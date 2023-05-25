@@ -237,6 +237,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod tests {
+    use dpp::block::block_info::BlockInfo;
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::platform::{Platform, PlatformRef};
     use crate::rpc::core::MockCoreRPCLike;
@@ -259,18 +260,18 @@ mod tests {
     }
 
     impl PlatformTestHelper {
-        pub fn apply_data_contract(&self, data_contract: &DataContract) {
+        pub fn apply_data_contract(&self, data_contract: &DataContract, block_info: BlockInfo) {
             self.platform
                 .drive
-                .apply_contract(data_contract, Default::default(), true, None, None)
+                .apply_contract(data_contract, block_info, true, None, None)
                 .expect("to apply contract");
         }
     }
 
-    fn apply_contract(platform: &TempPlatform<MockCoreRPCLike>, data_contract: &DataContract) {
+    fn apply_contract(platform: &TempPlatform<MockCoreRPCLike>, data_contract: &DataContract, block_info: BlockInfo) {
         platform
             .drive
-            .apply_contract(data_contract, Default::default(), true, None, None)
+            .apply_contract(data_contract, block_info, true, None, None)
             .expect("to apply contract");
     }
 
@@ -311,6 +312,7 @@ mod tests {
     }
 
     mod validate_state {
+        use std::sync::Arc;
         use super::super::StateTransitionValidation;
         use super::*;
         use serde_json::json;
@@ -318,6 +320,7 @@ mod tests {
         use dpp::assert_state_consensus_errors;
         use dpp::errors::consensus::ConsensusError;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
+        use drive::drive::contract::ContractHistoryFetchInfo;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -328,7 +331,7 @@ mod tests {
             } = setup_test();
 
             data_contract.config.readonly = true;
-            apply_contract(&platform, &data_contract);
+            apply_contract(&platform, &data_contract, Default::default());
 
             let updated_document = json!({
                 "type": "object",
@@ -387,7 +390,12 @@ mod tests {
             data_contract.config.readonly = false;
 
             // TODO: check that keep_history actually works
-            apply_contract(&platform, &data_contract);
+            apply_contract(&platform, &data_contract, BlockInfo {
+                time_ms: 1000,
+                height: 100,
+                core_height: 10,
+                epoch: Default::default(),
+            });
 
             let updated_document = json!({
                 "type": "object",
@@ -434,22 +442,41 @@ mod tests {
             assert!(result.is_valid());
 
             // This should store update and history
-            apply_contract(&platform, &data_contract);
+            apply_contract(&platform, &data_contract, BlockInfo {
+                time_ms: 2000,
+                height: 110,
+                core_height: 11,
+                epoch: Default::default(),
+            });
 
             // TODO: this shouldn't be working, investigate one day
-            let res = platform.drive.fetch_contract(
+            let res = platform.drive.fetch_contract_with_history(
                 *data_contract.id.as_bytes(),
                 None,
-                None,
+                Some(true),
                 None
             );
 
-            // TODO: what to actually check here?
-            let fetch_result = res.value
-                .expect("to get contract")
-                .expect("to get contract");
+            // // TODO: what to actually check here?
+            // let fetch_result = match res.value {
+            //     Ok(v) => {
+            //         match v {
+            //             None => {
+            //                 panic!("Contract history info is none");
+            //             }
+            //             Some(v2) => {
+            //                 v2
+            //             }
+            //         }
+            //     },
+            //     Err(e) => {
+            //         println!("Received error: {:?}", e);
+            //         panic!("Expected to receive a contract history");
+            //     },
+            // };
 
-            println!("{:?}", fetch_result.contract);
+            // println!("History len: {:?}", fetch_result.history.len());
+            // println!("{:?}", fetch_result.history);
         }
     }
 }

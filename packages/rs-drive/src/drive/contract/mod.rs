@@ -67,8 +67,11 @@ use grovedb::reference_path::ReferencePathType::SiblingReference;
 
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::Convertible;
+use grovedb::batch::key_info;
+use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{PathQuery, SizedQuery};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
@@ -84,16 +87,22 @@ use crate::drive::flags::StorageFlags;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
+use crate::drive::contract;
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::contract_root_path;
+use crate::drive::contract::paths::{
+    contract_keeping_history_storage_path, contract_storage_path_vec,
+};
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::QueryType;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
+use crate::drive::object_size_info::PathKeyInfo;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 #[cfg(feature = "full")]
@@ -110,9 +119,11 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
-use crate::query::QueryResultEncoding;
+use crate::query::QueryItem::RangeFull;
+use crate::query::{Query, QueryItem, QueryResultEncoding};
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 
@@ -142,11 +153,9 @@ pub struct ContractFetchInfo {
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Contract history and fetch information
 #[derive(Default, PartialEq, Debug, Clone)]
-pub struct HistoricalContractFetchInfo {
-    // TODO: figure out how history should look like
+pub struct ContractHistoryFetchInfo {
+    /// Contracts history
     pub history: Vec<Contract>,
-    /// The contract
-    pub contract: Contract,
     /// The contract's potential storage flags
     pub storage_flags: Option<StorageFlags>,
     /// These are the operations that are used to fetch a contract
@@ -169,6 +178,8 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         insert_operations: &mut Vec<LowLevelDriveOperation>,
+        is_first_insert: bool,
+        transaction: TransactionArg,
     ) -> Result<(), Error> {
         let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
         if contract.config.keeps_history {
@@ -184,15 +195,60 @@ impl Drive {
                 );
             }
 
-            self.batch_insert_empty_tree(
-                contract_root_path,
-                KeyRef(&[0]),
-                storage_flags.as_ref().map(|flags| flags.as_ref()),
-                insert_operations,
-            )?;
+            if is_first_insert {
+                self.batch_insert_empty_tree(
+                    contract_root_path,
+                    KeyRef(&[0]),
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                    insert_operations,
+                )?;
+            } else {
+                let apply_type = if estimated_costs_only_with_layer_info.is_some() {
+                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                        is_sum_tree: false,
+                        in_tree_using_sums: false,
+                        flags_len: storage_flags
+                            .as_ref()
+                            .map(|flags| flags.to_element_flags().len())
+                            .unwrap_or_default() as u32,
+                    }
+                } else {
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree
+                };
+
+                let key_info = PathKeyInfo::PathFixedSizeKeyRef((contract_root_path, &[0]));
+
+                self.batch_insert_empty_tree_if_not_exists(
+                    key_info,
+                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                    apply_type,
+                    transaction,
+                    &mut None,
+                    insert_operations,
+                )?;
+            }
+
             let encoded_time = encode_u64(block_info.time_ms);
             let contract_keeping_history_storage_path =
                 paths::contract_keeping_history_storage_path(contract.id.as_bytes());
+
+            if !is_first_insert {
+                // we can use a DirectQueryType::StatefulDirectQuery because if we were stateless we would always think
+                // this was the first insert
+                let maybe_element = self.grove_get_raw_optional(
+                    contract_keeping_history_storage_path,
+                    encoded_time.as_slice(),
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    insert_operations,
+                )?;
+                if maybe_element.is_some() {
+                    return Err(Error::Drive(DriveError::UpdatingContractWithHistoryError(
+                        "updating a contract with same time as a previous revision",
+                    )));
+                }
+            };
+
             self.batch_insert(
                 PathFixedSizeKeyRefElement((
                     contract_keeping_history_storage_path,
@@ -353,6 +409,8 @@ impl Drive {
             block_info,
             estimated_costs_only_with_layer_info,
             &mut batch_operations,
+            true,
+            None, // we are not inserting into history, hence the transaction will not be used, we can pass None
         )?;
 
         // the documents
@@ -632,6 +690,8 @@ impl Drive {
             block_info,
             estimated_costs_only_with_layer_info,
             &mut batch_operations,
+            false,
+            transaction,
         )?;
 
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
@@ -1171,8 +1231,58 @@ impl Drive {
         }
     }
 
-    pub fn fetch_contract_with_history() {
+    /// TODO: write docs
+    pub fn fetch_contract_with_history(
+        &self,
+        contract_id: [u8; 32],
+        epoch: Option<&Epoch>,
+        known_keeps_history: Option<bool>,
+        transaction: TransactionArg,
+    ) -> () {
+        // CostResult<Option<Arc<ContractHistoryFetchInfo>>, Error>
+        let key = (0..10).collect::<Vec<u8>>();
+        println!("Tree");
+        let mut ops = Vec::new();
 
+        let query = Query::new_single_query_item_with_direction(
+            QueryItem::RangeAfter(std::ops::RangeFrom { start: vec![0] }),
+            false,
+        );
+
+        let sized_query = SizedQuery::new(query, Some(10), None);
+
+        let path_query = PathQuery::new(
+            paths::contract_keeping_history_storage_path_vec(&contract_id),
+            sized_query,
+        );
+
+        let (results, _) = self
+            .grove_get_path_query(
+                &path_query,
+                transaction,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut ops,
+            )
+            .expect("something to happen");
+
+        println!("Results: {:?}", results.elements.len());
+
+        for el in results.elements.iter() {
+            match el {
+                QueryResultElement::ElementResultItem(e) => println!("Item"),
+                QueryResultElement::KeyElementPairResultItem(e) => match &e.1 {
+                    Element::Item(a, b) => {
+                        let contract =
+                            DataContract::deserialize_no_limit(a).expect("to parse contract");
+                        println!("{:?}", contract);
+                    }
+                    _ => panic!("Not an item"),
+                },
+                QueryResultElement::PathKeyElementTrioResultItem(e) => {
+                    panic!("trio not expected")
+                }
+            };
+        }
     }
 
     /// Applies a contract and returns the fee for applying.
@@ -1312,23 +1422,69 @@ impl Drive {
         };
 
         // We can do a get direct because there are no references involved
-        if let Ok(Some(stored_element)) = self.grove_get_raw(
+        match self.grove_get_raw(
             contract_root_path(contract.id.as_bytes()),
             &[0],
             direct_query_type,
             transaction,
             &mut drive_operations,
         ) {
-            already_exists = true;
-            match stored_element {
-                Element::Item(stored_contract_bytes, _) => {
-                    if contract_serialization != stored_contract_bytes {
-                        original_contract_stored_data = stored_contract_bytes;
+            Ok(Some(stored_element)) => {
+                match stored_element {
+                    Element::Item(stored_contract_bytes, _) => {
+                        already_exists = true;
+                        if contract_serialization != stored_contract_bytes {
+                            original_contract_stored_data = stored_contract_bytes;
+                        }
+                    }
+                    Element::Tree(..) => {
+                        // we are in a tree, this means that the contract keeps history, we need to fetch the actual latest contract
+                        already_exists = true;
+                        // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
+                        let stored_element = self
+                            .grove_get(
+                                contract_keeping_history_storage_path(contract.id.as_bytes()),
+                                &[0],
+                                QueryType::StatefulQuery,
+                                transaction,
+                                &mut drive_operations,
+                            )?
+                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "we should have an element for the contract",
+                            )))?;
+                        match stored_element {
+                            Element::Item(stored_contract_bytes, _) => {
+                                if contract_serialization != stored_contract_bytes {
+                                    original_contract_stored_data = stored_contract_bytes;
+                                }
+                            }
+                            _ => {
+                                return Err(Error::Drive(DriveError::CorruptedDriveState(format!("expecting an item for the last reference of a contract that keeps history {}", contract.id.to_string(Encoding::Base58)))));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "expecting an item or a tree at contract root {}",
+                            contract.id.to_string(Encoding::Base58)
+                        ))));
                     }
                 }
-                _ => {
-                    already_exists = false;
-                }
+            }
+            Ok(None) => {
+                // we are in estimated costs
+                // keep already_exists at false
+            }
+            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            | Err(Error::GroveDB(grovedb::Error::PathNotFound(_)))
+            | Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_))) => {
+                println!(
+                    "Nothing found for {:?}",
+                    contract_root_path(contract.id.as_bytes())
+                );
+            }
+            Err(e) => {
+                return Err(e);
             }
         };
 
