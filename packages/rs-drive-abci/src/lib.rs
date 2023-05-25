@@ -60,3 +60,6 @@ pub mod query;
 pub mod test;
 /// Validator Set
 pub mod validator_set;
+
+/// Metrics subsystem
+pub mod metrics;

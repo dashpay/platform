@@ -89,6 +89,18 @@ impl DocumentFacadeWasm {
             .await
     }
 
+    // TODO(rs-drive-abci): add tests
+    #[wasm_bindgen(js_name=createExtendedDocumentFromDocumentBuffer)]
+    pub fn create_extended_from_document_buffer(
+        &self,
+        buffer: Vec<u8>,
+        document_type: &str,
+        data_contract: &DataContractWasm,
+    ) -> Result<ExtendedDocumentWasm, JsValue> {
+        self.factory
+            .create_extended_from_document_buffer(buffer, document_type, data_contract)
+    }
+
     /// Creates Documents State Transition
     #[wasm_bindgen(js_name=createStateTransition)]
     pub fn create_state_transition(

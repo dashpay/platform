@@ -43,6 +43,9 @@ pub enum Error {
     /// Logging error
     #[error("logging: {0}")]
     Logging(#[from] logging::Error),
+    /// Error from metrics subsystem
+    #[error("metrics: {0}")]
+    Metrics(#[from] crate::metrics::Error),
 }
 
 impl From<Error> for ResponseException {

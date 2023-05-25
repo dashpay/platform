@@ -223,7 +223,10 @@ WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
 CMD ["start"]
 
+# ABCI interface
 EXPOSE 26658
+# Prometheus port
+EXPOSE 29090
 
 #
 # STAGE: DASHMATE HELPER BUILD

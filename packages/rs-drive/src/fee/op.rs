@@ -40,7 +40,9 @@ use costs::OperationCost;
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{batch::GroveDbOp, Element};
+use grovedb::element::MaxReferenceHop;
+use grovedb::reference_path::ReferencePathType;
+use grovedb::{batch::GroveDbOp, Element, ElementFlags};
 
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
@@ -404,6 +406,25 @@ impl LowLevelDriveOperation {
         element: Element,
     ) -> Self {
         GroveOperation(GroveDbOp::replace_estimated_op(path, key, element))
+    }
+
+    /// Sets `GroveOperation` for refresh of a reference at the given path and key
+    pub fn refresh_reference_for_known_path_key_reference_info(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        reference_path_type: ReferencePathType,
+        max_reference_hop: MaxReferenceHop,
+        flags: Option<ElementFlags>,
+        trust_refresh_reference: bool,
+    ) -> Self {
+        GroveOperation(GroveDbOp::refresh_reference_op(
+            path,
+            key,
+            reference_path_type,
+            max_reference_hop,
+            flags,
+            trust_refresh_reference,
+        ))
     }
 }
 
