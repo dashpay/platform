@@ -200,6 +200,9 @@ RUN ldd /usr/bin/drive-abci
 
 # Create a volume
 VOLUME /var/lib/dash
+VOLUME /var/log/dash
+
+RUN mkdir -p /var/log/dash
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
 
@@ -211,14 +214,14 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 RUN addgroup -g $USER_GID $USERNAME && \
     adduser -D -u $USER_UID -G $USERNAME -h /var/lib/dash/rs-drive-abci $USERNAME && \
-    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci
+    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci /var/log/dash
 
 USER $USERNAME
 
 ENV RUST_BACKTRACE=1
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
-CMD ["-vvvv", "start"]
+CMD ["start"]
 
 # ABCI interface
 EXPOSE 26658
