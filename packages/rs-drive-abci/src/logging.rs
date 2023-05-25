@@ -53,13 +53,13 @@ pub struct LogConfig {
     /// detailed description.
     #[serde(default)]
     pub format: LogFormat,
-    /// Max number of daily files to store; only used when storing logs in file; defaults to 7
+    /// Max number of daily files to store; only used when storing logs in file; defaults to 0 - rotation disabled
     #[serde(default = "LogConfig::default_max_files")]
     pub max_files: usize,
 }
 impl LogConfig {
     fn default_max_files() -> usize {
-        7
+        0
     }
 }
 
@@ -168,26 +168,34 @@ pub enum Error {
 pub type LoggerID = String;
 
 /// Add and manage logging methods
-pub struct LogController {
+#[derive(Default)]
+pub struct LogBuilder {
     loggers: HashMap<LoggerID, Logger>,
 }
 
-impl Default for LogController {
-    fn default() -> Self {
-        Self {
-            loggers: HashMap::new(),
-        }
-    }
-}
-
-impl LogController {
-    /// Create new LogController
+impl LogBuilder {
+    /// Create new LogBuilder
     pub fn new() -> Self {
         Default::default()
     }
 
-    /// Add new logger to log controller.
-    pub fn add(&mut self, configuration_name: &str, config: &LogConfig) -> Result<(), Error> {
+    /// Add all configuration configs
+    pub fn with_configs(self, configs: &LogConfigs) -> Result<Self, Error> {
+        let mut me = self;
+        for (name, config) in configs {
+            me.add(name, config)?;
+        }
+        Ok(me)
+    }
+    ///
+    pub fn with_config(self, configuration_name: &str, config: &LogConfig) -> Result<Self, Error> {
+        let mut me = self;
+        me.add(configuration_name, config)?;
+        Ok(me)
+    }
+
+    /// Add new logger
+    fn add(&mut self, configuration_name: &str, config: &LogConfig) -> Result<(), Error> {
         let logger = Logger::try_from(config)?;
         if self.loggers.contains_key(configuration_name) {
             return Err(Error::DuplicateConfigName(configuration_name.to_string()));
@@ -196,32 +204,28 @@ impl LogController {
         Ok(())
     }
 
-    /// Add all configuration configs
-    pub fn add_all(&mut self, configs: &LogConfigs) -> Result<(), Error> {
-        for (name, config) in configs {
-            self.add(name, config)?;
-        }
-        Ok(())
-    }
-
-    /// Flush all loggers.
+    /// Initialize logging subsystem after finishing configuration.
     ///
-    /// In case of multiple errors, returns only last one.
-    pub fn flush(&self) -> Result<(), std::io::Error> {
-        let mut result = Ok(());
-        for logger in self.loggers.values() {
-            if let Err(e) = logger
-                .destination
-                .clone()
-                .lock()
-                .expect("logging lock poisoned")
-                .to_write()
-                .flush()
-            {
-                result = Err(e);
-            };
-        }
-        result
+    /// Panics if logging subsystem is already initialized.
+    pub fn build(self) -> Loggers {
+        Loggers(self.loggers)
+    }
+}
+
+/// Loggers that were defined in builder
+pub struct Loggers(HashMap<LoggerID, Logger>);
+
+impl Loggers {
+    /// Install loggers as a global tracing handler.
+    ///
+    /// Can be called only once.
+    ///
+    /// Panics if logging subsystem is already initialized.
+    pub fn install(&self) {
+        // Based on  examples from  https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
+        let loggers = self.0.values().map(|l| Box::new(l.layer())).collect_vec();
+
+        registry().with(loggers).init();
     }
 
     /// Trigger log rotation.
@@ -230,7 +234,7 @@ impl LogController {
     pub fn rotate(&self) -> Result<(), Error> {
         let mut result: Result<(), Error> = Ok(());
 
-        for logger in self.loggers.values() {
+        for logger in self.0.values() {
             let cloned = logger.destination.clone();
             let guard = cloned.lock().expect("logging lock poisoned");
 
@@ -243,20 +247,6 @@ impl LogController {
             };
         }
         result
-    }
-
-    /// Initialize logging subsystem after finishing configuration.
-    ///
-    /// Panics if logging subsystem is already initialized.
-    pub fn finalize(&self) {
-        // Based on  examples from  https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
-        let loggers = self
-            .loggers
-            .values()
-            .map(|l| Box::new(l.layer()))
-            .collect_vec();
-
-        registry().with(loggers).init();
     }
 }
 
@@ -551,7 +541,7 @@ mod tests {
     /// Note that, due to limitation of [tracing::subscriber::set_global_default()], we can only have one test.
     #[test]
     fn test_logging() {
-        let mut logging = LogController::new();
+        let mut logging = LogBuilder::new();
 
         let logger_stdout = LogConfig {
             destination: "stdout".to_string(),
@@ -596,7 +586,7 @@ mod tests {
         };
         logging.add("dir_v0", &logger_dir_v0).unwrap();
 
-        logging.finalize();
+        logging.build();
 
         const TEST_STRING_DEBUG: &str = "testing debug trace";
         const TEST_STRING_ERROR: &str = "testing error trace";

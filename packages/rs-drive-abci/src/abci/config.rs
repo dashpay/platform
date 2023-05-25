@@ -1,6 +1,5 @@
 //! Configuration of ABCI Application server
 
-use crate::{config::FromEnv, logging::LogConfig};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 

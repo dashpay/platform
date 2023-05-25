@@ -4,7 +4,7 @@
 
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
-use drive_abci::logging::{LogConfig, LogController};
+use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
@@ -114,9 +114,7 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
 fn configure_logging(
     cli: &Cli,
     config: &PlatformConfig,
-) -> Result<LogController, drive_abci::logging::Error> {
-    let mut controller = LogController::new();
-
+) -> Result<Loggers, drive_abci::logging::Error> {
     let mut configs = config.abci.log.clone();
     if configs.is_empty() || cli.verbose > 0 {
         let cli_config = LogConfig {
@@ -129,12 +127,12 @@ fn configure_logging(
         configs.insert("cli_verbosity".to_string(), cli_config);
     }
 
-    controller.add_all(&configs);
-    controller.finalize();
+    let loggers = LogBuilder::new().with_configs(&configs)?.build();
+    loggers.install();
 
     tracing::info!("Configured log destinations: {}", configs.keys().join(","));
 
-    Ok(controller)
+    Ok(loggers)
 }
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.
