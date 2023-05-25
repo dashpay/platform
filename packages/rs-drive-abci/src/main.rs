@@ -119,8 +119,9 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 
 /// Check status of ABCI server.
 fn check_status(config: &PlatformConfig) -> Result<(), String> {
-    if let Some(addr) = config.abci.prometheus_bind_address.clone() {
-        let url = url::Url::parse(&addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
+    if let Some(prometheus_addr) = &config.abci.prometheus_bind_address {
+        let url =
+            url::Url::parse(prometheus_addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
 
         let addr = format!(
             "{}://{}:{}/metrics",
