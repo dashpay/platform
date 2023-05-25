@@ -267,7 +267,7 @@ impl LogBuilder {
     ///
     /// This method is called after configuring the builder with all desired settings. It consumes
     /// the builder and returns the constructed object.
-    /// 
+    ///
     /// # Panics
     pub fn build(self) -> Loggers {
         Loggers(self.loggers)
@@ -276,7 +276,7 @@ impl LogBuilder {
 
 /// Collection of loggers defined using [LogBuilder].
 ///
-/// This struct holds a collection of loggers created using the [LogBuilder]. 
+/// This struct holds a collection of loggers created using the [LogBuilder].
 /// It provides methods for installing, flushing, and rotating logs.
 pub struct Loggers(HashMap<LoggerID, Logger>);
 
