@@ -14,13 +14,26 @@ use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 #[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AbciConfig {
-    /// Address to listen on
+    /// Address to listen for ABCI connections
     ///
     /// Address should be an URL with scheme `tcp://` or `unix://`, for example:
     /// - `tcp://127.0.0.1:1234`
     /// - `unix:///var/run/abci.sock`
     #[serde(rename = "abci_bind_address")]
     pub bind_address: String,
+
+    /// Address to listen for Prometheus connection.
+    ///
+    /// Optional.
+    ///
+    /// /// Address should be an URL with scheme `http://`, for example:
+    /// - `http://127.0.0.1:29090`
+    ///
+    /// Port number defaults to [DEFAULT_PROMETHEUS_PORT].
+    ///
+    /// [DEFAULT_PROMETHEUS_PORT]: crate::metrics::DEFAULT_PROMETHEUS_PORT
+    #[serde(default, rename = "abci_prometheus_bind_address")]
+    pub prometheus_bind_address: Option<String>,
 
     /// Public keys used for system identity
     #[serde(flatten)]
