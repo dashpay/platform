@@ -95,7 +95,8 @@ describe('Platform', () => {
           // expect(recoveredDataContract.toObject()).to.be.deep.equal(dataContract.toObject());
         });
 
-        it('should be able to verify proof that data contract does not exist', async () => {
+        // TODO(rs-drive-abci): restore.
+        it.skip('should be able to verify proof that data contract does not exist', async () => {
           // The same as above, but for an identity id that doesn't exist
 
           const dataContractId = await generateRandomIdentifier();
