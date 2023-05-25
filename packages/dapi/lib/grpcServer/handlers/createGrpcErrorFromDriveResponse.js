@@ -73,6 +73,11 @@ async function createGrpcErrorFromDriveResponse(code, info) {
       );
     }
 
+    // TODO(rs-drive-abci): revisit.
+    //   Rust does not provide stack trace in case of an error.
+    //   It is possible however to use Backtrace crate to report stack.
+    //   Decide whether it worth using Backtrace in rs-drive-abci queries
+    //   and remove if not needed
     // Restore stack for internal error
     if (code === GrpcErrorCodes.INTERNAL) {
       const error = new Error(message);
