@@ -43,7 +43,9 @@ For more detailed description for different formats, refer to the [tracing-subsc
 
 #### MAX_FILES (optional)
 
-Specifies the maximum number of daily log files to store. This parameter is only used when logs are stored in a file. The default value is 7 if not specified.
+Specifies the maximum number of daily log files to store. Defaults to 0.
+
+This parameter is only used when logs are stored in a file. If this is set to 0, log rotation is disabled.
 
 #### Configuring multiple destinations
 
