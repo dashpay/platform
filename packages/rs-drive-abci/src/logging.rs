@@ -104,12 +104,12 @@ pub enum LogFormat {
 ///
 /// ```bash
 /// # First logger, logging to stderr on verbosity level 5
-/// ABCI_LOG_StdErr_DESTINATION=stderr
-/// ABCI_LOG_StdErr_VERBOSITY=6
+/// ABCI_LOG_STDERR_DESTINATION=stderr
+/// ABCI_LOG_STDERR_VERBOSITY=6
 ///
 /// # Second logger, logging to stdout on verbosity level 1
-/// ABCI_LOG_StdOut_DESTINATION=stdout
-/// ABCI_LOG_StdOut_VERBOSITY=1
+/// ABCI_LOG_STDOUT_DESTINATION=stdout
+/// ABCI_LOG_STDOUT_VERBOSITY=1
 /// ```
 ///
 ///
@@ -152,8 +152,8 @@ pub enum Error {
     /// File creation error
     #[error("create file {0}: {1}")]
     FileCreate(PathBuf, std::io::Error),
-    /// Invalid destination
 
+    /// Invalid destination
     #[error(
         "invalid destination {0}: must be one of: stderr, stdout, or absolute path to a directory"
     )]
@@ -171,19 +171,61 @@ pub enum Error {
 /// Name of logging configuration
 pub type LoggerID = String;
 
-/// Add and manage logging methods
+/// LogBuilder is a builder for configuring and initializing logging subsystem.
+///
+/// # Examples
+///
+/// ```
+/// use drive_abci::logging::LogBuilder;
+/// use drive_abci::logging::LogConfigs;
+/// use drive_abci::logging::LogConfig;
+///
+/// // Create a new LogBuilder instance
+/// let mut log_builder = LogBuilder::new();
+///
+/// // Define your LogConfigs
+/// let mut log_configs = LogConfigs::new();
+/// log_configs.insert("config1".to_string(), LogConfig::default());
+///
+/// // Add all configs to the LogBuilder
+/// log_builder = log_builder.with_configs(&log_configs).unwrap();
+///
+/// // Add an individual config to the LogBuilder
+/// let config2 = LogConfig::default();
+/// log_builder = log_builder.with_config("config2", &config2).unwrap();
+///
+/// // Build the logging subsystem
+/// let loggers = log_builder.build();
+///
+/// // Install logging subsystem handler
+/// loggers.install();
+/// ```
 #[derive(Default)]
 pub struct LogBuilder {
     loggers: HashMap<LoggerID, Logger>,
 }
 
 impl LogBuilder {
-    /// Create new LogBuilder
+    /// Creates a new `LogBuilder` instance with default settings.
     pub fn new() -> Self {
         Default::default()
     }
 
-    /// Add all configuration configs
+    /// Adds multiple logging configurations to the `LogBuilder` at once.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use drive_abci::logging::LogBuilder;
+    /// use drive_abci::logging::LogConfigs;
+    ///
+    /// let mut log_builder = LogBuilder::new();
+    /// let mut log_configs = LogConfigs::new();
+    ///
+    /// // Add configurations to log_configs
+    ///
+    /// log_builder = log_builder.with_configs(&log_configs).unwrap();
+    /// ```
     pub fn with_configs(self, configs: &LogConfigs) -> Result<Self, Error> {
         let mut me = self;
         for (name, config) in configs {
@@ -191,14 +233,27 @@ impl LogBuilder {
         }
         Ok(me)
     }
+
+    /// Adds a single logging configuration to the `LogBuilder`.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// use drive_abci::logging::LogBuilder;
+    /// use drive_abci::logging::LogConfig;
+    ///
+    /// let log_builder = LogBuilder::new();
+    /// let config = LogConfig::default();
+    ///
+    /// let log_builder = log_builder.with_config("config_name", &config).unwrap();
+    /// ```
     pub fn with_config(self, configuration_name: &str, config: &LogConfig) -> Result<Self, Error> {
         let mut me = self;
         me.add(configuration_name, config)?;
         Ok(me)
     }
 
-    /// Add new logger
+    /// Adds a new logger to the `LogBuilder`.
     fn add(&mut self, configuration_name: &str, config: &LogConfig) -> Result<(), Error> {
         let logger = Logger::try_from(config)?;
         if self.loggers.contains_key(configuration_name) {
@@ -208,32 +263,62 @@ impl LogBuilder {
         Ok(())
     }
 
-    /// Initialize logging subsystem after finishing configuration.
+    /// Finalizes the build process and constructs loggers collection.
     ///
-    /// Panics if logging subsystem is already initialized.
+    /// This method is called after configuring the builder with all desired settings. It consumes
+    /// the builder and returns the constructed object.
+    /// 
+    /// # Panics
     pub fn build(self) -> Loggers {
         Loggers(self.loggers)
     }
 }
 
-/// Loggers that were defined in builder
+/// Collection of loggers defined using [LogBuilder].
+///
+/// This struct holds a collection of loggers created using the [LogBuilder]. 
+/// It provides methods for installing, flushing, and rotating logs.
 pub struct Loggers(HashMap<LoggerID, Logger>);
 
 impl Loggers {
-    /// Install loggers as a global tracing handler.
+    /// Installs loggers as a global tracing handler.
     ///
-    /// Can be called only once.
+    /// Installs loggers prepared in the [LogBuilder] as a global tracing handler. It must be called exactly once.
+    /// Panics if a global tracing handler was already defined.
     ///
-    /// Panics if logging subsystem is already initialized.
+    /// # Examples
+    ///
+    /// ```
+    /// use drive_abci::logging::{LogBuilder, Loggers};
+    ///
+    /// // Create logger(s) using LogBuilder
+    /// let mut logger_builder = LogBuilder::new();
+    /// // Configure logger_builder using its methods
+    ///
+    /// // Build Loggers instance
+    /// let loggers: Loggers = logger_builder.build();
+    ///
+    /// // Install loggers as a global tracing handler
+    /// loggers.install();
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the logging subsystem is already initialized.
     pub fn install(&self) {
-        // Based on  examples from  https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
+        // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
         let loggers = self.0.values().map(|l| Box::new(l.layer())).collect_vec();
 
         registry().with(loggers).init();
     }
-    /// Flush all loggers.
+
+    /// Flushes all loggers.
     ///
-    /// In case of multiple errors, returns only last one.
+    /// In case of multiple errors, returns only the last one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there's an issue flushing any of the loggers.
     pub fn flush(&self) -> Result<(), std::io::Error> {
         let mut result = Ok(());
         for logger in self.0.values() {
@@ -251,9 +336,13 @@ impl Loggers {
         result
     }
 
-    /// Trigger log rotation.
+    /// Triggers log rotation for log destinations that support this.
     ///
-    /// In case of multiple errors, we return error from last logger.
+    /// In case of multiple errors, returns the error from the last logger.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there's an issue rotating any of the logs.
     pub fn rotate(&self) -> Result<(), Error> {
         let mut result: Result<(), Error> = Ok(());
 
@@ -562,7 +651,6 @@ mod tests {
 
     use super::*;
     use std::str::from_utf8;
-    use std::time::Duration;
 
     /// Reads data written to provided destination.
     ///
@@ -644,7 +732,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut logging = LogBuilder::new()
+        let logging = LogBuilder::new()
             .with_config("stdout", &logger_stdout)
             .unwrap()
             .with_config("stderr", &logger_stderr)
@@ -691,8 +779,5 @@ mod tests {
         assert!(!result_dir_verb_0.contains(TEST_STRING_DEBUG));
         assert!(result_verb_4.contains(TEST_STRING_DEBUG));
         assert!(result_file_verb_4.contains(TEST_STRING_DEBUG));
-
-        // ensure we didn't drop earlier
-        drop(dir_v4);
     }
 }
