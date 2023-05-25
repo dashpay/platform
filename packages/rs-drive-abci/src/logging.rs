@@ -41,6 +41,7 @@ pub struct LogConfig {
     /// For testing, also "bytes" is available.
     pub destination: String,
     /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
+    #[serde(default)]
     pub verbosity: u8,
     /// Whether or not to use colorful output; defaults to autodetect
     #[serde(default)]
@@ -58,13 +59,8 @@ pub struct LogConfig {
     #[serde(default)]
     pub format: LogFormat,
     /// Max number of daily files to store; only used when storing logs in file; defaults to 0 - rotation disabled
-    #[serde(default = "LogConfig::default_max_files")]
+    #[serde(default)]
     pub max_files: usize,
-}
-impl LogConfig {
-    fn default_max_files() -> usize {
-        0
-    }
 }
 
 impl Default for LogConfig {
@@ -74,7 +70,7 @@ impl Default for LogConfig {
             verbosity: 0,
             color: None,
             format: Default::default(),
-            max_files: LogConfig::default_max_files(),
+            max_files: 0,
         }
     }
 }
