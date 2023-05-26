@@ -116,16 +116,10 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 46"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
-    tree -L 3 /usr/local/cargo && \
-    tree -L 3 /platform/target && \
-    find /usr/local/cargo/registry/ -exec stat -c '%n %Y' {} + && \
-    find /usr/local/cargo/git/ -exec stat -c '%n %Y' {} + && \
-    find /platform/target/ -exec stat -c '%n %Y' {} + && \
     CARGO_TARGET_DIR=/platform/target \
     cargo install \
       --profile "$CARGO_BUILD_PROFILE" \
@@ -153,20 +147,10 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
-RUN echo "inspect platform dir"
-RUN ls -lha /platform
-RUN ls -lha /platform/target || true
-RUN --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
-    ls -lha /platform/target
-
-RUN echo "bust cache 48"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
-    tree -L 3 /usr/local/cargo && \
-    tree -L 4 /platform/target/ && \
-    find /platform/target/ -exec stat -c '%n %Y' {} + && \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \

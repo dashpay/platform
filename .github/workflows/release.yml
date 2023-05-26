@@ -226,25 +226,8 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
-      # - name: Setup s5cmd
-      #   run: |
-      #     curl -sL --retry 5 -o /tmp/s5cmd.tar.gz https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz
-      #     sudo tar -xf /tmp/s5cmd.tar.gz -C /usr/local/bin s5cmd
-
-      # - name: Sync files
-      #   run: |
-      #     s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
-
       - name: inject go-build-cache into docker
         uses: dcginfra/buildkit-cache-dance/inject@main
-
-      - name: Inspect cache
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          builder: ${{ steps.buildx.outputs.name }}
-          file: ./Dockerfile2
-          push: false
 
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v3
@@ -265,14 +248,6 @@ jobs:
 
       - name: extract go-build-cache from docker
         uses: dcginfra/buildkit-cache-dance/extract@main
-
-      # - name: Sync files
-      #   run: |
-      #     s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
-
-      # - name: Setup tmate session
-      #   if: ${{ failure() }}
-      #   uses: mxschmitt/action-tmate@v3
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
