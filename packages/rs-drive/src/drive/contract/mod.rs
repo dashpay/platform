@@ -53,6 +53,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use crate::common::encode::encode_u64;
+#[cfg(feature = "full")]
+use crate::common::decode::decode_u64;
 #[cfg(any(feature = "full", feature = "verify"))]
 use costs::OperationCost;
 #[cfg(feature = "full")]
@@ -1236,14 +1238,14 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
+        start_at_date: u64,
         limit: Option<u16>,
         offset: Option<u16>,
-    ) -> Result<Vec<Contract>, Error> {
-        // CostResult<Option<Arc<ContractHistoryFetchInfo>>, Error>
+    ) -> Result<BTreeMap<u64, Contract>, Error> {
         let mut ops = Vec::new();
 
         let query = Query::new_single_query_item_with_direction(
-            QueryItem::RangeAfter(std::ops::RangeFrom { start: vec![0] }),
+            QueryItem::RangeAfter(std::ops::RangeFrom { start: encode_u64(start_at_date) }),
             false,
         );
 
@@ -1262,13 +1264,18 @@ impl Drive {
 
         let contracts = results.elements.iter().map(|el| {
             match el {
-                QueryResultElement::KeyElementPairResultItem(e) => {
-                    println!("{:?}", e.0);
-                    match &e.1 {
+                QueryResultElement::KeyElementPairResultItem((key, value)) => {
+                    let contract_time = decode_u64(key).map_err(|e| {
+                        Error::Drive(DriveError::CorruptedContractPath(
+                            "contract key is not a valid u64",
+                        ))
+                    })?;
+                    match value {
                         Element::Item(a, b) => {
-                                DataContract::deserialize_no_limit(a).map_err(|e| {
+                                let contract = DataContract::deserialize_no_limit(a).map_err(|e| {
                                     Error::Protocol(e)
-                                })
+                                })?;
+                                Ok((contract_time, contract))
                         }
                         _ => Err(Error::Drive(DriveError::CorruptedContractPath(
                             "contract path did not refer to a contract element",
@@ -1279,7 +1286,7 @@ impl Drive {
                     "contract path did not refer to a contract element",
                 )))
             }
-        }).collect::<Result<Vec<Contract>, Error>>();
+        }).collect::<Result<BTreeMap<u64, Contract>, Error>>();
 
         // Left like this for future additions if needed
         contracts

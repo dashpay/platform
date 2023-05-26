@@ -313,6 +313,7 @@ mod tests {
 
     mod validate_state {
         use std::sync::Arc;
+        use dashcore_rpc::dashcore_rpc_json::Bip125Replaceable::No;
         use super::super::StateTransitionValidation;
         use super::*;
         use serde_json::json;
@@ -449,33 +450,54 @@ mod tests {
                 epoch: Default::default(),
             });
 
-            let res = platform.drive.fetch_contract_with_history(
+            // Fetch from time 0 without a limit or offset
+            let contract_history = platform.drive.fetch_contract_with_history(
                 *data_contract.id.as_bytes(),
                 None,
+                0,
                 None,
                 None
             ).expect("to get contract history");
 
-            // // TODO: what to actually check here?
-            // let fetch_result = match res.value {
-            //     Ok(v) => {
-            //         match v {
-            //             None => {
-            //                 panic!("Contract history info is none");
-            //             }
-            //             Some(v2) => {
-            //                 v2
-            //             }
-            //         }
-            //     },
-            //     Err(e) => {
-            //         println!("Received error: {:?}", e);
-            //         panic!("Expected to receive a contract history");
-            //     },
-            // };
+            let keys = contract_history.keys().copied().collect::<Vec<u64>>();
 
-            // println!("History len: {:?}", fetch_result.history.len());
-            // println!("{:?}", fetch_result.history);
+            // Check that keys sorted from oldest to newest
+            assert_eq!(contract_history.len(), 2);
+            assert_eq!(keys[0], 1000);
+            assert_eq!(keys[1], 2000);
+
+            // assert_eq!(contract_history.keys().cloned())
+            println!("History: {:?}", contract_history);
+
+            // Fetch with an offset should offset from the newest to oldest
+            let contract_history = platform.drive.fetch_contract_with_history(
+                *data_contract.id.as_bytes(),
+                None,
+                0,
+                None,
+                Some(1)
+            ).expect("to get contract history");
+
+            let keys = contract_history.keys().copied().collect::<Vec<u64>>();
+
+            assert_eq!(contract_history.len(), 1);
+            assert_eq!(keys[0], 1000);
+
+            // Check that when we limit ny 1 we get only the most recent contract
+            let contract_history = platform.drive.fetch_contract_with_history(
+                *data_contract.id.as_bytes(),
+                None,
+                0,
+                Some(1),
+                None
+            ).expect("to get contract history");
+
+            let keys = contract_history.keys().copied().collect::<Vec<u64>>();
+
+            // Check that when we limit ny 1 we get only the most recent contract
+            assert_eq!(contract_history.len(), 1);
+            assert_eq!(keys[0], 2000);
+
         }
     }
 }
