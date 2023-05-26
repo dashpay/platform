@@ -131,6 +131,8 @@ where
         &self,
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("prepare_proposal");
+
         // We should get the latest CoreChainLock from core
         // It is possible that we will not get a chain lock from core, in this case, just don't
         // propose one
@@ -245,6 +247,8 @@ where
         &self,
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("process_proposal");
+
         let mut block_execution_context_guard =
             self.platform.block_execution_context.write().unwrap();
 
@@ -340,6 +344,8 @@ where
         &self,
         request: proto::RequestExtendVote,
     ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("extend_vote");
+
         let proto::RequestExtendVote {
             hash: block_hash,
             height,
@@ -387,6 +393,8 @@ where
         &self,
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
+
         let proto::RequestVerifyVoteExtension {
             hash: block_hash,
             validator_pro_tx_hash: _,
@@ -478,6 +486,8 @@ where
         &self,
         request: RequestFinalizeBlock,
     ) -> Result<ResponseFinalizeBlock, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("finalize_block");
+
         let transaction_guard = self.transaction.read().unwrap();
 
         let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
@@ -515,8 +525,10 @@ where
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("check_tx");
+
         let RequestCheckTx { tx, .. } = request;
-        let validation_result = self.platform.check_tx(tx)?;
+        let validation_result = self.platform.check_tx(tx.as_slice())?;
 
         let validation_error = validation_result.errors.first();
 
@@ -561,6 +573,8 @@ where
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("query");
+
         let RequestQuery { data, path, .. } = &request;
 
         let result = self.platform.query(path.as_str(), data.as_slice())?;

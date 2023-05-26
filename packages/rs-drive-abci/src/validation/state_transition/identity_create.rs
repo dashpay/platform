@@ -194,7 +194,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
         let tx_out_validation = self
             .asset_lock_proof
             .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
-        if !tx_out_validation.is_valid_with_data() {
+        if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,
             ));
