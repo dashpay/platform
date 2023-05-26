@@ -188,7 +188,7 @@ jobs:
               [[worker.oci.gcpolicy]]
                 all = true
                 keepBytes = 30000000000 # 30 GB
-                keepDuration = 432000 # 5 days
+                keepDuration = 864000 # 10 days
 
       - name: Get tag
         uses: actions/github-script@v6
