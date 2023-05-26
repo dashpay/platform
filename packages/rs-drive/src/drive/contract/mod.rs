@@ -129,6 +129,10 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 
+/// How many contracts to fetch at once. This is an arbitrary number and is needed to prevent
+/// the server from being overloaded with requests.
+pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
+
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.
@@ -1242,6 +1246,12 @@ impl Drive {
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<BTreeMap<u64, Contract>, Error> {
+        let limit = limit.unwrap_or_else(|| MAX_CONTRACT_HISTORY_FETCH_LIMIT);
+        if limit > MAX_CONTRACT_HISTORY_FETCH_LIMIT || limit < 1 {
+            return Err(Error::Drive(DriveError::InvalidContractHistoryFetchLimit(
+                limit,
+            )));
+        }
         let mut ops = Vec::new();
 
         let query = Query::new_single_query_item_with_direction(
@@ -1251,7 +1261,7 @@ impl Drive {
 
         let path_query = PathQuery::new(
             paths::contract_keeping_history_storage_path_vec(&contract_id),
-            SizedQuery::new(query, limit, offset),
+            SizedQuery::new(query, Some(limit), offset),
         );
 
         let (results, _cost) = self
