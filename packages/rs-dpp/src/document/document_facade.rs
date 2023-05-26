@@ -81,6 +81,16 @@ where
         self.factory.create_from_buffer(bytes, options).await
     }
 
+    pub async fn create_extended_from_document_buffer(
+        &self,
+        buffer: &[u8],
+        document_type: &str,
+        data_contract: &DataContract,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        self.factory
+            .create_extended_from_document_buffer(buffer, document_type, data_contract)
+    }
+
     /// Creates Documents State Transition
     pub fn create_state_transition(
         &self,

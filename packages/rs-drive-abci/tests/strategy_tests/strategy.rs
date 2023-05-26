@@ -13,9 +13,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::data_contract::{
-    generate_data_contract_id, CreatedDataContract, DataContract as Contract,
-};
+use dpp::data_contract::{generate_data_contract_id, CreatedDataContract};
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
     Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,

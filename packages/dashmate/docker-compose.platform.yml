@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci
+      - drive_abci_logs:/var/log/dash
     environment:
       - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
       - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
@@ -109,7 +110,6 @@ services:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
     environment:
-      - DASHMATE_HOME_DIR=/home/dashmate/.dashmate
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
     ports:
@@ -121,4 +121,5 @@ services:
 
 volumes:
   drive_abci_data:
+  drive_abci_logs:
   drive_tenderdash:

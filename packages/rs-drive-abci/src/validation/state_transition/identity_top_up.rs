@@ -1,8 +1,16 @@
 use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
+use dpp::consensus::basic::identity::{
+    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+};
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
+use dpp::consensus::ConsensusError;
+use dpp::dashcore::OutPoint;
 use dpp::identity::state_transition::identity_topup_transition::validation::basic::IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 use dpp::identity::PartialIdentity;
+use dpp::platform_value::Bytes36;
 use dpp::{
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
     state_transition::StateTransitionAction,
@@ -62,6 +70,40 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let outpoint = match self.asset_lock_proof.out_point() {
+            None => {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                            IdentityAssetLockTransactionOutputNotFoundError::new(
+                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
+                            ),
+                        ),
+                    ),
+                ));
+            }
+            Some(outpoint) => outpoint,
+        };
+
+        // Now we should check that we aren't using an asset lock again
+        let asset_lock_already_found = platform
+            .drive
+            .has_asset_lock_outpoint(&Bytes36(outpoint), tx)?;
+
+        if asset_lock_already_found {
+            let outpoint = OutPoint::from(outpoint);
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
+                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
+                            outpoint.txid,
+                            outpoint.vout as usize,
+                        ),
+                    ),
+                ),
+            ));
+        }
+
         self.transform_into_action(platform, tx)
     }
 
@@ -75,16 +117,22 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         let tx_out_validation = self
             .asset_lock_proof
             .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
-        if !tx_out_validation.is_valid_with_data() {
+        if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,
             ));
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        validation_result.set_data(
-            IdentityTopUpTransitionAction::from_borrowed(self, tx_out.value * 1000).into(),
-        );
+        match IdentityTopUpTransitionAction::from_borrowed(self, tx_out.value * 1000) {
+            Ok(action) => {
+                validation_result.set_data(action.into());
+            }
+            Err(error) => {
+                validation_result.add_error(error);
+            }
+        }
+
         Ok(validation_result)
     }
 }

@@ -10,7 +10,7 @@ use dpp::state_transition::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
-use drive::fee::credits::SignedCredits;
+use drive::fee::credits::{Credits, SignedCredits};
 use drive::fee::result::FeeResult;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
@@ -105,6 +105,8 @@ pub enum ExecutionEvent<'a> {
     PaidFromAssetLockDriveEvent {
         /// The identity requesting the event
         identity: PartialIdentity,
+        /// The added balance
+        added_balance: Credits,
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
     },
@@ -158,17 +160,21 @@ impl<'a> TryFrom<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for E
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();
+                let added_balance = identity_create_action.initial_balance_amount;
                 let operations = action.into_high_level_drive_operations(epoch)?;
                 Ok(PaidFromAssetLockDriveEvent {
                     identity,
+                    added_balance,
                     operations,
                 })
             }
-            StateTransitionAction::IdentityTopUpAction(_) => {
+            StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
+                let added_balance = identity_top_up_action.top_up_balance_amount;
                 let operations = action.into_high_level_drive_operations(epoch)?;
                 if let Some(identity) = identity {
                     Ok(PaidFromAssetLockDriveEvent {
                         identity,
+                        added_balance,
                         operations,
                     })
                 } else {
