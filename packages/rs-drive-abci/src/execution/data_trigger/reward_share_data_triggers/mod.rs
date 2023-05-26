@@ -118,7 +118,7 @@ pub fn create_masternode_reward_shares_data_trigger(
             )]),
         },
         offset: None,
-        limit: (MAX_DOCUMENTS + 1) as u16,
+        limit: Some((MAX_DOCUMENTS + 1) as u16),
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,

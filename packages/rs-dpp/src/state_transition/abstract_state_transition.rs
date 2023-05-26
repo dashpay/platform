@@ -135,6 +135,8 @@ pub trait StateTransitionLike:
             ));
         }
         let data = self.signable_bytes()?;
+        // dbg!(hex::encode(&data), hex::encode(&public_key), hex::encode(self.get_signature().as_slice()));
+
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
                 // TODO: it shouldn't respond with consensus error

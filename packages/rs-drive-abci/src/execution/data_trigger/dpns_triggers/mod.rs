@@ -89,7 +89,11 @@ pub fn create_domain_data_trigger(
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
-    let full_domain_name = normalized_label;
+    let full_domain_name = if normalized_parent_domain_name.is_empty() {
+        normalized_label.to_string()
+    } else {
+        format!("{normalized_label}.{normalized_parent_domain_name}")
+    };
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
@@ -195,7 +199,7 @@ pub fn create_domain_data_trigger(
                 ]),
             },
             offset: None,
-            limit: 0,
+            limit: None,
             order_by: Default::default(),
             start_at: None,
             start_at_included: false,
@@ -265,14 +269,14 @@ pub fn create_domain_data_trigger(
             equal_clauses: BTreeMap::from([(
                 "saltedDomainHash".to_string(),
                 WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
+                    field: "saltedDomainHash".to_string(),
                     operator: WhereOperator::Equal,
                     value: Value::Bytes32(salted_domain_hash),
                 },
             )]),
         },
         offset: None,
-        limit: 0,
+        limit: None,
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,

@@ -45,7 +45,7 @@ pub trait CoreRPCLike {
 
     /// Get list of quorums at a given height.
     ///
-    /// See https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-listextended
+    /// See <https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-listextended>
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
@@ -53,7 +53,7 @@ pub trait CoreRPCLike {
 
     /// Get quorum information.
     ///
-    /// See https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-info
+    /// See <https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-info>
     fn get_quorum_info(
         &self,
         quorum_type: QuorumType,
