@@ -121,7 +121,9 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=private,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
+    export CARGO_TARGET_DIR=/platform/target ; \
+    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
+    cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
 
 #
 # LOAD SOURCES
