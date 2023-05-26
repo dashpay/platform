@@ -57,7 +57,7 @@ RUN apk add --no-cache \
         xz \
         zeromq-dev
 
-SHELL ["/bin/bash", "-xc"]
+SHELL ["/bin/bash", "-c"]
 
 ARG TARGETARCH
 
