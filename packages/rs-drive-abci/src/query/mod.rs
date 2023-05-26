@@ -476,18 +476,25 @@ impl<C> Platform<C> {
                 )
                 .map_err(|_| {
                     QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode query from cbor".to_string(),
+                        "unable to decode 'where' query from cbor".to_string(),
                     ))
                 }));
 
-                let order_by = check_validation_result_with_data!(ciborium::de::from_reader(
-                    order_by.as_slice()
-                )
-                .map_err(|_| {
-                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode query from cbor".to_string(),
-                    ))
-                }));
+                // TODO: fix?
+                //   Fails with "query syntax error: deserialization error: unable to decode 'order_by' query from cbor"
+                //   cbor deserialization fails if order_by is empty
+                let order_by = if !order_by.is_empty() {
+                    check_validation_result_with_data!(ciborium::de::from_reader(
+                        order_by.as_slice()
+                    )
+                    .map_err(|_| {
+                        QueryError::Query(QuerySyntaxError::DeserializationError(
+                            "unable to decode 'order_by' query from cbor".to_string(),
+                        ))
+                    }))
+                } else {
+                    None
+                };
 
                 let (start_at_included, start_at) = if let Some(start) = start {
                     match start {
@@ -524,7 +531,11 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(DriveQuery::from_decomposed_values(
                         where_clause,
                         order_by,
-                        Some(limit as u16),
+                        Some(if limit == 0 {
+                            self.config.drive.default_query_limit
+                        } else {
+                            limit as u16
+                        }),
                         start_at,
                         start_at_included,
                         None,

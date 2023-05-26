@@ -42,7 +42,9 @@ use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::platform_value::platform_value;
 use drive::fee::credits::SignedCredits;
+use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
@@ -55,6 +57,9 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
+
+use dpp::platform_value::string_encoding::{encode, Encoding};
+use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -126,6 +131,8 @@ where
         &self,
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("prepare_proposal");
+
         // We should get the latest CoreChainLock from core
         // It is possible that we will not get a chain lock from core, in this case, just don't
         // propose one
@@ -240,6 +247,8 @@ where
         &self,
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("process_proposal");
+
         let mut block_execution_context_guard =
             self.platform.block_execution_context.write().unwrap();
 
@@ -335,6 +344,8 @@ where
         &self,
         request: proto::RequestExtendVote,
     ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("extend_vote");
+
         let proto::RequestExtendVote {
             hash: block_hash,
             height,
@@ -382,6 +393,8 @@ where
         &self,
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
+
         let proto::RequestVerifyVoteExtension {
             hash: block_hash,
             validator_pro_tx_hash: _,
@@ -473,6 +486,8 @@ where
         &self,
         request: RequestFinalizeBlock,
     ) -> Result<ResponseFinalizeBlock, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("finalize_block");
+
         let transaction_guard = self.transaction.read().unwrap();
 
         let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
@@ -510,15 +525,38 @@ where
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-        let RequestCheckTx { tx, .. } = request;
-        let validation_result = self.platform.check_tx(tx)?;
+        let _timer = crate::metrics::abci_request_duration("check_tx");
 
-        // If there are no execution errors the code will be 0
-        let code = validation_result
-            .errors
-            .first()
-            .map(|error| error.code())
-            .unwrap_or_default();
+        let RequestCheckTx { tx, .. } = request;
+        let validation_result = self.platform.check_tx(tx.as_slice())?;
+
+        let validation_error = validation_result.errors.first();
+
+        let (code, info) = if let Some(validation_error) = validation_error {
+            let serialized_error = platform_value!(validation_error
+                .serialize()
+                .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
+
+            let error_data = json!({
+                "message": "Drive check_tx error",
+                "data": {
+                    "serializedError": serialized_error
+                }
+            });
+
+            let mut error_data_buffer: Vec<u8> = Vec::new();
+            ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
+                .map_err(|e| e.to_string())?;
+
+            (
+                validation_error.code(),
+                encode(&error_data_buffer, Encoding::Base64),
+            )
+        } else {
+            // If there are no execution errors the code will be 0
+            (0, "".to_string())
+        };
+
         let gas_wanted = validation_result
             .data
             .map(|fee_result| fee_result.total_base_fee())
@@ -526,7 +564,7 @@ where
         Ok(ResponseCheckTx {
             code,
             data: vec![],
-            info: "".to_string(),
+            info,
             gas_wanted: gas_wanted as SignedCredits,
             codespace: "".to_string(),
             sender: "".to_string(),
@@ -535,36 +573,41 @@ where
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
+        let _timer = crate::metrics::abci_request_duration("query");
+
         let RequestQuery { data, path, .. } = &request;
 
         let result = self.platform.query(path.as_str(), data.as_slice())?;
 
-        let (code, data, log) = if result.is_valid() {
-            (
-                0,
-                result.data.unwrap_or_default(),
-                "query success".to_string(),
-            )
+        let (code, data, info) = if result.is_valid() {
+            (0, result.data.unwrap_or_default(), "success".to_string())
         } else {
-            let mut buffer: Vec<u8> = Vec::new();
-            ciborium::ser::into_writer(
-                &result
-                    .errors
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>(),
-                &mut buffer,
-            )
-            .map_err(|e| e.to_string())?;
-            (1, buffer, format!("{:?}", result.errors))
+            let error = result.errors.first();
+
+            let error_message = if let Some(error) = error {
+                error.to_string()
+            } else {
+                "Unknown Drive error".to_string()
+            };
+
+            let mut error_data = Map::new();
+            error_data.insert("message".to_string(), Value::String(error_message));
+
+            let mut error_data_buffer: Vec<u8> = Vec::new();
+            ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
+                .map_err(|e| e.to_string())?;
+            // TODO(rs-drive-abci): restore different error codes?
+            //   For now return error code 2, because it is recognized by DAPI as UNKNOWN error
+            //   and error code 1 corresponds to CANCELED grpc request which is not suitable
+            (2, vec![], encode(&error_data_buffer, Encoding::Base64))
         };
 
         let response = ResponseQuery {
             //todo: right now just put GRPC error codes,
             //  later we will use own error codes
             code,
-            log,
-            info: "".to_string(),
+            log: "".to_string(),
+            info,
             index: 0,
             key: vec![],
             value: data,
