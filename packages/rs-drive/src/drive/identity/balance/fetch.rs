@@ -53,7 +53,6 @@ impl Drive {
 
     #[cfg(feature = "full")]
     /// Fetches the Identity's balance from the backing store
-    /// Passing apply as false get the estimated cost instead
     pub fn fetch_serialized_identity_balance(
         &self,
         identity_id: [u8; 32],
@@ -66,8 +65,7 @@ impl Drive {
     }
 
     #[cfg(feature = "full")]
-    /// Fetches the Identity's balance from the backing store
-    /// Passing apply as false get the estimated cost instead
+    /// Fetches the Identity's balance and revision from the backing store
     pub fn fetch_serialized_identity_balance_and_revision(
         &self,
         identity_id: [u8; 32],
