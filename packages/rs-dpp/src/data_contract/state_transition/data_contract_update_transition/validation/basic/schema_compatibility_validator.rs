@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 /// The functionality has been ported 'as is' without any logic improvements and optimizations
 use std::convert::TryFrom;
 
+use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::EMPTY_JSON;
+use crate::data_contract::DocumentName;
 use anyhow::Context;
 use itertools::Itertools;
 use json_patch::PatchOperation;
 use jsonptr::{Pointer, Resolve};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
-use crate::data_contract::DocumentName;
-use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::EMPTY_JSON;
 
 mod property_names {
     pub const REQUIRED: &str = "required";
@@ -46,12 +46,18 @@ pub enum DiffVAlidatorError {
     SchemaCompatibilityError { diffs: Vec<PatchOperation> },
 }
 
-pub fn any_schema_changes(old_schema: &BTreeMap<DocumentName, JsonValue>, new_schema: &JsonValue) -> bool {
-    let changes = old_schema.iter().filter(|(document_type, original_schema)| {
-        let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
-        let diff = json_patch::diff(original_schema, new_document_schema);
-        diff.0.len() > 0
-    }).count();
+pub fn any_schema_changes(
+    old_schema: &BTreeMap<DocumentName, JsonValue>,
+    new_schema: &JsonValue,
+) -> bool {
+    let changes = old_schema
+        .iter()
+        .filter(|(document_type, original_schema)| {
+            let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
+            let diff = json_patch::diff(original_schema, new_document_schema);
+            diff.0.len() > 0
+        })
+        .count();
 
     changes > 0
 }

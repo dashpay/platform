@@ -33,9 +33,9 @@
 //!
 
 #[cfg(any(feature = "full", feature = "verify"))]
-pub mod encode;
-#[cfg(any(feature = "full", feature = "verify"))]
 pub mod decode;
+#[cfg(any(feature = "full", feature = "verify"))]
+pub mod encode;
 #[cfg(feature = "full")]
 /// Helpers module
 pub mod helpers;

@@ -32,7 +32,7 @@
 //! This module defines decoding functions.
 //!
 
-use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt};
 
 /// Decodes an unsigned integer on 64 bits.
 pub fn decode_u64(val: &[u8]) -> Result<u64, ()> {

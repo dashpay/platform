@@ -2115,11 +2115,11 @@ mod tests {
 
     pub mod fetch_contract_with_history {
         use super::*;
+        use crate::error::drive::DriveError;
+        use crate::error::Error;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;
-        use crate::error::drive::DriveError;
-        use crate::error::Error;
         use serde_json::json;
 
         struct TestData {
@@ -2596,7 +2596,7 @@ mod tests {
             } else {
                 *data_contract.id.as_bytes()
             };
-            let kek = data_contract.clone();
+            let original_data_contract = data_contract.clone();
             setup_history_test_with_n_updates(
                 data_contract,
                 &drive,
@@ -2630,7 +2630,7 @@ mod tests {
                             // TODO: this doesn't work because when we deserialize the contract
                             //  keeps_history is false for some reason!
                             assert_eq!(key, &test_case.contract_created_date);
-                            assert_eq!(contract, &kek);
+                            assert_eq!(contract, &original_data_contract);
                             continue;
                         }
                         let expected_key: u64 = test_case.expected_oldest_update_date_in_result
@@ -2639,6 +2639,10 @@ mod tests {
 
                         let prop_index =
                             i + test_case.expected_oldest_update_index_in_result as usize;
+                        // When updating a contract, we add a new property to it
+
+                        // TODO: this test actually applies incompatible updates to the contract
+                        //  because we don't validate the contract in the apply function
                         assert_property_exists(contract, format!("newProp{}", prop_index).as_str());
                     }
                 }

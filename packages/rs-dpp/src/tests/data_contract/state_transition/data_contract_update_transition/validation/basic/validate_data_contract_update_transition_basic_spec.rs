@@ -460,9 +460,9 @@ async fn should_not_check_data_contract_on_dry_run() {
 }
 
 mod update {
-    use serde_json::json;
     use super::*;
     use crate::data_contract::JsonSchema;
+    use serde_json::json;
 
     #[tokio::test]
     pub async fn should_be_able_to_update_data_contract_if_schema_is_compatible() {
@@ -510,7 +510,7 @@ mod update {
             Arc::new(state_repository_mock),
             Arc::new(version_validator),
         )
-            .expect("validator should be created");
+        .expect("validator should be created");
 
         let result = validator
             .validate(&raw_state_transition, &Default::default())
@@ -539,7 +539,11 @@ mod update {
         data_contract.config.documents_mutable_contract_default = false;
         let first_revision_data_contract = data_contract.clone();
 
-        assert!(!first_revision_data_contract.config.documents_mutable_contract_default);
+        assert!(
+            !first_revision_data_contract
+                .config
+                .documents_mutable_contract_default
+        );
 
         state_repository_mock
             .expect_fetch_data_contract()

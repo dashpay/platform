@@ -212,7 +212,10 @@ where
             .map_err(ProtocolError::ValueError)?;
 
         // println!("Fetched config: {:?}", existing_data_contract.config);
-        if !existing_data_contract.config.documents_mutable_contract_default {
+        if !existing_data_contract
+            .config
+            .documents_mutable_contract_default
+        {
             // todo: figure out how to calculate diff for mutable contracts
             // There's no point in validating schema compatibility; However, we need to check
             // if there are any differences between schemas at all.

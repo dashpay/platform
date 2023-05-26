@@ -312,11 +312,11 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
         use drive::drive::contract::ContractHistoryFetchInfo;
+        use drive::error::drive::DriveError;
+        use drive::error::Error;
         use serde_json::json;
         use std::sync::Arc;
         use tracing_subscriber::util::SubscriberInitExt;
-        use drive::error::drive::DriveError;
-        use drive::error::Error;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
