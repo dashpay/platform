@@ -50,6 +50,11 @@ pub enum DriveError {
     /// Error
     #[error("changing contract keeps history error: {0}")]
     ChangingContractKeepsHistory(&'static str),
+
+    /// Error
+    #[error("updating contract with history error: {0}")]
+    UpdatingContractWithHistoryError(&'static str),
+
     /// Error
     #[error("changing contract documents keeps history default error: {0}")]
     ChangingContractDocumentsKeepsHistoryDefault(&'static str),
