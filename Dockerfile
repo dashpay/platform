@@ -116,7 +116,7 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 45"
+RUN echo "bust cache 46"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
@@ -159,7 +159,7 @@ RUN ls -lha /platform/target || true
 RUN --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
     ls -lha /platform/target
 
-RUN echo "bust cache 47"
+RUN echo "bust cache 48"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
