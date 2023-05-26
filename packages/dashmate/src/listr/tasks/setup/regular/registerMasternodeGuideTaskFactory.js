@@ -41,8 +41,9 @@ function registerMasternodeGuideTaskFactory() {
 
     const REGISTRARS = {
       CORE: 'dashCore',
-      ANDROID: 'dashAndroid',
-      IOS: 'dashIOS',
+      // TODO: Temporary disabled until this functionality is implemented in mobile wallets
+      // ANDROID: 'dashAndroid',
+      // IOS: 'dashIOS',
       OTHER: 'other',
     };
 
@@ -62,8 +63,8 @@ function registerMasternodeGuideTaskFactory() {
               message: 'Which wallet will you use to store keys for your masternode?',
               choices: [
                 { name: REGISTRARS.CORE, message: 'Dash Core Wallet' },
-                { name: REGISTRARS.ANDROID, message: 'Android Dash Wallet' },
-                { name: REGISTRARS.IOS, message: 'iOS Dash Wallet' },
+                // { name: REGISTRARS.ANDROID, message: 'Android Dash Wallet' },
+                // { name: REGISTRARS.IOS, message: 'iOS Dash Wallet' },
                 { name: REGISTRARS.OTHER, message: 'Other' },
               ],
               initial: REGISTRARS.CORE,
