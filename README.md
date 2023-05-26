@@ -62,8 +62,9 @@ this repository may be used on the following networks:
       - on Mac: `brew install protobuf`
       - on other systems, install most recent version from [Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases) (tested with protobuf 22.4)
       - if needed, set PROTOC environment variable to location of `protoc` binary
-    - `cargo install wasm-bindgen-cli`
-      - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)_
+    - `cargo install wasm-bindgen-cli@0.2.85`
+      - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
+      - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
     - `rustup target add wasm32-unknown-unknown`
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
