@@ -181,6 +181,14 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 432000 # 5 days
 
       - name: Get tag
         uses: actions/github-script@v6
