@@ -1235,13 +1235,11 @@ impl Drive {
     pub fn fetch_contract_with_history(
         &self,
         contract_id: [u8; 32],
-        epoch: Option<&Epoch>,
-        known_keeps_history: Option<bool>,
         transaction: TransactionArg,
-    ) -> () {
+        limit: Option<u16>,
+        offset: Option<u16>,
+    ) -> Result<Vec<Contract>, Error> {
         // CostResult<Option<Arc<ContractHistoryFetchInfo>>, Error>
-        let key = (0..10).collect::<Vec<u8>>();
-        println!("Tree");
         let mut ops = Vec::new();
 
         let query = Query::new_single_query_item_with_direction(
@@ -1249,40 +1247,42 @@ impl Drive {
             false,
         );
 
-        let sized_query = SizedQuery::new(query, Some(10), None);
-
         let path_query = PathQuery::new(
             paths::contract_keeping_history_storage_path_vec(&contract_id),
-            sized_query,
+            SizedQuery::new(query, limit, offset),
         );
 
-        let (results, _) = self
+        let (results, _cost) = self
             .grove_get_path_query(
                 &path_query,
                 transaction,
                 QueryResultType::QueryKeyElementPairResultType,
                 &mut ops,
-            )
-            .expect("something to happen");
+            )?;
 
-        println!("Results: {:?}", results.elements.len());
-
-        for el in results.elements.iter() {
+        let contracts = results.elements.iter().map(|el| {
             match el {
-                QueryResultElement::ElementResultItem(e) => println!("Item"),
-                QueryResultElement::KeyElementPairResultItem(e) => match &e.1 {
-                    Element::Item(a, b) => {
-                        let contract =
-                            DataContract::deserialize_no_limit(a).expect("to parse contract");
-                        println!("{:?}", contract);
+                QueryResultElement::KeyElementPairResultItem(e) => {
+                    println!("{:?}", e.0);
+                    match &e.1 {
+                        Element::Item(a, b) => {
+                                DataContract::deserialize_no_limit(a).map_err(|e| {
+                                    Error::Protocol(e)
+                                })
+                        }
+                        _ => Err(Error::Drive(DriveError::CorruptedContractPath(
+                            "contract path did not refer to a contract element",
+                        )))
                     }
-                    _ => panic!("Not an item"),
                 },
-                QueryResultElement::PathKeyElementTrioResultItem(e) => {
-                    panic!("trio not expected")
-                }
-            };
-        }
+                _ => Err(Error::Drive(DriveError::CorruptedContractPath(
+                    "contract path did not refer to a contract element",
+                )))
+            }
+        }).collect::<Result<Vec<Contract>, Error>>();
+
+        // Left like this for future additions if needed
+        contracts
     }
 
     /// Applies a contract and returns the fee for applying.

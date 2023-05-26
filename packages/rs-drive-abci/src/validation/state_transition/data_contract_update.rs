@@ -449,13 +449,12 @@ mod tests {
                 epoch: Default::default(),
             });
 
-            // TODO: this shouldn't be working, investigate one day
             let res = platform.drive.fetch_contract_with_history(
                 *data_contract.id.as_bytes(),
                 None,
-                Some(true),
+                None,
                 None
-            );
+            ).expect("to get contract history");
 
             // // TODO: what to actually check here?
             // let fetch_result = match res.value {
