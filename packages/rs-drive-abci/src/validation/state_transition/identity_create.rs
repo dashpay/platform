@@ -128,6 +128,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
         }
         let outpoint = match self.asset_lock_proof.out_point() {
             None => {
+                // TODO: We use this consensus error to indicate that the outpoint was not found in Core chain
                 return Ok(ConsensusValidationResult::new_with_error(
                     ConsensusError::BasicError(
                         BasicError::IdentityAssetLockTransactionOutputNotFoundError(
