@@ -28,7 +28,7 @@ describe('createContactRequestDataTrigger', () => {
     });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.returns(42);
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,

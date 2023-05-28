@@ -27,9 +27,9 @@ describe('applyIdentityUpdateTransition', () => {
     executionContext = new StateTransitionExecutionContext();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.updateIdentityRevision.resolves();
-    stateRepositoryMock.disableIdentityKeys.resolves();
-    stateRepositoryMock.addKeysToIdentity.resolves();
+    stateRepositoryMock.updateIdentityRevision.returns();
+    stateRepositoryMock.disableIdentityKeys.returns();
+    stateRepositoryMock.addKeysToIdentity.returns();
 
     applyIdentityUpdateTransition = (st) => applyIdentityUpdateTransitionDPP(
       stateRepositoryMock,

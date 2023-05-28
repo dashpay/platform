@@ -51,7 +51,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       IdentityPublicKey,
     } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves();
+    stateRepositoryMock.fetchDataContract.returns();
     const blsMock = getBlsMock();
 
     dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);
@@ -72,7 +72,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     stateTransition.sign(identity.getPublicKeyById(2), privateKey, getBlsMock());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchIdentity.resolves(identity);
+    stateRepositoryMock.fetchIdentity.returns(identity);
 
     validateStateTransitionIdentitySignature = (st) => validate(
       stateRepositoryMock, st, executionContext, blsMock,
@@ -101,7 +101,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
   });
 
   it('should return invalid result if owner id doesn\'t exist', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(undefined);
+    stateRepositoryMock.fetchIdentity.returns(undefined);
 
     const result = await validateStateTransitionIdentitySignature(
       stateTransition,

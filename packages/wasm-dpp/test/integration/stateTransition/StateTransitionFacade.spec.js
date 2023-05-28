@@ -107,10 +107,10 @@ describe('StateTransitionFacade', () => {
 
     const blockTime = Date.now();
 
-    stateRepositoryMock.fetchIdentity.resolves(identity);
-    stateRepositoryMock.fetchIdentityBalance.resolves(identity.getBalance());
-    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
-    stateRepositoryMock.fetchDataContract.resolves(null);
+    stateRepositoryMock.fetchIdentity.returns(identity);
+    stateRepositoryMock.fetchIdentityBalance.returns(identity.getBalance());
+    stateRepositoryMock.fetchLatestPlatformBlockTime.returns(blockTime);
+    stateRepositoryMock.fetchDataContract.returns(null);
 
     const blsAdapter = await getBlsAdapterMock();
 
@@ -176,7 +176,7 @@ describe('StateTransitionFacade', () => {
 
     it('should return invalid result if not enough balance to pay fee for State Transition', async () => {
       identity.setBalance(0);
-      stateRepositoryMock.fetchIdentityBalance.resolves(0);
+      stateRepositoryMock.fetchIdentityBalance.returns(0);
       const result = await dpp.stateTransition.validate(
         dataContractCreateTransition, executionContext,
       );
@@ -189,7 +189,7 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should return invalid result if State Transition is invalid against state', async () => {
-      stateRepositoryMock.fetchDataContract.resolves(dataContract);
+      stateRepositoryMock.fetchDataContract.returns(dataContract);
 
       const result = await dpp.stateTransition.validate(
         dataContractCreateTransition, executionContext,
@@ -213,10 +213,10 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should validate DocumentsBatchTransition', async () => {
-      stateRepositoryMock.fetchDocuments.resolves([]);
-      stateRepositoryMock.fetchExtendedDocuments.resolves([]);
+      stateRepositoryMock.fetchDocuments.returns([]);
+      stateRepositoryMock.fetchExtendedDocuments.returns([]);
 
-      stateRepositoryMock.fetchDataContract.resolves(dataContract);
+      stateRepositoryMock.fetchDataContract.returns(dataContract);
       const result = await dpp.stateTransition.validate(
         documentsBatchTransition,
         executionContext,

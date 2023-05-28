@@ -58,7 +58,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     const reCreatedDataContract = await dataContractFactory
       .createFromBuffer(dataContract.toBuffer());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(reCreatedDataContract);
+    stateRepositoryMock.fetchDataContract.returns(reCreatedDataContract);
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -379,7 +379,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   });
 
   it('should not check Data Contract on dry run', async () => {
-    stateRepositoryMock.fetchDataContract.resolves(null);
+    stateRepositoryMock.fetchDataContract.returns(null);
 
     executionContext.enableDryRun();
 

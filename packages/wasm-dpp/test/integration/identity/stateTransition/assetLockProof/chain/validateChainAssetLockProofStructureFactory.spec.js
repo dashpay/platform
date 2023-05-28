@@ -51,10 +51,10 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
-    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.returns(42);
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.returns(false);
 
-    stateRepositoryMock.fetchTransaction.resolves({
+    stateRepositoryMock.fetchTransaction.returns({
       data: Buffer.from(rawTransaction, 'hex'),
       height: 42,
     });
@@ -213,7 +213,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
     });
 
     it('should be less or equal to consensus core height', async () => {
-      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(41);
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.returns(41);
 
       const result = await validateChainAssetLockProofStructure(
         rawProof,
@@ -309,7 +309,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
     });
 
     it('should point to existing transaction', async function () {
-      stateRepositoryMock.fetchTransaction.resolves(null);
+      stateRepositoryMock.fetchTransaction.returns(null);
 
       const result = await validateChainAssetLockProofStructure(
         rawProof,
@@ -338,7 +338,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
       const fromAddress = new PrivateKey().toAddress();
       parsedTx.outputs[0].setScript(Script.buildPublicKeyHashOut(fromAddress).toString());
 
-      stateRepositoryMock.fetchTransaction.resolves({
+      stateRepositoryMock.fetchTransaction.returns({
         data: parsedTx.toBuffer(),
         height: 42,
       });
@@ -356,7 +356,7 @@ describe('validateChainAssetLockProofStructureFactory', () => {
 
     it('should point to transaction from block lower than core chain locked height', async function () {
       rawProof.coreChainLockedHeight = 41;
-      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(41);
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.returns(41);
 
       const result = await validateChainAssetLockProofStructure(
         rawProof,

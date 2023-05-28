@@ -118,7 +118,7 @@ describe('DataContractFacade', () => {
       );
 
       const buf = dataContractUpdateTransition.toBuffer();
-      stateTransitionMock.fetchDataContract.resolves(dataContract);
+      stateTransitionMock.fetchDataContract.returns(dataContract);
 
       const st = await dpp.stateTransition.createFromBuffer(buf);
 

@@ -80,7 +80,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
 
       assetLockProofFixture = new ChainAssetLockProof(rawProof);
 
-      stateRepositoryMock.fetchTransaction.resolves({
+      stateRepositoryMock.fetchTransaction.returns({
         data: Buffer.from(rawTransaction, 'hex'),
         height: 42,
       });
@@ -104,7 +104,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
     });
 
     it('should throw AssetLockTransactionIsNotFoundError when transaction is not found', async () => {
-      stateRepositoryMock.fetchTransaction.resolves(null);
+      stateRepositoryMock.fetchTransaction.returns(null);
 
       try {
         await fetchAssetLockTransactionOutput(

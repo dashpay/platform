@@ -16,7 +16,7 @@ describe('DataTrigger', () => {
   let topLevelIdentity;
 
   beforeEach(function beforeEach() {
-    triggerStub = this.sinonSandbox.stub().resolves(new DataTriggerExecutionResult());
+    triggerStub = this.sinonSandbox.stub().returns(new DataTriggerExecutionResult());
     dataContractMock = getDpnsContractFixture();
 
     ([document] = getDocumentsFixture());
@@ -68,7 +68,7 @@ describe('DataTrigger', () => {
 
       functionResult.addError(triggerError);
 
-      triggerStub.resolves(functionResult);
+      triggerStub.returns(functionResult);
 
       const trigger = new DataTrigger(
         dataContractMock.getId(),
@@ -109,7 +109,7 @@ describe('DataTrigger', () => {
     });
 
     it('should return a result with invalid result error if trigger function have not returned any result', async () => {
-      triggerStub.resolves(null);
+      triggerStub.returns(null);
 
       const trigger = new DataTrigger(
         dataContractMock.getId(),

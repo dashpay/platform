@@ -58,9 +58,9 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
     };
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchSMLStore.resolves(smlStoreMock);
-    stateRepositoryMock.fetchIdentity.resolves(getIdentityFixture());
-    stateRepositoryMock.fetchDocuments.resolves([]);
+    stateRepositoryMock.fetchSMLStore.returns(smlStoreMock);
+    stateRepositoryMock.fetchIdentity.returns(getIdentityFixture());
+    stateRepositoryMock.fetchDocuments.returns([]);
 
     const [document] = getMasternodeRewardShareDocumentsFixture(undefined, undefined, dataContract);
 
@@ -80,7 +80,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should return an error if percentage > 10000', async () => {
-    stateRepositoryMock.fetchDocuments.resolves(documentsFixture);
+    stateRepositoryMock.fetchDocuments.returns(documentsFixture);
     // documentsFixture contains percentage = 500
     documentTransition.data.percentage = 9501;
 
@@ -104,7 +104,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should return an error if payToId does not exist', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(null);
+    stateRepositoryMock.fetchIdentity.returns(null);
 
     const result = await createRewardShareDataTrigger(
       documentTransition, contextMock,
@@ -160,7 +160,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should pass on dry run', async () => {
-    stateRepositoryMock.fetchIdentity.resolves(null);
+    stateRepositoryMock.fetchIdentity.returns(null);
 
     executionContext.enableDryRun();
 
@@ -179,7 +179,7 @@ describe('createMasternodeRewardSharesDataTrigger', () => {
   });
 
   it('should return an error if there are 16 stored shares', async () => {
-    stateRepositoryMock.fetchDocuments.resolves(new Array(16).fill(0));
+    stateRepositoryMock.fetchDocuments.returns(new Array(16).fill(0));
 
     const result = await createRewardShareDataTrigger(
       documentTransition, contextMock,

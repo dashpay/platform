@@ -62,7 +62,7 @@ describe('DocumentFactory', () => {
     fetchContractResult.setData(dataContractJs);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchDataContract.returns(dataContract);
 
     factory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
   });
@@ -183,7 +183,7 @@ describe('DocumentFactory', () => {
 
     it('should throw InvalidDocumentError if Data Contract is not valid', async () => {
       dataContract.setDocuments({ '$%34': { '^&*': 'Keck' } });
-      stateRepositoryMock.fetchDataContract.resolves(dataContract);
+      stateRepositoryMock.fetchDataContract.returns(dataContract);
 
       try {
         await factory.createFromObject(rawDocument);
@@ -217,7 +217,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should throw InvalidDocumentError if the decoding fails with consensus error', async () => {
-      stateRepositoryMock.fetchDataContract.resolves(null);
+      stateRepositoryMock.fetchDataContract.returns(null);
       serializedDocument = document.toBuffer();
 
       try {

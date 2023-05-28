@@ -53,7 +53,7 @@ describe('createDomainDataTrigger', () => {
     }
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDocuments.resolves([]);
+    stateRepositoryMock.fetchDocuments.returns([]);
 
     const [normalizedParentLabel] = normalizedParentDomainName.split('.');
     const normalizedGrandParentDomainName = normalizedParentDomainName.split('.')
@@ -71,7 +71,7 @@ describe('createDomainDataTrigger', () => {
           ],
         },
       )
-      .resolves([parentDocument]);
+      .returns([parentDocument]);
 
     const saltedDomainHashBuffer = Buffer.concat([
       preorderSalt,
@@ -86,15 +86,15 @@ describe('createDomainDataTrigger', () => {
         'preorder',
         { where: [['saltedDomainHash', '==', saltedDomainHash]] },
       )
-      .resolves([preorderDocument.toObject()]);
+      .returns([preorderDocument.toObject()]);
 
-    stateRepositoryMock.fetchTransaction.resolves(null);
+    stateRepositoryMock.fetchTransaction.returns(null);
 
     stateRepositoryMock.fetchTransaction
       .withArgs(
         records.dashUniqueIdentityId,
       )
-      .resolves({ confirmations: 10 });
+      .returns({ confirmations: 10 });
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -122,7 +122,7 @@ describe('createDomainDataTrigger', () => {
       .withArgs(
         childDocument.getData().records.dashUniqueIdentityId,
       )
-      .resolves({ confirmations: 10 });
+      .returns({ confirmations: 10 });
 
     [childDocumentTransition] = getDocumentTransitionFixture({
       create: [childDocument],
@@ -152,7 +152,7 @@ describe('createDomainDataTrigger', () => {
       .withArgs(
         childDocument.getData().records.dashUniqueIdentityId,
       )
-      .resolves({ confirmations: 10 });
+      .returns({ confirmations: 10 });
 
     [childDocumentTransition] = getDocumentTransitionFixture({
       create: [childDocument],
@@ -347,7 +347,7 @@ describe('createDomainDataTrigger', () => {
   it('should allow creating a second level domain by any identity', async () => {
     topDocument.ownerId = 'anotherId';
 
-    stateRepositoryMock.fetchDocuments.resolves([topDocument]);
+    stateRepositoryMock.fetchDocuments.returns([topDocument]);
 
     const result = await createDomainDataTrigger(
       parentDocumentTransition, context, topLevelIdentity,
@@ -364,7 +364,7 @@ describe('createDomainDataTrigger', () => {
       .withArgs(
         childDocument.getData().records.dashUniqueIdentityId,
       )
-      .resolves({ confirmations: 10 });
+      .returns({ confirmations: 10 });
 
     [childDocumentTransition] = getDocumentTransitionFixture({
       create: [childDocument],

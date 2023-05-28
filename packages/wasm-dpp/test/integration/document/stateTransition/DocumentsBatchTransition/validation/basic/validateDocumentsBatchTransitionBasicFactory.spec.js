@@ -82,7 +82,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     rawStateTransition = stateTransition.toObject();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(dataContract.clone());
+    stateRepositoryMock.fetchDataContract.returns(dataContract.clone());
 
     protocolVersionValidator = new ProtocolVersionValidator();
   });
@@ -501,7 +501,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         });
 
         it('should exists in the state - Rust', async () => {
-          stateRepositoryMock.fetchDataContract.resolves(undefined);
+          stateRepositoryMock.fetchDataContract.returns(undefined);
 
           const result = await validateDocumentsBatchTransitionBasic(
             protocolVersionValidator,
@@ -1057,7 +1057,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
   });
 
   it('should not validate Document transitions on dry run - Rust', async () => {
-    stateRepositoryMock.fetchDataContract.resolves(null);
+    stateRepositoryMock.fetchDataContract.returns(null);
 
     executionContext.enableDryRun();
 

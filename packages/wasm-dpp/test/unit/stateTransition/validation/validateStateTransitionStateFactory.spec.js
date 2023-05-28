@@ -30,7 +30,7 @@ describe('validateStateTransitionStateFactory', () => {
     executionContext = new StateTransitionExecutionContext();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves();
+    stateRepositoryMock.fetchDataContract.returns();
     const blsMock = getBlsMock();
 
     dpp = new DashPlatformProtocol(blsMock, stateRepositoryMock);
@@ -60,7 +60,7 @@ describe('validateStateTransitionStateFactory', () => {
   });
 
   it('should return invalid result if Data Contract State Transition is not valid', async () => {
-    stateRepositoryMock.fetchDataContract.resolves(await getDataContractFixture());
+    stateRepositoryMock.fetchDataContract.returns(await getDataContractFixture());
 
     const result = await dpp.stateTransition.validateState(stateTransition, executionContext);
 

@@ -28,9 +28,9 @@ describe('applyIdentityCreateTransitionFactory', () => {
 
   beforeEach(async function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.createIdentity.resolves();
-    stateRepositoryMock.addToSystemCredits.resolves();
-    stateRepositoryMock.markAssetLockTransactionOutPointAsUsed.resolves();
+    stateRepositoryMock.createIdentity.returns();
+    stateRepositoryMock.addToSystemCredits.returns();
+    stateRepositoryMock.markAssetLockTransactionOutPointAsUsed.returns();
 
     stateTransition = await getIdentityCreateTransitionFixture();
 

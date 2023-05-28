@@ -87,7 +87,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
   it('should return IdentityNotFoundError if identity not exist on topup transaction', async function () {
     stateTransition = await getIdentityTopUpTransitionFixture();
-    stateRepositoryMock.fetchIdentityBalance.resolves(undefined);
+    stateRepositoryMock.fetchIdentityBalance.returns(undefined);
 
     const result = await validateStateTransitionKeySignature(
       stateTransition,

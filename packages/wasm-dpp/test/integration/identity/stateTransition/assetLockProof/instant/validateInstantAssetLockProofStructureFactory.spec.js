@@ -42,8 +42,8 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     rawProof = assetLock.toObject();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.verifyInstantLock.resolves(true);
-    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
+    stateRepositoryMock.verifyInstantLock.returns(true);
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.returns(false);
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -186,7 +186,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
     });
 
     it('should have valid signature', async () => {
-      stateRepositoryMock.verifyInstantLock.resolves(false);
+      stateRepositoryMock.verifyInstantLock.returns(false);
 
       const result = await validateInstantAssetLockProofStructure(rawProof, executionContext);
 

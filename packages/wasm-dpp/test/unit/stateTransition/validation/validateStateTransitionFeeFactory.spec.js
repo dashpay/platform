@@ -36,7 +36,7 @@ describe('validateStateTransitionFeeFactory', () => {
       getCreditsConversionRatio,
     } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(undefined);
+    stateRepositoryMock.fetchDataContract.returns(undefined);
 
     dpp = new DashPlatformProtocol(getBlsMock(), stateRepositoryMock);
 
@@ -60,7 +60,7 @@ describe('validateStateTransitionFeeFactory', () => {
 
     it('should return invalid result if balance is not enough', async () => {
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
-      stateRepositoryMock.fetchIdentityBalance.resolves(1);
+      stateRepositoryMock.fetchIdentityBalance.returns(1);
 
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
@@ -78,7 +78,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return valid result', async () => {
-      stateRepositoryMock.fetchIdentityBalance.resolves(42);
+      stateRepositoryMock.fetchIdentityBalance.returns(42);
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
 
@@ -106,7 +106,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return invalid result if balance is not enough', async () => {
-      stateRepositoryMock.fetchIdentityBalance.resolves(1);
+      stateRepositoryMock.fetchIdentityBalance.returns(1);
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
 
@@ -126,7 +126,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return valid result', async () => {
-      stateRepositoryMock.fetchIdentityBalance.resolves(42);
+      stateRepositoryMock.fetchIdentityBalance.returns(42);
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
 
@@ -141,7 +141,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should not increase balance on dry run', async () => {
-      stateRepositoryMock.fetchIdentityBalance.resolves(1);
+      stateRepositoryMock.fetchIdentityBalance.returns(1);
 
       executionContext.enableDryRun();
 
@@ -228,7 +228,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return invalid result if sum of balance and asset lock output amount is not enough', async () => {
-      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(1);
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.returns(1);
 
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount + 2, []));
 
@@ -248,7 +248,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should return valid result', async () => {
-      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(41);
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.returns(41);
 
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount - 1, []));
 
@@ -263,7 +263,7 @@ describe('validateStateTransitionFeeFactory', () => {
     });
 
     it('should not increase balance on dry run', async () => {
-      stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(1);
+      stateRepositoryMock.fetchIdentityBalanceWithDebt.returns(1);
 
       executionContext.enableDryRun();
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount + 42, []));

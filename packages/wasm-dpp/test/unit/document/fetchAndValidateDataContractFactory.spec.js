@@ -31,7 +31,7 @@ describe('fetchAndValidateDataContractFactory', () => {
     rawDocument = document.toObject();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchDataContract.returns(dataContract);
   });
 
   it('should return with invalid result if $dataContractId is not present', async () => {
@@ -46,7 +46,7 @@ describe('fetchAndValidateDataContractFactory', () => {
   });
 
   it('should return with invalid result if Data Contract is not present', async () => {
-    stateRepositoryMock.fetchDataContract.resolves(null);
+    stateRepositoryMock.fetchDataContract.returns(null);
 
     const result = await fetchAndValidateDataContract(stateRepositoryMock, rawDocument);
 

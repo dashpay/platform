@@ -43,7 +43,7 @@ describe('DocumentFacade', () => {
     dataContract = new DataContract(dataContractJs.toObject());
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(dataContract);
+    stateRepositoryMock.fetchDataContract.returns(dataContract);
 
     blsAdapter = await getBlsAdapterMock();
     dpp = new DashPlatformProtocol(
@@ -136,7 +136,7 @@ describe('DocumentFacade', () => {
     });
 
     it('should return invalid result if Data Contract is invalid - Rust', async () => {
-      stateRepositoryMock.fetchDataContract.resolves(null);
+      stateRepositoryMock.fetchDataContract.returns(null);
 
       const result = await dpp.document.validate(document);
 

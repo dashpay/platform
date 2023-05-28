@@ -34,8 +34,8 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
 
   beforeEach(async function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.verifyInstantLock.resolves(true);
-    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
+    stateRepositoryMock.verifyInstantLock.returns(true);
+    stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.returns(false);
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -168,7 +168,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
     });
 
     it('should be valid', async () => {
-      stateRepositoryMock.verifyInstantLock.resolves(false);
+      stateRepositoryMock.verifyInstantLock.returns(false);
 
       const result = await validateIdentityTopUpTransitionBasic(
         rawStateTransition,

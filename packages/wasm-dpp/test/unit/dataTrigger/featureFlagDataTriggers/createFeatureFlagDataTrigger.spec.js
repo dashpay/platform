@@ -21,7 +21,7 @@ describe('createFeatureFlagDataTrigger', () => {
     topLevelIdentityId = getIdentityFixture().getId();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(new Long(42));
+    stateRepositoryMock.fetchLatestPlatformBlockHeight.returns(new Long(42));
 
     const [document] = getFeatureFlagsDocumentsFixture();
 

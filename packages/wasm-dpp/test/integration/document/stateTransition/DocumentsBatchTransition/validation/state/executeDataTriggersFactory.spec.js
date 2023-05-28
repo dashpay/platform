@@ -61,7 +61,7 @@ describe('executeDataTriggersFactory', () => {
 
     contractMock.setId(dpnsSystemIds.contractId);
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDocuments.resolves([childDocument]);
+    stateRepositoryMock.fetchDocuments.returns([childDocument]);
 
     stateTransitionExecutionContext = new StateTransitionExecutionContext();
     stateTransitionExecutionContext.disableDryRun();
