@@ -36,7 +36,7 @@ pub struct FetchTransactionResponse {
     type FetchExtendedDocument=ExtendedDocument;
 ))]
 #[async_trait(?Send)]
-pub trait StateRepositoryLike: Sync {
+pub trait StateRepositoryLike {
     type ConversionError: Into<ProtocolError>;
     type FetchDataContract: TryInto<DataContract, Error = Self::ConversionError> + Send;
     type FetchDocument: TryInto<Document, Error = Self::ConversionError>;
