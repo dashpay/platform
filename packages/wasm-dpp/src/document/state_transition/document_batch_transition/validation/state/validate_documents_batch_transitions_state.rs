@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name = "validateDocumentsBatchTransitionState")]
-pub async fn validate_documents_batch_transition_state_wasm(
+pub fn validate_documents_batch_transition_state_wasm(
     state_repository: ExternalStateRepositoryLike,
     state_transition: &DocumentsBatchTransitionWasm,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -22,7 +22,6 @@ pub async fn validate_documents_batch_transition_state_wasm(
             &state_transition.0,
             &execution_context.to_owned().into(),
         )
-        .await
         .with_js_error()?;
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())

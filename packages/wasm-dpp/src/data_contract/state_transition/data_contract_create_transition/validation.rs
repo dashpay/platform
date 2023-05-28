@@ -26,7 +26,7 @@ use crate::{
 use super::DataContractCreateTransitionParameters;
 
 #[wasm_bindgen(js_name=validateDataContractCreateTransitionState)]
-pub async fn validate_data_contract_create_transition_state(
+pub fn validate_data_contract_create_transition_state(
     state_repository: ExternalStateRepositoryLike,
     state_transition: DataContractCreateTransitionWasm,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -37,13 +37,12 @@ pub async fn validate_data_contract_create_transition_state(
         &state_transition.into(),
         &execution_context.to_owned().into(),
     )
-    .await
     .with_js_error()?;
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }
 
 #[wasm_bindgen(js_name=validateDataContractCreateTransitionBasic)]
-pub async fn validate_data_contract_create_transition_basic(
+pub fn validate_data_contract_create_transition_basic(
     raw_parameters: JsValue,
 ) -> Result<ValidationResultWasm, JsError> {
     let parameters: DataContractCreateTransitionParameters =

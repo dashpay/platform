@@ -64,24 +64,24 @@ where
     }
 
     /// Creates Document from object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_document: Value,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        self.factory.create_from_object(raw_document, options).await
+        self.factory.create_from_object(raw_document, options)
     }
 
     /// Creates Document form bytes
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         bytes: impl AsRef<[u8]>,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        self.factory.create_from_buffer(bytes, options).await
+        self.factory.create_from_buffer(bytes, options)
     }
 
-    pub async fn create_extended_from_document_buffer(
+    pub fn create_extended_from_document_buffer(
         &self,
         buffer: &[u8],
         document_type: &str,
@@ -100,24 +100,22 @@ where
     }
 
     /// Creates Documents State Transition
-    pub async fn validate_extended_document(
+    pub fn validate_extended_document(
         &self,
         extended_document: &ExtendedDocument,
     ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
         let raw_extended_document = extended_document.to_value()?;
         self.validate_raw_extended_document(&raw_extended_document)
-            .await
     }
 
     /// Creates Documents State Transition
-    pub async fn validate_raw_extended_document(
+    pub fn validate_raw_extended_document(
         &self,
         raw_extended_document: &Value,
     ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
         let mut result = self
             .data_contract_fetcher_and_validator
-            .validate_extended(raw_extended_document)
-            .await?;
+            .validate_extended(raw_extended_document)?;
 
         if !result.is_valid() {
             return Ok(result);

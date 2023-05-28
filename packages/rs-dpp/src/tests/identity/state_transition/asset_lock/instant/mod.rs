@@ -81,15 +81,14 @@ mod validate_instant_asset_lock_proof_structure_factory {
         use super::*;
         use crate::assert_basic_consensus_errors;
 
-        #[tokio::test]
-        async fn should_be_present() {
+        #[test]
+        fn should_be_present() {
             let mut test_data = setup_test(None);
             test_data.raw_proof.remove("type").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -100,15 +99,14 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.property_name(), "type");
         }
 
-        #[tokio::test]
-        async fn should_be_equal_to_0() {
+        #[test]
+        fn should_be_equal_to_0() {
             let mut test_data = setup_test(None);
             test_data.raw_proof.set_into_value("type", -1).unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -126,15 +124,14 @@ mod validate_instant_asset_lock_proof_structure_factory {
         use crate::consensus::basic::BasicError;
         use crate::consensus::codes::ErrorWithCode;
 
-        #[tokio::test]
-        async fn should_be_present() {
+        #[test]
+        fn should_be_present() {
             let mut test_data = setup_test(None);
             test_data.raw_proof.remove("instantLock").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -145,8 +142,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.property_name(), "instantLock");
         }
 
-        #[tokio::test]
-        async fn should_be_a_byte_array() {
+        #[test]
+        fn should_be_a_byte_array() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -156,7 +153,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 165);
@@ -166,8 +162,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        async fn should_not_be_shorter_than_160_bytes() {
+        #[test]
+        fn should_not_be_shorter_than_160_bytes() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -177,7 +173,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -187,8 +182,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "minItems");
         }
 
-        #[tokio::test]
-        async fn should_not_be_longer_than_100_kb() {
+        #[test]
+        fn should_not_be_longer_than_100_kb() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -198,7 +193,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -208,8 +202,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "maxItems");
         }
 
-        #[tokio::test]
-        async fn should_be_valid() {
+        #[test]
+        fn should_be_valid() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -219,7 +213,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             assert_basic_consensus_errors!(
@@ -232,8 +225,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(consensus_error.code(), 1041);
         }
 
-        #[tokio::test]
-        async fn should_lock_the_same_transaction() {
+        #[test]
+        fn should_lock_the_same_transaction() {
             let test_data = setup_test(None);
             let transaction = instant_asset_lock_proof_transaction_fixture(None);
             let instant_lock =
@@ -250,7 +243,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
                     &asset_lock_proof.to_raw_object().unwrap(),
                     &Default::default(),
                 )
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(
@@ -269,8 +261,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.asset_lock_transaction_id(), transaction.txid());
         }
 
-        #[tokio::test]
-        async fn should_have_valid_signature() {
+        #[test]
+        fn should_have_valid_signature() {
             let mut state_repository_mock = MockStateRepositoryLike::new();
             state_repository_mock
                 .expect_verify_instant_lock()
@@ -280,7 +272,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             assert!(!result.is_valid());
@@ -301,15 +292,14 @@ mod validate_instant_asset_lock_proof_structure_factory {
         use crate::assert_basic_consensus_errors;
         use crate::consensus::codes::ErrorWithCode;
 
-        #[tokio::test]
-        async fn should_be_present() {
+        #[test]
+        fn should_be_present() {
             let mut test_data = setup_test(None);
             test_data.raw_proof.remove("transaction").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -320,8 +310,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.property_name(), "transaction");
         }
 
-        #[tokio::test]
-        async fn should_be_a_byte_array() {
+        #[test]
+        fn should_be_a_byte_array() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -331,7 +321,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 66);
@@ -341,8 +330,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        async fn should_not_be_shorter_than_1_byte() {
+        #[test]
+        fn should_not_be_shorter_than_1_byte() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -352,7 +341,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -362,8 +350,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "minItems");
         }
 
-        #[tokio::test]
-        async fn should_not_be_longer_than_100_kb() {
+        #[test]
+        fn should_not_be_longer_than_100_kb() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -373,7 +361,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -383,8 +370,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "maxItems");
         }
 
-        #[tokio::test]
-        async fn should_should_be_valid() {
+        #[test]
+        fn should_should_be_valid() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -394,7 +381,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             assert_basic_consensus_errors!(
@@ -412,15 +398,14 @@ mod validate_instant_asset_lock_proof_structure_factory {
         use super::*;
         use crate::assert_basic_consensus_errors;
 
-        #[tokio::test]
-        async fn should_be_present() {
+        #[test]
+        fn should_be_present() {
             let mut test_data = setup_test(None);
             test_data.raw_proof.remove("outputIndex").unwrap();
 
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -431,8 +416,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.property_name(), "outputIndex");
         }
 
-        #[tokio::test]
-        async fn should_be_an_integer() {
+        #[test]
+        fn should_be_an_integer() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -442,7 +427,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -452,8 +436,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        async fn should_not_be_less_than_0() {
+        #[test]
+        fn should_not_be_less_than_0() {
             let mut test_data = setup_test(None);
             test_data
                 .raw_proof
@@ -463,7 +447,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let result = test_data
                 .validate_instant_asset_lock_proof_structure
                 .validate(&test_data.raw_proof, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -474,14 +457,13 @@ mod validate_instant_asset_lock_proof_structure_factory {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_a_valid_result() {
+    #[test]
+    fn should_return_a_valid_result() {
         let test_data = setup_test(None);
 
         let result = test_data
             .validate_instant_asset_lock_proof_structure
             .validate(&test_data.raw_proof, &Default::default())
-            .await
             .unwrap();
 
         assert!(result.is_valid());

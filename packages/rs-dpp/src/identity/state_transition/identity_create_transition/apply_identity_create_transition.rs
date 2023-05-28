@@ -33,15 +33,14 @@ where
         }
     }
 
-    pub async fn apply_identity_create_transition(
+    pub fn apply_identity_create_transition(
         &self,
         state_transition: &IdentityCreateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(state_transition.get_asset_lock_proof(), execution_context)
-            .await?;
+            .fetch(state_transition.get_asset_lock_proof(), execution_context)?;
 
         let credits_amount = convert_satoshi_to_credits(output.value)?;
 

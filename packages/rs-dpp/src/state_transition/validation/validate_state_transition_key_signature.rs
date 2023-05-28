@@ -8,7 +8,7 @@ use crate::consensus::signature::SignatureError;
 use crate::consensus::signature::{IdentityNotFoundError, InvalidStateTransitionSignatureError};
 use crate::consensus::ConsensusError;
 use crate::prelude::ConsensusValidationResult;
-use crate::validation::AsyncDataValidator;
+use crate::validation::{AsyncDataValidator, SyncDataValidator};
 use crate::{
     identity::{
         state_transition::asset_lock_proof::{AssetLockProof, AssetLockPublicKeyHashFetcher},
@@ -30,14 +30,14 @@ pub struct StateTransitionKeySignatureValidator<SR> {
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for StateTransitionKeySignatureValidator<SR>
+impl<SR> SyncDataValidator for StateTransitionKeySignatureValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     type Item = StateTransition;
     type ResultItem = ();
 
-    async fn validate(
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
@@ -48,7 +48,6 @@ where
             data,
             execution_context,
         )
-        .await
     }
 }
 
@@ -67,7 +66,7 @@ where
     }
 }
 
-pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
+pub fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     state_repository: &impl StateRepositoryLike,
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
@@ -105,7 +104,6 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     let asset_lock_proof = get_asset_lock_proof(state_transition)?;
     let public_key_hash = asset_lock_public_key_hash_fetcher
         .fetch_public_key_hash(asset_lock_proof.to_owned(), execution_context)
-        .await
         .with_context(|| format!("public key hash fetching failed for {:?}", asset_lock_proof))?;
     let operation = SignatureVerificationOperation::new(KeyType::ECDSA_SECP256K1);
     execution_context.add_operation(Operation::SignatureVerification(operation));
@@ -195,8 +193,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_error_when_unsupported_state_transition_type() {
+    #[test]
+    fn should_return_error_when_unsupported_state_transition_type() {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
@@ -211,13 +209,12 @@ mod test {
             &state_transition,
             &execution_context,
         )
-        .await
         .expect_err("error is expected");
         assert_eq!("key signature validation isn't supported for DocumentsBatch. Asset lock proof is required", result.to_string());
     }
 
-    #[tokio::test]
-    async fn should_return_valid_result_if_signature_is_valid() {
+    #[test]
+    fn should_return_valid_result_if_signature_is_valid() {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
@@ -250,14 +247,13 @@ mod test {
             &state_transition,
             &execution_context,
         )
-        .await
         .expect("the validation result should be returned");
 
         assert!(result.is_valid());
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_signature_error_if_signature_is_invalid() {
+    #[test]
+    fn should_return_invalid_signature_error_if_signature_is_invalid() {
         let TestData {
             state_repository,
             asset_lock_public_key_hash_fetcher,
@@ -293,7 +289,6 @@ mod test {
             &state_transition,
             &execution_context,
         )
-        .await
         .expect("the validation result should be returned");
 
         let signature_error = get_signature_error_from_result(&result, 0);
@@ -305,8 +300,8 @@ mod test {
         ));
     }
 
-    #[tokio::test]
-    async fn should_return_error_if_identity_id_not_exist_on_top_up_transition() {
+    #[test]
+    fn should_return_error_if_identity_id_not_exist_on_top_up_transition() {
         let TestData {
             mut state_repository,
             asset_lock_public_key_hash_fetcher,
@@ -334,7 +329,6 @@ mod test {
             &state_transition,
             &execution_context,
         )
-        .await
         .expect("the validation result should be returned");
 
         let signature_error = get_signature_error_from_result(&result, 0);

@@ -162,7 +162,7 @@ impl StateTransitionFactoryWasm {
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         state_transition_object: JsValue,
         options: JsValue,
@@ -175,21 +175,18 @@ impl StateTransitionFactoryWasm {
 
         let raw_state_transition: Value = state_transition_object.with_serde_to_platform_value()?;
 
-        let result = self
-            .0
-            .create_from_object(
-                raw_state_transition,
-                Some(StateTransitionFactoryOptions {
-                    skip_validation: options.skip_validation.unwrap_or(false),
-                }),
-            )
-            .await;
+        let result = self.0.create_from_object(
+            raw_state_transition,
+            Some(StateTransitionFactoryOptions {
+                skip_validation: options.skip_validation.unwrap_or(false),
+            }),
+        );
 
         Self::state_transition_wasm_from_factory_result(result)
     }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         options: JsValue,
@@ -200,15 +197,12 @@ impl StateTransitionFactoryWasm {
             Default::default()
         };
 
-        let result = self
-            .0
-            .create_from_buffer(
-                &buffer,
-                Some(StateTransitionFactoryOptions {
-                    skip_validation: options.skip_validation.unwrap_or(false),
-                }),
-            )
-            .await;
+        let result = self.0.create_from_buffer(
+            &buffer,
+            Some(StateTransitionFactoryOptions {
+                skip_validation: options.skip_validation.unwrap_or(false),
+            }),
+        );
 
         Self::state_transition_wasm_from_factory_result(result)
     }

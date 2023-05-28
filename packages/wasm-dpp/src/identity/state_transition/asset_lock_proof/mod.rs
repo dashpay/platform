@@ -165,7 +165,7 @@ pub fn create_asset_lock_proof_from_wasm_instance(
 }
 
 #[wasm_bindgen(js_name=validateAssetLockTransaction)]
-pub async fn validate_asset_lock_transaction(
+pub fn validate_asset_lock_transaction(
     state_repository: ExternalStateRepositoryLike,
     raw_transaction: String,
     output_index: usize,
@@ -181,7 +181,6 @@ pub async fn validate_asset_lock_transaction(
 
     let result = validator
         .validate(tx_bytes.as_slice(), output_index, execution_context.into())
-        .await
         .map_err(|e| from_dpp_err(e.into()))?;
 
     let validation_result = result.map(|item| {
@@ -210,7 +209,7 @@ pub async fn validate_asset_lock_transaction(
 }
 
 #[wasm_bindgen(js_name=fetchAssetLockTransactionOutput)]
-pub async fn fetch_asset_lock_transaction_output(
+pub fn fetch_asset_lock_transaction_output(
     state_repository: ExternalStateRepositoryLike,
     raw_asset_lock_proof: JsValue,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -224,7 +223,6 @@ pub async fn fetch_asset_lock_transaction_output(
 
     let fetch_result = fetcher
         .fetch(&asset_lock_proof, execution_context.into())
-        .await
         .map_err(|e| from_dpp_error_ref(&e))?;
 
     let tx_out = js_sys::Object::new();
@@ -244,7 +242,7 @@ pub async fn fetch_asset_lock_transaction_output(
 }
 
 #[wasm_bindgen(js_name=fetchAssetLockPublicKeyHash)]
-pub async fn fetch_asset_lock_public_key_hash(
+pub fn fetch_asset_lock_public_key_hash(
     state_repository: ExternalStateRepositoryLike,
     raw_asset_lock_proof: JsValue,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -262,7 +260,6 @@ pub async fn fetch_asset_lock_public_key_hash(
 
     let fetch_result = public_key_hash_fetcher
         .fetch_public_key_hash(asset_lock_proof, execution_context.into())
-        .await
         .map_err(|e| from_dpp_error_ref(&e))?;
 
     Ok(Buffer::from_bytes(&fetch_result).into())

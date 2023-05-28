@@ -43,8 +43,8 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
 
     use super::*;
 
-    #[tokio::test]
-    async fn should_return_invalid_result_if_identity_not_found() {
+    #[test]
+    fn should_return_invalid_result_if_identity_not_found() {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
@@ -61,7 +61,6 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 &state_transition,
                 &execution_context,
             )
-            .await
             .unwrap();
 
         let errors = result.errors;
@@ -81,8 +80,8 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_result_if_identity_have_not_enough_balance() {
+    #[test]
+    fn should_return_invalid_result_if_identity_have_not_enough_balance() {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
@@ -105,7 +104,6 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 &state_transition,
                 &execution_context,
             )
-            .await
             .unwrap();
 
         assert_state_consensus_errors!(result, StateError::IdentityInsufficientBalanceError, 1);
@@ -115,8 +113,8 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         assert_eq!(error.code(), 4024);
     }
 
-    #[tokio::test]
-    async fn should_return_original_error_if_any() {
+    #[test]
+    fn should_return_original_error_if_any() {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
@@ -128,12 +126,10 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         let (state_transition, validator) = setup_test(state_repository, Some(5));
 
         let execution_context = StateTransitionExecutionContext::default();
-        let result = validator
-            .validate_identity_credit_withdrawal_transition_state(
-                &state_transition,
-                &execution_context,
-            )
-            .await;
+        let result = validator.validate_identity_credit_withdrawal_transition_state(
+            &state_transition,
+            &execution_context,
+        );
 
         match result {
             Ok(_) => panic!("should not return Ok result"),
@@ -141,8 +137,8 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_valid_result() {
+    #[test]
+    fn should_return_valid_result() {
         let mut state_repository = MockStateRepositoryLike::default();
 
         state_repository
@@ -184,7 +180,6 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 &state_transition,
                 &execution_context,
             )
-            .await
             .unwrap();
 
         assert!(result.is_valid());

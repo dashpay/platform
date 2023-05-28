@@ -3,7 +3,6 @@ use std::{
     convert::TryInto,
 };
 
-use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
@@ -16,7 +15,7 @@ use crate::{
     ProtocolError,
 };
 
-pub async fn fetch_documents(
+pub fn fetch_documents(
     state_repository: &impl StateRepositoryLike,
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,
@@ -72,7 +71,7 @@ pub async fn fetch_documents(
     Ok(documents)
 }
 
-pub async fn fetch_extended_documents(
+pub fn fetch_extended_documents(
     state_repository: &impl StateRepositoryLike,
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,

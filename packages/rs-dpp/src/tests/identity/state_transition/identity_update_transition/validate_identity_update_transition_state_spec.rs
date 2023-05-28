@@ -80,8 +80,8 @@ fn setup_test() -> TestData {
     }
 }
 
-#[tokio::test]
-async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_incremented_by_1() {
+#[test]
+fn should_return_invalid_identity_revision_error_if_new_revision_is_not_incremented_by_1() {
     let TestData {
         identity,
         state_repository_mock,
@@ -99,7 +99,6 @@ async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_in
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
 
@@ -112,9 +111,8 @@ async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_in
     ));
 }
 
-#[tokio::test]
-async fn should_return_identity_public_key_is_read_only_error_if_disabling_public_key_is_read_only()
-{
+#[test]
+fn should_return_identity_public_key_is_read_only_error_if_disabling_public_key_is_read_only() {
     let TestData {
         mut identity,
         validate_public_keys_mock,
@@ -138,7 +136,6 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
 
@@ -148,8 +145,8 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
     ));
 }
 
-#[tokio::test]
-async fn should_return_error_if_disabling_public_key_is_already_disabled() {
+#[test]
+fn should_return_error_if_disabling_public_key_is_already_disabled() {
     let TestData {
         mut identity,
         validate_public_keys_mock,
@@ -174,7 +171,6 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
 
@@ -184,8 +180,8 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
     ));
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() {
+#[test]
+fn should_return_invalid_result_if_disabled_at_has_violated_time_window() {
     let TestData {
         validate_public_keys_mock,
         state_repository_mock,
@@ -205,7 +201,6 @@ async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() 
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
 
@@ -215,8 +210,8 @@ async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() 
     ));
 }
 
-#[tokio::test]
-async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_contain_public_key_with_disabling_id(
+#[test]
+fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_contain_public_key_with_disabling_id(
 ) {
     let TestData {
         validate_public_keys_mock,
@@ -235,7 +230,6 @@ async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
 
@@ -247,8 +241,8 @@ async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_
     ));
 }
 
-#[tokio::test]
-async fn should_pass_when_disabling_public_key() {
+#[test]
+fn should_pass_when_disabling_public_key() {
     let TestData {
         validate_public_keys_mock,
         state_repository_mock,
@@ -266,13 +260,12 @@ async fn should_pass_when_disabling_public_key() {
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_pass_when_adding_public_key() {
+#[test]
+fn should_pass_when_adding_public_key() {
     let TestData {
         validate_public_keys_mock,
         state_repository_mock,
@@ -290,13 +283,12 @@ async fn should_pass_when_adding_public_key() {
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     assert!(result.is_valid(), "{:?}", result.errors);
 }
 
-#[tokio::test]
-async fn should_pass_when_both_adding_and_disabling_public_keys() {
+#[test]
+fn should_pass_when_both_adding_and_disabling_public_keys() {
     let TestData {
         validate_public_keys_mock,
         state_repository_mock,
@@ -314,13 +306,12 @@ async fn should_pass_when_both_adding_and_disabling_public_keys() {
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_validate_purpose_and_security_level() {
+#[test]
+fn should_validate_purpose_and_security_level() {
     let TestData {
         validate_public_keys_mock,
         mut state_transition,
@@ -364,7 +355,6 @@ async fn should_validate_purpose_and_security_level() {
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
 
     assert!(matches!(
@@ -373,8 +363,8 @@ async fn should_validate_purpose_and_security_level() {
     ));
 }
 
-#[tokio::test]
-async fn should_validate_pubic_keys_to_add() {
+#[test]
+fn should_validate_pubic_keys_to_add() {
     let TestData {
         state_repository_mock,
         state_transition,
@@ -396,7 +386,6 @@ async fn should_validate_pubic_keys_to_add() {
 
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
 
     assert!(matches!(
@@ -405,8 +394,8 @@ async fn should_validate_pubic_keys_to_add() {
     ));
 }
 
-#[tokio::test]
-async fn should_return_valid_result_on_dry_run() {
+#[test]
+fn should_return_valid_result_on_dry_run() {
     let TestData {
         validate_public_keys_mock,
         mut state_transition,
@@ -427,7 +416,6 @@ async fn should_return_valid_result_on_dry_run() {
     );
     let result = validator
         .validate(&state_transition, &execution_context)
-        .await
         .expect("the validation result should be returned");
     assert!(result.is_valid());
 }

@@ -52,7 +52,7 @@ where
         })
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
@@ -81,7 +81,6 @@ where
         let is_signature_verified = self
             .state_repository
             .verify_instant_lock(&instant_lock, Some(execution_context))
-            .await
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository verify instant send lock error: {}",
@@ -100,8 +99,7 @@ where
 
         let validate_asset_lock_transaction_result = self
             .asset_lock_transaction_validator
-            .validate(&tx_json_uint_array, output_index, execution_context)
-            .await?;
+            .validate(&tx_json_uint_array, output_index, execution_context)?;
 
         let validation_result_data = if validate_asset_lock_transaction_result.is_valid_with_data()
         {

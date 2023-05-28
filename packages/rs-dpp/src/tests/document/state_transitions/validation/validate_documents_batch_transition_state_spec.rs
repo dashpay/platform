@@ -122,8 +122,8 @@ fn set_created_at(dt: &mut DocumentTransition, ts: Option<TimestampMillis>) {
         DocumentTransition::Delete(ref mut _t) => {}
     }
 }
-#[tokio::test]
-async fn should_throw_error_if_data_contract_was_not_found() {
+#[test]
+fn should_throw_error_if_data_contract_was_not_found() {
     let TestData {
         data_contract,
         owner_id,
@@ -142,7 +142,6 @@ async fn should_throw_error_if_data_contract_was_not_found() {
         document_transitions.iter().collect::<Vec<_>>().as_slice(),
         &Default::default(),
     )
-    .await
     .expect_err("protocol error expected");
 
     match error {
@@ -153,8 +152,8 @@ async fn should_throw_error_if_data_contract_was_not_found() {
     }
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_document_transition_with_action_delete_is_not_present() {
+#[test]
+fn should_return_invalid_result_if_document_transition_with_action_delete_is_not_present() {
     let TestData {
         data_contract,
         owner_id,
@@ -195,7 +194,6 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
@@ -206,9 +204,8 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
     ));
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_document_transition_with_action_replace_has_wrong_revision(
-) {
+#[test]
+fn should_return_invalid_result_if_document_transition_with_action_replace_has_wrong_revision() {
     let TestData {
         data_contract,
         owner_id,
@@ -273,7 +270,6 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
 
@@ -287,8 +283,8 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     ));
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_document_transition_with_action_replace_has_mismatch_of_owner_id(
+#[test]
+fn should_return_invalid_result_if_document_transition_with_action_replace_has_mismatch_of_owner_id(
 ) {
     let TestData {
         data_contract,
@@ -355,7 +351,6 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4006, state_error.code());
@@ -369,21 +364,21 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     ));
 }
 
-#[tokio::test]
+#[test]
 #[ignore = "the action is correct. It uses enums"]
-async fn should_throw_an_error_if_document_transition_has_invalid_actions() {
+fn should_throw_an_error_if_document_transition_has_invalid_actions() {
     unimplemented!()
 }
 
-#[tokio::test]
+#[test]
 #[ignore = "unable to mock unique indices validator"]
-async fn should_return_invalid_result_if_there_are_duplicate_document_transitions_according_to_unique_indices(
+fn should_return_invalid_result_if_there_are_duplicate_document_transitions_according_to_unique_indices(
 ) {
     unimplemented!()
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_timestamps_mismatch() {
+#[test]
+fn should_return_invalid_result_if_timestamps_mismatch() {
     let TestData {
         data_contract,
         owner_id,
@@ -433,7 +428,6 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
@@ -446,8 +440,8 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
     ));
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
+#[test]
+fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
     let TestData {
         data_contract,
         owner_id,
@@ -498,7 +492,6 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
@@ -512,9 +505,8 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
     ));
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for_replace_transition(
-) {
+#[test]
+fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for_replace_transition() {
     let TestData {
         data_contract,
         owner_id,
@@ -565,7 +557,6 @@ async fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
@@ -578,8 +569,8 @@ async fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for
     ));
 }
 
-#[tokio::test]
-async fn should_not_validate_time_in_block_window_on_dry_run() {
+#[test]
+fn should_not_validate_time_in_block_window_on_dry_run() {
     let TestData {
         data_contract,
         owner_id,
@@ -628,14 +619,13 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
 
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
+#[test]
+fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     let TestData {
         data_contract,
         owner_id,
@@ -686,7 +676,6 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
@@ -700,8 +689,8 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     ));
 }
 
-#[tokio::test]
-async fn should_return_valid_result_if_document_transitions_are_valid() {
+#[test]
+fn should_return_valid_result_if_document_transitions_are_valid() {
     let TestData {
         data_contract,
         owner_id,
@@ -757,7 +746,6 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         &state_transition,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
     println!("result is {:#?}", validation_result);
     assert!(validation_result.is_valid());

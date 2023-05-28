@@ -14,7 +14,7 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::platform_value;
 
-pub async fn delete_withdrawal_data_trigger<'a, SR>(
+pub fn delete_withdrawal_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     _top_level_identity: Option<&Identifier>,
@@ -87,8 +87,8 @@ mod tests {
     use crate::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use platform_value::platform_value;
 
-    #[tokio::test]
-    async fn should_throw_error_if_withdrawal_not_found() {
+    #[test]
+    fn should_throw_error_if_withdrawal_not_found() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let mut state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None).data_contract;
@@ -108,7 +108,6 @@ mod tests {
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .await
                 .expect("the execution result should be returned");
 
         assert!(!result.is_ok());
@@ -118,8 +117,8 @@ mod tests {
         assert_eq!(error.to_string(), "Withdrawal document was not found");
     }
 
-    #[tokio::test]
-    async fn should_throw_error_if_withdrawal_has_wrong_status() {
+    #[test]
+    fn should_throw_error_if_withdrawal_has_wrong_status() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let mut state_repository = MockStateRepositoryLike::new();
         let data_contract =
@@ -157,7 +156,6 @@ mod tests {
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .await
                 .expect("the execution result should be returned");
 
         assert!(!result.is_ok());

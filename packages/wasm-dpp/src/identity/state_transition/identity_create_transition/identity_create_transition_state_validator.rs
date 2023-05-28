@@ -21,7 +21,7 @@ impl IdentityCreateTransitionStateValidator {
     }
 
     #[wasm_bindgen(js_name = validate)]
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &IdentityCreateTransitionWasm,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -31,7 +31,6 @@ impl IdentityCreateTransitionStateValidator {
             &state_transition.to_owned().into(),
             &execution_context.to_owned().into(),
         )
-        .await
         .map_err(from_dpp_err)?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())

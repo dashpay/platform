@@ -18,7 +18,7 @@ const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
 const MAX_DOCUMENTS: usize = 16;
 
-pub async fn create_masternode_reward_shares_data_trigger<'a, SR>(
+pub fn create_masternode_reward_shares_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     _top_level_identifier: Option<&Identifier>,
@@ -61,7 +61,7 @@ where
 
         // TODO: bring it back once the SML store is implemented
         // // Do not allow creating document if ownerId is not in SML
-        // let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        // let sml_store: SMLStore = context.state_repository.fetch_sml_store()?;
         //
         // let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
         //
@@ -243,8 +243,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_an_error_if_percentage_greater_than_1000() {
+    #[test]
+    fn should_return_an_error_if_percentage_greater_than_1000() {
         let TestData {
             mut document_transition,
             extended_documents,
@@ -284,8 +284,7 @@ mod test {
         };
 
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                .await;
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None);
 
         let percentage_error = get_data_trigger_error(&result, 0);
         assert_eq!(
@@ -294,8 +293,8 @@ mod test {
         );
     }
 
-    #[tokio::test]
-    async fn should_return_an_error_if_pay_to_id_does_not_exists() {
+    #[test]
+    fn should_return_an_error_if_pay_to_id_does_not_exists() {
         let TestData {
             document_transition,
 
@@ -323,8 +322,7 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                .await;
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None);
 
         let error = get_data_trigger_error(&result, 0);
         let pay_to_id_bytes = document_transition
@@ -340,8 +338,8 @@ mod test {
         );
     }
 
-    #[tokio::test]
-    async fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
+    #[test]
+    fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
         let TestData {
             document_transition,
 
@@ -368,8 +366,7 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                .await;
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None);
         let error = get_data_trigger_error(&result, 0);
 
         assert_eq!(
@@ -378,8 +375,8 @@ mod test {
         );
     }
 
-    #[tokio::test]
-    async fn should_pass() {
+    #[test]
+    fn should_pass() {
         let TestData {
             document_transition,
 
@@ -409,13 +406,12 @@ mod test {
         };
         let result =
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                .await
                 .expect("the execution result should be returned");
         assert!(result.is_ok())
     }
 
-    #[tokio::test]
-    async fn should_return_error_if_there_are_16_stored_shares() {
+    #[test]
+    fn should_return_error_if_there_are_16_stored_shares() {
         let TestData {
             document_transition,
 
@@ -446,8 +442,7 @@ mod test {
         };
 
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                .await;
+            create_masternode_reward_shares_data_trigger(&document_transition, &context, None);
         let error = get_data_trigger_error(&result, 0);
 
         assert_eq!(
@@ -456,8 +451,8 @@ mod test {
         );
     }
 
-    #[tokio::test]
-    async fn should_pass_on_dry_run() {
+    #[test]
+    fn should_pass_on_dry_run() {
         let TestData {
             document_transition,
             data_contract,
@@ -484,7 +479,6 @@ mod test {
         };
         let result =
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
-                .await
                 .expect("the execution result should be returned");
         assert!(result.is_ok());
     }

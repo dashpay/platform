@@ -11,7 +11,7 @@ use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 const PROPERTY_BLOCK_HEIGHT: &str = "height";
 const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 
-pub async fn create_feature_flag_data_trigger<'a, SR>(
+pub fn create_feature_flag_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     top_level_identity: Option<&Identifier>,
@@ -84,8 +84,8 @@ mod test {
         tests::fixtures::get_data_contract_fixture,
     };
 
-    #[tokio::test]
-    async fn should_successfully_execute_on_dry_run() {
+    #[test]
+    fn should_successfully_execute_on_dry_run() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None).data_contract;
@@ -103,7 +103,6 @@ mod test {
 
         let result =
             create_feature_flag_data_trigger(&document_transition, &data_trigger_context, None)
-                .await
                 .expect("the execution result should be returned");
 
         assert!(result.is_ok());

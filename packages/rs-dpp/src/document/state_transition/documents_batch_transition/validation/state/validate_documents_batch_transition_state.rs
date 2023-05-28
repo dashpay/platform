@@ -21,7 +21,7 @@ use crate::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
 use crate::document::Document;
-use crate::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
+use crate::validation::{SimpleConsensusValidationResult, SyncDataValidator};
 use crate::NonConsensusError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
@@ -54,20 +54,19 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for DocumentsBatchTransitionStateValidator<SR>
+impl<SR> SyncDataValidator for DocumentsBatchTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     type Item = DocumentsBatchTransition;
     type ResultItem = DocumentsBatchTransitionAction;
 
-    async fn validate(
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_document_batch_transition_state(&self.state_repository, data, execution_context)
-            .await
     }
 }
 
@@ -83,7 +82,7 @@ where
     }
 }
 
-pub async fn validate_document_batch_transition_state(
+pub fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
     execution_context: &StateTransitionExecutionContext,
@@ -96,9 +95,9 @@ pub async fn validate_document_batch_transition_state(
         .iter()
         .into_group_map_by(|t| &t.base().data_contract_id);
 
-    let mut futures = vec![];
+    let mut results = vec![];
     for (data_contract_id, transitions) in transitions_by_data_contract_id.iter() {
-        futures.push(validate_document_transitions(
+        results.push(validate_document_transitions(
             state_repository,
             data_contract_id,
             owner_id,
@@ -107,8 +106,7 @@ pub async fn validate_document_batch_transition_state(
         ))
     }
 
-    let state_transition_actions = join_all(futures)
-        .await
+    let state_transition_actions = results
         .into_iter()
         .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, ProtocolError>>()?
         .into_iter()
@@ -137,7 +135,7 @@ pub async fn validate_document_batch_transition_state(
     }
 }
 
-pub async fn validate_document_transitions(
+pub fn validate_document_transitions(
     state_repository: &impl StateRepositoryLike,
     data_contract_id: &Identifier,
     owner_id: Identifier,
@@ -166,7 +164,7 @@ pub async fn validate_document_transitions(
     execution_context.add_operations(tmp_execution_context.get_operations());
 
     let fetched_documents =
-        fetch_documents(state_repository, document_transitions, execution_context).await?;
+        fetch_documents(state_repository, document_transitions, execution_context)?;
 
     // Calculate time window for timestamp
     let last_header_time_millis = state_repository.fetch_latest_platform_block_time()?;
@@ -211,8 +209,7 @@ pub async fn validate_document_transitions(
             .cloned(),
         &data_contract,
         execution_context,
-    )
-    .await?;
+    )?;
 
     if !validation_uniqueness_by_indices_result.is_valid() {
         result.add_errors(validation_uniqueness_by_indices_result.errors)
@@ -225,7 +222,7 @@ pub async fn validate_document_transitions(
         state_transition_execution_context: execution_context,
     };
     let data_trigger_execution_results =
-        execute_data_triggers(document_transitions, &data_trigger_execution_context).await?;
+        execute_data_triggers(document_transitions, &data_trigger_execution_context)?;
 
     for execution_result in data_trigger_execution_results.into_iter() {
         if !execution_result.is_ok() {

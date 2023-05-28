@@ -24,7 +24,7 @@ impl StateTransitionFeeValidatorWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &JsValue,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -33,7 +33,6 @@ impl StateTransitionFeeValidatorWasm {
         Ok(self
             .0
             .validate(&st, &execution_context.to_owned().into())
-            .await
             .map(|v| v.map(|_| JsValue::undefined()))
             .with_js_error()?
             .into())

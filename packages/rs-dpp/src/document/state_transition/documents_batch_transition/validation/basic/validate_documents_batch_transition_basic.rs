@@ -86,7 +86,7 @@ where
         }
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
@@ -98,11 +98,10 @@ where
             self.state_repository.clone(),
             execution_context,
         )
-        .await
     }
 }
 
-pub async fn validate_documents_batch_transition_basic(
+pub fn validate_documents_batch_transition_basic(
     protocol_version_validator: &ProtocolVersionValidator,
     raw_state_transition: &Value,
     state_repository: Arc<impl StateRepositoryLike>,

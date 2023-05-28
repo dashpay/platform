@@ -24,7 +24,7 @@ impl<SR> ApplyDataContractUpdateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    pub async fn apply_data_contract_update_transition(
+    pub fn apply_data_contract_update_transition(
         &self,
         state_transition: &DataContractUpdateTransition,
         execution_context: &StateTransitionExecutionContext,

@@ -51,7 +51,7 @@ where
         }
     }
 
-    pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
+    pub fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
         // TODO(v0.24-backport): is it fine using default context here?
         //   (Check if applier is actually used in the drive executor)
         let execution_context = StateTransitionExecutionContext::default();
@@ -59,36 +59,28 @@ where
             StateTransition::DataContractCreate(st) => self
                 .apply_data_contract_create_transition
                 .apply_data_contract_create_transition(st, Some(&execution_context))
-                .await
                 .map_err(ProtocolError::from),
             StateTransition::DataContractUpdate(st) => self
                 .apply_data_contract_update_transition
                 .apply_data_contract_update_transition(st, &execution_context)
-                .await
                 .map_err(ProtocolError::from),
-            StateTransition::DocumentsBatch(st) => {
-                self.apply_documents_batch_transition
-                    .apply(st, execution_context)
-                    .await
-            }
+            StateTransition::DocumentsBatch(st) => self
+                .apply_documents_batch_transition
+                .apply(st, execution_context),
             StateTransition::IdentityCreate(st) => self
                 .apply_identity_create_transition
                 .apply_identity_create_transition(st, &execution_context)
-                .await
                 .map_err(ProtocolError::from),
             StateTransition::IdentityTopUp(st) => self
                 .apply_identity_top_up_transition
                 .apply(st, &execution_context)
-                .await
                 .map_err(ProtocolError::from),
             StateTransition::IdentityCreditWithdrawal(_) => {
                 Err(ProtocolError::Error(anyhow!("Not implemented yet")))
             }
-            StateTransition::IdentityUpdate(st) => {
-                self.apply_identity_update_transition
-                    .apply(st, &execution_context)
-                    .await
-            }
+            StateTransition::IdentityUpdate(st) => self
+                .apply_identity_update_transition
+                .apply(st, &execution_context),
         }
     }
 }

@@ -27,7 +27,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name=validateDataContractUpdateTransitionState)]
-pub async fn validate_data_contract_update_transition_state(
+pub fn validate_data_contract_update_transition_state(
     state_repository: ExternalStateRepositoryLike,
     state_transition: &DataContractUpdateTransitionWasm,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -38,7 +38,6 @@ pub async fn validate_data_contract_update_transition_state(
         &state_transition.to_owned().into(),
         &execution_context.to_owned().into(),
     )
-    .await
     .with_js_error()?;
 
     Ok(result.map(|_| JsValue::undefined()).into())
@@ -64,7 +63,7 @@ pub fn validate_indices_are_backward_compatible(
 }
 
 #[wasm_bindgen(js_name=validateDataContractUpdateTransitionBasic)]
-pub async fn validate_data_contract_update_transition_basic(
+pub fn validate_data_contract_update_transition_basic(
     state_repository: ExternalStateRepositoryLike,
     raw_parameters: JsValue,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -85,11 +84,7 @@ pub async fn validate_data_contract_update_transition_basic(
             Arc::new(ProtocolVersionValidator::default()),
         )?;
 
-    validation_result.merge(
-        validator
-            .validate(&value, &execution_context.into())
-            .await?,
-    );
+    validation_result.merge(validator.validate(&value, &execution_context.into())?);
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())
 }

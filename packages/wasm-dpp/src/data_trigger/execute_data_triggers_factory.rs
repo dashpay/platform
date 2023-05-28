@@ -19,7 +19,7 @@ use super::{
 };
 
 #[wasm_bindgen(js_name=executeDataTriggers)]
-pub async fn execute_data_triggers_wasm(
+pub fn execute_data_triggers_wasm(
     js_document_transitions: Array,
     js_context: DataTriggerExecutionContextWasm,
     js_data_triggers: Array,
@@ -49,7 +49,6 @@ pub async fn execute_data_triggers_wasm(
         &context,
         data_triggers,
     )
-    .await
     .with_js_error()?;
 
     let array_with_results = js_sys::Array::new();

@@ -31,15 +31,14 @@ where
         }
     }
 
-    pub async fn apply(
+    pub fn apply(
         &self,
         state_transition: &IdentityTopUpTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(state_transition.get_asset_lock_proof(), execution_context)
-            .await?;
+            .fetch(state_transition.get_asset_lock_proof(), execution_context)?;
 
         let mut credits_amount = convert_satoshi_to_credits(output.value)?;
 
@@ -94,8 +93,8 @@ mod test {
 
     use super::ApplyIdentityTopUpTransition;
 
-    #[tokio::test]
-    async fn should_topup_amount_to_identity_balance() {
+    #[test]
+    fn should_topup_amount_to_identity_balance() {
         let raw_transition = identity_topup_transition_fixture(None);
         let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
 
@@ -138,15 +137,13 @@ mod test {
 
         let execution_context = StateTransitionExecutionContext::default();
 
-        let result = apply_identity_topup_transition
-            .apply(&state_transition, &execution_context)
-            .await;
+        let result = apply_identity_topup_transition.apply(&state_transition, &execution_context);
 
         assert!(result.is_ok())
     }
 
-    #[tokio::test]
-    async fn should_ignore_balance_debt_for_system_credits() {
+    #[test]
+    fn should_ignore_balance_debt_for_system_credits() {
         let raw_transition = identity_topup_transition_fixture(None);
         let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
 
@@ -189,15 +186,13 @@ mod test {
 
         let execution_context = StateTransitionExecutionContext::default();
 
-        let result = apply_identity_topup_transition
-            .apply(&state_transition, &execution_context)
-            .await;
+        let result = apply_identity_topup_transition.apply(&state_transition, &execution_context);
 
         assert!(result.is_ok())
     }
 
-    #[tokio::test]
-    async fn should_add_topup_amount_to_identity_balance_on_dry_run() {
+    #[test]
+    fn should_add_topup_amount_to_identity_balance_on_dry_run() {
         let raw_transition = identity_topup_transition_fixture(None);
         let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
 
@@ -240,9 +235,7 @@ mod test {
             Arc::new(asset_lock_transaction_fetcher),
         );
 
-        let result = apply_identity_topup_transition
-            .apply(&state_transition, &execution_context)
-            .await;
+        let result = apply_identity_topup_transition.apply(&state_transition, &execution_context);
 
         assert!(result.is_ok())
     }

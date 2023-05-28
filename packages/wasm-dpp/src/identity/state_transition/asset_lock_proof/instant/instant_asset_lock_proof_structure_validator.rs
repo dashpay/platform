@@ -51,7 +51,7 @@ impl InstantAssetLockProofStructureValidatorWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(
+    pub fn validate(
         &self,
         raw_asset_lock_proof: JsValue,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -62,7 +62,6 @@ impl InstantAssetLockProofStructureValidatorWasm {
         let validation_result = self
             .0
             .validate(&asset_lock_proof_object, context)
-            .await
             .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(validation_result

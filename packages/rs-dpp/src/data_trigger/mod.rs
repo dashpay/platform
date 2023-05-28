@@ -71,7 +71,7 @@ impl DataTrigger {
             && self.transition_action == transition_action
     }
 
-    pub async fn execute<'a, SR>(
+    pub fn execute<'a, SR>(
         &self,
         document_transition: &DocumentTransition,
         context: &DataTriggerExecutionContext<'a, SR>,
@@ -88,8 +88,7 @@ impl DataTrigger {
             document_transition,
             context,
             self.top_level_identity.as_ref(),
-        )
-        .await;
+        );
 
         match maybe_execution_result {
             Err(err) => {
@@ -108,7 +107,7 @@ impl DataTrigger {
     }
 }
 
-async fn execute_trigger<'a, SR>(
+fn execute_trigger<'a, SR>(
     trigger_kind: DataTriggerKind,
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
@@ -119,23 +118,22 @@ where
 {
     match trigger_kind {
         DataTriggerKind::CreateDataContractRequest => {
-            create_contact_request_data_trigger(document_transition, context, identifier).await
+            create_contact_request_data_trigger(document_transition, context, identifier)
         }
         DataTriggerKind::DataTriggerCreateDomain => {
-            create_domain_data_trigger(document_transition, context, identifier).await
+            create_domain_data_trigger(document_transition, context, identifier)
         }
         DataTriggerKind::CrateFeatureFlag => {
-            create_feature_flag_data_trigger(document_transition, context, identifier).await
+            create_feature_flag_data_trigger(document_transition, context, identifier)
         }
         DataTriggerKind::DataTriggerReject => {
-            reject_data_trigger(document_transition, context, identifier).await
+            reject_data_trigger(document_transition, context, identifier)
         }
         DataTriggerKind::DataTriggerRewardShare => {
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
-                .await
         }
         DataTriggerKind::DeleteWithdrawal => {
-            delete_withdrawal_data_trigger(document_transition, context, identifier).await
+            delete_withdrawal_data_trigger(document_transition, context, identifier)
         }
     }
 }

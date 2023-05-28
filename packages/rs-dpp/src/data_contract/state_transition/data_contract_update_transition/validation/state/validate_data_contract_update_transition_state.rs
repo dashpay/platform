@@ -7,7 +7,7 @@ use crate::consensus::basic::data_contract::InvalidDataContractVersionError;
 use crate::consensus::basic::document::DataContractNotPresentError;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
+use crate::validation::{ConsensusValidationResult, SyncDataValidator};
 use crate::{
     data_contract::{
         state_transition::data_contract_update_transition::DataContractUpdateTransition,
@@ -26,13 +26,13 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for DataContractUpdateTransitionStateValidator<SR>
+impl<SR> SyncDataValidator for DataContractUpdateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     type Item = DataContractUpdateTransition;
     type ResultItem = DataContractUpdateTransitionAction;
-    async fn validate(
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
@@ -42,7 +42,6 @@ where
             data,
             execution_context,
         )
-        .await
     }
 }
 
@@ -55,7 +54,7 @@ where
     }
 }
 
-pub async fn validate_data_contract_update_transition_state(
+pub fn validate_data_contract_update_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractUpdateTransition,
     execution_context: &StateTransitionExecutionContext,
@@ -107,8 +106,8 @@ mod test {
         state_repository::MockStateRepositoryLike, tests::fixtures::get_data_contract_fixture,
     };
 
-    #[tokio::test]
-    async fn should_return_valid_result_on_dry_run() {
+    #[test]
+    fn should_return_valid_result_on_dry_run() {
         let data_contract = get_data_contract_fixture(None).data_contract;
         let state_transition = DataContractUpdateTransition {
             data_contract,
@@ -128,7 +127,6 @@ mod test {
             &state_transition,
             &execution_context,
         )
-        .await
         .expect("the validation result should be returned");
 
         assert!(result.is_valid());

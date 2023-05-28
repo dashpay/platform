@@ -22,8 +22,8 @@ mod apply_identity_credit_withdrawal_transition_factory {
     use platform_value::Value;
     use std::default::Default;
 
-    #[tokio::test]
-    async fn should_fail_if_data_contract_was_not_found() {
+    #[test]
+    fn should_fail_if_data_contract_was_not_found() {
         let mut state_repository = MockStateRepositoryLike::default();
 
         let state_transition = IdentityCreditWithdrawalTransition {
@@ -42,7 +42,6 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
         match applier
             .apply_identity_credit_withdrawal_transition(&state_transition, &execution_context)
-            .await
         {
             Ok(_) => panic!("should not be able to apply state transition"),
             Err(e) => {
@@ -51,8 +50,8 @@ mod apply_identity_credit_withdrawal_transition_factory {
         };
     }
 
-    #[tokio::test]
-    async fn should_create_withdrawal_and_reduce_balance() {
+    #[test]
+    fn should_create_withdrawal_and_reduce_balance() {
         let block_time_seconds = 1675709306;
 
         let state_transition = IdentityCreditWithdrawalTransition {
@@ -136,8 +135,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         let execution_context = StateTransitionExecutionContext::default();
 
         let result = applier
-            .apply_identity_credit_withdrawal_transition(&state_transition, &execution_context)
-            .await;
+            .apply_identity_credit_withdrawal_transition(&state_transition, &execution_context);
 
         assert!(result.is_ok())
     }

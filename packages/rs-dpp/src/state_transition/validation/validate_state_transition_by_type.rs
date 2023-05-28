@@ -16,7 +16,7 @@ use crate::validation::ConsensusValidationResult;
 #[cfg_attr(test, automock)]
 #[async_trait(?Send)]
 pub trait ValidatorByStateTransitionType {
-    async fn validate(
+    fn validate(
         &self,
         raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
@@ -88,7 +88,7 @@ where
     SR: StateRepositoryLike,
     BLS: BlsModule,
 {
-    async fn validate(
+    fn validate(
         &self,
         raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
@@ -100,34 +100,24 @@ where
             StateTransitionType::DataContractCreate => self
                 .data_contract_create_validator
                 .validate(raw_state_transition, execution_context)?,
-            StateTransitionType::DataContractUpdate => {
-                self.data_contract_update_validator
-                    .validate(raw_state_transition, execution_context)
-                    .await?
-            }
-            StateTransitionType::IdentityCreate => {
-                self.identity_create_validator
-                    .validate(raw_state_transition, execution_context)
-                    .await?
-            }
+            StateTransitionType::DataContractUpdate => self
+                .data_contract_update_validator
+                .validate(raw_state_transition, execution_context)?,
+            StateTransitionType::IdentityCreate => self
+                .identity_create_validator
+                .validate(raw_state_transition, execution_context)?,
             StateTransitionType::IdentityUpdate => self
                 .identity_update_validator
                 .validate(raw_state_transition)?,
-            StateTransitionType::IdentityTopUp => {
-                self.identity_top_up_validator
-                    .validate(raw_state_transition, execution_context)
-                    .await?
-            }
-            StateTransitionType::IdentityCreditWithdrawal => {
-                self.identity_credit_withdrawal_validator
-                    .validate(raw_state_transition)
-                    .await?
-            }
-            StateTransitionType::DocumentsBatch => {
-                self.document_batch_validator
-                    .validate(raw_state_transition, execution_context)
-                    .await?
-            }
+            StateTransitionType::IdentityTopUp => self
+                .identity_top_up_validator
+                .validate(raw_state_transition, execution_context)?,
+            StateTransitionType::IdentityCreditWithdrawal => self
+                .identity_credit_withdrawal_validator
+                .validate(raw_state_transition)?,
+            StateTransitionType::DocumentsBatch => self
+                .document_batch_validator
+                .validate(raw_state_transition, execution_context)?,
         };
 
         result.merge(validation_result);

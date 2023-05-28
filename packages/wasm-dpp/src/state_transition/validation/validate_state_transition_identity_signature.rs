@@ -22,7 +22,7 @@ struct StValidator {
 }
 
 impl StValidator {
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &mut impl StateTransitionIdentitySigned,
         execution_context: &StateTransitionExecutionContext,
@@ -33,7 +33,6 @@ impl StValidator {
             &self.bls,
             execution_context,
         )
-        .await
         .with_js_error()?;
         Ok(ValidationResultWasm::from(
             result.map(|_v| JsValue::undefined()),
@@ -42,7 +41,7 @@ impl StValidator {
 }
 
 #[wasm_bindgen(js_name=validateStateTransitionIdentitySignature)]
-pub async fn validate_state_transition_identity_signature_wasm(
+pub fn validate_state_transition_identity_signature_wasm(
     external_state_repository: ExternalStateRepositoryLike,
     js_state_transition: &JsValue,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -64,19 +63,13 @@ pub async fn validate_state_transition_identity_signature_wasm(
 
     match state_transition {
         StateTransition::DataContractCreate(mut state_transition) => {
-            validator
-                .validate(&mut state_transition, &execution_context)
-                .await
+            validator.validate(&mut state_transition, &execution_context)
         }
         StateTransition::DataContractUpdate(mut state_transition) => {
-            validator
-                .validate(&mut state_transition, &execution_context)
-                .await
+            validator.validate(&mut state_transition, &execution_context)
         }
         StateTransition::DocumentsBatch(mut state_transition) => {
-            validator
-                .validate(&mut state_transition, &execution_context)
-                .await
+            validator.validate(&mut state_transition, &execution_context)
         }
         // TODO: We should use protocol error here, not consensus
         StateTransition::IdentityCreate(state_transition) => Err(from_consensus_error(
@@ -91,14 +84,10 @@ pub async fn validate_state_transition_identity_signature_wasm(
             )),
         )),
         StateTransition::IdentityCreditWithdrawal(mut state_transition) => {
-            validator
-                .validate(&mut state_transition, &execution_context)
-                .await
+            validator.validate(&mut state_transition, &execution_context)
         }
         StateTransition::IdentityUpdate(mut state_transition) => {
-            validator
-                .validate(&mut state_transition, &execution_context)
-                .await
+            validator.validate(&mut state_transition, &execution_context)
         }
     }
 }

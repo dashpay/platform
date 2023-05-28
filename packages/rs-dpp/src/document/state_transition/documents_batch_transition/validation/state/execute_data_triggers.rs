@@ -8,7 +8,7 @@ use crate::{
     ProtocolError,
 };
 
-pub async fn execute_data_triggers<'a, SR>(
+pub fn execute_data_triggers<'a, SR>(
     document_transitions: &[&DocumentTransition],
     context: &DataTriggerExecutionContext<'a, SR>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError>
@@ -16,10 +16,10 @@ where
     SR: StateRepositoryLike,
 {
     let data_triggers_list = data_triggers()?;
-    execute_data_triggers_with_custom_list(document_transitions, context, data_triggers_list).await
+    execute_data_triggers_with_custom_list(document_transitions, context, data_triggers_list)
 }
 
-pub async fn execute_data_triggers_with_custom_list<'a, SR>(
+pub fn execute_data_triggers_with_custom_list<'a, SR>(
     document_transitions: &[&DocumentTransition],
     context: &DataTriggerExecutionContext<'a, SR>,
     data_triggers_list: impl IntoIterator<Item = DataTrigger>,
@@ -52,14 +52,13 @@ where
             &data_triggers_for_transition,
             context,
             &mut execution_results,
-        )
-        .await;
+        );
     }
 
     Ok(execution_results)
 }
 
-async fn execute_data_triggers_sequentially<'a, SR>(
+fn execute_data_triggers_sequentially<'a, SR>(
     document_transition: &'a DocumentTransition,
     data_triggers: &[&DataTrigger],
     context: &DataTriggerExecutionContext<'a, SR>,
@@ -68,6 +67,6 @@ async fn execute_data_triggers_sequentially<'a, SR>(
     SR: StateRepositoryLike,
 {
     for data_trigger in data_triggers {
-        results.push(data_trigger.execute(document_transition, context).await);
+        results.push(data_trigger.execute(document_transition, context));
     }
 }

@@ -21,7 +21,7 @@ impl IdentityTopUpTransitionStateValidator {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &IdentityTopUpTransitionWasm,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -31,7 +31,6 @@ impl IdentityTopUpTransitionStateValidator {
             &state_transition.to_owned().into(),
             &execution_context.to_owned().into(),
         )
-        .await
         .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())

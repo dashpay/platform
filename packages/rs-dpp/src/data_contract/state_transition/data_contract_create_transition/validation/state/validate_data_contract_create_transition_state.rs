@@ -7,14 +7,13 @@ use crate::consensus::state::data_contract::data_contract_already_present_error:
 use crate::consensus::state::state_error::StateError;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::ConsensusValidationResult;
+use crate::validation::{ConsensusValidationResult, SyncDataValidator};
 use crate::{
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransition,
         DataContract,
     },
     state_repository::StateRepositoryLike,
-    validation::AsyncDataValidator,
     ProtocolError,
 };
 
@@ -26,14 +25,14 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for DataContractCreateTransitionStateValidator<SR>
+impl<SR> SyncDataValidator for DataContractCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     type Item = DataContractCreateTransition;
     type ResultItem = DataContractCreateTransitionAction;
 
-    async fn validate(
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
@@ -43,7 +42,6 @@ where
             data,
             execution_context,
         )
-        .await
     }
 }
 
@@ -59,7 +57,7 @@ where
     }
 }
 
-pub async fn validate_data_contract_create_transition_state(
+pub fn validate_data_contract_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractCreateTransition,
     execution_context: &StateTransitionExecutionContext,
@@ -92,8 +90,8 @@ mod test {
 
     use super::*;
 
-    #[tokio::test]
-    async fn should_return_valid_result_on_dry_run() {
+    #[test]
+    fn should_return_valid_result_on_dry_run() {
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let created_data_contract = get_data_contract_fixture(None);
         let state_transition = &DataContractCreateTransition {
@@ -112,7 +110,6 @@ mod test {
             state_transition,
             &execution_context,
         )
-        .await
         .expect("should return validation result");
 
         assert!(result.is_valid());

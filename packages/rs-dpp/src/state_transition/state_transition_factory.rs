@@ -78,7 +78,7 @@ where
         }
     }
 
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_state_transition: Value,
         options: Option<StateTransitionFactoryOptions>,
@@ -86,13 +86,13 @@ where
         let options = options.unwrap_or_default();
 
         if !options.skip_validation {
-            self.validate_basic(&raw_state_transition).await?;
+            self.validate_basic(&raw_state_transition)?;
         }
 
-        create_state_transition(self.state_repository.as_ref(), raw_state_transition).await
+        create_state_transition(self.state_repository.as_ref(), raw_state_transition)
     }
 
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         state_transition_buffer: &[u8],
         options: Option<StateTransitionFactoryOptions>,
@@ -109,20 +109,18 @@ where
             .map(|options| options.skip_validation)
             .unwrap_or_default()
         {
-            self.validate_basic(&state_transition.to_cleaned_object(false)?)
-                .await?;
+            self.validate_basic(&state_transition.to_cleaned_object(false)?)?;
         }
 
         Ok(state_transition)
     }
 
-    pub async fn validate_basic(&self, raw_state_transition: &Value) -> Result<(), ProtocolError> {
+    pub fn validate_basic(&self, raw_state_transition: &Value) -> Result<(), ProtocolError> {
         let execution_context = StateTransitionExecutionContext::default();
 
         let validation_result = self
             .basic_validator
-            .validate(raw_state_transition, &execution_context)
-            .await?;
+            .validate(raw_state_transition, &execution_context)?;
 
         if !validation_result.is_valid() {
             return Err(ProtocolError::StateTransitionError(
@@ -137,7 +135,7 @@ where
     }
 }
 
-pub async fn create_state_transition(
+pub fn create_state_transition(
     state_repository: &impl StateRepositoryLike,
     raw_state_transition: Value,
 ) -> Result<StateTransition, ProtocolError> {
@@ -174,8 +172,7 @@ pub async fn create_state_transition(
                 state_repository,
                 raw_transitions,
                 &execution_context,
-            )
-            .await?;
+            )?;
             let documents_batch_transition =
                 DocumentsBatchTransition::from_raw_object_with_contracts(
                     raw_state_transition,
@@ -190,9 +187,9 @@ pub async fn create_state_transition(
     }
 }
 
-async fn fetch_data_contracts_for_document_transition(
+fn fetch_data_contracts_for_document_transition<'v>(
     state_repository: &impl StateRepositoryLike,
-    raw_document_transitions: impl IntoIterator<Item = &Value>,
+    raw_document_transitions: impl IntoIterator<Item = &'v Value>,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<Vec<DataContract>, ProtocolError> {
     let mut data_contracts = vec![];
@@ -263,8 +260,8 @@ mod test {
 
     use super::create_state_transition;
 
-    #[tokio::test]
-    async fn should_create_data_contract_transition_if_type_is_data_contract_create() {
+    #[test]
+    fn should_create_data_contract_transition_if_type_is_data_contract_create() {
         let created_data_contract = get_data_contract_fixture(None);
         let mut state_repostiory_mock = MockStateRepositoryLike::new();
         let data_contract_to_return = created_data_contract.data_contract.clone();
@@ -287,7 +284,6 @@ mod test {
                 .to_object(false)
                 .unwrap(),
         )
-        .await
         .expect("the state transition should be created");
 
         assert!(
@@ -297,8 +293,8 @@ mod test {
         )
     }
 
-    #[tokio::test]
-    async fn should_return_document_batch_transition_if_type_is_documents() {
+    #[test]
+    fn should_return_document_batch_transition_if_type_is_documents() {
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
@@ -334,7 +330,6 @@ mod test {
             &state_repostiory_mock,
             documents_batch_state_transition.to_object(false).unwrap(),
         )
-        .await
         .expect("the state transition should be created");
 
         assert!(matches!(result, StateTransition::DocumentsBatch(_)));
@@ -351,14 +346,14 @@ mod test {
         assert_eq!(values, raw_document_transitions);
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_state_transition_type_if_type_is_invalid() {
+    #[test]
+    fn should_return_invalid_state_transition_type_if_type_is_invalid() {
         let state_repository_mock = MockStateRepositoryLike::new();
         let raw_state_transition = platform_value!( {
             "type" : 110u8
         });
 
-        let result = create_state_transition(&state_repository_mock, raw_state_transition).await;
+        let result = create_state_transition(&state_repository_mock, raw_state_transition);
         let err = get_protocol_error(result);
 
         match err {

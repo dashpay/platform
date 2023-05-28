@@ -33,13 +33,12 @@ impl ApplyDataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=applyDataContractCreateTransition)]
-    pub async fn apply_data_contract_create_transition(
+    pub fn apply_data_contract_create_transition(
         &self,
         transition: DataContractCreateTransitionWasm,
     ) -> Result<(), JsError> {
         self.0
             .apply_data_contract_create_transition(&transition.into(), None)
-            .await
             .map_err(|e| e.deref().into())
     }
 }

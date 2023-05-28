@@ -37,7 +37,7 @@ where
         Self { state_repository }
     }
 
-    pub async fn apply_identity_credit_withdrawal_transition(
+    pub fn apply_identity_credit_withdrawal_transition(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
         execution_context: &StateTransitionExecutionContext,

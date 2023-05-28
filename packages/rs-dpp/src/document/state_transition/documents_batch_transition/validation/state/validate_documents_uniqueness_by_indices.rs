@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 
-use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::platform_value;
 
@@ -27,10 +26,10 @@ struct QueryDefinition<'a> {
     document_transition: &'a DocumentTransition,
 }
 
-pub async fn validate_documents_uniqueness_by_indices<SR>(
+pub fn validate_documents_uniqueness_by_indices<'t, SR>(
     state_repository: &SR,
     owner_id: &Identifier,
-    document_transitions: impl Iterator<Item = &DocumentTransition>,
+    document_transitions: impl Iterator<Item = &'t DocumentTransition>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError>

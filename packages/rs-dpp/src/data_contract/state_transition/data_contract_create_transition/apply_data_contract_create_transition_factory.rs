@@ -24,7 +24,7 @@ impl<SR> ApplyDataContractCreateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    pub async fn apply_data_contract_create_transition(
+    pub fn apply_data_contract_create_transition(
         &self,
         state_transition: &DataContractCreateTransition,
         execution_context: Option<&StateTransitionExecutionContext>,

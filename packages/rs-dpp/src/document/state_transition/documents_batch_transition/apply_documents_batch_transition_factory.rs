@@ -34,7 +34,7 @@ where
         ApplyDocumentsBatchTransition { state_repository }
     }
 
-    pub async fn apply(
+    pub fn apply(
         &self,
         state_transition: &DocumentsBatchTransition,
         execution_context: StateTransitionExecutionContext,
@@ -44,11 +44,10 @@ where
             state_transition,
             &execution_context,
         )
-        .await
     }
 }
 
-pub async fn apply_documents_batch_transition(
+pub fn apply_documents_batch_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
     execution_context: &StateTransitionExecutionContext,
@@ -63,8 +62,7 @@ pub async fn apply_documents_batch_transition(
         state_repository,
         replace_transitions.as_slice(),
         execution_context,
-    )
-    .await?;
+    )?;
 
     let mut fetched_documents_by_id: HashMap<Identifier, ExtendedDocument> = fetched_documents
         .into_iter()
@@ -160,8 +158,8 @@ mod test {
 
     use super::apply_documents_batch_transition;
 
-    #[tokio::test]
-    async fn should_fetch_latest_block_when_replace_and_dry_run_enabled() {
+    #[test]
+    fn should_fetch_latest_block_when_replace_and_dry_run_enabled() {
         let mut state_repository = MockStateRepositoryLike::new();
 
         let owner_id = generate_random_identifier_struct();
@@ -202,8 +200,7 @@ mod test {
             &state_repository,
             &state_transition,
             &execution_context,
-        )
-        .await;
+        );
         assert!(result.is_ok());
     }
 }

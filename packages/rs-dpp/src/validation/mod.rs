@@ -35,7 +35,19 @@ pub trait DataValidator {
 pub trait AsyncDataValidator {
     type Item;
     type ResultItem: Clone;
-    async fn validate(
+    fn validate(
+        &self,
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError>;
+}
+
+/// Sync validator validates data of given type
+#[async_trait(?Send)]
+pub trait SyncDataValidator {
+    type Item;
+    type ResultItem: Clone;
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
@@ -59,7 +71,7 @@ pub trait DataValidatorWithContext {
 pub trait AsyncDataValidatorWithContext {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
-    async fn validate(
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,

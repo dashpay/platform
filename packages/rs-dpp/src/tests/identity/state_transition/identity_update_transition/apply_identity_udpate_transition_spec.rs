@@ -28,8 +28,8 @@ fn setup_test() -> TestData {
     }
 }
 
-#[tokio::test]
-async fn should_add_and_disable_public_keys() {
+#[test]
+fn should_add_and_disable_public_keys() {
     let TestData {
         state_transition,
         mut state_repository_mock,
@@ -79,14 +79,13 @@ async fn should_add_and_disable_public_keys() {
         &state_repository_mock,
         &state_transition,
         &execution_context,
-    )
-    .await;
+    );
 
     assert!(result.is_ok());
 }
 
-#[tokio::test]
-async fn should_add_and_disable_public_keys_on_dry_run() {
+#[test]
+fn should_add_and_disable_public_keys_on_dry_run() {
     let TestData {
         state_transition, ..
     } = setup_test();
@@ -137,8 +136,7 @@ async fn should_add_and_disable_public_keys_on_dry_run() {
         &state_repository_mock,
         &state_transition,
         &execution_context,
-    )
-    .await;
+    );
 
     assert!(result.is_ok());
 }

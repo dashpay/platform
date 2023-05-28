@@ -46,7 +46,7 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
         Ok(identity_validator)
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         identity_topup_transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
@@ -74,14 +74,12 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
         }
 
         result.merge(
-            self.asset_lock_proof_validator
-                .validate_structure(
-                    identity_topup_transition_object
-                        .get_value(ASSET_LOCK_PROOF_PROPERTY_NAME)
-                        .map_err(NonConsensusError::ValueError)?,
-                    execution_context,
-                )
-                .await?,
+            self.asset_lock_proof_validator.validate_structure(
+                identity_topup_transition_object
+                    .get_value(ASSET_LOCK_PROOF_PROPERTY_NAME)
+                    .map_err(NonConsensusError::ValueError)?,
+                execution_context,
+            )?,
         );
 
         Ok(result)

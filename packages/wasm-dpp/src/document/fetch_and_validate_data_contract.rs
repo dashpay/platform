@@ -39,24 +39,21 @@ impl DataContractFetcherAndValidatorWasm {
     }
 
     #[wasm_bindgen(js_name=validate)]
-    pub async fn validate(
-        &self,
-        js_raw_document: &JsValue,
-    ) -> Result<ValidationResultWasm, JsValue> {
-        fetch_and_validate_data_contract_inner(&self.state_repository, js_raw_document).await
+    pub fn validate(&self, js_raw_document: &JsValue) -> Result<ValidationResultWasm, JsValue> {
+        fetch_and_validate_data_contract_inner(&self.state_repository, js_raw_document)
     }
 }
 
 #[wasm_bindgen(js_name = fetchAndValidateDataContract)]
-pub async fn fetch_and_validate_data_contract_wasm(
+pub fn fetch_and_validate_data_contract_wasm(
     state_repository: ExternalStateRepositoryLike,
     js_raw_document: JsValue,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-    fetch_and_validate_data_contract_inner(&wrapped_state_repository, &js_raw_document).await
+    fetch_and_validate_data_contract_inner(&wrapped_state_repository, &js_raw_document)
 }
 
-async fn fetch_and_validate_data_contract_inner(
+fn fetch_and_validate_data_contract_inner(
     state_repository: &ExternalStateRepositoryLikeWrapper,
     js_raw_document: &JsValue,
 ) -> Result<ValidationResultWasm, JsValue> {
@@ -70,7 +67,6 @@ async fn fetch_and_validate_data_contract_inner(
     let ctx = StateTransitionExecutionContext::default();
     let validation_result =
         fetch_and_validate_data_contract(state_repository, &document_value, &ctx)
-            .await
             .with_js_error()?;
     let result_with_js_value: ConsensusValidationResult<JsValue> = validation_result
         .map(|dc| <DataContractWasm as std::convert::From<DataContract>>::from(dc).into());

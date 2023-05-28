@@ -61,32 +61,28 @@ impl DocumentFacadeWasm {
 
     /// Creates Document from object
     #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_document: JsValue,
         options: Option<js_sys::Object>,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        self.factory
-            .create_from_object(
-                raw_document,
-                options.map(Into::into).unwrap_or(JsValue::undefined()),
-            )
-            .await
+        self.factory.create_from_object(
+            raw_document,
+            options.map(Into::into).unwrap_or(JsValue::undefined()),
+        )
     }
 
     /// Creates Document form bytes
     #[wasm_bindgen(js_name=createFromBuffer)]
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         bytes: Vec<u8>,
         options: Option<js_sys::Object>,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        self.factory
-            .create_from_buffer(
-                bytes,
-                &options.map(Into::into).unwrap_or(JsValue::undefined()),
-            )
-            .await
+        self.factory.create_from_buffer(
+            bytes,
+            &options.map(Into::into).unwrap_or(JsValue::undefined()),
+        )
     }
 
     // TODO(rs-drive-abci): add tests
@@ -112,10 +108,7 @@ impl DocumentFacadeWasm {
 
     /// Creates Documents State Transition
     #[wasm_bindgen(js_name=validate)]
-    pub async fn validate_document(
-        &self,
-        document: &JsValue,
-    ) -> Result<ValidationResultWasm, JsValue> {
+    pub fn validate_document(&self, document: &JsValue) -> Result<ValidationResultWasm, JsValue> {
         let raw_document = if get_class_name(document) == "ExtendedDocument" {
             let document = document.to_wasm::<ExtendedDocumentWasm>("ExtendedDocument")?;
             document.to_object(&JsValue::NULL)?
@@ -123,18 +116,17 @@ impl DocumentFacadeWasm {
             document.to_owned()
         };
 
-        self.validate_raw_document(raw_document).await
+        self.validate_raw_document(raw_document)
     }
 
     /// Creates Documents State Transition
-    pub async fn validate_raw_document(
+    pub fn validate_raw_document(
         &self,
         js_raw_document: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
         let result = self
             .data_contract_fetcher_and_validator
-            .validate(&js_raw_document)
-            .await?;
+            .validate(&js_raw_document)?;
         if !result.is_valid() {
             return Ok(result);
         }

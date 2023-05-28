@@ -295,7 +295,7 @@ where
         })
     }
 
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: impl AsRef<[u8]>,
         options: FactoryOptions,
@@ -307,30 +307,28 @@ where
             ))
         })?;
 
-        self.create_from_object(document.to_value()?, options).await
+        self.create_from_object(document.to_value()?, options)
     }
 
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_document: Value,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        let data_contract = self
-            .validate_data_contract_for_extended_document(&raw_document, options)
-            .await?;
+        let data_contract =
+            self.validate_data_contract_for_extended_document(&raw_document, options)?;
 
         ExtendedDocument::from_untrusted_platform_value(raw_document, data_contract)
     }
 
-    async fn validate_data_contract_for_extended_document(
+    fn validate_data_contract_for_extended_document(
         &self,
         raw_document: &Value,
         options: FactoryOptions,
     ) -> Result<DataContract, ProtocolError> {
         let result = self
             .data_contract_fetcher_and_validator
-            .validate_extended(raw_document)
-            .await?;
+            .validate_extended(raw_document)?;
 
         if !result.is_valid() {
             return Err(ProtocolError::Document(Box::new(

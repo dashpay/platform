@@ -27,7 +27,7 @@ const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
 const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 
-pub async fn create_domain_data_trigger<'a, SR>(
+pub fn create_domain_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     top_level_identity: Option<&Identifier>,
@@ -262,8 +262,8 @@ mod test {
 
     use super::create_domain_data_trigger;
 
-    #[tokio::test]
-    async fn should_return_execution_result_on_dry_run() {
+    #[test]
+    fn should_return_execution_result_on_dry_run() {
         let mut state_repository = MockStateRepositoryLike::new();
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
@@ -289,7 +289,6 @@ mod test {
 
         let result =
             create_domain_data_trigger(first_transition, &data_trigger_context, Some(&owner_id))
-                .await
                 .expect("the execution result should be returned");
         assert!(result.is_ok());
     }

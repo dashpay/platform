@@ -59,25 +59,22 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from plain object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         self.factory
             .create_from_object(raw_data_contract, skip_validation)
-            .await
     }
 
     /// Create Data Contract from buffer
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory
-            .create_from_buffer(buffer, skip_validation)
-            .await
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     /// Create Data Contract Create State Transition
@@ -99,7 +96,7 @@ impl DataContractFacade {
     }
 
     /// Validate Data Contract
-    pub async fn validate(
+    pub fn validate(
         &self,
         data_contract: Value,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {

@@ -102,8 +102,8 @@ fn setup_test(action: Action) -> TestData {
 #[test_case("ownerId")]
 #[test_case("transitions")]
 #[test_case("signature")]
-#[tokio::test]
-async fn property_should_be_present(property: &str) {
+#[test]
+fn property_should_be_present(property: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -120,7 +120,6 @@ async fn property_should_be_present(property: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -128,8 +127,8 @@ async fn property_should_be_present(property: &str) {
     assert_eq!(schema_error.property_name(), property);
 }
 
-#[tokio::test]
-async fn protocol_version_should_be_integer() {
+#[test]
+fn protocol_version_should_be_integer() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -146,7 +145,6 @@ async fn protocol_version_should_be_integer() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -154,8 +152,8 @@ async fn protocol_version_should_be_integer() {
     assert_eq!("type", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn protocol_version_should_be_valid() {
+#[test]
+fn protocol_version_should_be_valid() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -172,7 +170,6 @@ async fn protocol_version_should_be_valid() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -180,8 +177,8 @@ async fn protocol_version_should_be_valid() {
     assert_eq!("type", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn type_should_be_equal_1() {
+#[test]
+fn type_should_be_equal_1() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -198,7 +195,6 @@ async fn type_should_be_equal_1() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -208,8 +204,8 @@ async fn type_should_be_equal_1() {
 
 #[test_case("ownerId")]
 #[test_case("signature")]
-#[tokio::test]
-async fn property_in_state_transition_should_be_byte_array(property_name: &str) {
+#[test]
+fn property_in_state_transition_should_be_byte_array(property_name: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -227,7 +223,6 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -243,8 +238,8 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
     );
 }
 
-#[tokio::test]
-async fn owner_id_should_be_no_less_than_32_bytes() {
+#[test]
+fn owner_id_should_be_no_less_than_32_bytes() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -262,7 +257,6 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -270,8 +264,8 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
     assert_eq!("minItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn owner_id_should_be_no_longer_than_32_bytes() {
+#[test]
+fn owner_id_should_be_no_longer_than_32_bytes() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -290,7 +284,6 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -298,8 +291,8 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
     assert_eq!("maxItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn transitions_should_be_an_array() {
+#[test]
+fn transitions_should_be_an_array() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -316,7 +309,6 @@ async fn transitions_should_be_an_array() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -324,8 +316,8 @@ async fn transitions_should_be_an_array() {
     assert_eq!("type", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn transitions_should_have_at_least_one_element() {
+#[test]
+fn transitions_should_have_at_least_one_element() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -342,7 +334,6 @@ async fn transitions_should_have_at_least_one_element() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -350,8 +341,8 @@ async fn transitions_should_have_at_least_one_element() {
     assert_eq!("minItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn transitions_should_have_no_more_than_10_elements() {
+#[test]
+fn transitions_should_have_no_more_than_10_elements() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -372,7 +363,6 @@ async fn transitions_should_have_no_more_than_10_elements() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -380,8 +370,8 @@ async fn transitions_should_have_no_more_than_10_elements() {
     assert_eq!("maxItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn transitions_should_have_an_object_as_elements() {
+#[test]
+fn transitions_should_have_an_object_as_elements() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -399,7 +389,6 @@ async fn transitions_should_have_an_object_as_elements() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -411,8 +400,8 @@ async fn transitions_should_have_an_object_as_elements() {
 
 #[test_case("$id")]
 #[test_case("$entropy")]
-#[tokio::test]
-async fn property_in_document_transition_should_be_present(property: &str) {
+#[test]
+fn property_in_document_transition_should_be_present(property: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -431,7 +420,6 @@ async fn property_in_document_transition_should_be_present(property: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -442,8 +430,8 @@ async fn property_in_document_transition_should_be_present(property: &str) {
 #[test_case("$action", 1026)]
 #[test_case("$type", 1027)]
 #[test_case("$dataContractId", 1025)]
-#[tokio::test]
-async fn property_should_should_exist_with_code(property_name: &str, error_code: u32) {
+#[test]
+fn property_should_should_exist_with_code(property_name: &str, error_code: u32) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -462,7 +450,6 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
@@ -471,8 +458,8 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
 
 #[test_case("$id")]
 #[test_case("$entropy")]
-#[tokio::test]
-async fn property_should_be_byte_array(property_name: &str) {
+#[test]
+fn property_should_be_byte_array(property_name: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -490,7 +477,6 @@ async fn property_should_be_byte_array(property_name: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -506,8 +492,8 @@ async fn property_should_be_byte_array(property_name: &str) {
     );
 }
 
-#[tokio::test]
-async fn data_contract_id_should_be_byte_array() {
+#[test]
+fn data_contract_id_should_be_byte_array() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -524,7 +510,6 @@ async fn data_contract_id_should_be_byte_array() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
@@ -534,8 +519,8 @@ async fn data_contract_id_should_be_byte_array() {
 
 #[test_case("$id")]
 #[test_case("$entropy")]
-#[tokio::test]
-async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
+#[test]
+fn property_should_be_no_less_than_32_bytes(property_name: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -553,7 +538,6 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -563,8 +547,8 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
 
 #[test_case("$id")]
 #[test_case("$entropy")]
-#[tokio::test]
-async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
+#[test]
+fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -583,7 +567,6 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -594,12 +577,12 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
     assert_eq!("maxItems", schema_error.keyword());
 }
 
-#[tokio::test]
+#[test]
 #[ignore = "unable to mock"]
-async fn should_have_no_duplicate_id_in_state_transition() {}
+fn should_have_no_duplicate_id_in_state_transition() {}
 
-#[tokio::test]
-async fn data_contract_should_exist_in_the_state() {
+#[test]
+fn data_contract_should_exist_in_the_state() {
     let TestData {
         raw_state_transition,
         protocol_version_validator,
@@ -617,15 +600,14 @@ async fn data_contract_should_exist_in_the_state() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
     assert_eq!(1018, error.code());
 }
 
-#[tokio::test]
-async fn type_should_be_defined_in_data_contract() {
+#[test]
+fn type_should_be_defined_in_data_contract() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -642,15 +624,14 @@ async fn type_should_be_defined_in_data_contract() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
     assert_eq!(1024, error.code());
 }
 
-#[tokio::test]
-async fn should_throw_invalid_document_transaction_action_error_if_action_is_not_valid() {
+#[test]
+fn should_throw_invalid_document_transaction_action_error_if_action_is_not_valid() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -667,15 +648,14 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
     assert_eq!(1022, error.code());
 }
 
-#[tokio::test]
-async fn id_should_be_valid_generated_id() {
+#[test]
+fn id_should_be_valid_generated_id() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -693,7 +673,6 @@ async fn id_should_be_valid_generated_id() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
@@ -701,8 +680,8 @@ async fn id_should_be_valid_generated_id() {
 }
 
 #[test_case("$revision")]
-#[tokio::test]
-async fn property_in_replace_transition_should_be_present(property: &str) {
+#[test]
+fn property_in_replace_transition_should_be_present(property: &str) {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -721,7 +700,6 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -729,8 +707,8 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
     assert_eq!(schema_error.property_name(), property);
 }
 
-#[tokio::test]
-async fn revision_should_be_number() {
+#[test]
+fn revision_should_be_number() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -747,7 +725,6 @@ async fn revision_should_be_number() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -755,8 +732,8 @@ async fn revision_should_be_number() {
     assert_eq!("type", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn revision_should_not_be_fractional() {
+#[test]
+fn revision_should_not_be_fractional() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -773,7 +750,6 @@ async fn revision_should_not_be_fractional() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -781,8 +757,8 @@ async fn revision_should_not_be_fractional() {
     assert_eq!("type", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn revision_should_be_at_least_1() {
+#[test]
+fn revision_should_be_at_least_1() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -799,7 +775,6 @@ async fn revision_should_be_at_least_1() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -807,8 +782,8 @@ async fn revision_should_be_at_least_1() {
     assert_eq!("minimum", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn id_should_be_present_in_delete_transition() {
+#[test]
+fn id_should_be_present_in_delete_transition() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -827,7 +802,6 @@ async fn id_should_be_present_in_delete_transition() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -835,20 +809,20 @@ async fn id_should_be_present_in_delete_transition() {
     assert_eq!(schema_error.property_name(), "$id");
 }
 
-#[tokio::test]
+#[test]
 #[ignore]
-async fn should_return_invalid_result_if_there_are_duplicate_unique_index_values() {
+fn should_return_invalid_result_if_there_are_duplicate_unique_index_values() {
     unimplemented!("unable to mock unique indices validation")
 }
 
-#[tokio::test]
+#[test]
 #[ignore]
-async fn should_return_invalid_result_if_compound_index_does_not_contain_all_fields() {
+fn should_return_invalid_result_if_compound_index_does_not_contain_all_fields() {
     unimplemented!("unable to mock compound indices validation")
 }
 
-#[tokio::test]
-async fn signature_should_be_not_less_than_65_bytes() {
+#[test]
+fn signature_should_be_not_less_than_65_bytes() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -866,7 +840,6 @@ async fn signature_should_be_not_less_than_65_bytes() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -874,8 +847,8 @@ async fn signature_should_be_not_less_than_65_bytes() {
     assert_eq!("minItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn signature_should_be_not_longer_than_96_bytes() {
+#[test]
+fn signature_should_be_not_longer_than_96_bytes() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -893,7 +866,6 @@ async fn signature_should_be_not_longer_than_96_bytes() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -901,8 +873,8 @@ async fn signature_should_be_not_longer_than_96_bytes() {
     assert_eq!("maxItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn signature_public_key_should_be_an_integer() {
+#[test]
+fn signature_public_key_should_be_an_integer() {
     let TestData {
         mut raw_state_transition,
         protocol_version_validator,
@@ -919,7 +891,6 @@ async fn signature_public_key_should_be_an_integer() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
@@ -930,8 +901,8 @@ async fn signature_public_key_should_be_an_integer() {
     assert_eq!("type", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn validation_should_be_successful() {
+#[test]
+fn validation_should_be_successful() {
     let TestData {
         raw_state_transition,
         protocol_version_validator,
@@ -946,14 +917,13 @@ async fn validation_should_be_successful() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     assert!(result.is_valid(), "{:?}", result.errors);
 }
 
-#[tokio::test]
-async fn should_not_validate_document_transitions_on_dry_run() {
+#[test]
+fn should_not_validate_document_transitions_on_dry_run() {
     let TestData {
         raw_state_transition,
         protocol_version_validator,
@@ -975,7 +945,6 @@ async fn should_not_validate_document_transitions_on_dry_run() {
 
     let result = validator
         .validate(&raw_state_transition, &execution_context)
-        .await
         .expect("validation result should be returned");
 
     assert!(result.is_valid());

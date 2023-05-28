@@ -40,7 +40,7 @@ where
         }
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
         execution_context: &StateTransitionExecutionContext,

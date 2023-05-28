@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name=applyIdentityCreateTransition)]
-pub async fn apply_identity_create_transition_wasm(
+pub fn apply_identity_create_transition_wasm(
     state_repository: ExternalStateRepositoryLike,
     state_transition: &IdentityCreateTransitionWasm,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -23,7 +23,6 @@ pub async fn apply_identity_create_transition_wasm(
             &state_transition.to_owned().into(),
             &execution_context.to_owned().into(),
         )
-        .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     Ok(())

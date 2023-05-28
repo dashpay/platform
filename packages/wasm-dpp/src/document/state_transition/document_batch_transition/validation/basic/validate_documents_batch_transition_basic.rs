@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name=validateDocumentsBatchTransitionBasic)]
-pub async fn validate_documents_batch_transition_basic_wasm(
+pub fn validate_documents_batch_transition_basic_wasm(
     protocol_version_validator: ProtocolVersionValidatorWasm,
     state_repository: ExternalStateRepositoryLike,
     js_raw_state_transition: JsValue,
@@ -36,7 +36,6 @@ pub async fn validate_documents_batch_transition_basic_wasm(
             Arc::new(wrapped_state_repository),
             &execution_context.to_owned().into(),
         )
-        .await
         .with_js_error()?,
     );
 

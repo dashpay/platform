@@ -84,7 +84,7 @@ impl IdentityTopUpTransitionBasicValidatorWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(
+    pub fn validate(
         mut self,
         raw_state_transition: JsValue,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -105,7 +105,6 @@ impl IdentityTopUpTransitionBasicValidatorWasm {
         let validation_result = self
             .0
             .validate(&state_transition_object, execution_context)
-            .await
             .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())

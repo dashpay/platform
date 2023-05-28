@@ -26,15 +26,14 @@ where
         }
     }
 
-    pub async fn fetch_public_key_hash(
+    pub fn fetch_public_key_hash(
         &self,
         asset_lock_proof: AssetLockProof,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<[u8; 20], DPPError> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(&asset_lock_proof, execution_context)
-            .await?;
+            .fetch(&asset_lock_proof, execution_context)?;
 
         if output.script_pubkey.is_op_return() {
             let public_key_hash = &output.script_pubkey.as_bytes()[2..];

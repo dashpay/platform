@@ -56,15 +56,14 @@ mod validate_identity_topup_transition_basic {
     mod protocol_version {
         use super::*;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let state_repository = MockStateRepositoryLike::new();
             let (mut raw_state_transition, validator) = setup_test(state_repository);
             raw_state_transition.remove("protocolVersion").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -76,8 +75,8 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.property_name(), "protocolVersion");
         }
 
-        #[tokio::test]
-        pub async fn should_be_an_integer() {
+        #[test]
+        pub fn should_be_an_integer() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_into_value("protocolVersion", "1")
@@ -85,7 +84,6 @@ mod validate_identity_topup_transition_basic {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -96,16 +94,14 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_valid() {
+        #[test]
+        pub fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_into_value("protocolVersion", -1)
                 .unwrap();
 
-            let result = validator
-                .validate(&raw_state_transition, &Default::default())
-                .await;
+            let result = validator.validate(&raw_state_transition, &Default::default());
 
             match result {
                 Ok(_) => {
@@ -126,13 +122,12 @@ mod validate_identity_topup_transition_basic {
     mod type_a {
         pub use super::*;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.remove("type").unwrap();
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -144,14 +139,13 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.property_name(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_equal_to_3() {
+        #[test]
+        pub fn should_be_equal_to_3() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.set_into_value("type", 666).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -172,14 +166,13 @@ mod validate_identity_topup_transition_basic {
     mod asset_lock_proof {
         pub use super::*;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.remove("assetLockProof").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -191,8 +184,8 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.property_name(), "assetLockProof");
         }
 
-        #[tokio::test]
-        pub async fn should_be_an_object() {
+        #[test]
+        pub fn should_be_an_object() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_into_value("assetLockProof", 1u64)
@@ -200,7 +193,6 @@ mod validate_identity_topup_transition_basic {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -211,8 +203,8 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_valid() {
+        #[test]
+        pub fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_value_at_path(
@@ -224,7 +216,6 @@ mod validate_identity_topup_transition_basic {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -238,14 +229,13 @@ mod validate_identity_topup_transition_basic {
     mod signature {
         use super::*;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition.remove("signature").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -257,8 +247,8 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.property_name(), "signature");
         }
 
-        #[tokio::test]
-        pub async fn should_be_a_byte_array() {
+        #[test]
+        pub fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_into_value("signature", vec!["string"; 65])
@@ -266,7 +256,6 @@ mod validate_identity_topup_transition_basic {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
@@ -277,8 +266,8 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_not_shorter_than_65_bytes() {
+        #[test]
+        pub fn should_be_not_shorter_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_into_value("signature", vec![0; 64])
@@ -286,7 +275,6 @@ mod validate_identity_topup_transition_basic {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -297,8 +285,8 @@ mod validate_identity_topup_transition_basic {
             assert_eq!(error.keyword(), "minItems");
         }
 
-        #[tokio::test]
-        pub async fn should_be_not_longer_than_65_bytes() {
+        #[test]
+        pub fn should_be_not_longer_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(MockStateRepositoryLike::new());
             raw_state_transition
                 .set_into_value("signature", vec![0; 66])
@@ -306,7 +294,6 @@ mod validate_identity_topup_transition_basic {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -318,8 +305,8 @@ mod validate_identity_topup_transition_basic {
         }
     }
 
-    #[tokio::test]
-    pub async fn should_return_valid_result() {
+    #[test]
+    pub fn should_return_valid_result() {
         let mut state_repository = MockStateRepositoryLike::new();
         state_repository
             .expect_verify_instant_lock()
@@ -331,7 +318,6 @@ mod validate_identity_topup_transition_basic {
         let (raw_state_transition, validator) = setup_test(state_repository);
         let result = validator
             .validate(&raw_state_transition, &Default::default())
-            .await
             .unwrap();
 
         assert!(result.is_valid());

@@ -33,7 +33,7 @@ impl ApplyDataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=applyDataContractUpdateTransition)]
-    pub async fn apply_data_contract_update_transition(
+    pub fn apply_data_contract_update_transition(
         &self,
         transition: DataContractUpdateTransitionWasm,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -43,7 +43,6 @@ impl ApplyDataContractUpdateTransitionWasm {
                 &transition.into(),
                 &execution_context.to_owned().into(),
             )
-            .await
             .map_err(|e| e.deref().into())
     }
 }

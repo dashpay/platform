@@ -63,8 +63,8 @@ fn setup_test() -> TestData {
 #[test_case(property_names::PROTOCOL_VERSION)]
 #[test_case(property_names::DATA_CONTRACT)]
 #[test_case(property_names::SIGNATURE)]
-#[tokio::test]
-async fn should_be_present(property: &str) {
+#[test]
+fn should_be_present(property: &str) {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -81,7 +81,6 @@ async fn should_be_present(property: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -92,8 +91,8 @@ async fn should_be_present(property: &str) {
 
 #[test_case(property_names::PROTOCOL_VERSION)]
 #[test_case(property_names::SIGNATURE_PUBLIC_KEY_ID)]
-#[tokio::test]
-async fn should_be_integer(property: &str) {
+#[test]
+fn should_be_integer(property: &str) {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -110,7 +109,6 @@ async fn should_be_integer(property: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -119,8 +117,8 @@ async fn should_be_integer(property: &str) {
     assert_eq!(schema_error.keyword(), "type");
 }
 
-#[tokio::test]
-async fn protocol_version_should_be_valid() {
+#[test]
+fn protocol_version_should_be_valid() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -137,7 +135,6 @@ async fn protocol_version_should_be_valid() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     assert!(matches!(
@@ -148,8 +145,8 @@ async fn protocol_version_should_be_valid() {
     ));
 }
 
-#[tokio::test]
-async fn type_should_be_equal_4() {
+#[test]
+fn type_should_be_equal_4() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -166,7 +163,6 @@ async fn type_should_be_equal_4() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -178,8 +174,8 @@ async fn type_should_be_equal_4() {
 }
 
 #[test_case(property_names::SIGNATURE)]
-#[tokio::test]
-async fn property_should_be_byte_array(property_name: &str) {
+#[test]
+fn property_should_be_byte_array(property_name: &str) {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -197,7 +193,6 @@ async fn property_should_be_byte_array(property_name: &str) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -214,8 +209,8 @@ async fn property_should_be_byte_array(property_name: &str) {
 }
 
 #[test_case(property_names::SIGNATURE, 65)]
-#[tokio::test]
-async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
+#[test]
+fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -233,7 +228,6 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -243,8 +237,8 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
 }
 
 #[test_case(property_names::SIGNATURE, 96)]
-#[tokio::test]
-async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) {
+#[test]
+fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -262,7 +256,6 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -270,8 +263,8 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
     assert_eq!("maxItems", schema_error.keyword());
 }
 
-#[tokio::test]
-async fn signature_public_key_id_should_be_valid() {
+#[test]
+fn signature_public_key_id_should_be_valid() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -288,7 +281,6 @@ async fn signature_public_key_id_should_be_valid() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
@@ -298,8 +290,8 @@ async fn signature_public_key_id_should_be_valid() {
     );
 }
 
-#[tokio::test]
-async fn should_allow_making_backward_compatible_changes() {
+#[test]
+fn should_allow_making_backward_compatible_changes() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -321,14 +313,13 @@ async fn should_allow_making_backward_compatible_changes() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_have_existing_documents_schema_backward_compatible() {
+#[test]
+fn should_have_existing_documents_schema_backward_compatible() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -347,7 +338,6 @@ async fn should_have_existing_documents_schema_backward_compatible() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     let basic_error = get_basic_error_from_result(&result, 0);
@@ -364,8 +354,8 @@ async fn should_have_existing_documents_schema_backward_compatible() {
     }
 }
 
-#[tokio::test]
-async fn should_allow_defining_new_document() {
+#[test]
+fn should_allow_defining_new_document() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -384,14 +374,13 @@ async fn should_allow_defining_new_document() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_return_valid_result() {
+#[test]
+fn should_return_valid_result() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -406,14 +395,13 @@ async fn should_return_valid_result() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_not_check_data_contract_on_dry_run() {
+#[test]
+fn should_not_check_data_contract_on_dry_run() {
     let TestData {
         version_validator,
         state_repository_mock,
@@ -436,7 +424,6 @@ async fn should_not_check_data_contract_on_dry_run() {
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
-        .await
         .expect("validation result should be returned");
 
     assert!(result.is_valid());

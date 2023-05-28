@@ -18,7 +18,7 @@ mod property_names {
     pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 }
 
-pub async fn create_contact_request_data_trigger<'a, SR>(
+pub fn create_contact_request_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     _: Option<&Identifier>,
@@ -137,8 +137,8 @@ mod test {
         },
     };
 
-    #[tokio::test]
-    async fn should_successfully_execute_on_dry_run() {
+    #[test]
+    fn should_successfully_execute_on_dry_run() {
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
         contact_request_document
             .set(
@@ -172,14 +172,13 @@ mod test {
 
         let result =
             create_contact_request_data_trigger(document_transition, &data_trigger_context, None)
-                .await
                 .expect("the execution result should be returned");
 
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn should_fail_if_owner_id_equals_to_user_id() {
+    #[test]
+    fn should_fail_if_owner_id_equals_to_user_id() {
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
         let owner_id = contact_request_document.owner_id();
         contact_request_document
@@ -218,7 +217,6 @@ mod test {
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
-        .await
         .expect("data trigger result should be returned");
 
         assert!(!result.is_ok());
@@ -234,8 +232,8 @@ mod test {
         ));
     }
 
-    #[tokio::test]
-    async fn should_fail_if_id_not_exists() {
+    #[test]
+    fn should_fail_if_id_not_exists() {
         let contact_request_document = get_contact_request_document_fixture(None, None);
         let data_contract = get_dashpay_contract_fixture(None).data_contract;
         let owner_id = contact_request_document.owner_id();
@@ -271,7 +269,6 @@ mod test {
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
-        .await
         .expect("data trigger result should be returned");
 
         assert!(!result.is_ok());

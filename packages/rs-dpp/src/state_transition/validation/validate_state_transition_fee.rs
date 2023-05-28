@@ -39,7 +39,7 @@ where
         }
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &StateTransition,
         execution_context: &StateTransitionExecutionContext,
@@ -49,10 +49,9 @@ where
             calculate_state_transition_fee,
             execution_context,
         )
-        .await
     }
 
-    async fn validate_with_custom_calculator(
+    fn validate_with_custom_calculator(
         &self,
         state_transition: &StateTransition,
         calculate_state_transition_fee_fn: impl Fn(
@@ -69,7 +68,6 @@ where
                 let output = self
                     .asset_lock_transition_output_fetcher
                     .fetch(st.get_asset_lock_proof(), execution_context)
-                    .await
                     .with_context(|| {
                         format!(
                             "unable to fetch asset lock transition output for: {:?}",
@@ -82,7 +80,6 @@ where
                 let output = self
                     .asset_lock_transition_output_fetcher
                     .fetch(st.get_asset_lock_proof(), execution_context)
-                    .await
                     .with_context(|| {
                         format!(
                             "unable to fetch asset lock transition output for: {:?}",
@@ -125,27 +122,21 @@ where
                 }
             }
             StateTransition::DataContractCreate(st) => {
-                let balance = self
-                    .get_identity_owner_balance(st, execution_context)
-                    .await?;
+                let balance = self.get_identity_owner_balance(st, execution_context)?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
                 balance
             }
             StateTransition::DataContractUpdate(st) => {
-                let balance = self
-                    .get_identity_owner_balance(st, execution_context)
-                    .await?;
+                let balance = self.get_identity_owner_balance(st, execution_context)?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
                 balance
             }
             StateTransition::DocumentsBatch(st) => {
-                let balance = self
-                    .get_identity_owner_balance(st, execution_context)
-                    .await?;
+                let balance = self.get_identity_owner_balance(st, execution_context)?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
@@ -153,9 +144,7 @@ where
             }
 
             StateTransition::IdentityUpdate(st) => {
-                let balance = self
-                    .get_identity_owner_balance(st, execution_context)
-                    .await?;
+                let balance = self.get_identity_owner_balance(st, execution_context)?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
@@ -185,7 +174,7 @@ where
         Ok(result)
     }
 
-    async fn get_identity_owner_balance(
+    fn get_identity_owner_balance(
         &self,
         st: &impl StateTransitionIdentitySigned,
         execution_context: &StateTransitionExecutionContext,
@@ -268,8 +257,8 @@ mod test {
         };
     }
 
-    #[tokio::test]
-    async fn data_contract_crate_transition_invalid_result_if_balance_is_not_enough() {
+    #[test]
+    fn data_contract_crate_transition_invalid_result_if_balance_is_not_enough() {
         let mut identity = identity_fixture();
         let mut state_repository_mock = MockStateRepositoryLike::new();
 
@@ -289,15 +278,14 @@ mod test {
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate(&data_contract_create_transition.into(), &execution_context)
-            .await
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
         assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
-    #[tokio::test]
-    async fn data_contract_crate_transition_should_return_valid_result() {
+    #[test]
+    fn data_contract_crate_transition_should_return_valid_result() {
         let mut identity = identity_fixture();
         let mut state_repository_mock = MockStateRepositoryLike::new();
 
@@ -317,13 +305,12 @@ mod test {
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate(&data_contract_create_transition.into(), &execution_context)
-            .await
             .expect("the validation result should be returned");
         assert!(result.is_valid())
     }
 
-    #[tokio::test]
-    async fn documents_batch_transition_invalid_result_if_balance_is_not_enough() {
+    #[test]
+    fn documents_batch_transition_invalid_result_if_balance_is_not_enough() {
         let mut identity = identity_fixture();
         let mut state_repository_mock = MockStateRepositoryLike::new();
 
@@ -346,15 +333,14 @@ mod test {
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate(&documents_batch_transition.into(), &execution_context)
-            .await
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
         assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
-    #[tokio::test]
-    async fn documents_batch_transition_should_return_valid_result() {
+    #[test]
+    fn documents_batch_transition_should_return_valid_result() {
         let mut identity = identity_fixture();
         let mut state_repository_mock = MockStateRepositoryLike::new();
 
@@ -377,13 +363,12 @@ mod test {
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate(&documents_batch_transition.into(), &execution_context)
-            .await
             .expect("the validation result should be returned");
         assert!(result.is_valid());
     }
 
-    #[tokio::test]
-    async fn documents_batch_transition_should_not_increase_balance_on_dry_run() {
+    #[test]
+    fn documents_batch_transition_should_not_increase_balance_on_dry_run() {
         let mut identity = identity_fixture();
         let mut state_repository_mock = MockStateRepositoryLike::new();
 
@@ -408,13 +393,12 @@ mod test {
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate(&documents_batch_transition.into(), &execution_context)
-            .await
             .expect("the validation result should be returned");
         assert!(result.is_valid());
     }
 
-    #[tokio::test]
-    async fn identity_create_transition_should_return_invalid_result_if_asset_lock_output_amount_is_not_enough(
+    #[test]
+    fn identity_create_transition_should_return_invalid_result_if_asset_lock_output_amount_is_not_enough(
     ) {
         let identity_create_transition =
             IdentityCreateTransition::from_raw_object(identity_create_transition_fixture(None))
@@ -438,7 +422,6 @@ mod test {
                 calculate_state_transition_fee_mock,
                 &execution_context,
             )
-            .await
             .expect("the validation result should be returned");
         let fee_error = get_fee_error_from_result(&result, 0);
 
@@ -447,8 +430,8 @@ mod test {
         );
     }
 
-    #[tokio::test]
-    async fn identity_create_transition_should_return_valid_result() {
+    #[test]
+    fn identity_create_transition_should_return_valid_result() {
         let identity_create_transition =
             IdentityCreateTransition::from_raw_object(identity_create_transition_fixture(None))
                 .unwrap();
@@ -470,13 +453,12 @@ mod test {
                 calculate_state_transition_fee_mock,
                 &execution_context,
             )
-            .await
             .expect("the validation result should be returned");
         assert!(result.is_valid())
     }
 
-    #[tokio::test]
-    async fn identity_top_up_transition_should_return_invalid_result_if_balance_is_not_enough() {
+    #[test]
+    fn identity_top_up_transition_should_return_invalid_result_if_balance_is_not_enough() {
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
             .expect_fetch_identity_balance_with_debt()
@@ -503,7 +485,6 @@ mod test {
                 calculate_state_transition_fee_mock,
                 &execution_context,
             )
-            .await
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
@@ -513,8 +494,8 @@ mod test {
         );
     }
 
-    #[tokio::test]
-    async fn identity_top_up_transition_should_return_valid_result() {
+    #[test]
+    fn identity_top_up_transition_should_return_valid_result() {
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
             .expect_fetch_identity_balance_with_debt()
@@ -540,14 +521,13 @@ mod test {
                 calculation_mock,
                 &execution_context,
             )
-            .await
             .expect("the validation result should be returned");
 
         assert!(result.is_valid())
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_state_transition_type() {
+    #[test]
+    fn should_return_invalid_state_transition_type() {
         let transition = IdentityCreditWithdrawalTransition::default();
         let state_repository_mock = MockStateRepositoryLike::new();
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
@@ -555,7 +535,6 @@ mod test {
 
         let result = validator
             .validate(&transition.into(), &execution_context)
-            .await
             .expect_err("error should be returned");
 
         match result {

@@ -6,7 +6,7 @@ use crate::{
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
-pub async fn reject_data_trigger<'a, SR>(
+pub fn reject_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,
     _top_level_identity: Option<&Identifier>,

@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name=validateDocumentsUniquenessByIndices)]
-pub async fn validate_uniqueness_by_indices_wasm(
+pub fn validate_uniqueness_by_indices_wasm(
     state_repository: ExternalStateRepositoryLike,
     js_owner_id: &IdentifierWrapper,
     js_document_transitions: Array,
@@ -40,7 +40,6 @@ pub async fn validate_uniqueness_by_indices_wasm(
             js_data_contract.inner(),
             &execution_context,
         )
-        .await
         .with_js_error()?;
 
     Ok(validation_result.map(|_| JsValue::undefined()).into())

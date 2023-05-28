@@ -24,7 +24,7 @@ impl<SR: StateRepositoryLike> AssetLockProofValidator<SR> {
         }
     }
 
-    pub async fn validate_structure(
+    pub fn validate_structure(
         &self,
         asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
@@ -32,16 +32,12 @@ impl<SR: StateRepositoryLike> AssetLockProofValidator<SR> {
         let asset_lock_type = AssetLockProof::type_from_raw_value(asset_lock_proof_object);
         if let Some(proof_type) = asset_lock_type {
             match proof_type {
-                AssetLockProofType::Instant => {
-                    self.instant_asset_lock_structure_validator
-                        .validate(asset_lock_proof_object, execution_context)
-                        .await
-                }
-                AssetLockProofType::Chain => {
-                    self.chain_asset_lock_structure_validator
-                        .validate(asset_lock_proof_object, execution_context)
-                        .await
-                }
+                AssetLockProofType::Instant => self
+                    .instant_asset_lock_structure_validator
+                    .validate(asset_lock_proof_object, execution_context),
+                AssetLockProofType::Chain => self
+                    .chain_asset_lock_structure_validator
+                    .validate(asset_lock_proof_object, execution_context),
             }
         } else {
             Err(NonConsensusError::SerdeJsonError(String::from(

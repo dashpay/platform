@@ -37,7 +37,7 @@ impl IdentityUpdateTransitionStateValidatorWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &IdentityUpdateTransitionWasm,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -47,7 +47,6 @@ impl IdentityUpdateTransitionStateValidatorWasm {
         let validation_result = self
             .0
             .validate(&state_transition, &execution_context.to_owned().into())
-            .await
             .map_err(|e| from_dpp_err(e.into()))?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())

@@ -205,7 +205,7 @@ pub trait StateRepositoryLike: Sync {
     fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
 
     /// Verify Instant Lock
-    async fn verify_instant_lock<'a>(
+    fn verify_instant_lock<'a>(
         &self,
         instant_lock: &InstantLock,
         execution_context: Option<&'a StateTransitionExecutionContext>,

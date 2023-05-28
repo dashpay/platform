@@ -5,7 +5,7 @@ use crate::identity::state_transition::identity_create_transition::{
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
-use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
+use crate::validation::{ConsensusValidationResult, SyncDataValidator};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
@@ -17,20 +17,19 @@ where
 }
 
 #[async_trait(?Send)]
-impl<SR> AsyncDataValidator for IdentityCreateTransitionStateValidator<SR>
+impl<SR> SyncDataValidator for IdentityCreateTransitionStateValidator<SR>
 where
     SR: StateRepositoryLike,
 {
     type Item = IdentityCreateTransition;
     type ResultItem = IdentityCreateTransitionAction;
 
-    async fn validate(
+    fn validate(
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data, execution_context)
-            .await
     }
 }
 
@@ -53,7 +52,7 @@ where
 /// For later versions:
 /// 1. We need to check that outpoint exists (not now)
 /// 2. Verify ownership proof signature, as it requires special transaction to be implemented
-pub async fn validate_identity_create_transition_state(
+pub fn validate_identity_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityCreateTransition,
     execution_context: &StateTransitionExecutionContext,
@@ -83,7 +82,6 @@ pub async fn validate_identity_create_transition_state(
         let tx_out = state_transition
             .asset_lock_proof
             .fetch_asset_lock_transaction_output(state_repository, execution_context)
-            .await
             .map_err(Into::<NonConsensusError>::into)?;
         Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into())
     }
@@ -100,8 +98,8 @@ mod test {
 
     use super::validate_identity_create_transition_state;
 
-    #[tokio::test]
-    async fn should_not_verify_signature_on_dry_run() {
+    #[test]
+    fn should_not_verify_signature_on_dry_run() {
         let mut state_repository = MockStateRepositoryLike::new();
         let raw_transition = identity_create_transition_fixture(None);
         let transition = IdentityCreateTransition::from_raw_object(raw_transition).unwrap();
@@ -115,8 +113,8 @@ mod test {
             &state_repository,
             &transition,
             &execution_context,
-        )
-        .await;
+        );
+
         assert!(result.is_ok());
     }
 }

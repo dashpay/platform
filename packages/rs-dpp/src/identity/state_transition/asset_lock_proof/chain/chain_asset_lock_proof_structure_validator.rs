@@ -70,7 +70,7 @@ where
         })
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
@@ -155,8 +155,7 @@ where
         if let Some(raw_tx) = transaction_result.data {
             let validate_asset_lock_transaction_result = self
                 .asset_lock_transaction_validator
-                .validate(&raw_tx, output_index as usize, execution_context)
-                .await?;
+                .validate(&raw_tx, output_index as usize, execution_context)?;
 
             let validation_result_data =
                 if validate_asset_lock_transaction_result.is_valid_with_data() {

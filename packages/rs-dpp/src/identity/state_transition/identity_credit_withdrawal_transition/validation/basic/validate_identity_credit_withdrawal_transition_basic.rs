@@ -50,7 +50,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         Ok(identity_validator)
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         transition_object: &Value,
     ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {

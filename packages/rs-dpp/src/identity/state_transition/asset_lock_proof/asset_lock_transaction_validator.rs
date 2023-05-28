@@ -52,7 +52,7 @@ where
     }
 
     /// raw_tx should be a js uint array
-    pub async fn validate(
+    pub fn validate(
         &self,
         raw_tx: &[u8],
         output_index: usize,

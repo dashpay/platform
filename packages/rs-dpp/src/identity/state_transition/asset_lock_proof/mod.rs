@@ -38,7 +38,7 @@ pub enum AssetLockProof {
 
 impl AssetLockProof {
     /// This fetches the asset lock transaction output from core
-    pub async fn fetch_asset_lock_transaction_output(
+    pub fn fetch_asset_lock_transaction_output(
         &self,
         state_repository: &impl StateRepositoryLike,
         execution_context: &StateTransitionExecutionContext,
@@ -344,8 +344,8 @@ mod test {
 
     use super::*;
 
-    #[tokio::test]
-    async fn should_return_mocked_data_on_dry_run() {
+    #[test]
+    fn should_return_mocked_data_on_dry_run() {
         let mut state_repository_mock = MockStateRepositoryLike::new();
         let asset_lock_proof = &AssetLockProof::Chain(ChainAssetLockProof::new(0, [0u8; 36]));
         let execution_context = StateTransitionExecutionContext::default();
@@ -357,7 +357,6 @@ mod test {
 
         let result = asset_lock_proof
             .fetch_asset_lock_transaction_output(&state_repository_mock, &execution_context)
-            .await
             .expect("the transaction output should be returned");
 
         assert_eq!(

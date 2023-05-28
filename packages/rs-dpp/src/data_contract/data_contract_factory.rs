@@ -163,7 +163,7 @@ impl DataContractFactory {
     }
 
     /// Create Data Contract from plain object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         mut data_contract_object: Value,
         skip_validation: bool,
@@ -186,7 +186,7 @@ impl DataContractFactory {
     }
 
     /// Create Data Contract from buffer
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         skip_validation: bool,
@@ -322,8 +322,8 @@ mod tests {
         assert_eq!(data_contract.binary_properties, result.binary_properties);
     }
 
-    #[tokio::test]
-    async fn should_crate_data_contract_from_object() {
+    #[test]
+    fn should_crate_data_contract_from_object() {
         let TestData {
             created_data_contract,
             raw_data_contract,
@@ -334,7 +334,6 @@ mod tests {
 
         let result = factory
             .create_from_object(raw_data_contract.into(), true)
-            .await
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);
@@ -347,8 +346,8 @@ mod tests {
         assert_eq!(data_contract.defs, result.defs);
     }
 
-    #[tokio::test]
-    async fn should_create_data_contract_from_buffer() {
+    #[test]
+    fn should_create_data_contract_from_buffer() {
         let TestData {
             created_data_contract,
             factory,
@@ -362,7 +361,6 @@ mod tests {
             .expect("should be serialized to buffer");
         let result = factory
             .create_from_buffer(serialized_data_contract, false)
-            .await
             .expect("Data Contract should be created from the buffer");
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);

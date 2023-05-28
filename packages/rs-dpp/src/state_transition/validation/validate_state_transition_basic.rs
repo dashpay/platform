@@ -51,7 +51,7 @@ where
 {
     type Item = Value;
 
-    async fn validate(
+    fn validate(
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
@@ -78,14 +78,11 @@ where
             return Ok(result);
         };
 
-        let validate_result = self
-            .validate_state_transition_by_type
-            .validate(
-                raw_state_transition,
-                state_transition_type,
-                execution_context,
-            )
-            .await?;
+        let validate_result = self.validate_state_transition_by_type.validate(
+            raw_state_transition,
+            state_transition_type,
+            execution_context,
+        )?;
 
         result.merge(validate_result);
 
@@ -94,8 +91,7 @@ where
         }
 
         let state_transition =
-            create_state_transition(self.state_repository.as_ref(), raw_state_transition.clone())
-                .await?;
+            create_state_transition(self.state_repository.as_ref(), raw_state_transition.clone())?;
 
         let serialization_result = state_transition.serialize();
 
@@ -199,8 +195,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_result_if_state_transition_type_is_missing() {
+    #[test]
+    fn should_return_invalid_result_if_state_transition_type_is_missing() {
         let TestData {
             mut raw_state_transition,
             ..
@@ -222,7 +218,6 @@ mod test {
 
         let result = validator
             .validate(&raw_state_transition, &execution_context)
-            .await
             .expect("the validation result should be returned");
 
         let basic_error = get_basic_error_from_result(&result, 0);
@@ -233,8 +228,8 @@ mod test {
         ));
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_result_if_state_transition_type_is_not_valid() {
+    #[test]
+    fn should_return_invalid_result_if_state_transition_type_is_not_valid() {
         let TestData {
             mut raw_state_transition,
             ..
@@ -254,7 +249,6 @@ mod test {
 
         let result = validator
             .validate(&raw_state_transition, &execution_context)
-            .await
             .expect("the validation result should be returned");
 
         let basic_error = get_basic_error_from_result(&result, 0);
@@ -270,9 +264,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_result_if_state_transition_is_invalid_against_validation_function(
-    ) {
+    #[test]
+    fn should_return_invalid_result_if_state_transition_is_invalid_against_validation_function() {
         let TestData {
             mut raw_state_transition,
             ..
@@ -292,7 +285,6 @@ mod test {
 
         let result = validator
             .validate(&raw_state_transition, &execution_context)
-            .await
             .expect("the validation result should be returned");
 
         let basic_error = get_basic_error_from_result(&result, 0);
@@ -308,8 +300,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_invalid_result_if_state_transition_size_is_more_than_25_kb() {
+    #[test]
+    fn should_return_invalid_result_if_state_transition_size_is_more_than_25_kb() {
         let TestData {
             mut raw_state_transition,
             ..
@@ -336,7 +328,6 @@ mod test {
 
         let result = validator
             .validate(&raw_state_transition, &execution_context)
-            .await
             .expect("the validation result should be returned");
 
         let basic_error = get_basic_error_from_result(&result, 0);
@@ -353,8 +344,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn should_return_valid_result() {
+    #[test]
+    fn should_return_valid_result() {
         let TestData {
             raw_state_transition,
             ..
@@ -375,7 +366,6 @@ mod test {
 
         let result = validator
             .validate(&raw_state_transition, &execution_context)
-            .await
             .expect("should return validation result");
 
         assert!(result.is_valid());

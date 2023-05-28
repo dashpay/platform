@@ -29,8 +29,8 @@ use crate::state_transition::validation::validate_state_transition_identity_sign
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{
-    AsyncDataValidator, AsyncDataValidatorWithContext, ConsensusValidationResult,
-    SimpleConsensusValidationResult,
+    AsyncDataValidatorWithContext, ConsensusValidationResult, SimpleConsensusValidationResult,
+    SyncDataValidator,
 };
 use crate::version::ProtocolVersionValidator;
 
@@ -201,33 +201,29 @@ where
         })
     }
 
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         state_transition: Value,
         skip_validation: bool,
     ) -> Result<StateTransition, ProtocolError> {
-        self.factory
-            .create_from_object(
-                state_transition,
-                Some(StateTransitionFactoryOptions { skip_validation }),
-            )
-            .await
+        self.factory.create_from_object(
+            state_transition,
+            Some(StateTransitionFactoryOptions { skip_validation }),
+        )
     }
 
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: &[u8],
         skip_validation: bool,
     ) -> Result<StateTransition, ProtocolError> {
-        self.factory
-            .create_from_buffer(
-                buffer,
-                Some(StateTransitionFactoryOptions { skip_validation }),
-            )
-            .await
+        self.factory.create_from_buffer(
+            buffer,
+            Some(StateTransitionFactoryOptions { skip_validation }),
+        )
     }
 
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: &StateTransition,
         execution_context: &StateTransitionExecutionContext,
@@ -237,10 +233,7 @@ where
             ConsensusValidationResult::<Option<StateTransitionAction>>::new_with_data(None);
         if options.basic {
             let state_transition_cleaned = state_transition.to_cleaned_object(false)?;
-            result.merge(
-                self.validate_basic(&state_transition_cleaned, execution_context)
-                    .await?,
-            );
+            result.merge(self.validate_basic(&state_transition_cleaned, execution_context)?);
 
             if !result.is_valid() {
                 return Ok(result);
@@ -248,10 +241,7 @@ where
         }
 
         if options.signature {
-            result.merge(
-                self.validate_signature(state_transition.clone(), execution_context)
-                    .await?,
-            );
+            result.merge(self.validate_signature(state_transition.clone(), execution_context)?);
 
             if !result.is_valid() {
                 return Ok(result);
@@ -259,10 +249,7 @@ where
         }
 
         if options.fee {
-            result.merge(
-                self.validate_fee(state_transition, execution_context)
-                    .await?,
-            );
+            result.merge(self.validate_fee(state_transition, execution_context)?);
 
             if !result.is_valid() {
                 return Ok(result);
@@ -271,25 +258,23 @@ where
 
         if options.state {
             Ok(self
-                .validate_state(state_transition, execution_context)
-                .await?
+                .validate_state(state_transition, execution_context)?
                 .map(Some))
         } else {
             Ok(result)
         }
     }
 
-    pub async fn validate_basic(
+    pub fn validate_basic(
         &self,
         state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         self.basic_validator
             .validate(state_transition, execution_context)
-            .await
     }
 
-    pub async fn validate_signature(
+    pub fn validate_signature(
         &self,
         mut state_transition: StateTransition,
         execution_context: &StateTransitionExecutionContext,
@@ -303,7 +288,6 @@ where
                     &self.bls,
                     execution_context,
                 )
-                .await
             }
             StateTransition::DataContractUpdate(ref mut st) => {
                 validate_state_transition_identity_signature(
@@ -312,7 +296,6 @@ where
                     &self.bls,
                     execution_context,
                 )
-                .await
             }
             StateTransition::DocumentsBatch(ref mut st) => {
                 validate_state_transition_identity_signature(
@@ -321,7 +304,6 @@ where
                     &self.bls,
                     execution_context,
                 )
-                .await
             }
             StateTransition::IdentityCreditWithdrawal(ref mut st) => {
                 validate_state_transition_identity_signature(
@@ -330,7 +312,6 @@ where
                     &self.bls,
                     execution_context,
                 )
-                .await
             }
             StateTransition::IdentityUpdate(ref mut st) => {
                 validate_state_transition_identity_signature(
@@ -339,38 +320,33 @@ where
                     &self.bls,
                     execution_context,
                 )
-                .await
             }
-            _ => {
-                self.key_signature_validator
-                    .validate(&state_transition, execution_context)
-                    .await
-            }
+            _ => self
+                .key_signature_validator
+                .validate(&state_transition, execution_context),
         }
     }
 
-    pub async fn validate_fee(
+    pub fn validate_fee(
         &self,
         state_transition: &StateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         self.fee_validator
             .validate(state_transition, execution_context)
-            .await
     }
 
-    pub async fn validate_state(
+    pub fn validate_state(
         &self,
         state_transition: &StateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, ProtocolError> {
         self.state_validator
             .validate(state_transition, execution_context)
-            .await
     }
 
-    pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
-        self.apply_state_transition.apply(state_transition).await
+    pub fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
+        self.apply_state_transition.apply(state_transition)
     }
 }
 

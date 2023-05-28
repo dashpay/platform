@@ -150,7 +150,7 @@ impl DocumentFactoryWASM {
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_document_js: JsValue,
         options: JsValue,
@@ -173,7 +173,6 @@ impl DocumentFactoryWASM {
         let mut document = self
             .0
             .create_from_object(raw_document, options)
-            .await
             .with_js_error()?;
         let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = document
             .get_identifiers_and_binary_paths_owned()
@@ -192,7 +191,7 @@ impl DocumentFactoryWASM {
     }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         options: &JsValue,
@@ -204,11 +203,7 @@ impl DocumentFactoryWASM {
             Default::default()
         };
 
-        let document = self
-            .0
-            .create_from_buffer(buffer, options)
-            .await
-            .with_js_error()?;
+        let document = self.0.create_from_buffer(buffer, options).with_js_error()?;
 
         Ok(document.into())
     }

@@ -6,7 +6,7 @@ use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,
 };
 use dpp::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
-use dpp::validation::AsyncDataValidator;
+use dpp::validation::SyncDataValidator;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -46,7 +46,7 @@ impl StateTransitionKeySignatureValidatorWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(
+    pub fn validate(
         &self,
         state_transition: JsValue,
         execution_context: &StateTransitionExecutionContextWasm,
@@ -59,7 +59,6 @@ impl StateTransitionKeySignatureValidatorWasm {
         let validation_result = self
             .0
             .validate(&state_transition, &execution_context.to_owned().into())
-            .await
             .with_js_error()?;
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }

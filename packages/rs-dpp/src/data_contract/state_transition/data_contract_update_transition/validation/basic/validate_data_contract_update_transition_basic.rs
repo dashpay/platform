@@ -79,7 +79,7 @@ where
 {
     type Item = Value;
 
-    async fn validate(
+    fn validate(
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,

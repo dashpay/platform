@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name=applyDocumentsBatchTransition)]
-pub async fn apply_documents_batch_transition_wasm(
+pub fn apply_documents_batch_transition_wasm(
     state_repository: ExternalStateRepositoryLike,
     transition: &DocumentsBatchTransitionWasm,
     execution_context: &StateTransitionExecutionContextWasm,
@@ -20,6 +20,5 @@ pub async fn apply_documents_batch_transition_wasm(
         &transition.0,
         &execution_context.to_owned().into(),
     )
-    .await
     .with_js_error()
 }

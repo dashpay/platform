@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name = fetchExtendedDocuments)]
-pub async fn fetch_extended_documents_wasm(
+pub fn fetch_extended_documents_wasm(
     state_repository: ExternalStateRepositoryLike,
     js_document_transitions: Array,
     js_execution_context: &StateTransitionExecutionContextWasm,
@@ -31,7 +31,6 @@ pub async fn fetch_extended_documents_wasm(
         document_transitions.iter().collect::<Vec<_>>().as_slice(),
         &execution_context,
     )
-    .await
     .with_js_error()?;
 
     let array = js_sys::Array::new();

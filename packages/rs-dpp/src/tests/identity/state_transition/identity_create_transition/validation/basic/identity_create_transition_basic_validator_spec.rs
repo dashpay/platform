@@ -101,8 +101,8 @@ mod validate_identity_create_transition_basic_factory {
 
         use super::setup_test;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let state_repository = MockStateRepositoryLike::new();
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
@@ -113,7 +113,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -125,8 +124,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.property_name(), "protocolVersion");
         }
 
-        #[tokio::test]
-        pub async fn should_be_an_integer() {
+        #[test]
+        pub fn should_be_an_integer() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -138,7 +137,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -149,8 +147,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_valid() {
+        #[test]
+        pub fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -160,9 +158,7 @@ mod validate_identity_create_transition_basic_factory {
                 .set_into_value("protocolVersion", -1)
                 .unwrap();
 
-            let result = validator
-                .validate(&raw_state_transition, &Default::default())
-                .await;
+            let result = validator.validate(&raw_state_transition, &Default::default());
 
             match result {
                 Ok(_) => {
@@ -192,8 +188,8 @@ mod validate_identity_create_transition_basic_factory {
 
         use super::super::setup_test;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -202,7 +198,6 @@ mod validate_identity_create_transition_basic_factory {
             raw_state_transition.remove("type").unwrap();
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -214,8 +209,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.property_name(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_equal_to_2() {
+        #[test]
+        pub fn should_be_equal_to_2() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -225,7 +220,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -256,8 +250,8 @@ mod validate_identity_create_transition_basic_factory {
 
         use super::super::setup_test;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -267,7 +261,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -279,8 +272,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.property_name(), "assetLockProof");
         }
 
-        #[tokio::test]
-        pub async fn should_be_an_object() {
+        #[test]
+        pub fn should_be_an_object() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -292,7 +285,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -303,8 +295,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_valid() {
+        #[test]
+        pub fn should_be_valid() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -320,7 +312,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
@@ -349,8 +340,8 @@ mod validate_identity_create_transition_basic_factory {
 
         use super::super::setup_test;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -360,7 +351,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -372,8 +362,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.property_name(), "publicKeys");
         }
 
-        #[tokio::test]
-        pub async fn should_not_be_empty() {
+        #[test]
+        pub fn should_not_be_empty() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -385,7 +375,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -396,8 +385,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.instance_path(), "/publicKeys");
         }
 
-        #[tokio::test]
-        pub async fn should_not_have_more_than_10_items() {
+        #[test]
+        pub fn should_not_have_more_than_10_items() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -415,7 +404,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
@@ -426,8 +414,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.instance_path(), "/publicKeys");
         }
 
-        #[tokio::test]
-        pub async fn should_be_unique() {
+        #[test]
+        pub fn should_be_unique() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -442,7 +430,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -453,8 +440,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.instance_path(), "/publicKeys");
         }
 
-        #[tokio::test]
-        pub async fn should_be_valid() {
+        #[test]
+        pub fn should_be_valid() {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
@@ -471,7 +458,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::TestConsensusError, 1);
@@ -486,8 +472,8 @@ mod validate_identity_create_transition_basic_factory {
             );
         }
 
-        #[tokio::test]
-        pub async fn should_have_at_least_1_master_key() {
+        #[test]
+        pub fn should_have_at_least_1_master_key() {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
@@ -504,7 +490,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_consensus_errors!(result, ConsensusError::TestConsensusError, 1);
@@ -532,8 +517,8 @@ mod validate_identity_create_transition_basic_factory {
 
         use super::super::setup_test;
 
-        #[tokio::test]
-        pub async fn should_be_present() {
+        #[test]
+        pub fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -543,7 +528,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -555,8 +539,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.property_name(), "signature");
         }
 
-        #[tokio::test]
-        pub async fn should_be_a_byte_array() {
+        #[test]
+        pub fn should_be_a_byte_array() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -568,7 +552,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
@@ -579,8 +562,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.keyword(), "type");
         }
 
-        #[tokio::test]
-        pub async fn should_be_not_shorter_than_65_bytes() {
+        #[test]
+        pub fn should_be_not_shorter_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -592,7 +575,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -603,8 +585,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error.keyword(), "minItems");
         }
 
-        #[tokio::test]
-        pub async fn should_be_not_longer_than_65_bytes() {
+        #[test]
+        pub fn should_be_not_longer_than_65_bytes() {
             let (mut raw_state_transition, validator) = setup_test(
                 Arc::new(get_public_keys_validator_for_transition()),
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
@@ -616,7 +598,6 @@ mod validate_identity_create_transition_basic_factory {
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
-                .await
                 .unwrap();
 
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
@@ -628,8 +609,8 @@ mod validate_identity_create_transition_basic_factory {
         }
     }
 
-    #[tokio::test]
-    pub async fn should_return_valid_result() {
+    #[test]
+    pub fn should_return_valid_result() {
         let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
         pk_validator_mock.returns_fun(move || Ok(ConsensusValidationResult::default()));
 
@@ -648,7 +629,6 @@ mod validate_identity_create_transition_basic_factory {
         );
         let result = validator
             .validate(&raw_state_transition, &Default::default())
-            .await
             .unwrap();
 
         assert!(result.is_valid());

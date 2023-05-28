@@ -120,7 +120,7 @@ impl DataContractFactoryWasm {
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         object: JsValue,
         skip_validation: Option<bool>,
@@ -128,8 +128,7 @@ impl DataContractFactoryWasm {
         let parameters_value = js_value_to_data_contract_value(object.clone())?;
         let result = self
             .0
-            .create_from_object(parameters_value, skip_validation.unwrap_or(false))
-            .await;
+            .create_from_object(parameters_value, skip_validation.unwrap_or(false));
         match result {
             Ok(data_contract) => Ok(data_contract.into()),
             Err(dpp::ProtocolError::InvalidDataContractError(err)) => {
@@ -140,20 +139,19 @@ impl DataContractFactoryWasm {
     }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         skip_validation: Option<bool>,
     ) -> Result<DataContractWasm, JsValue> {
         self.0
             .create_from_buffer(buffer, skip_validation.unwrap_or(false))
-            .await
             .map(Into::into)
             .map_err(from_protocol_error)
     }
 
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
-    pub async fn create_data_contract_create_transition(
+    pub fn create_data_contract_create_transition(
         &self,
         data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {

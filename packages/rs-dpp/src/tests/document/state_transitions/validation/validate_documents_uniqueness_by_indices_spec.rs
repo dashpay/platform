@@ -46,8 +46,8 @@ fn setup_test() -> TestData {
     }
 }
 
-#[tokio::test]
-async fn should_return_valid_result_if_documents_have_no_unique_indices() {
+#[test]
+fn should_return_valid_result_if_documents_have_no_unique_indices() {
     let TestData {
         owner_id,
         data_contract,
@@ -68,13 +68,12 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
         &data_contract,
         &Default::default(),
     )
-    .await
     .expect("validation result should be returned");
     assert!(validation_result.is_valid())
 }
 
-#[tokio::test]
-async fn should_return_valid_result_if_document_has_unique_indices_and_there_are_no_duplicates() {
+#[test]
+fn should_return_valid_result_if_document_has_unique_indices_and_there_are_no_duplicates() {
     let TestData {
         owner_id,
         data_contract,
@@ -126,13 +125,12 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
         &data_contract,
         &Default::default(),
     )
-    .await
     .expect("validation result should be returned");
     assert!(validation_result.is_valid())
 }
 
-#[tokio::test]
-async fn should_return_invalid_result_if_document_has_unique_indices_and_there_are_duplicates() {
+#[test]
+fn should_return_invalid_result_if_document_has_unique_indices_and_there_are_duplicates() {
     let TestData {
         owner_id,
         data_contract,
@@ -219,7 +217,6 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
         &data_contract,
         &Default::default(),
     )
-    .await
     .expect("validation result should be returned");
     assert!(!validation_result.is_valid());
 
@@ -238,9 +235,8 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     ));
 }
 
-#[tokio::test]
-async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_and_there_are_duplicate(
-) {
+#[test]
+fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_and_there_are_duplicate() {
     let TestData {
         owner_id,
         data_contract,
@@ -330,13 +326,12 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
         &data_contract,
         &execution_context,
     )
-    .await
     .expect("validation result should be returned");
     assert!(result.is_valid());
 }
 
-#[tokio::test]
-async fn should_return_valid_result_if_document_has_undefined_field_from_index() {
+#[test]
+fn should_return_valid_result_if_document_has_undefined_field_from_index() {
     let TestData {
         owner_id,
         data_contract,
@@ -388,14 +383,13 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
         &data_contract,
         &Default::default(),
     )
-    .await
     .expect("validation result should be returned");
     assert!(validation_result.is_valid());
 }
 
-#[tokio::test]
-async fn should_return_valid_result_if_document_being_created_and_has_created_at_and_updated_at_indices(
-) {
+#[test]
+fn should_return_valid_result_if_document_being_created_and_has_created_at_and_updated_at_indices()
+{
     let TestData {
         owner_id,
         data_contract,
@@ -430,7 +424,6 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
         &data_contract,
         &Default::default(),
     )
-    .await
     .expect("validation result should be returned");
     assert!(validation_result.is_valid());
 }

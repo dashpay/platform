@@ -20,7 +20,7 @@ where
         Self { state_repository }
     }
 
-    pub async fn apply(
+    pub fn apply(
         &self,
         state_transition: &IdentityUpdateTransition,
         execution_context: &StateTransitionExecutionContext,
@@ -30,12 +30,11 @@ where
             state_transition,
             execution_context,
         )
-        .await
     }
 }
 
 /// Apply Identity Update state transition
-pub async fn apply_identity_update_transition(
+pub fn apply_identity_update_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityUpdateTransition,
     execution_context: &StateTransitionExecutionContext,

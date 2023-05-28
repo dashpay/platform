@@ -37,7 +37,7 @@ where
         Self { state_repository }
     }
 
-    pub async fn validate_extended(
+    pub fn validate_extended(
         &self,
         raw_extended_document: &Value,
     ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
@@ -49,11 +49,10 @@ where
             raw_extended_document,
             &ctx,
         )
-        .await
     }
 }
 
-pub async fn fetch_and_validate_data_contract(
+pub fn fetch_and_validate_data_contract(
     state_repository: &impl StateRepositoryLike,
     raw_extended_document: &Value,
     execution_context: &StateTransitionExecutionContext,

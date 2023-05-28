@@ -678,7 +678,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(height as u64)
     }
 
-    async fn verify_instant_lock<'a>(
+    fn verify_instant_lock<'a>(
         &self,
         instant_lock: &InstantLock,
         execution_context: Option<&'a StateTransitionExecutionContext>,
