@@ -17,13 +17,16 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::state_repository::StateRepositoryLike;
+use dpp::{BlsModule, NativeBlsModule};
 use drive_abci::abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::execution::test_quorum::TestQuorumInfo;
+use drive_abci::platform::state_repository::DPPStateRepository;
 use drive_abci::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
+use drive_abci::rpc::core::{CoreRPCLike, MockCoreRPCLike};
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
@@ -438,7 +441,12 @@ pub(crate) fn create_chain_for_strategy(
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
-    let abci_application = AbciApplication::new(platform).expect("expected new abci application");
+    let abci_application = AbciApplication::<
+        MockCoreRPCLike,
+        DPPStateRepository<MockCoreRPCLike>,
+        NativeBlsModule,
+    >::new(platform)
+    .expect("expected new abci application");
     let seed = strategy
         .failure_testing
         .as_ref()
@@ -457,15 +465,20 @@ pub(crate) fn create_chain_for_strategy(
     )
 }
 
-pub(crate) fn start_chain_for_strategy(
-    abci_application: AbciApplication<MockCoreRPCLike>,
+pub(crate) fn start_chain_for_strategy<'a>(
+    abci_application: AbciApplication<
+        'a,
+        MockCoreRPCLike,
+        DPPStateRepository<'a, MockCoreRPCLike>,
+        NativeBlsModule,
+    >,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
-) -> ChainExecutionOutcome {
+) -> ChainExecutionOutcome<'a> {
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
@@ -541,13 +554,18 @@ pub(crate) fn start_chain_for_strategy(
     )
 }
 
-pub(crate) fn continue_chain_for_strategy(
-    abci_app: AbciApplication<MockCoreRPCLike>,
+pub(crate) fn continue_chain_for_strategy<'a>(
+    abci_app: AbciApplication<
+        'a,
+        MockCoreRPCLike,
+        DPPStateRepository<'a, MockCoreRPCLike>,
+        NativeBlsModule,
+    >,
     chain_execution_parameters: ChainExecutionParameters,
     mut strategy: Strategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
-) -> ChainExecutionOutcome {
+) -> ChainExecutionOutcome<'a> {
     let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,

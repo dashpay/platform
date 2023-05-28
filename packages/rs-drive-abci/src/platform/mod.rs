@@ -37,10 +37,11 @@ use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use crate::state::PlatformState;
 use drive::drive::Drive;
+use std::ops::Deref;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::FromHex;
@@ -52,7 +53,8 @@ use dpp::serialization_traits::PlatformDeserializable;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
-mod state_repository;
+/// DPP State Repository
+pub mod state_repository;
 
 /// Platform
 pub struct Platform<C> {
@@ -78,6 +80,40 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
+}
+
+/// Platform Ref with block execution context
+pub struct PlatformWithBlockContextRef<'a, C> {
+    /// Drive
+    pub drive: &'a Drive,
+    /// State
+    pub state: &'a RwLock<PlatformState>,
+    /// Configuration
+    pub config: &'a PlatformConfig,
+    /// Core RPC Client
+    pub core_rpc: &'a C,
+    /// Block execution context
+    pub block_execution_context: &'a RwLock<Option<BlockExecutionContext>>,
+}
+
+impl<'a, C> From<&'a Platform<C>> for PlatformWithBlockContextRef<'a, C> {
+    fn from(value: &'a Platform<C>) -> Self {
+        let Platform {
+            drive,
+            state,
+            config,
+            core_rpc,
+            block_execution_context,
+        } = value;
+
+        PlatformWithBlockContextRef {
+            drive,
+            state,
+            config,
+            core_rpc,
+            block_execution_context,
+        }
+    }
 }
 
 /// Platform State Ref

@@ -59,11 +59,15 @@ use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
+use dpp::state_repository::StateRepositoryLike;
+use dpp::BlsModule;
 use serde_json::Map;
 
-impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
+impl<'a, C, SR, BLS> tenderdash_abci::Application for AbciApplication<'a, C, SR, BLS>
 where
     C: CoreRPCLike,
+    SR: StateRepositoryLike + Clone,
+    BLS: BlsModule + Clone,
 {
     fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
         let state_guard = self.platform.state.read().unwrap();
@@ -179,9 +183,11 @@ where
 
         let transaction = transaction_guard.as_ref().unwrap();
         // Running the proposal executes all the state transitions for the block
-        let run_result = self
-            .platform
-            .run_block_proposal(block_proposal, transaction)?;
+        let run_result = self.platform.run_block_proposal(
+            block_proposal,
+            &self.dpp_transactional,
+            transaction,
+        )?;
 
         if !run_result.is_valid() {
             // This is a system error, because we are proposing
@@ -310,9 +316,11 @@ where
         }
 
         // Running the proposal executes all the state transitions for the block
-        let run_result = self
-            .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+        let run_result = self.platform.run_block_proposal(
+            (&request).try_into()?,
+            &self.dpp_transactional,
+            transaction,
+        )?;
 
         if !run_result.is_valid() {
             // This was an error running this proposal, tell tenderdash that the block isn't valid
@@ -528,7 +536,7 @@ where
         let _timer = crate::metrics::abci_request_duration("check_tx");
 
         let RequestCheckTx { tx, .. } = request;
-        let validation_result = self.platform.check_tx(tx.as_slice())?;
+        let validation_result = self.platform.check_tx(tx.as_slice(), &self.dpp)?;
 
         let validation_error = validation_result.errors.first();
 

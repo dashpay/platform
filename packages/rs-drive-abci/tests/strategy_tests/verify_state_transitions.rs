@@ -11,13 +11,19 @@ use drive_abci::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::validation::state_transition::StateTransitionValidation;
 
+use dpp::state_repository::StateRepositoryLike;
+use dpp::BlsModule;
 use prost::Message;
 
-pub(crate) fn verify_state_transitions_were_executed(
-    abci_app: &AbciApplication<MockCoreRPCLike>,
+pub(crate) fn verify_state_transitions_were_executed<SR, BLS>(
+    abci_app: &AbciApplication<MockCoreRPCLike, SR, BLS>,
     expected_root_hash: &[u8; 32],
     state_transitions: &Vec<StateTransition>,
-) -> bool {
+) -> bool
+where
+    SR: StateRepositoryLike + Clone,
+    BLS: BlsModule + Clone,
+{
     let state = abci_app.platform.state.read().unwrap();
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,

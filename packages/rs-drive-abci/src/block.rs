@@ -40,7 +40,7 @@ use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// Block info
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct BlockStateInfo {
     /// Block height
     pub height: u64,
@@ -149,6 +149,7 @@ impl BlockStateInfo {
     }
 }
 /// Block execution context
+#[derive(Clone, Default)]
 pub struct BlockExecutionContext {
     /// Block info
     pub block_state_info: BlockStateInfo,

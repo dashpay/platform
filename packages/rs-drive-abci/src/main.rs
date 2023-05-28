@@ -3,9 +3,11 @@
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
 
 use clap::{Parser, Subcommand};
+use dpp::NativeBlsModule;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
+use drive_abci::platform::state_repository::DPPStateRepository;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
@@ -82,7 +84,12 @@ pub fn main() -> Result<(), String> {
             .unwrap();
             let _prometheus = start_prometheus(&config)?;
 
-            drive_abci::abci::start(&config, core_rpc).unwrap();
+            drive_abci::abci::start::<
+                DefaultCoreRPC,
+                DPPStateRepository<'_, DefaultCoreRPC>,
+                NativeBlsModule,
+            >(&config, core_rpc)
+            .unwrap();
             Ok(())
         }
         Commands::Config {} => dump_config(&config),

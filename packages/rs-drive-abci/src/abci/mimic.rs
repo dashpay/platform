@@ -29,6 +29,8 @@ use tenderdash_abci::{
     proto::{self, version::Consensus},
     Application,
 };
+use dpp::BlsModule;
+use dpp::state_repository::StateRepositoryLike;
 
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
@@ -46,7 +48,12 @@ pub struct MimicExecuteBlockOptions {
     pub dont_finalize_block: bool,
 }
 
-impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
+impl<'a, C: CoreRPCLike, SR, BLS> AbciApplication<'a, C, SR, BLS>
+where
+    C: CoreRPCLike,
+    SR: StateRepositoryLike + Clone,
+    BLS: BlsModule + Clone,
+{
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
     pub fn mimic_execute_block(

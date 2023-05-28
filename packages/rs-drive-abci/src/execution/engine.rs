@@ -2,7 +2,7 @@ use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
-use dpp::bls_signatures;
+use dpp::{bls_signatures, BlsModule, DashPlatformProtocol};
 
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::error::Error::GroveDB;
@@ -10,12 +10,13 @@ use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
+use dpp::state_repository::StateRepositoryLike;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::commit::Commit;
 use crate::abci::withdrawal::WithdrawalTxs;
-use crate::abci::AbciError;
+use crate::abci::{AbciApplication, AbciError};
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 
@@ -79,11 +80,16 @@ where
     /// This function may return an `Error` variant if there is a problem with processing the block
     /// proposal, updating the core info, processing raw state transitions, or processing block fees.
     ///
-    pub fn run_block_proposal(
+    pub fn run_block_proposal<SR, BLS>(
         &self,
         block_proposal: BlockProposal,
+        dpp: &DashPlatformProtocol<SR, BLS>,
         transaction: &Transaction,
-    ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error> {
+    ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error>
+    where
+        SR: StateRepositoryLike + Clone,
+        BLS: BlsModule + Clone,
+    {
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
@@ -204,8 +210,18 @@ where
             })
             .collect();
 
-        let (block_fees, tx_results) =
-            self.process_raw_state_transitions(raw_state_transitions, &block_info, transaction)?;
+        // TODO: we need execution context before we execute
+        self.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context.clone());
+
+        let (block_fees, tx_results) = self.process_raw_state_transitions(
+            raw_state_transitions,
+            &block_info,
+            dpp,
+            transaction,
+        )?;
 
         self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction)?;
 

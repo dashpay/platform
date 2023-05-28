@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use bls_signatures::{PrivateKey, PublicKey};
 use std::convert::TryInto;
 
-pub trait BlsModule {
+pub trait BlsModule: Clone {
     fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError>;
     fn verify_signature(
         &self,
@@ -18,7 +18,7 @@ pub trait BlsModule {
 
 // TODO: write tests for the native BLS module
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 #[cfg(not(target_arch = "wasm32"))]
 pub struct NativeBlsModule;
 

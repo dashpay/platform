@@ -21,9 +21,11 @@ use dpp::document::document_transition::{
 use dpp::document::{Document, DocumentsBatchTransition};
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization_traits::PlatformSerializable;
+use dpp::state_repository::StateRepositoryLike;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::LATEST_VERSION;
+use dpp::{BlsModule, NativeBlsModule};
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
@@ -31,8 +33,9 @@ use drive::fee::credits::Credits;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
+use drive_abci::platform::state_repository::DPPStateRepository;
 use drive_abci::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
+use drive_abci::rpc::core::{CoreRPCLike, MockCoreRPCLike};
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
@@ -675,7 +678,12 @@ pub struct ValidatorVersionMigration {
 }
 
 pub struct ChainExecutionOutcome<'a> {
-    pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
+    pub abci_app: AbciApplication<
+        'a,
+        MockCoreRPCLike,
+        DPPStateRepository<'a, MockCoreRPCLike>,
+        NativeBlsModule,
+    >,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<MasternodeListItemWithUpdates>,

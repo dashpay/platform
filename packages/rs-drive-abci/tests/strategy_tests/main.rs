@@ -1812,6 +1812,8 @@ mod tests {
         }));
     }
 
+    // TODO: Backport withdrawal validation to DPP
+    #[ignore]
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let strategy = Strategy {

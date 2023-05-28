@@ -8,11 +8,17 @@ use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::process_state_transition;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::serialization_traits::PlatformDeserializable;
+use dpp::state_repository::StateRepositoryLike;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::{errors, BlsModule, DashPlatformProtocol};
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::ExecTxResult;
@@ -217,12 +223,19 @@ where
     /// This function may return an `Error` variant if there is a problem with deserializing the raw
     /// state transitions, processing state transitions, or executing events.
     ///
-    pub(crate) fn process_raw_state_transitions(
+    pub(crate) fn process_raw_state_transitions<SR, BLS>(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
         block_info: &BlockInfo,
+        dpp: &DashPlatformProtocol<SR, BLS>,
         transaction: &Transaction,
-    ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {
+    ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error>
+    where
+        SR: StateRepositoryLike + Clone,
+        BLS: BlsModule + Clone,
+    {
+        // TODO: We should handle serialization errors for each ST separately
+        //  and return BasicError::SerializedObjectParsingError(SerializedObjectParsingError)
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
         let mut aggregate_fee_result = FeeResult::default();
         let state_read_guard = self.state.read().unwrap();
@@ -236,8 +249,12 @@ where
             .into_iter()
             .zip(raw_state_transitions.iter())
             .map(|(state_transition, raw_state_transition)| {
-                let state_transition_execution_event =
-                    process_state_transition(&platform_ref, state_transition, Some(transaction))?;
+                let state_transition_execution_event = process_state_transition(
+                    state_transition,
+                    &dpp,
+                    &platform_ref,
+                    Some(transaction),
+                )?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;

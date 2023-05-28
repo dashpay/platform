@@ -90,9 +90,4 @@ impl StateTransitionExecutionContext {
         let inner = self.inner.lock().unwrap();
         inner.is_dry_run
     }
-
-    pub fn is_transactional(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
-        inner.is_transactional
-    }
 }

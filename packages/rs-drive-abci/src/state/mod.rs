@@ -24,7 +24,7 @@ mod commit;
 mod genesis;
 
 /// Platform state
-#[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize)]
+#[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, Default)]
 #[platform_serialize_into(PlatformStateForSaving)]
 #[platform_deserialize_from(PlatformStateForSaving)]
 #[platform_error_type(ProtocolError)]

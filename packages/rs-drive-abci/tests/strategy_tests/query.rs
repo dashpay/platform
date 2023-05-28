@@ -9,6 +9,8 @@ use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive_abci::abci::AbciApplication;
 
+use dpp::state_repository::StateRepositoryLike;
+use dpp::BlsModule;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use rand::prelude::SliceRandom;
@@ -29,13 +31,16 @@ pub struct ProofVerification<'a> {
 }
 
 impl QueryStrategy {
-    pub(crate) fn query_chain_for_strategy(
+    pub(crate) fn query_chain_for_strategy<SR, BLS>(
         &self,
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &AbciApplication<MockCoreRPCLike, SR, BLS>,
         seed: StrategyRandomness,
-    ) {
+    ) where
+        SR: StateRepositoryLike + Clone,
+        BLS: BlsModule + Clone,
+    {
         let mut rng = match seed {
             StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
             StrategyRandomness::RNGEntropy(rng) => rng,
@@ -54,13 +59,16 @@ impl QueryStrategy {
         }
     }
 
-    pub(crate) fn query_identities_by_public_key_hashes(
+    pub(crate) fn query_identities_by_public_key_hashes<SR, BLS>(
         proof_verification: &ProofVerification,
         current_identities: &Vec<Identity>,
         frequency: &Frequency,
-        abci_app: &AbciApplication<MockCoreRPCLike>,
+        abci_app: &AbciApplication<MockCoreRPCLike, SR, BLS>,
         rng: &mut StdRng,
-    ) {
+    ) where
+        SR: StateRepositoryLike + Clone,
+        BLS: BlsModule + Clone,
+    {
         let events = frequency.events_if_hit(rng);
 
         for _i in 0..events {

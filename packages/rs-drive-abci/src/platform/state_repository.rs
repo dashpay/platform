@@ -1,14 +1,10 @@
 use crate::abci::AbciApplication;
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-use crate::platform::Platform;
+use crate::platform::{PlatformRef, PlatformWithBlockContextRef};
 use crate::rpc::core::CoreRPCLike;
-use anyhow::{anyhow, bail, Result as AnyResult};
+use anyhow::{anyhow, Result as AnyResult};
 use dashcore_rpc::dashcore::anyhow::Result;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{InstantLock, ProTxHash};
-use dpp::async_trait::async_trait;
-use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::dashcore::hashes::hex::FromHex;
 use dpp::dashcore::Txid;
@@ -20,13 +16,61 @@ use dpp::platform_value::{Bytes36, Value};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::state_repository::{FetchTransactionResponse, StateRepositoryLike};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use drive::grovedb::TransactionArg;
 use drive::query::DriveQuery;
-use itertools::Itertools;
 use serde::Deserialize;
 use std::convert::Infallible;
+use std::sync::{Arc, RwLock};
 
-impl<'a, C> StateRepositoryLike for AbciApplication<'a, C>
+/// DPP State Repository
+pub struct DPPStateRepository<'a, C>
+where
+    C: CoreRPCLike,
+{
+    platform: Arc<PlatformWithBlockContextRef<'a, C>>,
+    transaction: Arc<RwLock<Option<drive::grovedb::Transaction<'a>>>>,
+    is_transactional: bool,
+}
+
+impl<'a, C> Clone for DPPStateRepository<'a, C>
+where
+    C: CoreRPCLike,
+{
+    fn clone(&self) -> Self {
+        Self {
+            platform: self.platform.clone(),
+            transaction: self.transaction.clone(),
+            is_transactional: self.is_transactional,
+        }
+    }
+}
+
+impl<'a, C> DPPStateRepository<'a, C>
+where
+    C: CoreRPCLike,
+{
+    /// Create a new DPP State Repository
+    pub fn new(platform: Arc<PlatformWithBlockContextRef<'a, C>>) -> Self {
+        Self {
+            platform,
+            transaction: Arc::new(RwLock::new(None)),
+            is_transactional: false,
+        }
+    }
+
+    /// Create a new DPP State Repository with transaction
+    pub fn with_transaction(
+        platform: Arc<PlatformWithBlockContextRef<'a, C>>,
+        transaction: Arc<RwLock<Option<drive::grovedb::Transaction<'a>>>>,
+    ) -> Self {
+        Self {
+            platform,
+            transaction,
+            is_transactional: true,
+        }
+    }
+}
+
+impl<'a, C> StateRepositoryLike for DPPStateRepository<'a, C>
 where
     C: CoreRPCLike,
 {
@@ -44,7 +88,7 @@ where
     ) -> AnyResult<Option<Self::FetchDataContract>> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -88,7 +132,7 @@ where
     ) -> AnyResult<Vec<Self::FetchDocument>> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -143,7 +187,7 @@ where
     ) -> AnyResult<Vec<Self::FetchExtendedDocument>> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -259,7 +303,7 @@ where
     ) -> AnyResult<Option<Self::FetchIdentity>> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -315,7 +359,7 @@ where
     ) -> AnyResult<Option<u64>> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -355,7 +399,7 @@ where
     ) -> AnyResult<Option<i64>> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -445,7 +489,7 @@ where
     ) -> AnyResult<bool> {
         let transaction_guard = self.transaction.read().unwrap();
         let maybe_transaction = match execution_context {
-            Some(context) if context.is_transactional() => transaction_guard
+            Some(_) if self.is_transactional => transaction_guard
                 .as_ref()
                 .ok_or(anyhow!("state repository expect a current transaction"))
                 .map(Some),
@@ -458,7 +502,7 @@ where
 
         self.platform
             .drive
-            .has_asset_lock_outpoint(&Bytes36(bytes), maybe_transaction) // todo
+            .has_asset_lock_outpoint(&Bytes36(bytes), maybe_transaction)
             .map_err(Into::into)
     }
 
