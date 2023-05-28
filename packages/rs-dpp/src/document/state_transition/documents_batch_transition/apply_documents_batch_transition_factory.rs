@@ -79,17 +79,13 @@ pub async fn apply_documents_batch_transition(
                 let document =
                     document_create_transition.to_extended_document(state_transition.owner_id)?;
                 //todo: eventually we should use Cow instead
-                state_repository
-                    .create_document(&document, Some(execution_context))
-                    .await?;
+                state_repository.create_document(&document, Some(execution_context))?;
             }
             DocumentTransition::Replace(document_replace_transition) => {
                 if execution_context.is_dry_run() {
                     let document = document_replace_transition
                         .to_extended_document_for_dry_run(state_transition.owner_id)?;
-                    state_repository
-                        .update_document(&document, Some(execution_context))
-                        .await?;
+                    state_repository.update_document(&document, Some(execution_context))?;
                 } else {
                     let document = fetched_documents_by_id
                         .get_mut(&document_replace_transition.base.id)
@@ -97,20 +93,16 @@ pub async fn apply_documents_batch_transition(
                             document_transition: document_transition.clone(),
                         })?;
                     document_replace_transition.replace_extended_document(document)?;
-                    state_repository
-                        .update_document(document, Some(execution_context))
-                        .await?;
+                    state_repository.update_document(document, Some(execution_context))?;
                 };
             }
             DocumentTransition::Delete(document_delete_transition) => {
-                state_repository
-                    .remove_document(
-                        &document_delete_transition.base.data_contract,
-                        &document_delete_transition.base.document_type_name,
-                        &document_delete_transition.base.id,
-                        Some(execution_context),
-                    )
-                    .await?;
+                state_repository.remove_document(
+                    &document_delete_transition.base.data_contract,
+                    &document_delete_transition.base.document_type_name,
+                    &document_delete_transition.base.id,
+                    Some(execution_context),
+                )?;
             }
         };
     }

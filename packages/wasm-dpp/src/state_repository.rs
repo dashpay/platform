@@ -42,42 +42,42 @@ extern "C" {
     pub type ExternalStateRepositoryLike;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchDataContract)]
-    pub async fn fetch_data_contract(
+    pub fn fetch_data_contract(
         this: &ExternalStateRepositoryLike,
         data_contract_id: IdentifierWrapper,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=createDataContract)]
-    pub async fn create_data_contract(
+    pub fn create_data_contract(
         this: &ExternalStateRepositoryLike,
         data_contract: DataContractWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=updateDataContract)]
-    pub async fn update_data_contract(
+    pub fn update_data_contract(
         this: &ExternalStateRepositoryLike,
         data_contract: DataContractWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=createDocument)]
-    pub async fn create_document(
+    pub fn create_document(
         this: &ExternalStateRepositoryLike,
         document: ExtendedDocumentWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=updateDocument)]
-    pub async fn update_document(
+    pub fn update_document(
         this: &ExternalStateRepositoryLike,
         document: ExtendedDocumentWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=removeDocument)]
-    pub async fn remove_document(
+    pub fn remove_document(
         this: &ExternalStateRepositoryLike,
         data_contract: DataContractWasm,
         data_contract_type: String,
@@ -86,7 +86,7 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchDocuments)]
-    pub async fn fetch_documents(
+    pub fn fetch_documents(
         this: &ExternalStateRepositoryLike,
         data_contract_id: IdentifierWrapper,
         data_contract_type: String,
@@ -95,7 +95,7 @@ extern "C" {
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchExtendedDocuments)]
-    pub async fn fetch_extended_documents(
+    pub fn fetch_extended_documents(
         this: &ExternalStateRepositoryLike,
         data_contract_id: IdentifierWrapper,
         data_contract_type: String,
@@ -104,21 +104,21 @@ extern "C" {
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchIdentity)]
-    pub async fn fetch_identity(
+    pub fn fetch_identity(
         this: &ExternalStateRepositoryLike,
         id: IdentifierWrapper,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=createIdentity)]
-    pub async fn create_identity(
+    pub fn create_identity(
         this: &ExternalStateRepositoryLike,
         identity: IdentityWasm,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=addKeysToIdentity)]
-    pub async fn add_keys_to_identity(
+    pub fn add_keys_to_identity(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         keys: js_sys::Array,
@@ -126,7 +126,7 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=disableIdentityKeys)]
-    pub async fn disable_identity_keys(
+    pub fn disable_identity_keys(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         keys: js_sys::Array,
@@ -135,7 +135,7 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=updateIdentityRevision)]
-    pub async fn update_identity_revision(
+    pub fn update_identity_revision(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         revision: Number,
@@ -143,21 +143,21 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchIdentityBalance)]
-    pub async fn fetch_identity_balance(
+    pub fn fetch_identity_balance(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchIdentityBalanceWithDebt)]
-    pub async fn fetch_identity_balance_with_debt(
+    pub fn fetch_identity_balance_with_debt(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=addToIdentityBalance)]
-    pub async fn add_to_identity_balance(
+    pub fn add_to_identity_balance(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         amount: Number,
@@ -165,7 +165,7 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=removeFromIdentityBalance)]
-    pub async fn remove_from_identity_balance(
+    pub fn remove_from_identity_balance(
         this: &ExternalStateRepositoryLike,
         identity_id: IdentifierWrapper,
         amount: Number,
@@ -173,73 +173,73 @@ extern "C" {
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=addToSystemCredits)]
-    pub async fn add_to_system_credits(
+    pub fn add_to_system_credits(
         this: &ExternalStateRepositoryLike,
         amount: Number,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=removeFromSystemCredits)]
-    pub async fn remove_from_system_credits(
+    pub fn remove_from_system_credits(
         this: &ExternalStateRepositoryLike,
         amount: Number,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformCoreChainLockedHeight)]
-    pub async fn fetch_latest_platform_core_chain_locked_height(
+    pub fn fetch_latest_platform_core_chain_locked_height(
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeight)]
-    pub async fn fetch_latest_platform_block_height(
+    pub fn fetch_latest_platform_block_height(
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchTransaction)]
-    pub async fn fetch_transaction(
+    pub fn fetch_transaction(
         this: &ExternalStateRepositoryLike,
         id: JsValue,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=isAssetLockTransactionOutPointAlreadyUsed)]
-    pub async fn is_asset_lock_transaction_out_point_already_used(
+    pub fn is_asset_lock_transaction_out_point_already_used(
         this: &ExternalStateRepositoryLike,
         out_point_buffer: Buffer,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=verifyInstantLock)]
-    pub async fn verify_instant_lock(
+    pub fn verify_instant_lock(
         this: &ExternalStateRepositoryLike,
         instant_lock: Vec<u8>,
         execution_context: &JsValue,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=markAssetLockTransactionOutPointAsUsed)]
-    pub async fn mark_asset_lock_transaction_out_point_as_used(
+    pub fn mark_asset_lock_transaction_out_point_as_used(
         this: &ExternalStateRepositoryLike,
         out_point_buffer: Buffer,
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchSMLStore)]
-    pub async fn fetch_sml_store(this: &ExternalStateRepositoryLike) -> Result<JsValue, JsValue>;
+    pub fn fetch_sml_store(this: &ExternalStateRepositoryLike) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=isInTheValidMasterNodesList)]
-    async fn is_in_the_valid_master_nodes_list(
+    fn is_in_the_valid_master_nodes_list(
         this: &ExternalStateRepositoryLike,
         id: Buffer,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeader)]
-    pub async fn fetch_latest_platform_block_header(
+    pub fn fetch_latest_platform_block_header(
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockTime)]
-    pub async fn fetch_latest_platform_block_time(
+    pub fn fetch_latest_platform_block_time(
         this: &ExternalStateRepositoryLike,
     ) -> Result<JsValue, JsValue>;
 
@@ -301,7 +301,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     type FetchIdentity = IdentityWasm;
     type FetchTransaction = FetchTransactionResponse;
 
-    async fn fetch_data_contract<'a>(
+    fn fetch_data_contract<'a>(
         &self,
         data_contract_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -312,7 +312,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 (*data_contract_id).into(),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)?;
 
         if maybe_data_contract.is_undefined() || maybe_data_contract.is_null() {
@@ -329,29 +328,27 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(data_contract))
     }
 
-    async fn create_data_contract<'a>(
+    fn create_data_contract<'a>(
         &self,
         data_contract: DataContract,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
         self.0
             .create_data_contract(data_contract.into(), &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)
     }
 
-    async fn update_data_contract<'a>(
+    fn update_data_contract<'a>(
         &self,
         data_contract: DataContract,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
         self.0
             .update_data_contract(data_contract.into(), &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)
     }
 
-    async fn fetch_documents<'a>(
+    fn fetch_documents<'a>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
@@ -368,7 +365,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                     .map_err(|e| anyhow!("serialization error: {}", e))?,
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)?;
         let js_documents_array = js_sys::Array::from(&js_documents);
 
@@ -382,7 +378,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(documents)
     }
 
-    async fn fetch_extended_documents<'a>(
+    fn fetch_extended_documents<'a>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
@@ -399,7 +395,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                     .map_err(|e| anyhow!("serialization error: {}", e))?,
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)?;
         let js_documents_array = js_sys::Array::from(&js_documents);
 
@@ -413,7 +408,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(documents)
     }
 
-    async fn create_document<'a>(
+    fn create_document<'a>(
         &self,
         extended_document: &ExtendedDocument,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -421,11 +416,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let extended_document_wasm: ExtendedDocumentWasm = extended_document.to_owned().into();
         self.0
             .create_document(extended_document_wasm, &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)
     }
 
-    async fn update_document<'a>(
+    fn update_document<'a>(
         &self,
         extended_document: &ExtendedDocument,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -433,11 +427,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let extended_document_wasm: ExtendedDocumentWasm = extended_document.to_owned().into();
         self.0
             .update_document(extended_document_wasm, &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)
     }
 
-    async fn remove_document<'a>(
+    fn remove_document<'a>(
         &self,
         data_contract: &DataContract,
         data_contract_type: &str,
@@ -453,11 +446,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 document_id,
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn fetch_transaction<'a>(
+    fn fetch_transaction<'a>(
         &self,
         id: &str,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -465,13 +457,12 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let transaction_data = self
             .0
             .fetch_transaction(JsValue::from_str(id), &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)?;
 
         Ok(FetchTransactionResponse::from(transaction_data))
     }
 
-    async fn fetch_identity<'a>(
+    fn fetch_identity<'a>(
         &self,
         id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -479,7 +470,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let maybe_identity = self
             .0
             .fetch_identity((*id).into(), &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)?;
 
         if maybe_identity.is_undefined() || maybe_identity.is_null() {
@@ -496,18 +486,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(identity))
     }
 
-    async fn create_identity<'a>(
+    fn create_identity<'a>(
         &self,
         identity: &Identity,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
         self.0
             .create_identity(identity.clone().into(), &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)
     }
 
-    async fn add_keys_to_identity<'a>(
+    fn add_keys_to_identity<'a>(
         &self,
         identity_id: &Identifier,
         keys: &[IdentityPublicKey],
@@ -521,11 +510,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                     .collect::<Array>(),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn disable_identity_keys<'a>(
+    fn disable_identity_keys<'a>(
         &self,
         identity_id: &Identifier,
         keys: &[KeyID],
@@ -539,11 +527,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Number::from(disable_at as f64),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn update_identity_revision<'a>(
+    fn update_identity_revision<'a>(
         &self,
         identity_id: &Identifier,
         revision: Revision,
@@ -555,11 +542,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Number::from(revision as f64), // TODO: We should use BigInt
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn fetch_identity_balance<'a>(
+    fn fetch_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -567,7 +553,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let maybe_balance = self
             .0
             .fetch_identity_balance((*identity_id).into(), &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)?;
 
         if maybe_balance.is_undefined() || maybe_balance.is_null() {
@@ -581,7 +566,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(balance as u64))
     }
 
-    async fn fetch_identity_balance_with_debt<'a>(
+    fn fetch_identity_balance_with_debt<'a>(
         &self,
         identity_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -592,7 +577,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 (*identity_id).into(),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)?;
 
         if maybe_balance.is_undefined() || maybe_balance.is_null() {
@@ -606,7 +590,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(balance as i64))
     }
 
-    async fn add_to_identity_balance<'a>(
+    fn add_to_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
         amount: u64,
@@ -618,11 +602,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Number::from(amount as f64),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn remove_from_identity_balance<'a>(
+    fn remove_from_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
         amount: u64,
@@ -634,11 +617,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Number::from(amount as f64),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn add_to_system_credits<'a>(
+    fn add_to_system_credits<'a>(
         &self,
         amount: u64,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -648,11 +630,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Number::from(amount as f64),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn remove_from_system_credits<'a>(
+    fn remove_from_system_credits<'a>(
         &self,
         _amount: u64,
         _execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -660,21 +641,19 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         bail!("remove_from_system_credits is not implemented in JS State Repository")
     }
 
-    async fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
+    fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
         let value: JsValue = self
             .0
             .fetch_latest_platform_block_header()
-            .await
             .map_err(from_js_error)?;
 
         Ok(Uint8Array::new(&value).to_vec())
     }
 
-    async fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
+    fn fetch_latest_platform_core_chain_locked_height(&self) -> anyhow::Result<Option<u32>> {
         let maybe_height = self
             .0
             .fetch_latest_platform_core_chain_locked_height()
-            .await
             .map_err(from_js_error)?;
 
         if maybe_height.is_undefined() || maybe_height.is_null() {
@@ -687,11 +666,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         Ok(Some(height as u32))
     }
 
-    async fn fetch_latest_platform_block_height(&self) -> anyhow::Result<u64> {
+    fn fetch_latest_platform_block_height(&self) -> anyhow::Result<u64> {
         let height = self
             .0
             .fetch_latest_platform_block_height()
-            .await
             .map_err(from_js_error)?;
 
         let height = height
@@ -710,7 +688,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         let verification_result = self
             .0
             .verify_instant_lock(raw_instant_lock, &ctx_to_js_value(execution_context))
-            .await
             .map_err(from_js_error)?;
 
         verification_result
@@ -718,7 +695,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .ok_or_else(|| anyhow!("Value is not a bool"))
     }
 
-    async fn is_asset_lock_transaction_out_point_already_used<'a>(
+    fn is_asset_lock_transaction_out_point_already_used<'a>(
         &self,
         out_point_buffer: &[u8],
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -729,7 +706,6 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Buffer::from_bytes(out_point_buffer),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)?;
 
         is_used
@@ -737,7 +713,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .ok_or_else(|| anyhow!("Value is not a bool"))
     }
 
-    async fn mark_asset_lock_transaction_out_point_as_used<'a>(
+    fn mark_asset_lock_transaction_out_point_as_used<'a>(
         &self,
         out_point_buffer: &[u8],
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -747,22 +723,20 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
                 Buffer::from_bytes(out_point_buffer),
                 &ctx_to_js_value(execution_context),
             )
-            .await
             .map_err(from_js_error)
     }
 
-    async fn fetch_sml_store<T>(&self) -> anyhow::Result<T>
+    fn fetch_sml_store<T>(&self) -> anyhow::Result<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static,
     {
         todo!()
     }
 
-    async fn is_in_the_valid_master_nodes_list(&self, id: [u8; 32]) -> anyhow::Result<bool> {
+    fn is_in_the_valid_master_nodes_list(&self, id: [u8; 32]) -> anyhow::Result<bool> {
         let is_valid = self
             .0
             .is_in_the_valid_master_nodes_list(Buffer::from_bytes(&id))
-            .await
             .map_err(from_js_error)?;
 
         is_valid
@@ -770,11 +744,11 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .ok_or_else(|| anyhow!("Value is not a bool"))
     }
 
-    async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
+    fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
         bail!("fetch_latest_withdrawal_transaction_index is not implemented in JS State Repository")
     }
 
-    async fn enqueue_withdrawal_transaction(
+    fn enqueue_withdrawal_transaction(
         &self,
         _index: u64,
         _transaction_bytes: Vec<u8>,
@@ -782,11 +756,10 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         bail!("enqueue_withdrawal_transaction is not implemented in JS State Repository")
     }
 
-    async fn fetch_latest_platform_block_time(&self) -> anyhow::Result<u64> {
+    fn fetch_latest_platform_block_time(&self) -> anyhow::Result<u64> {
         let js_number = self
             .0
             .fetch_latest_platform_block_time()
-            .await
             .map_err(from_js_error)?;
 
         if let Some(float_number) = js_number.as_f64() {

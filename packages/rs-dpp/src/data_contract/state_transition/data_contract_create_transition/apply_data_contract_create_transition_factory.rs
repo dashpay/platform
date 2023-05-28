@@ -31,6 +31,5 @@ where
     ) -> Result<()> {
         self.state_repository
             .create_data_contract(state_transition.data_contract.clone(), execution_context)
-            .await
     }
 }

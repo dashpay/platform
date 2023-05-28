@@ -50,8 +50,7 @@ pub async fn validate_state_transition_identity_signature(
         .fetch_identity(
             state_transition.get_owner_id(),
             Some(&tmp_execution_context),
-        )
-        .await?
+        )?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;

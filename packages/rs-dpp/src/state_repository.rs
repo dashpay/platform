@@ -48,20 +48,20 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch the Data Contract by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`DataContract`] should be also possible
-    async fn fetch_data_contract<'a>(
+    fn fetch_data_contract<'a>(
         &self,
         data_contract_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Option<Self::FetchDataContract>>;
 
     /// Store Data Contract
-    async fn create_data_contract<'a>(
+    fn create_data_contract<'a>(
         &self,
         data_contract: DataContract,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
-    async fn update_data_contract<'a>(
+    fn update_data_contract<'a>(
         &self,
         data_contract: DataContract,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -69,7 +69,7 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch Documents by Data Contract Id and type
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
-    async fn fetch_documents<'a>(
+    fn fetch_documents<'a>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
@@ -79,7 +79,7 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch Documents by Data Contract Id and type
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`ExtendedDocument`] should be also possible
-    async fn fetch_extended_documents<'a>(
+    fn fetch_extended_documents<'a>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
@@ -88,21 +88,21 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<Vec<Self::FetchExtendedDocument>>;
 
     /// Create Document
-    async fn create_document<'a>(
+    fn create_document<'a>(
         &self,
         document: &ExtendedDocument,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Update Document
-    async fn update_document<'a>(
+    fn update_document<'a>(
         &self,
         document: &ExtendedDocument,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Remove Document
-    async fn remove_document<'a>(
+    fn remove_document<'a>(
         &self,
         data_contract: &DataContract,
         data_contract_type: &str,
@@ -112,7 +112,7 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch the Transaction
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Transaction`] should be also possible
-    async fn fetch_transaction<'a>(
+    fn fetch_transaction<'a>(
         &self,
         id: &str,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -120,21 +120,21 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch Identity by ID
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Identity`] should be also possible
-    async fn fetch_identity<'a>(
+    fn fetch_identity<'a>(
         &self,
         id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Option<Self::FetchIdentity>>;
 
     /// Create an identity
-    async fn create_identity<'a>(
+    fn create_identity<'a>(
         &self,
         identity: &Identity,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Add keys to identity
-    async fn add_keys_to_identity<'a>(
+    fn add_keys_to_identity<'a>(
         &self,
         identity_id: &Identifier,
         keys: &[IdentityPublicKey],
@@ -142,7 +142,7 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Disable identity keys
-    async fn disable_identity_keys<'a>(
+    fn disable_identity_keys<'a>(
         &self,
         identity_id: &Identifier,
         keys: &[KeyID],
@@ -151,7 +151,7 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Update identity revision
-    async fn update_identity_revision<'a>(
+    fn update_identity_revision<'a>(
         &self,
         identity_id: &Identifier,
         revision: Revision,
@@ -159,21 +159,21 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Fetch identity balance by identity ID
-    async fn fetch_identity_balance<'a>(
+    fn fetch_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Option<u64>>; // TODO we should use Credits type
 
     /// Fetch identity balance including debt by identity ID
-    async fn fetch_identity_balance_with_debt<'a>(
+    fn fetch_identity_balance_with_debt<'a>(
         &self,
         identity_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Option<i64>>; // TODO we should use SignedCredits type
 
     /// Add to identity balance
-    async fn add_to_identity_balance<'a>(
+    fn add_to_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
         amount: u64, // TODO we should use Credits type
@@ -181,7 +181,7 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Remove from identity balance
-    async fn remove_from_identity_balance<'a>(
+    fn remove_from_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
         amount: u64, // TODO we should use Credits type
@@ -189,20 +189,20 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<()>;
 
     /// Add to system credits
-    async fn add_to_system_credits<'a>(
+    fn add_to_system_credits<'a>(
         &self,
         amount: u64, // TODO we should use Credits type
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Remove from system credits
-    async fn remove_from_system_credits<'a>(
+    fn remove_from_system_credits<'a>(
         &self,
         amount: u64, // TODO we should use Credits type
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
-    async fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
+    fn fetch_latest_platform_block_header(&self) -> AnyResult<Vec<u8>>;
 
     /// Verify Instant Lock
     async fn verify_instant_lock<'a>(
@@ -212,14 +212,14 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<bool>;
 
     /// Check if AssetLock Transaction outPoint exists in spent list
-    async fn is_asset_lock_transaction_out_point_already_used<'a>(
+    fn is_asset_lock_transaction_out_point_already_used<'a>(
         &self,
         out_point_buffer: &[u8],
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<bool>;
 
     /// Store AssetLock Transaction outPoint in spent list
-    async fn mark_asset_lock_transaction_out_point_as_used<'a>(
+    fn mark_asset_lock_transaction_out_point_as_used<'a>(
         &self,
         out_point_buffer: &[u8],
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -227,32 +227,29 @@ pub trait StateRepositoryLike: Sync {
 
     /// Fetch Simplified Masternode List Store
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`mocks::SMLStore`] should be also possible
-    async fn fetch_sml_store<T>(&self) -> AnyResult<T>
+    fn fetch_sml_store<T>(&self) -> AnyResult<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 
     /// Check if AssetLock Transaction outPoint exists in spent list
-    async fn is_in_the_valid_master_nodes_list(
-        &self,
-        out_point_buffer: [u8; 32],
-    ) -> AnyResult<bool>;
+    fn is_in_the_valid_master_nodes_list(&self, out_point_buffer: [u8; 32]) -> AnyResult<bool>;
 
     // Get latest (in a queue) withdrawal transaction index
-    async fn fetch_latest_withdrawal_transaction_index(&self) -> AnyResult<u64>;
+    fn fetch_latest_withdrawal_transaction_index(&self) -> AnyResult<u64>;
 
     // Get latest (in a queue) withdrawal transaction index
-    async fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
+    fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>>;
 
     // Enqueue withdrawal transaction
-    async fn enqueue_withdrawal_transaction(
+    fn enqueue_withdrawal_transaction(
         &self,
         index: u64,
         transaction_bytes: Vec<u8>,
     ) -> AnyResult<()>;
 
     // Fetch latest platform block time
-    async fn fetch_latest_platform_block_time(&self) -> AnyResult<u64>;
+    fn fetch_latest_platform_block_time(&self) -> AnyResult<u64>;
 
     // Get latest platform block height
-    async fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;
+    fn fetch_latest_platform_block_height(&self) -> AnyResult<u64>;
 }

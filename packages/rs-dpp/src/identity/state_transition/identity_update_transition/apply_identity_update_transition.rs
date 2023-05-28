@@ -40,27 +40,23 @@ pub async fn apply_identity_update_transition(
     state_transition: &IdentityUpdateTransition,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<(), ProtocolError> {
-    state_repository
-        .update_identity_revision(
-            &state_transition.identity_id,
-            state_transition.revision,
-            Some(execution_context),
-        )
-        .await?;
+    state_repository.update_identity_revision(
+        &state_transition.identity_id,
+        state_transition.revision,
+        Some(execution_context),
+    )?;
 
     if !state_transition.get_public_key_ids_to_disable().is_empty() {
         let disabled_at = state_transition
             .get_public_keys_disabled_at()
             .ok_or_else(|| anyhow!("disabled_at must be present"))?;
 
-        state_repository
-            .disable_identity_keys(
-                &state_transition.identity_id,
-                state_transition.get_public_key_ids_to_disable(),
-                disabled_at,
-                Some(execution_context),
-            )
-            .await?;
+        state_repository.disable_identity_keys(
+            &state_transition.identity_id,
+            state_transition.get_public_key_ids_to_disable(),
+            disabled_at,
+            Some(execution_context),
+        )?;
     }
 
     if !state_transition.get_public_keys_to_add().is_empty() {
@@ -71,13 +67,11 @@ pub async fn apply_identity_update_transition(
             .map(|pk| pk.to_identity_public_key())
             .collect::<Vec<IdentityPublicKey>>();
 
-        state_repository
-            .add_keys_to_identity(
-                &state_transition.identity_id,
-                &keys_to_add,
-                Some(execution_context),
-            )
-            .await?;
+        state_repository.add_keys_to_identity(
+            &state_transition.identity_id,
+            &keys_to_add,
+            Some(execution_context),
+        )?;
     }
 
     Ok(())

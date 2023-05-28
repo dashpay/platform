@@ -93,8 +93,7 @@ where
                 let identity_id = st.get_owner_id();
                 let identity_balance: i64 = self
                     .state_repository
-                    .fetch_identity_balance_with_debt(identity_id, Some(execution_context))
-                    .await?
+                    .fetch_identity_balance_with_debt(identity_id, Some(execution_context))?
                     .ok_or_else(|| {
                         ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
                             *identity_id,
@@ -195,7 +194,6 @@ where
         let maybe_balance = self
             .state_repository
             .fetch_identity_balance(identity_id, Some(execution_context))
-            .await
             .map_err(ProtocolError::from)?;
 
         if let Some(balance) = maybe_balance {

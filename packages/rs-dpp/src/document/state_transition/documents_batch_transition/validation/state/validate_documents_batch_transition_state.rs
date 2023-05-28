@@ -153,8 +153,7 @@ pub async fn validate_document_transitions(
 
     // Data Contract must exist
     let data_contract = state_repository
-        .fetch_data_contract(data_contract_id, Some(&tmp_execution_context))
-        .await?
+        .fetch_data_contract(data_contract_id, Some(&tmp_execution_context))?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?
@@ -170,7 +169,7 @@ pub async fn validate_document_transitions(
         fetch_documents(state_repository, document_transitions, execution_context).await?;
 
     // Calculate time window for timestamp
-    let last_header_time_millis = state_repository.fetch_latest_platform_block_time().await?;
+    let last_header_time_millis = state_repository.fetch_latest_platform_block_time()?;
 
     let document_transition_actions = if !execution_context.is_dry_run() {
         let document_transition_actions = document_transitions

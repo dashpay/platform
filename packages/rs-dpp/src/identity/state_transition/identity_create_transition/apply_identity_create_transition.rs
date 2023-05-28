@@ -61,12 +61,10 @@ where
         };
 
         self.state_repository
-            .create_identity(&identity, Some(execution_context))
-            .await?;
+            .create_identity(&identity, Some(execution_context))?;
 
         self.state_repository
-            .add_to_system_credits(credits_amount, Some(execution_context))
-            .await?;
+            .add_to_system_credits(credits_amount, Some(execution_context))?;
 
         let out_point = state_transition
             .get_asset_lock_proof()
@@ -74,8 +72,7 @@ where
             .ok_or_else(|| anyhow!("Out point is missing from asset lock proof"))?;
 
         self.state_repository
-            .mark_asset_lock_transaction_out_point_as_used(&out_point, Some(execution_context))
-            .await?;
+            .mark_asset_lock_transaction_out_point_as_used(&out_point, Some(execution_context))?;
 
         Ok(())
     }

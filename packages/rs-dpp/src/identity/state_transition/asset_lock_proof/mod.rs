@@ -56,7 +56,6 @@ impl AssetLockProof {
 
                 let transaction_data = state_repository
                     .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
-                    .await
                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
 
                 if execution_context.is_dry_run() {

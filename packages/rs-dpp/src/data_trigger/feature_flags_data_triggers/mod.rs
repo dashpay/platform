@@ -42,8 +42,7 @@ where
 
     let block_height = context
         .state_repository
-        .fetch_latest_platform_block_height()
-        .await?;
+        .fetch_latest_platform_block_height()?;
 
     let enable_at_height: u64 = data.get_integer(PROPERTY_ENABLE_AT_HEIGHT).map_err(|_| {
         anyhow!(

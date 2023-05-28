@@ -31,19 +31,16 @@ where
         );
     };
 
-    let withdrawals_not_converted = context
-        .state_repository
-        .fetch_documents(
-            &context.data_contract.id,
-            withdrawals_contract::document_types::WITHDRAWAL,
-            platform_value!({
-                "where" : [
-                    ["$id", "==", dt_delete.base.id.to_buffer()],
-                ]
-            }),
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
+    let withdrawals_not_converted = context.state_repository.fetch_documents(
+        &context.data_contract.id,
+        withdrawals_contract::document_types::WITHDRAWAL,
+        platform_value!({
+            "where" : [
+                ["$id", "==", dt_delete.base.id.to_buffer()],
+            ]
+        }),
+        Some(context.state_transition_execution_context),
+    )?;
 
     let withdrawals: Vec<Document> = withdrawals_not_converted
         .into_iter()

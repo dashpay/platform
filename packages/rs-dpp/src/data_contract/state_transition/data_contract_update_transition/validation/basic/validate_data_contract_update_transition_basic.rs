@@ -131,8 +131,7 @@ where
         // Data Contract should exists
         let existing_data_contract: DataContract = match self
             .state_repository
-            .fetch_data_contract(&data_contract_id, Some(execution_context))
-            .await?
+            .fetch_data_contract(&data_contract_id, Some(execution_context))?
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?

@@ -48,8 +48,7 @@ where
         // TODO: Use fetchIdentityBalance
         let maybe_existing_identity = self
             .state_repository
-            .fetch_identity(&state_transition.identity_id, Some(execution_context))
-            .await?
+            .fetch_identity(&state_transition.identity_id, Some(execution_context))?
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
@@ -98,10 +97,8 @@ where
             state_transition.output_script.as_bytes(),
         );
 
-        let latest_platform_block_header_bytes: Vec<u8> = self
-            .state_repository
-            .fetch_latest_platform_block_header()
-            .await?;
+        let latest_platform_block_header_bytes: Vec<u8> =
+            self.state_repository.fetch_latest_platform_block_header()?;
 
         let latest_platform_block_header: BlockHeader =
             consensus::deserialize(&latest_platform_block_header_bytes)

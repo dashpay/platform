@@ -64,8 +64,7 @@ pub async fn validate_data_contract_update_transition_state(
 
     // Data contract should exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository
-        .fetch_data_contract(&state_transition.data_contract.id, Some(execution_context))
-        .await?
+        .fetch_data_contract(&state_transition.data_contract.id, Some(execution_context))?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;

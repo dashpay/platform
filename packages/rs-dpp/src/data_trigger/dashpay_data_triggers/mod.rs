@@ -66,8 +66,7 @@ where
         if let Some(core_height_created_at) = maybe_core_height_created_at {
             let core_chain_locked_height = context
                 .state_repository
-                .fetch_latest_platform_core_chain_locked_height()
-                .await?
+                .fetch_latest_platform_core_chain_locked_height()?
                 // is unwrap_or_default necessary?
                 .unwrap_or_default();
 
@@ -95,13 +94,10 @@ where
     }
 
     //  toUserId identity exits
-    let identity = context
-        .state_repository
-        .fetch_identity(
-            &to_user_id,
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
+    let identity = context.state_repository.fetch_identity(
+        &to_user_id,
+        Some(context.state_transition_execution_context),
+    )?;
 
     if !is_dry_run && identity.is_none() {
         result.add_error(

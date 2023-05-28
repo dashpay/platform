@@ -75,8 +75,7 @@ pub async fn fetch_and_validate_data_contract(
     let data_contract_id = Identifier::from(id_bytes);
 
     let maybe_data_contract = state_repository
-        .fetch_data_contract(&data_contract_id, Some(execution_context))
-        .await?
+        .fetch_data_contract(&data_contract_id, Some(execution_context))?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;

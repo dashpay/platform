@@ -49,8 +49,7 @@ where
 
         let maybe_stored_identity = self
             .state_repository
-            .fetch_identity(state_transition.get_identity_id(), Some(execution_context))
-            .await?
+            .fetch_identity(state_transition.get_identity_id(), Some(execution_context))?
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
@@ -123,13 +122,12 @@ where
             let last_block_header_time = self
                 .state_repository
                 .fetch_latest_platform_block_time()
-                .await
                 .map_err(|e| {
-                    NonConsensusError::StateRepositoryFetchError(format!(
-                        "state repository fetch latest platform block time error: {}",
-                        e
-                    ))
-                })?;
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch latest platform block time error: {}",
+                    e
+                ))
+            })?;
 
             let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {

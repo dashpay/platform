@@ -56,7 +56,7 @@ where
         // 2. Fetch Document by indexed properties
         let document_index_queries =
             generate_document_index_queries(&document_indices, transition, owner_id);
-        let (futures, futures_meta): (Vec<_>, Vec<_>) = document_index_queries
+        let (results, results_meta): (Vec<_>, Vec<_>) = document_index_queries
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
@@ -70,10 +70,9 @@ where
                 )
             })
             .unzip();
-        let results = join_all(futures).await;
 
         // 3. Create errors if duplicates found
-        let result = validate_uniqueness(futures_meta, results)?;
+        let result = validate_uniqueness(results_meta, results)?;
         validation_result.merge(result);
     }
 

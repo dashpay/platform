@@ -93,7 +93,6 @@ where
                             &out_point_buf,
                             Some(execution_context),
                         )
-                        .await
                         .map_err(|err| {
                             NonConsensusError::StateRepositoryFetchError(err.to_string())
                         })?;

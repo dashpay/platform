@@ -57,8 +57,7 @@ where
     if !is_dry_run {
         let is_valid_master_node = context
             .state_repository
-            .is_in_the_valid_master_nodes_list(context.owner_id.to_buffer())
-            .await?;
+            .is_in_the_valid_master_nodes_list(context.owner_id.to_buffer())?;
 
         // TODO: bring it back once the SML store is implemented
         // // Do not allow creating document if ownerId is not in SML
@@ -83,13 +82,10 @@ where
 
     // payToId identity exists
     let pay_to_identifier = Identifier::from(pay_to_id);
-    let maybe_identity = context
-        .state_repository
-        .fetch_identity(
-            &pay_to_identifier,
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
+    let maybe_identity = context.state_repository.fetch_identity(
+        &pay_to_identifier,
+        Some(context.state_transition_execution_context),
+    )?;
 
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
@@ -101,17 +97,14 @@ where
         return Ok(result);
     }
 
-    let documents_data = context
-        .state_repository
-        .fetch_documents(
-            &context.data_contract.id,
-            &transition_base.document_type_name,
-            platform_value!({
-                "where" : [ [ "$ownerId", "==", owner_id ]]
-            }),
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
+    let documents_data = context.state_repository.fetch_documents(
+        &context.data_contract.id,
+        &transition_base.document_type_name,
+        platform_value!({
+            "where" : [ [ "$ownerId", "==", owner_id ]]
+        }),
+        Some(context.state_transition_execution_context),
+    )?;
     let documents: Vec<Document> = documents_data
         .into_iter()
         .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))

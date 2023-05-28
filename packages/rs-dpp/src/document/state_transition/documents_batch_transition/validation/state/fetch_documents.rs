@@ -37,7 +37,7 @@ pub async fn fetch_documents(
         }
     }
 
-    let mut fetch_documents_futures = vec![];
+    let mut results = vec![];
     for (_, dts) in transitions_by_contracts_and_types {
         let ids: Vec<[u8; 32]> = dts
             .iter()
@@ -49,16 +49,15 @@ pub async fn fetch_documents(
             "orderBy" : [[ "$id", "asc"]],
         });
 
-        let future = state_repository.fetch_documents(
+        let result = state_repository.fetch_documents(
             get_from_transition!(dts[0], data_contract_id),
             get_from_transition!(dts[0], document_type_name),
             options,
             Some(execution_context),
         );
 
-        fetch_documents_futures.push(future);
+        results.push(result);
     }
-    let results = join_all(fetch_documents_futures).await;
 
     let mut documents = vec![];
     for result in results.into_iter() {
@@ -94,7 +93,7 @@ pub async fn fetch_extended_documents(
         }
     }
 
-    let mut fetch_documents_futures = vec![];
+    let mut results = vec![];
     for (_, dts) in transitions_by_contracts_and_types {
         let ids: Vec<String> = dts
             .iter()
@@ -106,17 +105,15 @@ pub async fn fetch_extended_documents(
             "orderBy" : [[ "$id", "asc"]],
         });
 
-        let future = state_repository.fetch_extended_documents(
+        let result = state_repository.fetch_extended_documents(
             get_from_transition!(dts[0], data_contract_id),
             get_from_transition!(dts[0], document_type_name),
             options,
             Some(execution_context),
         );
 
-        fetch_documents_futures.push(future);
+        results.push(result);
     }
-    let results = join_all(fetch_documents_futures).await;
-
     let mut documents = vec![];
     for result in results.into_iter() {
         let result = result?;

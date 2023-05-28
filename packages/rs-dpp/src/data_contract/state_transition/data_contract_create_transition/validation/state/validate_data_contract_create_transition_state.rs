@@ -66,8 +66,7 @@ pub async fn validate_data_contract_create_transition_state(
 ) -> Result<ConsensusValidationResult<DataContractCreateTransitionAction>, ProtocolError> {
     // Data contract shouldn't exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository
-        .fetch_data_contract(&state_transition.data_contract.id, Some(execution_context))
-        .await?
+        .fetch_data_contract(&state_transition.data_contract.id, Some(execution_context))?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;

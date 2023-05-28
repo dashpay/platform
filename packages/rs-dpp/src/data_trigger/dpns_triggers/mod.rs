@@ -154,20 +154,17 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents_data = context
-            .state_repository
-            .fetch_documents(
-                &context.data_contract.id,
-                &dt_create.base.document_type_name,
-                platform_value!({
-                    "where" : [
-                        ["normalizedParentDomainName", "==", grand_parent_domain_name],
-                        ["normalizedLabel", "==", parent_domain_label]
-                    ]
-                }),
-                Some(context.state_transition_execution_context),
-            )
-            .await?;
+        let documents_data = context.state_repository.fetch_documents(
+            &context.data_contract.id,
+            &dt_create.base.document_type_name,
+            platform_value!({
+                "where" : [
+                    ["normalizedParentDomainName", "==", grand_parent_domain_name],
+                    ["normalizedLabel", "==", parent_domain_label]
+                ]
+            }),
+            Some(context.state_transition_execution_context),
+        )?;
         let documents: Vec<Document> = documents_data
             .into_iter()
             .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
@@ -216,18 +213,15 @@ where
 
     let salted_domain_hash = hash_to_vec(salted_domain_buffer);
 
-    let preorder_documents_data = context
-        .state_repository
-        .fetch_documents(
-            &context.data_contract.id,
-            "preorder",
-            platform_value!({
-                //? should this be a base64 encoded
-                "where" : [["saltedDomainHash", "==", salted_domain_hash]]
-            }),
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
+    let preorder_documents_data = context.state_repository.fetch_documents(
+        &context.data_contract.id,
+        "preorder",
+        platform_value!({
+            //? should this be a base64 encoded
+            "where" : [["saltedDomainHash", "==", salted_domain_hash]]
+        }),
+        Some(context.state_transition_execution_context),
+    )?;
     let preorder_documents: Vec<Document> = preorder_documents_data
         .into_iter()
         .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))

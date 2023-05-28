@@ -95,7 +95,6 @@ where
         let current_core_chain_locked_height = self
             .state_repository
             .fetch_latest_platform_core_chain_locked_height()
-            .await
             .map_err(|e| NonConsensusError::StateRepositoryFetchError(format!("state repository fetch current core chain locked height for chain asset lock proof verification error: {}", e)))?
             .unwrap_or(0);
 
@@ -118,7 +117,6 @@ where
         let transaction_fetch_result = self
             .state_repository
             .fetch_transaction(&transaction_hash_string, Some(execution_context))
-            .await
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "transaction fetching error for chain lock: {}",

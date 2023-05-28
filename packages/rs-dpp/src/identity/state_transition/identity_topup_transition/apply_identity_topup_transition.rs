@@ -50,14 +50,15 @@ where
 
         let identity_id = state_transition.get_identity_id();
 
-        self.state_repository
-            .add_to_identity_balance(identity_id, credits_amount, Some(execution_context))
-            .await?;
+        self.state_repository.add_to_identity_balance(
+            identity_id,
+            credits_amount,
+            Some(execution_context),
+        )?;
 
         let balance = self
             .state_repository
-            .fetch_identity_balance_with_debt(identity_id, Some(execution_context))
-            .await?
+            .fetch_identity_balance_with_debt(identity_id, Some(execution_context))?
             .ok_or_else(|| anyhow!("balance must be persisted"))?;
 
         if balance < 0 {
@@ -67,12 +68,10 @@ where
         }
 
         self.state_repository
-            .add_to_system_credits(credits_amount, Some(execution_context))
-            .await?;
+            .add_to_system_credits(credits_amount, Some(execution_context))?;
 
         self.state_repository
-            .mark_asset_lock_transaction_out_point_as_used(&out_point, Some(execution_context))
-            .await?;
+            .mark_asset_lock_transaction_out_point_as_used(&out_point, Some(execution_context))?;
 
         Ok(())
     }

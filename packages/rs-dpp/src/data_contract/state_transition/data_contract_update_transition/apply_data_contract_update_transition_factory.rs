@@ -29,11 +29,9 @@ where
         state_transition: &DataContractUpdateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
-        self.state_repository
-            .update_data_contract(
-                state_transition.data_contract.clone(),
-                Some(execution_context),
-            )
-            .await
+        self.state_repository.update_data_contract(
+            state_transition.data_contract.clone(),
+            Some(execution_context),
+        )
     }
 }

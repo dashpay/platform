@@ -46,8 +46,7 @@ where
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
-            .fetch_data_contract(data_contract_id, Some(execution_context))
-            .await?
+            .fetch_data_contract(data_contract_id, Some(execution_context))?
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)?;
@@ -55,10 +54,8 @@ where
         let withdrawals_data_contract = maybe_withdrawals_data_contract
             .ok_or_else(|| anyhow!("Withdrawals data contract not found"))?;
 
-        let latest_platform_block_header_bytes: Vec<u8> = self
-            .state_repository
-            .fetch_latest_platform_block_header()
-            .await?;
+        let latest_platform_block_header_bytes: Vec<u8> =
+            self.state_repository.fetch_latest_platform_block_header()?;
 
         let latest_platform_block_header: BlockHeader =
             consensus::deserialize(&latest_platform_block_header_bytes)?;
@@ -102,19 +99,16 @@ where
                 &document_entropy,
             );
 
-            let documents = self
-                .state_repository
-                .fetch_documents(
-                    withdrawals_contract::CONTRACT_ID.deref(),
-                    withdrawals_contract::document_types::WITHDRAWAL,
-                    platform_value!({
-                        "where": [
-                            ["$id", "==", document_id.to_buffer()],
-                        ],
-                    }),
-                    Some(execution_context),
-                )
-                .await?;
+            let documents = self.state_repository.fetch_documents(
+                withdrawals_contract::CONTRACT_ID.deref(),
+                withdrawals_contract::document_types::WITHDRAWAL,
+                platform_value!({
+                    "where": [
+                        ["$id", "==", document_id.to_buffer()],
+                    ],
+                }),
+                Some(execution_context),
+            )?;
 
             if documents.is_empty() {
                 break;
@@ -141,20 +135,16 @@ where
         };
 
         self.state_repository
-            .create_document(&extended_withdrawal_document, Some(execution_context))
-            .await?;
+            .create_document(&extended_withdrawal_document, Some(execution_context))?;
 
         // TODO: we need to be able to batch state repository operations
-        self.state_repository
-            .remove_from_identity_balance(
-                &state_transition.identity_id,
-                state_transition.amount,
-                Some(execution_context),
-            )
-            .await?;
+        self.state_repository.remove_from_identity_balance(
+            &state_transition.identity_id,
+            state_transition.amount,
+            Some(execution_context),
+        )?;
 
         self.state_repository
             .remove_from_system_credits(state_transition.amount, Some(execution_context))
-            .await
     }
 }
