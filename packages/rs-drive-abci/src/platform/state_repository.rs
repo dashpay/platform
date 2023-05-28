@@ -1,3 +1,4 @@
+use crate::abci::AbciApplication;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
@@ -19,13 +20,13 @@ use dpp::platform_value::{Bytes36, Value};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::state_repository::{FetchTransactionResponse, StateRepositoryLike};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use drive::grovedb::TransactionArg;
 use drive::query::DriveQuery;
 use itertools::Itertools;
 use serde::Deserialize;
 use std::convert::Infallible;
 
-#[async_trait(?Send)]
-impl<C> StateRepositoryLike for Platform<C>
+impl<'a, C> StateRepositoryLike for AbciApplication<'a, C>
 where
     C: CoreRPCLike,
 {
@@ -41,11 +42,20 @@ where
         data_contract_id: &Identifier,
         execution_context: Option<&'c StateTransitionExecutionContext>,
     ) -> AnyResult<Option<Self::FetchDataContract>> {
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
         //todo: deal with execution context
-        let Some(contract_fetch_info) = self.drive.get_contract_with_fetch_info(
+        let Some(contract_fetch_info) = self.platform.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
-            true, // todo
-            None, // todo
+            true,
+            maybe_transaction,
         )? else {
             return Ok(None);
         };
@@ -76,19 +86,25 @@ where
         where_query: Value,
         execution_context: Option<&'c StateTransitionExecutionContext>,
     ) -> AnyResult<Vec<Self::FetchDocument>> {
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
                 .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
 
         let contract_fetch_info = self
+            .platform
             .drive
-            .get_contract_with_fetch_info(
-                contract_id.to_buffer(),
-                true, // todo
-                None, // todo
-            )?
+            .get_contract_with_fetch_info(contract_id.to_buffer(), true, maybe_transaction)?
             .ok_or(anyhow!("the contract should exist when fetching documents"))?;
 
         let contract = &contract_fetch_info.contract;
@@ -98,42 +114,56 @@ where
                 anyhow!("the contract document type should exist when fetching documents")
             })?;
 
-        let drive_query =
-            DriveQuery::from_value(where_query, contract, document_type, &self.drive.config)?;
+        let drive_query = DriveQuery::from_value(
+            where_query,
+            contract,
+            document_type,
+            &self.platform.drive.config,
+        )?;
 
         //todo: deal with fees
         let epoch = Epoch::new(block_execution_context.epoch_info.current_epoch_index)?;
 
-        let documents = self.drive.query_documents(
+        let documents = self.platform.drive.query_documents(
             drive_query,
             Some(&epoch),
             false, // todo
-            None,  // todo
+            maybe_transaction,
         )?;
 
         Ok(documents.documents)
     }
 
-    fn fetch_extended_documents<'a>(
+    fn fetch_extended_documents<'c>(
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
         where_query: Value,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        execution_context: Option<&'c StateTransitionExecutionContext>,
     ) -> AnyResult<Vec<Self::FetchExtendedDocument>> {
-        let state = self.state.read().unwrap();
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
+        let state = self.platform.state.read().unwrap();
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
                 .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
 
         let contract_fetch_info = self
+            .platform
             .drive
             .get_contract_with_fetch_info(
                 contract_id.to_buffer(),
                 true, // todo
-                None, // todo
+                maybe_transaction,
             )?
             .ok_or(anyhow!("the contract should exist when fetching documents"))?;
 
@@ -144,17 +174,21 @@ where
                 anyhow!("the contract document type should exist when fetching documents")
             })?;
 
-        let drive_query =
-            DriveQuery::from_value(where_query, contract, document_type, &self.drive.config)?;
+        let drive_query = DriveQuery::from_value(
+            where_query,
+            contract,
+            document_type,
+            &self.platform.drive.config,
+        )?;
 
         //todo: deal with fees
         let epoch = Epoch::new(block_execution_context.epoch_info.current_epoch_index)?;
 
-        let documents = self.drive.query_documents(
+        let documents = self.platform.drive.query_documents(
             drive_query,
             Some(&epoch),
             false, // todo
-            None,  // todo
+            maybe_transaction,
         )?;
 
         let extended_documents = documents
@@ -173,28 +207,28 @@ where
         Ok(extended_documents)
     }
 
-    fn create_document<'a>(
+    fn create_document(
         &self,
-        document: &ExtendedDocument,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        _document: &ExtendedDocument,
+        _execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
 
-    fn update_document<'a>(
+    fn update_document(
         &self,
-        document: &ExtendedDocument,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        _document: &ExtendedDocument,
+        _execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
 
-    fn remove_document<'a>(
+    fn remove_document(
         &self,
-        data_contract: &DataContract,
-        data_contract_type: &str,
-        document_id: &Identifier,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        _data_contract: &DataContract,
+        _data_contract_type: &str,
+        _document_id: &Identifier,
+        _execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
@@ -208,7 +242,8 @@ where
 
         // TODO: we need to handle errors (not found, etc.)
 
-        self.core_rpc
+        self.platform
+            .core_rpc
             .get_transaction_extended_info(&tx_id)
             .map(|tx_result| FetchTransactionResponse {
                 height: tx_result.blockindex,
@@ -222,46 +257,53 @@ where
         id: &Identifier,
         execution_context: Option<&'c StateTransitionExecutionContext>,
     ) -> AnyResult<Option<Self::FetchIdentity>> {
-        self.drive
-            .fetch_full_identity(
-                id.to_buffer(),
-                None, // todo
-            )
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
+        self.platform
+            .drive
+            .fetch_full_identity(id.to_buffer(), maybe_transaction)
             .map_err(Into::into)
     }
 
-    fn create_identity<'a>(
+    fn create_identity(
         &self,
         identity: &Identity,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
 
-    fn add_keys_to_identity<'a>(
+    fn add_keys_to_identity(
         &self,
         identity_id: &Identifier,
         keys: &[IdentityPublicKey],
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
 
-    fn disable_identity_keys<'a>(
+    fn disable_identity_keys(
         &self,
         identity_id: &Identifier,
         keys: &[KeyID],
         disable_at: TimestampMillis,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
 
-    fn update_identity_revision<'a>(
+    fn update_identity_revision(
         &self,
         identity_id: &Identifier,
         revision: Revision,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
@@ -271,7 +313,16 @@ where
         identity_id: &Identifier,
         execution_context: Option<&'c StateTransitionExecutionContext>,
     ) -> AnyResult<Option<u64>> {
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -284,12 +335,13 @@ where
             .to_block_info(epoch);
 
         let (maybe_balance, fee_result) = self
+            .platform
             .drive
             .fetch_identity_balance_with_costs(
                 identity_id.to_buffer(),
                 &block_info,
                 true, // todo
-                None, // todo
+                maybe_transaction,
             )
             .map_err(|e| anyhow!("error fetching identity balance: {}", e))?;
 
@@ -301,7 +353,16 @@ where
         identity_id: &Identifier,
         execution_context: Option<&'c StateTransitionExecutionContext>,
     ) -> AnyResult<Option<i64>> {
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -314,12 +375,13 @@ where
             .to_block_info(epoch);
 
         let (maybe_balance, fee_result) = self
+            .platform
             .drive
             .fetch_identity_balance_include_debt_with_costs(
                 identity_id.to_buffer(),
                 &block_info,
                 true, // todo
-                None, // todo
+                maybe_transaction,
             )
             .map_err(|e| anyhow!("error fetching identity balance with debt: {}", e))?;
 
@@ -335,11 +397,11 @@ where
         unreachable!()
     }
 
-    fn remove_from_identity_balance<'a>(
+    fn remove_from_identity_balance(
         &self,
         identity_id: &Identifier,
         amount: u64,
-        execution_context: Option<&'a StateTransitionExecutionContext>,
+        execution_context: Option<&StateTransitionExecutionContext>,
     ) -> Result<()> {
         unreachable!()
     }
@@ -381,12 +443,22 @@ where
         out_point_buffer: &[u8],
         execution_context: Option<&StateTransitionExecutionContext>,
     ) -> AnyResult<bool> {
+        let transaction_guard = self.transaction.read().unwrap();
+        let maybe_transaction = match execution_context {
+            Some(context) if context.is_transactional() => transaction_guard
+                .as_ref()
+                .ok_or(anyhow!("state repository expect a current transaction"))
+                .map(Some),
+            _ => Ok(None),
+        }?;
+
         let bytes: [u8; 36] = out_point_buffer
             .try_into()
             .map_err(|_| anyhow!("invalid out_point_buffer"))?;
 
-        self.drive
-            .has_asset_lock_outpoint(&Bytes36(bytes), None) // todo
+        self.platform
+            .drive
+            .has_asset_lock_outpoint(&Bytes36(bytes), maybe_transaction) // todo
             .map_err(Into::into)
     }
 
@@ -406,7 +478,7 @@ where
     }
 
     fn is_in_the_valid_master_nodes_list(&self, out_point_buffer: [u8; 32]) -> AnyResult<bool> {
-        let state = self.state.read().unwrap();
+        let state = self.platform.state.read().unwrap();
 
         let pro_tx_hash = ProTxHash::from_inner(out_point_buffer);
 
@@ -420,7 +492,7 @@ where
     }
 
     fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>> {
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -444,7 +516,7 @@ where
     }
 
     fn fetch_latest_platform_block_time(&self) -> AnyResult<u64> {
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -454,7 +526,7 @@ where
     }
 
     fn fetch_latest_platform_block_height(&self) -> AnyResult<u64> {
-        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()

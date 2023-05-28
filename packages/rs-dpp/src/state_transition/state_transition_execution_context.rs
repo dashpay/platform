@@ -12,6 +12,7 @@ struct StateTransitionContextInner {
     actual_operations: Vec<Operation>,
     dry_run_operations: Vec<Operation>,
     is_dry_run: bool,
+    is_transactional: bool,
 }
 
 impl StateTransitionExecutionContext {
@@ -88,5 +89,10 @@ impl StateTransitionExecutionContext {
     pub fn is_dry_run(&self) -> bool {
         let inner = self.inner.lock().unwrap();
         inner.is_dry_run
+    }
+
+    pub fn is_transactional(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner.is_transactional
     }
 }
