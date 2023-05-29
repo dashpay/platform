@@ -19,6 +19,7 @@ impl ErrorWithCode for ConsensusError {
             Self::SignatureError(e) => e.code(),
             Self::StateError(e) => e.code(),
             Self::FeeError(e) => e.code(),
+            Self::SystemError(_) => 2,
 
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,

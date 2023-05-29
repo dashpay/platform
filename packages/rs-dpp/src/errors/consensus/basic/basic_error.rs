@@ -47,6 +47,7 @@ use crate::consensus::ConsensusError;
 use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::value_error::ValueError;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum BasicError {

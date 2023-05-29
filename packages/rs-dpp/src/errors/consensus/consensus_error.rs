@@ -28,6 +28,9 @@ pub enum ConsensusError {
     #[error(transparent)]
     BasicError(BasicError),
 
+    #[error("system error: {0}")]
+    SystemError(String),
+
     #[error(transparent)]
     StateError(StateError),
 

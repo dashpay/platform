@@ -7,6 +7,8 @@ use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::process_state_transition;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -64,26 +66,39 @@ where
     ///
     /// # Returns
     ///
-    /// * `Result<ValidationResult<FeeResult, ConsensusError>, Error>` - If the state transition passes all
-    ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
-    pub fn check_tx(
-        &self,
-        raw_tx: &[u8],
-    ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition = StateTransition::deserialize(raw_tx).map_err(Error::Protocol)?;
-        let state_read_guard = self.state.read().unwrap();
+    /// * `ValidationResult<FeeResult, ConsensusError>` - If the state transition passes all
+    ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an
+    ///   `ValidationResult` with the `ConsensusError`.
+    pub fn check_tx(&self, raw_tx: &[u8]) -> ValidationResult<FeeResult, ConsensusError> {
+        let state_transition = match StateTransition::deserialize(raw_tx) {
+            Ok(state_transition) => state_transition,
+            Err(e) => {
+                return ValidationResult::new_with_error(ConsensusError::BasicError(
+                    BasicError::SerializedObjectParsingError(SerializedObjectParsingError::new(
+                        format!("state transition could not be deserialized: {}", e),
+                    )),
+                ))
+            }
+        };
+        let state_read_guard = self.state.read().unwrap(); //todo (probably not have unwrap)
         let platform_ref = PlatformRef {
             drive: &self.drive,
             state: &state_read_guard,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
-        let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
+        let execution_event = match process_state_transition(&platform_ref, state_transition, None)
+        {
+            Ok(execution_event) => execution_event,
+            Err(e) => {
+                return ValidationResult::new_with_error(ConsensusError::SystemError(e.to_string()))
+            }
+        };
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
-        if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
+        let result = if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
                 self.validate_fees_of_event(execution_event, &block_info.basic_info, None)
@@ -92,6 +107,13 @@ where
             execution_event.and_then_borrowed_validation(|execution_event| {
                 self.validate_fees_of_event(execution_event, &BlockInfo::default(), None)
             })
+        };
+
+        match result {
+            Ok(result) => result,
+            Err(e) => {
+                return ValidationResult::new_with_error(ConsensusError::SystemError(e.to_string()))
+            }
         }
     }
 }
@@ -156,9 +178,7 @@ mod tests {
             .add_new_identity(identity, &BlockInfo::default(), true, None)
             .expect("expected to insert identity");
 
-        let validation_result = platform
-            .check_tx(serialized.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(serialized.as_slice());
 
         //todo fix
         // assert!(validation_result.errors.is_empty());
@@ -205,9 +225,7 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        let validation_result = platform
-            .check_tx(document_update.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(document_update.as_slice());
 
         dbg!(&validation_result.errors);
         //todo fix
@@ -228,9 +246,7 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
-        let validation_result = platform
-            .check_tx(identity_top_up.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(identity_top_up.as_slice());
 
         assert!(validation_result.errors.is_empty());
 
@@ -277,9 +293,7 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        let validation_result = platform
-            .check_tx(identity_top_up.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(identity_top_up.as_slice());
 
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
@@ -303,9 +317,7 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
-        let validation_result = platform
-            .check_tx(identity_top_up.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(identity_top_up.as_slice());
 
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
@@ -342,9 +354,7 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        let validation_result = platform
-            .check_tx(identity_create.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(identity_create.as_slice());
 
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
@@ -402,9 +412,7 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        let validation_result = platform
-            .check_tx(dpns_domain_document.as_slice())
-            .expect("expected to check tx");
+        let validation_result = platform.check_tx(dpns_domain_document.as_slice());
 
         assert!(validation_result.errors.is_empty());
 
@@ -504,9 +512,7 @@ mod tests {
 
         let update_transition_bytes = transition.serialize().expect("expected to serialize");
 
-        let validation_result = platform
-            .check_tx(update_transition_bytes.as_slice())
-            .expect("expected to execute identity top up tx");
+        let validation_result = platform.check_tx(update_transition_bytes.as_slice());
 
         // Only master keys can sign an update
 
