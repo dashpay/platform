@@ -275,6 +275,10 @@ COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/dat
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
 
 USER node
+
+ENV DASHMATE_HOME_DIR=/home/dashmate/.dashmate
+ENV DASHMATE_HELPER=1
+
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 
 #
