@@ -5,9 +5,9 @@
 use clap::{Parser, Subcommand};
 use dpp::NativeBlsModule;
 use drive_abci::config::{FromEnv, PlatformConfig};
+use drive_abci::dpp::state_repository::DPPStateRepository;
 use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
-use drive_abci::platform::state_repository::DPPStateRepository;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;

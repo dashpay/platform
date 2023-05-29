@@ -1,1 +1,2 @@
-mod state_repository;
+/// DPP State Repository
+pub mod state_repository;

@@ -1,10 +1,9 @@
+use crate::dpp::state_repository::DPPStateRepository;
 use crate::error::Error;
 #[cfg(test)]
 use crate::execution::execution_event::ExecutionResult;
 #[cfg(test)]
 use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
-#[cfg(test)]
-use crate::platform::state_repository::DPPStateRepository;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::process_state_transition;
@@ -112,11 +111,8 @@ where
 mod tests {
     use crate::block::{BlockExecutionContext, BlockStateInfo};
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::error::execution::ExecutionError;
-    use crate::error::Error;
+    use crate::dpp::state_repository::DPPStateRepository;
     use crate::execution::execution_event::ExecutionResult::SuccessfulPaidExecution;
-    use crate::execution::fee_pools::epoch::EpochInfo;
-    use crate::platform::state_repository::DPPStateRepository;
     use crate::platform::{Platform, PlatformWithBlockContextRef};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;

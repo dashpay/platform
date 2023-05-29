@@ -1,11 +1,10 @@
 //! This module implements ABCI application server.
 //!
+use crate::dpp::state_repository::DPPStateRepository;
 use crate::error::execution::ExecutionError;
-use crate::platform::state_repository::DPPStateRepository;
 use crate::platform::PlatformWithBlockContextRef;
 use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
 use dpp::state_repository::StateRepositoryLike;
-use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::{BlsModule, DPPOptions, DashPlatformProtocol, NativeBlsModule};
 use drive::grovedb::Transaction;
 use std::fmt::Debug;

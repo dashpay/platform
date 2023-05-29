@@ -53,9 +53,6 @@ use dpp::serialization_traits::PlatformDeserializable;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
-/// DPP State Repository
-pub mod state_repository;
-
 /// Platform
 pub struct Platform<C> {
     /// Drive
