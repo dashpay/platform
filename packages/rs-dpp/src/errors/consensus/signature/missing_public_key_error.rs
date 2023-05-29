@@ -6,7 +6,9 @@ use crate::identity::KeyID;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Public key {public_key_id} doesn't exist")]
 pub struct MissingPublicKeyError {
     /*

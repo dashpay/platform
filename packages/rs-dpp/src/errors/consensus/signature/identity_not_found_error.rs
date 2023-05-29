@@ -6,7 +6,9 @@ use crate::prelude::Identifier;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Identity {identity_id} not found")]
 pub struct IdentityNotFoundError {
     /*

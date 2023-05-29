@@ -3,7 +3,9 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Encode, Decode)]
 #[error("Invalid instant lock proof signature")]
 pub struct InvalidInstantAssetLockProofSignatureError;
 
