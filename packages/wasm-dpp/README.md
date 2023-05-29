@@ -14,32 +14,37 @@ The WASM JavaScript binding of the Rust implementation of the [Dash Platform Pro
 In order for this binding to work, you have to have a rs-platform cloned
 alongside platform repo, so you can have access to the rust dpp.
 
-## IMPORTANT! 
+## IMPORTANT
 
 ### Build on a Mac
+
 Built-in `llvm` on OSX does not work, it needs to be installed from brew:
+
 - `brew install llvm`
 - LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
 
 ### Class names minification
+
 Library consumers must ignore class names minification for `@dashevo/wasm-dpp` library in their bundlers.  
 
 ## Table of Contents
-- [Prerequisites](#Prerequisites)
+
+- [Prerequisites](#prerequisites)
 - [Build](#build)
 - [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
 
-
-
 ## Prerequisites
+
 - Install [Rust](https://www.rust-lang.org/tools/install) v1.67+
 - Add wasm32 target: `$ rustup target add wasm32-unknown-unknown`
-- Install wasm-bingen-cli: `cargo install wasm-bindgen-cli`
-  - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)_
+- Install wasm-bingen-cli: `cargo install wasm-bindgen-cli@0.2.85`
+  - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
+  - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
 
 ## Build
+
 `$ yarn build`
 
 ## TODO
