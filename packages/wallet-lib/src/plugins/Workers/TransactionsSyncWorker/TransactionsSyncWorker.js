@@ -625,6 +625,7 @@ class TransactionsSyncWorker extends Worker {
    * @param {InstantLock[]} instantLocks
    */
   instantLocksHandler(instantLocks) {
+    // TODO: perform IS locks verification
     instantLocks.forEach((instantLock) => {
       this.importInstantLock(instantLock);
     });
