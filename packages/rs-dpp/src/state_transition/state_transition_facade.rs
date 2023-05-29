@@ -372,6 +372,10 @@ where
     pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
         self.apply_state_transition.apply(state_transition).await
     }
+
+    pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
+        self.apply_state_transition.apply(state_transition).await
+    }
 }
 
 pub struct ValidateOptions {

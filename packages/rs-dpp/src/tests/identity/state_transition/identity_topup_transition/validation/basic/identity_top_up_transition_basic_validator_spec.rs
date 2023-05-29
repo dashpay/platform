@@ -237,6 +237,7 @@ mod validate_identity_topup_transition_basic {
 
     mod signature {
         use super::*;
+        use futures::future::err;
 
         #[tokio::test]
         pub async fn should_be_present() {
