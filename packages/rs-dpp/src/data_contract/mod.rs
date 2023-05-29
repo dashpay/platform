@@ -17,6 +17,7 @@ pub mod state_transition;
 
 mod factory;
 mod v0;
+pub mod created_data_contract;
 
 pub use v0::*;
 

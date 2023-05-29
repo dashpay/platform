@@ -11,6 +11,7 @@ use crate::{
     tests::utils::generate_random_identifier_struct,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
+use crate::data_contract::created_data_contract::CreatedDataContract;
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
     let defs = platform_value!(

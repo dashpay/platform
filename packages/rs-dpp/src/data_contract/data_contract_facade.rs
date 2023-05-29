@@ -9,6 +9,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use std::sync::Arc;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;

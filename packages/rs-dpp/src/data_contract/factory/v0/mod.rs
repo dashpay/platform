@@ -10,7 +10,7 @@ use platform_value::{Bytes32, Error, Value};
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::errors::InvalidDataContractError;
 
-use crate::data_contract::property_names::PROTOCOL_VERSION;
+use crate::data_contract::property_names::{PROTOCOL_VERSION, SYSTEM_VERSION};
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
@@ -29,6 +29,9 @@ use crate::{
     prelude::Identifier,
     Convertible,
 };
+use crate::data_contract::created_data_contract::CreatedDataContract;
+use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::state_transition::data_contract_create_transition::property_names::DATA_CONTRACT_PROTOCOL_VERSION;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -154,18 +157,23 @@ impl DataContractFactoryV0 {
         if !skip_validation {
             self.validate_data_contract(&data_contract_object)?;
         }
-        if !data_contract_object
-            .has(PROTOCOL_VERSION)
-            .map_err(ProtocolError::ValueError)?
-        {
+        let Some(version) = !data_contract_object
+            .get_optional_integer::<u16>(SYSTEM_VERSION)
+            .map_err(ProtocolError::ValueError)? else {
+
             data_contract_object
                 .insert(
-                    PROTOCOL_VERSION.to_string(),
-                    Value::U32(self.protocol_version),
+                    SYSTEM_VERSION.to_string(),
+                    Value::U16(self.data_contract_feature_version),
                 )
                 .map_err(ProtocolError::ValueError)?;
+
+            self.data_contract_feature_version
+        };
+        match version {
+            0 => Ok(DataContractV0::from_raw_object(data_contract_object)?.into()),
+            _ => Err(ProtocolError::UnknownVersionError("unknown contract version when creating from object in factory".to_string()))
         }
-        DataContract::from_raw_object(data_contract_object)
     }
 
     /// Create Data Contract from buffer
