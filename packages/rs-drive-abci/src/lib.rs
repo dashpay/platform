@@ -39,6 +39,9 @@ pub mod identity_credit_withdrawal;
 /// Platform configuration
 pub mod config;
 
+/// Logging and tracing
+pub mod logging;
+
 /// Platform state
 pub mod state;
 

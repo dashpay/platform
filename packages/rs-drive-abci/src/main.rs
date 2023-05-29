@@ -1,15 +1,15 @@
 //! Main server process for RS-Drive-ABCI
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
+
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
-
+use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
+use itertools::Itertools;
 use std::path::PathBuf;
 use tracing::warn;
-use tracing_log::LogTracer;
-use tracing_subscriber::prelude::*;
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -29,7 +29,7 @@ struct Cli {
     ///
     /// Repeat `v` multiple times to increase log verbosity:
     ///
-    /// * none     - `warn` unless overriden by RUST_LOG variable{n}
+    /// * none     - use RUST_LOG variable, default to `info`{n}
     /// * `-v`     - `info` from Drive, `error` from libraries{n}
     /// * `-vv`    - `debug` from Drive, `info` from libraries{n}
     /// * `-vvv`   - `debug` from all components{n}
@@ -68,7 +68,7 @@ pub fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
-    configure_logging(&cli);
+    configure_logging(&cli, &config).expect("failed to configure logging");
 
     install_panic_hook();
 
@@ -169,31 +169,28 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     config.expect("cannot parse configuration file")
 }
 
-fn configure_logging(cli: &Cli) {
-    use tracing_subscriber::*;
+fn configure_logging(
+    cli: &Cli,
+    config: &PlatformConfig,
+) -> Result<Loggers, drive_abci::logging::Error> {
+    let mut configs = config.abci.log.clone();
+    if configs.is_empty() || cli.verbose > 0 {
+        let cli_config = LogConfig {
+            destination: "stderr".to_string(),
+            verbosity: cli.verbose,
+            color: cli.color,
+            ..Default::default()
+        };
+        // we use key with underscores which are not allowed in config read from env
+        configs.insert("cli_verbosity".to_string(), cli_config);
+    }
 
-    let env_filter = match cli.verbose {
-        0 => EnvFilter::builder()
-            .with_default_directive(
-                "error,tenderdash_abci=warn,drive_abci=warn"
-                    .parse()
-                    .unwrap(),
-            )
-            .from_env_lossy(),
-        1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
-        2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
-        3 => EnvFilter::new("debug"),
-        4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
-        5 => EnvFilter::new("trace"),
-        _ => panic!("max verbosity level is 5"),
-    };
+    let loggers = LogBuilder::new().with_configs(&configs)?.build();
+    loggers.install();
 
-    let ansi = cli.color.unwrap_or(atty::is(atty::Stream::Stdout));
-    let layer = fmt::layer().with_ansi(ansi);
+    tracing::info!("Configured log destinations: {}", configs.keys().join(","));
 
-    registry().with(layer).with(env_filter).init();
-
-    LogTracer::init().expect("cannot initialize LogTracer");
+    Ok(loggers)
 }
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.

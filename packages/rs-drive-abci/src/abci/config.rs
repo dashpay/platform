@@ -1,6 +1,5 @@
 //! Configuration of ABCI Application server
 
-use crate::config::FromEnv;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
@@ -50,6 +49,11 @@ pub struct AbciConfig {
     /// Chain ID of the network to use
     #[serde(default)]
     pub chain_id: String,
+
+    /// Logging configuration
+    // Note it is parsed directly in PlatformConfig::from_env() so here we just set defaults.
+    #[serde(default)]
+    pub log: crate::logging::LogConfigs,
 }
 
 impl AbciConfig {
@@ -62,7 +66,19 @@ impl AbciConfig {
     }
 }
 
-impl FromEnv for AbciConfig {}
+impl Default for AbciConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: "tcp://127.0.0.1:1234".to_string(),
+            prometheus_bind_address: None,
+            keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
+            genesis_height: AbciConfig::default_genesis_height(),
+            genesis_core_height: AbciConfig::default_genesis_core_height(),
+            chain_id: "chain_id".to_string(),
+            log: Default::default(),
+        }
+    }
+}
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -159,22 +175,5 @@ impl From<Keys> for SystemIdentityPublicKeys {
                 high: keys.dashpay_second_public_key,
             },
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-
-    use super::FromEnv;
-
-    #[test]
-    fn test_config_from_env() {
-        let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
-        let envfile = std::path::PathBuf::from(envfile);
-
-        dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
-
-        let _config = super::AbciConfig::from_env().unwrap();
     }
 }
