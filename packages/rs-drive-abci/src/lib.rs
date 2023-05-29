@@ -61,5 +61,6 @@ pub mod test;
 /// Validator Set
 pub mod validator_set;
 
+mod dpp;
 /// Metrics subsystem
 pub mod metrics;

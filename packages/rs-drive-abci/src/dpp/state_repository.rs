@@ -1,5 +1,4 @@
-use crate::abci::AbciApplication;
-use crate::platform::{PlatformRef, PlatformWithBlockContextRef};
+use crate::platform::PlatformWithBlockContextRef;
 use crate::rpc::core::CoreRPCLike;
 use anyhow::{anyhow, Result as AnyResult};
 use dashcore_rpc::dashcore::anyhow::Result;
@@ -477,7 +476,7 @@ where
         instant_lock: &InstantLock,
         execution_context: Option<&StateTransitionExecutionContext>,
     ) -> AnyResult<bool> {
-        // TODO: Implement verify_instant_lock in Core RPC
+        // TODO: Implement verify_instant_lock in Core RPC get_verifyislock method
 
         Ok(true)
     }

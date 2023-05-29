@@ -59,18 +59,19 @@ pub struct DriveConfig {
     #[serde(default = "default_batching_consistency_verification")]
     pub batching_consistency_verification: bool,
 
+    // TODO: Probably remove this
     /// Boolean if has_raw is enabled
     #[serde(default = "default_has_raw_enabled")]
     pub has_raw_enabled: bool,
 
-    /// The default returned count if no limit is set
+    /// The default returned count if no limit is set for document queries
     #[serde(
         default = "default_default_query_limit",
         deserialize_with = "from_str_or_number"
     )]
     pub default_query_limit: u16,
 
-    /// The limit for user defined queries
+    /// The limit for user defined document queries
     #[serde(
         default = "default_max_query_limit",
         deserialize_with = "from_str_or_number"
