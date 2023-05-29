@@ -97,14 +97,8 @@ where
             state_transition.output_script.as_bytes(),
         );
 
-        let latest_platform_block_header_bytes: Vec<u8> =
-            self.state_repository.fetch_latest_platform_block_header()?;
-
-        let latest_platform_block_header: BlockHeader =
-            consensus::deserialize(&latest_platform_block_header_bytes)
-                .map_err(ProtocolError::DashCoreError)?;
-
-        let document_created_at_millis: i64 = latest_platform_block_header.time as i64 * 1000i64;
+        let latest_platform_block_header_bytes: u64 =
+            self.state_repository.fetch_latest_platform_block_time()?;
 
         let document_data = platform_value!({
             withdrawals_contract::property_names::AMOUNT: state_transition.amount,
@@ -112,8 +106,8 @@ where
             withdrawals_contract::property_names::POOLING: Pooling::Never,
             withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
             withdrawals_contract::property_names::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
-            withdrawals_contract::property_names::CREATED_AT: document_created_at_millis,
-            withdrawals_contract::property_names::UPDATED_AT: document_created_at_millis,
+            withdrawals_contract::property_names::CREATED_AT: latest_platform_block_header_bytes,
+            withdrawals_contract::property_names::UPDATED_AT: latest_platform_block_header_bytes,
         });
 
         let withdrawal_document = Document {

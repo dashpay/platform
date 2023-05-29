@@ -27,7 +27,7 @@ where
     VBT: ValidatorByStateTransitionType,
 {
     state_repository: Arc<SR>,
-    validate_state_transition_by_type: VBT,
+    pub validate_state_transition_by_type: VBT,
 }
 
 impl<SR, VBT> StateTransitionBasicValidator<SR, VBT>

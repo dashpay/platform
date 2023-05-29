@@ -153,23 +153,12 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
                 anyhow::Ok(Some(identity))
             });
 
-        let block_time_seconds = 1675709306;
+        let block_time_ms = 1675709306 * 10000;
 
         state_repository
-            .expect_fetch_latest_platform_block_header()
+            .expect_fetch_latest_platform_block_time()
             .times(1)
-            .returning(move || {
-                let header = BlockHeader {
-                    time: block_time_seconds,
-                    version: 1,
-                    prev_blockhash: Default::default(),
-                    merkle_root: Default::default(),
-                    bits: Default::default(),
-                    nonce: Default::default(),
-                };
-
-                anyhow::Ok(consensus::serialize(&header))
-            });
+            .returning(move || anyhow::Ok(block_time_ms));
 
         let (mut state_transition, validator) = setup_test(state_repository, Some(5));
         let execution_context = StateTransitionExecutionContext::default();

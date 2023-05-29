@@ -9,46 +9,20 @@ mod identity_top_up;
 mod identity_update;
 mod key_validation;
 
-use std::ops::Deref;
-use std::sync::Arc;
-use anyhow::anyhow;
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator;
-use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator;
-use dpp::document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator;
 use dpp::identity::PartialIdentity;
-use dpp::identity::state_transition::asset_lock_proof::{AssetLockProofValidator, AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator};
-use dpp::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator;
-use dpp::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
-use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
-use dpp::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
-use dpp::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysValidator};
-use dpp::{BlsModule, DashPlatformProtocol, NativeBlsModule, platform_value, ProtocolError};
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_state::DataContractCreateTransitionStateValidator;
-use dpp::data_contract::state_transition::data_contract_update_transition::validation::state::validate_data_contract_update_transition_state::DataContractUpdateTransitionStateValidator;
-use dpp::document::validation::state::validate_documents_batch_transition_state::DocumentsBatchTransitionStateValidator;
-use dpp::identity::state_transition::identity_create_transition::validation::state::IdentityCreateTransitionStateValidator;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::validation::state::validate_identity_credit_withdrawal_transition_state::IdentityCreditWithdrawalTransitionValidator;
-use dpp::identity::state_transition::identity_topup_transition::validation::state::IdentityTopUpTransitionStateValidator;
-use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
-use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
-use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_repository::StateRepositoryLike;
-use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionConvert, StateTransitionFacade};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::validation::validate_state_transition_basic::StateTransitionBasicValidator;
-use dpp::state_transition::validation::validate_state_transition_by_type::StateTransitionByTypeValidator;
-use dpp::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
-use dpp::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
-use dpp::validation::{AsyncDataValidatorWithContext, ConsensusValidationResult, SimpleConsensusValidationResult};
-use dpp::version::{COMPATIBILITY_MAP, LATEST_VERSION, ProtocolVersionValidator};
+use dpp::state_transition::validation::validate_state_transition_by_type::ValidatorByStateTransitionType;
+use dpp::state_transition::{
+    StateTransition, StateTransitionAction, StateTransitionConvert, StateTransitionLike,
+};
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::{BlsModule, DashPlatformProtocol};
 use drive::drive::Drive;
 use drive::query::TransactionArg;
-use crate::abci::AbciApplication;
 
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent;
-use crate::platform::state_repository::DPPStateRepository;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -79,15 +53,19 @@ where
     let execution_context = StateTransitionExecutionContext::default();
 
     // Basic validation
-    let result = dpp.state_transitions.validate_basic(
-        &state_transition.to_cleaned_object(false)?,
-        &execution_context,
-    )?;
+    let result = dpp
+        .state_transitions
+        .basic_validator
+        .validate_state_transition_by_type
+        .validate(
+            &state_transition.to_object(false)?,
+            state_transition.get_type(),
+            &execution_context,
+        )?;
 
-    // TODO: Type is not present in ST
-    // if !result.is_valid() {
-    //     return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
-    // }
+    if !result.is_valid() {
+        dbg!("Structure validation errors", &result.errors);
+    }
 
     // Signature
 
@@ -96,7 +74,7 @@ where
         .validate_signature(state_transition.clone(), &execution_context)?;
 
     if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        dbg!("Signature validation errors", &result.errors);
     }
 
     // State
@@ -106,7 +84,7 @@ where
         .validate_state(&state_transition, &execution_context)?;
 
     if !result.is_valid() {
-        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        dbg!("State validation errors", &result.errors);
     }
 
     // TODO: And then we run new validation methods to double check

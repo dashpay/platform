@@ -41,7 +41,7 @@ where
     BLS: BlsModule + Clone,
 {
     state_repository: Arc<SR>,
-    basic_validator:
+    pub basic_validator:
         Arc<StateTransitionBasicValidator<SR, StateTransitionByTypeValidator<SR, BLS>>>,
     state_validator: Arc<StateTransitionStateValidator<SR>>,
     key_signature_validator: Arc<StateTransitionKeySignatureValidator<SR>>,

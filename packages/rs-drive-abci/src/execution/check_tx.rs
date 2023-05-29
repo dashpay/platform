@@ -194,8 +194,6 @@ mod tests {
         // assert!(validation_result.errors.is_empty());
     }
 
-    // TODO: Fix mocks
-    #[ignore]
     #[test]
     fn document_update_check_tx() {
         let identity_create = hex::decode("03020200000000002102b50c44b3a3bd342d620919352097ce39e31bb2b4a485583a933827920ee5aa9d4120e3e3432eba9c7c41c789b2ca4483ef1d5c6657ab83fb4164c6517edd3944c1246461ffe2b1eee25f79fcee2fcebee5e08aa264c8b5cd42cf050eb850874823bb01000002002103f85402738806681a6e6fd14ed8e70899bd831da5bd9302e84edf3caf03bcd744411ff87579b07c9b295c6f18ad0c98986e9f2437918f0fe34047e74ac957c2976edf50788d2b16fcaea9bbbd0aa90569efca11de669d7f08ef3b5c2db1a2bb7ccc470000c601018424a8d386812dfc24fe286915b1a14763c8fb3701d6b8991912b7a54088c30d00000000a9f543365d8345621e724755bcce89f77c374038e9a7d0a0d5c7e3e9481045cb506ebd6bcf46f5db0953dd84386d9942ac4e30372fbc7456b479b65a08b8801695f7078bb338c75272b849661d26e86e40e59a283767d24f361b7172f9256b6bc5ec9d33f1a5742dd3df24f96c45f56e15a781964b9d7cc29087dc8adf4f63b7b4a1cffcf8495a0b13cea819e80355307541a18912e74210fffb367b7b3a13b0de03000000018424a8d386812dfc24fe286915b1a14763c8fb3701d6b8991912b7a54088c30d000000006a47304402201e1f8c93f0ad0b4c43d5e1c03a912e9c8463bd9409b495bb3156638dbc03094102202aaf998d0e533f0aac62fb1ab3bd3885fc96201a6f282a22801df1f9180b6b7e012102e7568866ff0c53561fc0e577b76f3614b38aa548a89adbbfc715c2a85860aaa6ffffffff0240420f0000000000166a14b6c869d709e095182d9c49a347d67632606de3a428230000000000001976a9147d863019b137a7fc55d6399b0ae7c525933fb14388ac0000000000014120f138e7c9cec7ac53f74d141141adb463b57d87599e40bc6251678d8892e7a0c4100f64be98035e46fa2b400bab870069f0f612db3f6c98a85e6dcb15ca56d7b87e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca0").expect("expected to decode");
@@ -214,14 +212,14 @@ mod tests {
             .create_initial_state_structure(None)
             .expect("expected to create state structure");
 
-        // Init DPP
+        // Init transactional DPP
 
         let transaction_arc = Arc::new(RwLock::new(Some(platform.drive.grove.start_transaction())));
         let transaction_guard = transaction_arc.read().unwrap();
         let transaction_ref = transaction_guard.as_ref().unwrap();
 
         let platform_ref = Arc::new(PlatformWithBlockContextRef::from(platform.deref()));
-        let dpp = DashPlatformProtocol::new(
+        let dpp_transactional = DashPlatformProtocol::new(
             DPPOptions::default(),
             DPPStateRepository::with_transaction(platform_ref, transaction_arc.clone()),
             NativeBlsModule::default(),
@@ -244,21 +242,41 @@ mod tests {
             .unwrap()
             .replace(block_execution_context);
 
+        // Execute STs
+
         let validation_result = platform
-            .execute_tx(identity_create, &block_info, &dpp, transaction_ref)
+            .execute_tx(
+                identity_create,
+                &block_info,
+                &dpp_transactional,
+                transaction_ref,
+            )
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         let validation_result = platform
-            .execute_tx(data_contract_create, &block_info, &dpp, transaction_ref)
+            .execute_tx(
+                data_contract_create,
+                &block_info,
+                &dpp_transactional,
+                transaction_ref,
+            )
             .expect("expected to execute data_contract_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         let validation_result = platform
-            .execute_tx(document_create, &block_info, &dpp, transaction_ref)
+            .execute_tx(
+                document_create,
+                &block_info,
+                &dpp_transactional,
+                transaction_ref,
+            )
             .expect("expected to execute document_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
+        // Commit transaction
+
+        drop(transaction_guard);
         let transaction = transaction_arc.write().unwrap().take().unwrap();
 
         platform
@@ -267,6 +285,19 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+
+        // Init non-transactional DPP
+
+        let dpp = DashPlatformProtocol::new(
+            DPPOptions::default(),
+            DPPStateRepository::new(Arc::new(PlatformWithBlockContextRef::from(
+                platform.deref(),
+            ))),
+            NativeBlsModule::default(),
+        )
+        .expect("should create dpp");
+
+        // Check txs
 
         let validation_result = platform
             .check_tx(document_update.as_slice(), &dpp)
@@ -277,8 +308,6 @@ mod tests {
         // assert!(validation_result.errors.is_empty());
     }
 
-    // TODO: Fix mocks
-    #[ignore]
     #[test]
     fn identity_top_up_check_tx() {
         let identity_top_up = hex::decode("04030000c601018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000007f1df760772c7ab48c042c01319bd553b7a635936e9a06fa382eb5037638e6ba077a524aa82c6b20e7b8dcadafa46f8ecc59b2dea8c3d6269a24cd5cad74b712ae5a460d11242bd345e168028b3e8442439a63847aa736057a6cd587ae9f7bca1f59f3045566233566142cbca5a7b525085bf96c621ba39f838d6c5c31b116e756753177aa303a8ea712e17ad1ff5dfb0b1504c03d5c225c5cbdb1ee8f6636f0df03000000018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000006b483045022100d71b565e319a0b85725d1eca250da27d846c6b015e601254e3f8aeb11c0feab60220381c92a46467d6c5270d424b666b989e444e72955f3d5b77d8be9965335b43bd01210222150e3b66410341308b646234bff9c203172c6720b2ecc838c71d94f670066affffffff02e093040000000000166a144cf5fee3ebdce0f51540a3504091c0dccb0f7d343832963b000000001976a914f3b05a1dda565b0013cb9857e708d840bcd47bef88ac00000000003012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac014120d56826c39c07eaea7157b8b717fdcef73fbc99cc680e34f695e0c763d79531691d8ea117cd4623e96a25cbf673e5b1da6e43a96d5bb2a65fe82c2efd4dc2c6dc").expect("expected to decode");
@@ -293,6 +322,8 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
+        // Init non-transactional DPP
+
         let dpp = DashPlatformProtocol::new(
             DPPOptions::default(),
             DPPStateRepository::new(Arc::new(PlatformWithBlockContextRef::from(
@@ -302,18 +333,76 @@ mod tests {
         )
         .expect("should create dpp");
 
+        // Set block execution context
+
+        let block_info = BlockInfo::default_with_time(1684233625697);
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                block_time_ms: block_info.time_ms,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        platform
+            .block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        // Check txs
+
         let validation_result = platform
             .check_tx(identity_top_up.as_slice(), &dpp)
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
 
-        let transaction = platform.drive.grove.start_transaction();
+        // Init transactional DPP
+
+        let transaction_arc = Arc::new(RwLock::new(Some(platform.drive.grove.start_transaction())));
+        let transaction_guard = transaction_arc.read().unwrap();
+        let transaction_ref = transaction_guard.as_ref().unwrap();
+
+        let platform_ref = Arc::new(PlatformWithBlockContextRef::from(platform.deref()));
+        let dpp_transactional = DashPlatformProtocol::new(
+            DPPOptions::default(),
+            DPPStateRepository::with_transaction(platform_ref, transaction_arc.clone()),
+            NativeBlsModule::default(),
+        )
+        .expect("should create dpp");
+
+        // Set block execution context
+
+        let block_info = BlockInfo::default_with_time(1684233625697);
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                block_time_ms: block_info.time_ms,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        platform
+            .block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        // Execute txs
 
         let validation_result = platform
-            .execute_tx(identity_top_up, &BlockInfo::default(), &dpp, &transaction)
+            .execute_tx(
+                identity_top_up,
+                &BlockInfo::default(),
+                &dpp_transactional,
+                &transaction_ref,
+            )
             .expect("expected to execute identity top up tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        // Commit transaction
+
+        drop(transaction_guard);
+        let transaction = transaction_arc.write().unwrap().take().unwrap();
 
         platform
             .drive
@@ -323,8 +412,6 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    // TODO: Fix mocks
-    #[ignore]
     #[test]
     fn identity_cant_double_top_up() {
         let identity_top_up = hex::decode("04030000c601018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000007f1df760772c7ab48c042c01319bd553b7a635936e9a06fa382eb5037638e6ba077a524aa82c6b20e7b8dcadafa46f8ecc59b2dea8c3d6269a24cd5cad74b712ae5a460d11242bd345e168028b3e8442439a63847aa736057a6cd587ae9f7bca1f59f3045566233566142cbca5a7b525085bf96c621ba39f838d6c5c31b116e756753177aa303a8ea712e17ad1ff5dfb0b1504c03d5c225c5cbdb1ee8f6636f0df03000000018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000006b483045022100d71b565e319a0b85725d1eca250da27d846c6b015e601254e3f8aeb11c0feab60220381c92a46467d6c5270d424b666b989e444e72955f3d5b77d8be9965335b43bd01210222150e3b66410341308b646234bff9c203172c6720b2ecc838c71d94f670066affffffff02e093040000000000166a144cf5fee3ebdce0f51540a3504091c0dccb0f7d343832963b000000001976a914f3b05a1dda565b0013cb9857e708d840bcd47bef88ac00000000003012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac014120d56826c39c07eaea7157b8b717fdcef73fbc99cc680e34f695e0c763d79531691d8ea117cd4623e96a25cbf673e5b1da6e43a96d5bb2a65fe82c2efd4dc2c6dc").expect("expected to decode");
@@ -339,7 +426,61 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
-        let transaction = platform.drive.grove.start_transaction();
+        // Init transactional DPP
+
+        let transaction_arc = Arc::new(RwLock::new(Some(platform.drive.grove.start_transaction())));
+        let transaction_guard = transaction_arc.read().unwrap();
+        let transaction_ref = transaction_guard.as_ref().unwrap();
+
+        let platform_ref = Arc::new(PlatformWithBlockContextRef::from(platform.deref()));
+        let dpp_transactional = DashPlatformProtocol::new(
+            DPPOptions::default(),
+            DPPStateRepository::with_transaction(platform_ref, transaction_arc.clone()),
+            NativeBlsModule::default(),
+        )
+        .expect("should create dpp");
+
+        // Set block execution context
+
+        let block_info = BlockInfo::default_with_time(1684233625697);
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                block_time_ms: block_info.time_ms,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        platform
+            .block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        // Execute txs
+
+        let validation_result = platform
+            .execute_tx(
+                identity_top_up.clone(),
+                &BlockInfo::default(),
+                &dpp_transactional,
+                &transaction_ref,
+            )
+            .expect("expected to execute identity top up tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        // Commit transaction
+
+        drop(transaction_guard);
+        let transaction = transaction_arc.write().unwrap().take().unwrap();
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Init non-transactional DPP
 
         let dpp = DashPlatformProtocol::new(
             DPPOptions::default(),
@@ -350,22 +491,7 @@ mod tests {
         )
         .expect("should create dpp");
 
-        let validation_result = platform
-            .execute_tx(
-                identity_top_up.clone(),
-                &BlockInfo::default(),
-                &dpp,
-                &transaction,
-            )
-            .expect("expected to execute identity top up tx");
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
+        // Check txs
 
         let validation_result = platform
             .check_tx(identity_top_up.as_slice(), &dpp)
@@ -393,6 +519,8 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
+        // Init non-transactional DPP
+
         let dpp = DashPlatformProtocol::new(
             DPPOptions::default(),
             DPPStateRepository::new(Arc::new(PlatformWithBlockContextRef::from(
@@ -401,6 +529,8 @@ mod tests {
             NativeBlsModule::default(),
         )
         .expect("should create dpp");
+
+        // Check txs
 
         let validation_result = platform
             .check_tx(identity_top_up.as_slice(), &dpp)
@@ -412,8 +542,6 @@ mod tests {
         ));
     }
 
-    // TODO: Fix mocks
-    #[ignore]
     #[test]
     fn identity_cant_create_with_used_outpoint() {
         let identity_create = hex::decode("03020200000000002102b60f8631519ee2245dfbd7ff107540d378b9d9ca3e8356d1f791703b3027d71b412039feb0213146906bbe7b5c3edd127d567780258f11fd33475af3d2a48679c05e22c446a312d047ed61e94664a787bcac3aae2ab82417232e4a8edae519c525c4010000020021035f06136d7de4240dcfaa885f0c8236d752f906b3e1e8eb157cb816b5a58d6cd141202a6be48392e482a283380fc4679c0147589a898767897e958b3b85abf5703ef734c2041e172794199ecac63ee37f2744e13b6fc9e7d8265b9f2d0ea5a05e9be30000c601013f4fdb109bcd46a4f8eaf72c8bfca482b028e51a8e136519107c7b2c525a5f4100000000de33c4662f152d963eb1ee779cd11891d77890009e4aeabbfce29af45c402b846cc532593e62741065732e91762ac89822b1a6295c36c82863baf59bc0a0ad0b82f3a8f5d956f005dd505ad7e27cbb75c0196fa92f45f504079edb0ba5b64c2e93830f13a63cf9b7cba5a82836a979c1016378237e48859057bd6d2a09c47f78f0aa56f259aba31f205f68adc9f7b5931ea8929806dcd497c23fca262898a163de03000000013f4fdb109bcd46a4f8eaf72c8bfca482b028e51a8e136519107c7b2c525a5f41000000006a47304402207e065274128f612325de5c4e8332e8d3f49891ef2cd1ce4e57da7520484af7290220095d40dfa4490ea336155e82e969ee0f4b59d12126bec6ec7bfe1fee4cbf27d6012102faf354bb3b1487f939e7d7e2e25ec71ad6e3d9804f649e3765ea143d65042bdfffffffff02a086010000000000166a1445399c0424ad422c9dd1f1798ac570666a23f519d8230900000000001976a9143f10001d7dfcdbe673eccecd0cc5dabf208eb78388ac000000000001411f656fd575598f79545029603db7978810292c4b6d923898a09aaeaee2276c32da66f46fbb9ce3230c2485ae803ed98d3bf415fc31f4f1d8f17c44413580c8f7b6563829f5f8f22a6d3dba3143ac38cff96c1fcef4c18b2dbb7da0a2be80757955").expect("expected to decode");
@@ -428,7 +556,62 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
-        let transaction = platform.drive.grove.start_transaction();
+        // Init transactional DPP
+
+        let transaction_arc = Arc::new(RwLock::new(Some(platform.drive.grove.start_transaction())));
+        let transaction_guard = transaction_arc.read().unwrap();
+        let transaction_ref = transaction_guard.as_ref().unwrap();
+
+        let platform_ref = Arc::new(PlatformWithBlockContextRef::from(platform.deref()));
+        let dpp_transactional = DashPlatformProtocol::new(
+            DPPOptions::default(),
+            DPPStateRepository::with_transaction(platform_ref, transaction_arc.clone()),
+            NativeBlsModule::default(),
+        )
+        .expect("should create dpp");
+
+        // Set block execution context
+
+        let block_info = BlockInfo::default_with_time(1684233625697);
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                block_time_ms: block_info.time_ms,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        platform
+            .block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        // Execute txs
+
+        let validation_result = platform
+            .execute_tx(
+                identity_create.clone(),
+                &BlockInfo::default(),
+                &dpp_transactional,
+                &transaction_ref,
+            )
+            .expect("expected to execute identity create tx");
+
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        // Commit transaction
+
+        drop(transaction_guard);
+        let transaction = transaction_arc.write().unwrap().take().unwrap();
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Init non-transactional DPP
 
         let dpp = DashPlatformProtocol::new(
             DPPOptions::default(),
@@ -439,23 +622,7 @@ mod tests {
         )
         .expect("should create dpp");
 
-        let validation_result = platform
-            .execute_tx(
-                identity_create.clone(),
-                &BlockInfo::default(),
-                &dpp,
-                &transaction,
-            )
-            .expect("expected to execute identity create tx");
-
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
+        // Check txs
 
         let validation_result = platform
             .check_tx(identity_create.as_slice(), &dpp)
@@ -467,8 +634,6 @@ mod tests {
         ));
     }
 
-    // TODO: Fix mocks
-    #[ignore]
     #[test]
     fn dpns_owner_top_up() {
         let identity_top_up_first = hex::decode("04030000c60101ba15a200ad72279b3a5e060305660091412babfe6f4bed3c17af33da920baa93000000000460721b022a879c9afcf005fe36136e436f966a0700adf48aa7cf5b45be712e18cf6fd4c5423912f637a99e7cdc2723a42b6ee6d2ea450521a030319bcef330870eb1f0f6918d30e3ab3cfb653b5c087acd52af99efc1c997cd9999401cd323c47858b726f62ef02cf6672a05c7d4b308a59904256d5d1aed723eea5e6666622986750c8011a78b91ddfdccd519af3cb154b90bff6de975b9b3e38c3d9845d5df0300000001ba15a200ad72279b3a5e060305660091412babfe6f4bed3c17af33da920baa93000000006b4830450221008d13e35776dfc5f3dae9427dad1f205e069cac1f3681bc0bca55c434fd7782b002207712496a6eb693527f47f60d39c5cfd5ba99ff9df1ac4e9fe1a5f40c42e5645f0121032eb006412f801abfbfa25e3387cf15583b553d3b89cd30823579232ac021fc33ffffffff02e093040000000000166a14fec95dcf766d232571c45eb86cffda4605e891403832963b000000001976a914cf9e180ad4289a61cc0af0fb376ff7f9a04b8b2888ac00000000003012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac0141207ec67cdad799fcbb072b0dd8734b46e1ee1b3cf07c41ba32f29b745ae0ef89532348fee9ec7fa1e4a6224fcd54d9671452cb0a35b8fd0a5fdaba0447567b84d7").expect("expected to decode");
@@ -495,7 +660,81 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
-        let transaction = platform.drive.grove.start_transaction();
+        // Init transactional DPP
+
+        let transaction_arc = Arc::new(RwLock::new(Some(platform.drive.grove.start_transaction())));
+        let transaction_guard = transaction_arc.read().unwrap();
+        let transaction_ref = transaction_guard.as_ref().unwrap();
+
+        let platform_ref = Arc::new(PlatformWithBlockContextRef::from(platform.deref()));
+        let dpp_transactional = DashPlatformProtocol::new(
+            DPPOptions::default(),
+            DPPStateRepository::with_transaction(platform_ref, transaction_arc.clone()),
+            NativeBlsModule::default(),
+        )
+        .expect("should create dpp");
+
+        // Set block execution context
+
+        let block_info = BlockInfo::default_with_time(1684233625697);
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                block_time_ms: block_info.time_ms,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        platform
+            .block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        // Execute STs
+
+        let validation_result = platform
+            .execute_tx(
+                identity_top_up_first,
+                &BlockInfo::default(),
+                &dpp_transactional,
+                &transaction_ref,
+            )
+            .expect("expected to execute identity_top_up_first tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        let validation_result = platform
+            .execute_tx(
+                identity_top_up_second,
+                &BlockInfo::default(),
+                &dpp_transactional,
+                &transaction_ref,
+            )
+            .expect("expected to execute identity_top_up_second tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        let validation_result = platform
+            .execute_tx(
+                dpns_preorder_document,
+                &BlockInfo::default(),
+                &dpp_transactional,
+                &transaction_ref,
+            )
+            .expect("expected to execute identity_create tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        // Commit transaction
+
+        drop(transaction_guard);
+        let transaction = transaction_arc.write().unwrap().take().unwrap();
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Init non-transactional DPP
 
         let dpp = DashPlatformProtocol::new(
             DPPOptions::default(),
@@ -506,42 +745,7 @@ mod tests {
         )
         .expect("should create dpp");
 
-        let validation_result = platform
-            .execute_tx(
-                identity_top_up_first,
-                &BlockInfo::default(),
-                &dpp,
-                &transaction,
-            )
-            .expect("expected to execute identity_top_up_first tx");
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
-
-        let validation_result = platform
-            .execute_tx(
-                identity_top_up_second,
-                &BlockInfo::default(),
-                &dpp,
-                &transaction,
-            )
-            .expect("expected to execute identity_top_up_second tx");
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
-
-        let validation_result = platform
-            .execute_tx(
-                dpns_preorder_document,
-                &BlockInfo::default(),
-                &dpp,
-                &transaction,
-            )
-            .expect("expected to execute identity_create tx");
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
+        // Check txs
 
         let validation_result = platform
             .check_tx(dpns_domain_document.as_slice(), &dpp)
@@ -549,17 +753,29 @@ mod tests {
 
         assert!(validation_result.errors.is_empty());
 
-        let transaction = platform.drive.grove.start_transaction();
+        // Execute txs
+
+        transaction_arc
+            .write()
+            .unwrap()
+            .replace(platform.drive.grove.start_transaction());
+        let transaction_guard = transaction_arc.read().unwrap();
+        let transaction_ref = transaction_guard.as_ref().unwrap();
 
         let validation_result = platform
             .execute_tx(
                 dpns_domain_document,
                 &BlockInfo::default(),
-                &dpp,
-                &transaction,
+                &dpp_transactional,
+                &transaction_ref,
             )
             .expect("expected to execute identity top up tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        // Commit transaction
+
+        drop(transaction_guard);
+        let transaction = transaction_arc.write().unwrap().take().unwrap();
 
         platform
             .drive
@@ -569,8 +785,6 @@ mod tests {
             .expect("expected to commit transaction");
     }
 
-    // TODO: Fix mocks
-    #[ignore]
     #[test]
     fn identity_update_with_non_master_key_check_tx() {
         let mut config = PlatformConfig::default();
@@ -605,6 +819,8 @@ mod tests {
             .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
+        // Init non-transactional DPP
+
         let dpp = DashPlatformProtocol::new(
             DPPOptions::default(),
             DPPStateRepository::new(Arc::new(PlatformWithBlockContextRef::from(
@@ -613,6 +829,24 @@ mod tests {
             NativeBlsModule::default(),
         )
         .expect("should create dpp");
+
+        // Set block execution context
+
+        let block_info = BlockInfo::default_with_time(1684233625697);
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                block_time_ms: block_info.time_ms,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        platform
+            .block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        // Check txs
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);
 
@@ -639,7 +873,7 @@ mod tests {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityUpdate,
             identity_id: dpns_contract::OWNER_ID_BYTES.into(),
-            revision: 0,
+            revision: 1,
             add_public_keys: vec![new_key],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
