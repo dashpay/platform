@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.5",
+  "version": "0.25.0-dev.14",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -59,14 +59,12 @@
     "packages/wallet-lib",
     "packages/js-dash-sdk",
     "packages/dapi",
-    "packages/js-drive",
     "packages/dashmate",
     "packages/platform-test-suite",
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
     "packages/wasm-dpp",
-    "packages/withdrawals-contract",
-    "packages/rs-drive-nodejs"
+    "packages/withdrawals-contract"
   ],
   "resolutions": {
     "elliptic": "^6.5.4",
@@ -78,7 +76,8 @@
     "engine.io": "^6.4.2",
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0",
-    "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"
+    "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz",
+    "socket.io-parser": "^4.2.3"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"

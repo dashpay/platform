@@ -1,3 +1,4 @@
+: <!-- markdownlint-disable MD033 MD041 -->
 <p align="center">
   <a href="https://dashplatform.readme.io/docs/introduction-what-is-dash-platform/">
     <img alt="babel" src="https://media.dash.org/wp-content/uploads/dash_digital-cash_logo_2018_rgb_for_screens.png" width="546">
@@ -52,21 +53,27 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v16
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.67+
-  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/): 
+  - [rust](https://www.rust-lang.org/tools/install) v1.67+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
       - `brew install llvm`
       - LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
-    - `cargo install wasm-bindgen-cli` 
-      - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)_
-    - `rustup target add wasm32-unknown-unknown`
+    - install `protoc` - protobuf compiler:
+      - on debian/ubuntu: `apt install -y protobuf-compiler`
+      - on Mac: `brew install protobuf`
+      - on other systems, install most recent version from [Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases) (tested with protobuf 22.4)
+      - if needed, set PROTOC environment variable to location of `protoc` binary
+    - `cargo install wasm-bindgen-cli@0.2.85`
+      - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
+      - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
+  - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang`
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources
-- Run `yarn test` to run the whole test suite (note that running tests requires a running node, 
- so be sure to call `yarn start` first). Alternatively, you can run tests for a specific 
- package by running `yarn workspace <package_name> test`, for example running 
- `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see 
+- Run `yarn test` to run the whole test suite (note that running tests requires a running node,
+ so be sure to call `yarn start` first). Alternatively, you can run tests for a specific
+ package by running `yarn workspace <package_name> test`, for example running
+ `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see
  all available packages, please see the [packages readme](./packages/README.md)
 - `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
  so it is best to stop the local node when not in use
