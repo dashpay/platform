@@ -1,3 +1,4 @@
+: <!-- markdownlint-disable MD033 MD041 -->
 <p align="center">
   <a href="https://dashplatform.readme.io/docs/introduction-what-is-dash-platform/">
     <img alt="babel" src="https://media.dash.org/wp-content/uploads/dash_digital-cash_logo_2018_rgb_for_screens.png" width="546">
@@ -52,7 +53,7 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v16
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.67+
+  - [rust](https://www.rust-lang.org/tools/install) v1.67+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
       - `brew install llvm`
@@ -65,7 +66,7 @@ this repository may be used on the following networks:
     - `cargo install wasm-bindgen-cli@0.2.85`
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
-    - `rustup target add wasm32-unknown-unknown`
+  - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang`
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources
