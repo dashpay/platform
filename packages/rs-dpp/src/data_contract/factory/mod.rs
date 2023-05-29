@@ -8,9 +8,18 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 pub use v0::*;
 
-/// A factory for creating and managing data contracts.
+/// # Data Contract Factory
 ///
-/// The factory is versioned to support different implementations of data contracts in the future.
+/// This module is responsible for creating instances of data contracts.
+///
+/// ## Versioning
+///
+/// The factory is versioned because the process of creating data contracts
+/// can change over time. Changes may be due to modifications in contract
+/// requirements, alterations in the contract structure, or evolution in the
+/// dependencies of the contract. Versioning allows for these changes to be
+/// tracked and managed effectively, providing flexibility to handle different
+/// versions of data contracts as needed.
 pub enum DataContractFactory {
     /// The version 0 implementation of the data contract factory.
     V0(DataContractFactoryV0),

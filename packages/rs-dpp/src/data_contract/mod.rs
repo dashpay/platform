@@ -77,15 +77,22 @@ impl DataContract {
         raw_data_contract: &Value,
         allow_non_current_data_contract_versions: bool,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let Some(system_version) = raw_data_contract.get_optional_integer::<u16>(SYSTEM_VERSION)? else {
-            Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::VersionError("no system version found on data contract object".into()))))
+        let data_contract_system_version = match raw_data_contract.get_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
+            Ok(Some(data_contract_system_version)) => { data_contract_system_version }
+            Ok(None) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::VersionError("no system version found on data contract object".into()))));
+            }
+            Err(e) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::VersionError(format!("version error: {}", e.to_string()).into()))));
+            }
+
         };
         if !allow_non_current_data_contract_versions {
-            self.
+            Self::check_version_is_active(active_protocol_version, data_contract_system_version)?;
         }
         match system_version {
             0 => { DataContractV0::validate(raw_data_contract)}
-            _ => Err(ProtocolError::)
+            _ => Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::VersionError("system version found on data contract object".into()))))
         }
     }
 }

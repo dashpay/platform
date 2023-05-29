@@ -14,6 +14,19 @@ use crate::data_contract::created_data_contract::CreatedDataContract;
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+/// # Data Contract Facade
+///
+/// This module acts as a simplified, high-level interface to a more complex
+/// body of code. It forwards requests to appropriate subsystems.
+///
+/// ## Versioning
+///
+/// In Dash Platform, facades are not versioned because the interface they
+/// provide remains stable, even when changes occur in the underlying system.
+/// Since these modifications do not affect the facade's interface, versioning
+/// is not necessary. The primary function of the facade is to provide a stable
+/// API to the rest of the system, effectively isolating consumers of the API
+/// from changes in the underlying implementation.
 pub struct DataContractFacade {
     factory: DataContractFactory,
 }
