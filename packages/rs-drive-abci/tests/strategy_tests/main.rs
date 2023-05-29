@@ -72,7 +72,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::data_contract::extra::common::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -374,7 +374,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99870453070)
+        assert_eq!(balance, 99864467880)
     }
 
     #[test]
@@ -842,13 +842,13 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "894c403bc33c60ae03341a7a286588d7a6d5aec88c0d01b154b4595f83b0961b".to_string()
+            "00e215e827e562b98024c7737b33afd27f0c110327ce20eb372767238cad57b3".to_string()
         )
     }
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract() {
-        let contract = json_document_to_contract(
+        let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
@@ -908,6 +908,7 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
+                    .data_contract
                     .id
                     .to_buffer(),
                 None,
@@ -921,25 +922,25 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
-        let contract = json_document_to_contract(
+        let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
 
-        let mut contract_update_1 = json_document_to_contract(
+        let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
         )
         .expect("expected to get contract from a json document");
 
         //todo: versions should start at 0 (so this should be 1)
-        contract_update_1.version = 2;
+        contract_update_1.data_contract.version = 2;
 
-        let mut contract_update_2 = json_document_to_contract(
+        let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
         )
         .expect("expected to get contract from a json document");
 
-        contract_update_2.version = 3;
+        contract_update_2.data_contract.version = 3;
 
         let strategy = Strategy {
             contracts_with_updates: vec![(
@@ -1002,6 +1003,7 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
+                    .data_contract
                     .id
                     .to_buffer(),
                 None,
@@ -1015,10 +1017,12 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1030,7 +1034,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![Operation {
                 op_type: OperationType::Document(document_op),
                 frequency: Frequency {
@@ -1082,10 +1086,12 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1097,7 +1103,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![Operation {
                 op_type: OperationType::Document(document_op),
                 frequency: Frequency {
@@ -1159,10 +1165,12 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1183,7 +1191,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1254,10 +1262,12 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1278,7 +1288,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1356,17 +1366,19 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "4a0620fcec40b35447b575562ef51359babd2714f3f79dfee7943760b98578fe".to_string()
+            "9a5917416dcf3dc6e125c347b6d0be8bff8d56eb3f09b05a3cab68026911569c".to_string()
         )
     }
 
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1387,7 +1399,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1461,10 +1473,12 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1494,7 +1508,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -2250,5 +2264,126 @@ mod tests {
             .count();
         // we have a maximum 90 quorums, that could have been used, 4 were used twice
         assert_eq!(balance_count, 86);
+    }
+
+    #[test]
+    fn run_chain_stop_and_restart_with_rotation() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 500,
+            extra_normal_mns: 0,
+            quorum_count: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 3,
+            validator_set_quorum_rotation_block_count: 1,
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let TempPlatform {
+            mut platform,
+            tempdir: _,
+        } = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("expected root hash");
+
+        abci_app
+            .platform
+            .recreate_state()
+            .expect("expected to recreate state");
+
+        let ResponseInfo {
+            data: _,
+            version: _,
+            app_version: _,
+            last_block_height,
+            last_block_app_hash,
+        } = abci_app
+            .info(RequestInfo {
+                version: "0.12.0".to_string(),
+                block_version: 0,
+                p2p_version: 0,
+                abci_version: "0.20.0".to_string(),
+            })
+            .expect("expected to call info");
+
+        assert_eq!(last_block_height, 100);
+        assert_eq!(last_block_app_hash, known_root_hash);
+
+        let block_start = abci_app
+            .platform
+            .state
+            .read()
+            .unwrap()
+            .last_committed_block_info
+            .as_ref()
+            .unwrap()
+            .basic_info
+            .height
+            + 1;
+
+        continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 10,
+                block_count: 30,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_time_ms: end_time_ms,
+            },
+            strategy,
+            config,
+            StrategyRandomness::SeedEntropy(block_start),
+        );
     }
 }

@@ -22,7 +22,7 @@ struct TestData {
 }
 
 fn setup_test() -> TestData {
-    let old_data_contract = get_data_contract_fixture(None);
+    let old_data_contract = get_data_contract_fixture(None).data_contract;
     let mut new_data_contract = old_data_contract.clone();
 
     let mut indexed_document = new_data_contract

@@ -280,11 +280,11 @@ mod test {
             .expect_fetch_identity_balance()
             .returning(move |_, _| Ok(Some(identity.get_balance())));
 
-        let data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None);
         let execution_context = execution_context_with_cost(40, 5);
         let data_contract_create_transition = DataContractCreateTransitionV0 {
-            entropy: data_contract.entropy,
-            data_contract,
+            entropy: created_data_contract.entropy_used,
+            data_contract: created_data_contract.data_contract,
             ..Default::default()
         };
 
@@ -308,11 +308,11 @@ mod test {
             .expect_fetch_identity_balance()
             .returning(move |_, _| Ok(Some(identity.get_balance())));
 
-        let data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None);
         let execution_context = execution_context_with_cost(40, 5);
         let data_contract_create_transition = DataContractCreateTransitionV0 {
-            entropy: data_contract.entropy,
-            data_contract,
+            entropy: created_data_contract.entropy_used,
+            data_contract: created_data_contract.data_contract,
             ..Default::default()
         };
 
@@ -334,7 +334,7 @@ mod test {
             .expect_fetch_identity_balance()
             .returning(move |_, _| Ok(Some(identity.get_balance())));
 
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
@@ -365,7 +365,7 @@ mod test {
             .expect_fetch_identity_balance()
             .returning(move |_, _| Ok(Some(identity.get_balance())));
 
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
@@ -394,7 +394,7 @@ mod test {
             .expect_fetch_identity_balance()
             .returning(move |_, _| Ok(Some(identity.get_balance())));
 
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);

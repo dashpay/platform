@@ -10,17 +10,22 @@ use crate::identity::{KeyID, PartialIdentity};
 use crate::prelude::DataContract;
 use crate::serialization_traits::Signable;
 use crate::state_transition::StateTransitionLike;
+use platform_value::Bytes32;
+
+use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
+use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError};
 
 impl DataContractCreateTransition {
     pub fn new_from_data_contract<S: Signer>(
         mut data_contract: DataContract,
+        entropy: Bytes32,
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
     ) -> Result<Self, ProtocolError> {
         data_contract.owner_id = identity.id;
-        data_contract.id = generate_data_contract_id(identity.id, data_contract.entropy);
+        data_contract.id = generate_data_contract_id(identity.id, entropy);
         let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract,
             entropy: Default::default(),

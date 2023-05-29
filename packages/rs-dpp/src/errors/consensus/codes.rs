@@ -151,6 +151,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentTimestampWindowViolationError { .. } => 4008,
             Self::DuplicateUniqueIndexError { .. } => 4009,
             Self::InvalidDocumentRevisionError { .. } => 4010,
+            Self::DocumentTimestampsAreEqualError(_) => 4025,
 
             // Identity
             Self::IdentityAlreadyExistsError(_) => 4011,

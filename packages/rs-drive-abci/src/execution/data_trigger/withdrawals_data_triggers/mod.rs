@@ -60,7 +60,7 @@ pub fn delete_withdrawal_data_trigger(
             equal_clauses: BTreeMap::default(),
         },
         offset: None,
-        limit: 100,
+        limit: Some(100),
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
@@ -143,7 +143,7 @@ mod tests {
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransitionAction::DeleteAction(Default::default());

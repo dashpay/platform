@@ -94,7 +94,7 @@ mod tests {
     async fn should_throw_error_if_withdrawal_not_found() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let mut state_repository = MockStateRepositoryLike::new();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let owner_id = &data_contract.owner_id;
 
         state_repository

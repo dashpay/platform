@@ -84,11 +84,6 @@ impl DataContractUpdateTransitionWasm {
         self.0.state_transition_protocol_version()
     }
 
-    #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.data_contract().entropy.to_vec())
-    }
-
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
         (*self.0.get_owner_id()).into()

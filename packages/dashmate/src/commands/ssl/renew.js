@@ -10,7 +10,7 @@ class RenewCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {renewZeroSSLCertificateTask} renewZeroSSLCertificateTask
+   * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -19,12 +19,12 @@ class RenewCommand extends ConfigBaseCommand {
       verbose: isVerbose,
     },
     config,
-    renewZeroSSLCertificateTask,
+    obtainZeroSSLCertificateTask,
   ) {
     const tasks = new Listr([
       {
         title: 'Renew ZeroSSL certificate',
-        task: async () => renewZeroSSLCertificateTask(config),
+        task: async () => obtainZeroSSLCertificateTask(config),
       },
     ],
     {

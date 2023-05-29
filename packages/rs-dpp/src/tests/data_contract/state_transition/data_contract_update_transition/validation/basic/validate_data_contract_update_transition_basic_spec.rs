@@ -33,7 +33,7 @@ struct TestData {
 }
 
 fn setup_test() -> TestData {
-    let data_contract = get_data_contract_fixture(None);
+    let data_contract = get_data_contract_fixture(None).data_contract;
     let mut updated_data_contract = data_contract.clone();
     updated_data_contract.increment_version();
 

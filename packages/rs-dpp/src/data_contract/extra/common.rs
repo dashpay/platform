@@ -4,6 +4,7 @@ use crate::prelude::DataContract;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
+use crate::data_contract::CreatedDataContract;
 use platform_value::Identifier;
 use std::convert::TryInto;
 use std::fs::File;
@@ -64,6 +65,17 @@ pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract,
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).map_err(|e| {
         ProtocolError::DecodingError(format!("error decoding contract from document {e}"))
+    })
+}
+
+/// Reads a JSON file and converts it a contract.
+pub fn json_document_to_created_contract(
+    path: impl AsRef<Path>,
+) -> Result<CreatedDataContract, ProtocolError> {
+    let data_contract = json_document_to_contract(path)?;
+    Ok(CreatedDataContract {
+        data_contract,
+        entropy_used: Default::default(),
     })
 }
 

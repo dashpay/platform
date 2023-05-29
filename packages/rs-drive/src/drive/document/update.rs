@@ -665,6 +665,34 @@ impl Drive {
                         )));
                     }
                 }
+            } else {
+                // no change occurred on index, we need to refresh the references
+
+                // We can only trust the reference content has not changed if there are no storage flags
+                let trust_refresh_reference = storage_flags.is_none();
+
+                // unique indexes will be stored under key "0"
+                // non unique indices should have a tree at key "0" that has all elements based off of primary key
+                if !index.unique || all_fields_null {
+                    index_path.push(vec![0]);
+
+                    // here we should return an error if the element already exists
+                    self.batch_refresh_reference(
+                        index_path,
+                        document.id.to_vec(),
+                        document_reference.clone(),
+                        trust_refresh_reference,
+                        &mut batch_operations,
+                    )?;
+                } else {
+                    self.batch_refresh_reference(
+                        index_path,
+                        vec![0],
+                        document_reference.clone(),
+                        trust_refresh_reference,
+                        &mut batch_operations,
+                    )?;
+                }
             }
         }
         Ok(batch_operations)
@@ -720,7 +748,7 @@ mod tests {
     use dpp::document::document_validator::DocumentValidator;
 
     use dpp::platform_value::{platform_value, Identifier, Value};
-    use dpp::prelude::DataContract;
+
     use dpp::util::cbor_serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
@@ -742,6 +770,7 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_document;
     use dpp::platform_value;
+    use dpp::serialization_traits::PlatformSerializable;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -2429,18 +2458,12 @@ mod tests {
 
         let contract = factory
             .create(owner_id, documents, None, None)
-            .expect("data in fixture should be correct");
-
-        let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
-
-        // TODO: Create method doesn't initiate document_types. It must be fixed
-        let contract = DataContract::from_cbor(contract_cbor.clone())
-            .expect("should create decode contract from cbor");
+            .expect("data in fixture should be correct")
+            .data_contract;
 
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 block_info.clone(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -2466,34 +2489,42 @@ mod tests {
 
         // Create a document
 
-        let document_type = "niceDocument".to_string();
+        let document_type_name = "niceDocument".to_string();
+
+        let document_type = contract
+            .document_type_for_name(document_type_name.as_str())
+            .expect("expected document type");
 
         let mut document = document_factory
             .create_extended_document_for_state_transition(
                 contract.clone(),
                 owner_id,
-                document_type.clone(),
+                document_type_name.clone(),
                 json!({ "name": "Ivan" }).into(),
             )
-            .expect("should create a document");
-
-        let document_cbor = document.to_cbor_buffer().expect("should encode to buffer");
+            .expect("should create a document")
+            .document;
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
             owner_id.to_buffer(),
         )));
 
+        let document_info = DocumentRefInfo((&document, storage_flags.clone()));
+
         let create_fees = drive
-            .add_serialized_document_for_contract(
-                &document_cbor,
-                &contract,
-                &document_type,
-                Some(owner_id.to_buffer()),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info,
+                        owner_id: Some(owner_id.to_buffer()),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 block_info,
                 true,
-                storage_flags.clone(),
                 None,
             )
             .expect("should create document");
@@ -2502,19 +2533,15 @@ mod tests {
 
         // Update the document in a second
 
-        document
-            .set("name", Value::Text("Ivaaaaaaaaaan!".to_string()))
-            .expect("should change name");
-
-        let document_cbor = document.to_cbor_buffer().expect("should encode to buffer");
+        document.set("name", Value::Text("Ivaaaaaaaaaan!".to_string()));
 
         let block_info = BlockInfo::default_with_time(10000);
 
         let update_fees = drive
-            .update_document_for_contract_cbor(
-                &document_cbor,
-                &contract_cbor,
-                &document_type,
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
                 Some(owner_id.to_buffer()),
                 block_info,
                 false,

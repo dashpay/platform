@@ -3,15 +3,13 @@ use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 use dpp::bls_signatures;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransition;
+
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::error::Error::GroveDB;
-use drive::fee::result::FeeResult;
+
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
-use dpp::serialization_traits::PlatformDeserializable;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -25,10 +23,8 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
-use crate::platform::{Platform, PlatformRef};
+use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-
-use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
 #[derive(Clone)]
@@ -328,11 +324,7 @@ where
         state_cache.initialization_information = None;
 
         // Persist ephemeral data
-        self.store_ephemeral_data(
-            &block_info,
-            &state_cache.current_validator_set_quorum_hash,
-            transaction,
-        )?;
+        self.store_ephemeral_data(&state_cache, transaction)?;
 
         Ok(())
     }
@@ -579,50 +571,11 @@ where
 
         drive_cache.cached_contracts.clear_block_cache();
 
+        // Gather some metrics
+        crate::metrics::abci_last_block_time(block_header.time.seconds as u64);
+        crate::metrics::abci_last_platform_height(height);
+        crate::metrics::abci_last_finalized_round(round);
+
         Ok(validation_result.into())
-    }
-
-    /// Checks a state transition to determine if it should be added to the mempool.
-    ///
-    /// This function performs a few checks, including validating the state transition and ensuring that the
-    /// user can pay for it. It may be inaccurate in rare cases, so the proposer needs to re-check transactions
-    /// before proposing a block.
-    ///
-    /// # Arguments
-    ///
-    /// * `raw_tx` - A raw transaction represented as a vector of bytes.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<ValidationResult<FeeResult, ConsensusError>, Error>` - If the state transition passes all
-    ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
-    pub fn check_tx(
-        &self,
-        raw_tx: Vec<u8>,
-    ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition =
-            StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
-        let state_read_guard = self.state.read().unwrap();
-        let platform_ref = PlatformRef {
-            drive: &self.drive,
-            state: &state_read_guard,
-            config: &self.config,
-            core_rpc: &self.core_rpc,
-        };
-        let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
-
-        // We should run the execution event in dry run to see if we would have enough fees for the transaction
-
-        // We need the approximate block info
-        if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
-            // We do not put the transaction, because this event happens outside of a block
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &block_info.basic_info, None)
-            })
-        } else {
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None)
-            })
-        }
     }
 }

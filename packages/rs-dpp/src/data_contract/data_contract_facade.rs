@@ -1,6 +1,7 @@
+
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::validation::data_contract_validation::DataContractValidator;
-use crate::data_contract::{DataContract, DataContractFactory};
+use crate::data_contract::{CreatedDataContract, DataContract, DataContractFactory};
 
 use crate::prelude::Identifier;
 use crate::util::entropy_generator::EntropyGenerator;
@@ -47,7 +48,7 @@ impl DataContractFacade {
         documents: Value,
         config: Option<Value>,
         definitions: Option<Value>,
-    ) -> Result<DataContract, ProtocolError> {
+    ) -> Result<CreatedDataContract, ProtocolError> {
         self.factory
             .create(owner_id, documents, config, definitions)
     }
@@ -77,10 +78,10 @@ impl DataContractFacade {
     /// Create Data Contract Create State Transition
     pub fn create_data_contract_create_transition(
         &self,
-        data_contract: DataContract,
+        created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         self.factory
-            .create_data_contract_create_transition(data_contract)
+            .create_data_contract_create_transition(created_data_contract)
     }
 
     /// Create Data Contract Update State Transition

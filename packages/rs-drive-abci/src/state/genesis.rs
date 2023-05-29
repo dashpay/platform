@@ -117,33 +117,37 @@ impl<C> Platform<C> {
         ]);
 
         for (_, (data_contract, identity_public_keys_set)) in system_data_contract_types {
-            let public_keys = BTreeSet::from_iter([
-                IdentityPublicKey {
-                    id: 0,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_level: SecurityLevel::MASTER,
-                    key_type: KeyType::ECDSA_SECP256K1,
-                    read_only: false,
-                    data: identity_public_keys_set.master.into(),
-                    disabled_at: None,
-                },
-                IdentityPublicKey {
-                    id: 1,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_level: SecurityLevel::HIGH,
-                    key_type: KeyType::ECDSA_SECP256K1,
-                    read_only: false,
-                    data: identity_public_keys_set.high.into(),
-                    disabled_at: None,
-                },
-            ]);
+            let public_keys = [
+                (
+                    0,
+                    IdentityPublicKey {
+                        id: 0,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::MASTER,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        read_only: false,
+                        data: identity_public_keys_set.master.into(),
+                        disabled_at: None,
+                    },
+                ),
+                (
+                    1,
+                    IdentityPublicKey {
+                        id: 1,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::HIGH,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        read_only: false,
+                        data: identity_public_keys_set.high.into(),
+                        disabled_at: None,
+                    },
+                ),
+            ];
 
             let identity = Identity {
                 feature_version: PROTOCOL_VERSION,
                 id: data_contract.owner_id,
-                // TODO: It super inconvenient to have this boilerplate everywhere and there is no
-                //  way to control consistency. BTreeMap must be internal structure of IdentityPublicKey
-                public_keys: public_keys.into_iter().map(|pk| (pk.id, pk)).collect(),
+                public_keys: BTreeMap::from(public_keys),
                 balance: 0,
                 revision: 0,
                 asset_lock_proof: None,

@@ -163,7 +163,7 @@ mod test {
 
     fn setup_test() -> TestData {
         let bls = NativeBlsModule::default();
-        let data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None);
         let private_key_bytes =
             hex::decode("9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2")
                 .unwrap();
@@ -178,7 +178,7 @@ mod test {
         let data_contract_factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
 
         let mut state_transition = data_contract_factory
-            .create_data_contract_create_transition(data_contract.clone())
+            .create_data_contract_create_transition(created_data_contract.clone())
             .unwrap();
 
         state_transition
@@ -192,7 +192,7 @@ mod test {
         let raw_state_transition = state_transition.to_object(false).unwrap();
 
         TestData {
-            data_contract,
+            data_contract: created_data_contract.data_contract,
             state_transition,
             raw_state_transition,
             bls,

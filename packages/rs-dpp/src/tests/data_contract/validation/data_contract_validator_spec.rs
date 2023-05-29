@@ -24,7 +24,7 @@ struct TestData {
 fn setup_test() -> TestData {
     init();
 
-    let data_contract = get_data_contract_fixture(None);
+    let data_contract = get_data_contract_fixture(None).data_contract;
     let raw_data_contract = data_contract.to_object().unwrap();
 
     let protocol_version_validator =

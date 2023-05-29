@@ -36,7 +36,7 @@ struct TestData {
 }
 
 fn setup_test(action: Action) -> TestData {
-    let data_contract = get_data_contract_fixture(None);
+    let data_contract = get_data_contract_fixture(None).data_contract;
     let documents =
         get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
     let transitions = match action {

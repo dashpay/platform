@@ -1,7 +1,8 @@
 const lodashMerge = require('lodash/merge');
 
+const path = require('path');
 const {
-  NETWORK_MAINNET,
+  NETWORK_MAINNET, HOME_DIR_PATH,
 } = require('../../src/constants');
 
 const baseConfig = require('./base');
@@ -18,6 +19,12 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
       image: 'dashpay/dashd:18.2.2',
     },
     indexes: false,
+    log: {
+      file: {
+        categories: [],
+        path: path.join(HOME_DIR_PATH, 'logs', 'mainnet', 'core.log'),
+      },
+    },
   },
   network: NETWORK_MAINNET,
   platform: {

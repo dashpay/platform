@@ -4,13 +4,12 @@
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 
+use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
 use tracing::warn;
 use tracing_log::LogTracer;
 use tracing_subscriber::prelude::*;
-
-// struct aaa {}
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -25,6 +24,7 @@ struct Cli {
     /// Path to the config (.env) file.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath) ]
     config: Option<std::path::PathBuf>,
+
     /// Enable verbose logging. Use multiple times for even more logs.
     ///
     /// Repeat `v` multiple times to increase log verbosity:
@@ -56,9 +56,15 @@ enum Commands {
     /// WARNING: output can contain sensitive data!
     #[command()]
     Config {},
+
+    /// Check status.
+    ///
+    /// Returns 0 on success.
+    #[command()]
+    Status {},
 }
 
-pub fn main() {
+pub fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
@@ -74,17 +80,69 @@ pub fn main() {
                 config.core.rpc.password.clone(),
             )
             .unwrap();
-            drive_abci::abci::start(&config, core_rpc).unwrap()
+            let _prometheus = start_prometheus(&config)?;
+
+            drive_abci::abci::start(&config, core_rpc).unwrap();
+            Ok(())
         }
         Commands::Config {} => dump_config(&config),
+        Commands::Status {} => check_status(&config),
     }
 }
 
-fn dump_config(config: &PlatformConfig) {
+/// Start prometheus exporter if it's configured.
+fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, String> {
+    let prometheus_addr = config
+        .abci
+        .prometheus_bind_address
+        .clone()
+        .filter(|s| !s.is_empty());
+
+    if let Some(addr) = prometheus_addr {
+        let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
+        Ok(Some(
+            drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     let serialized =
         serde_json::to_string_pretty(config).expect("failed to generate configuration");
 
     println!("{}", serialized);
+
+    Ok(())
+}
+
+/// Check status of ABCI server.
+fn check_status(config: &PlatformConfig) -> Result<(), String> {
+    if let Some(prometheus_addr) = &config.abci.prometheus_bind_address {
+        let url =
+            url::Url::parse(prometheus_addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
+
+        let addr = format!(
+            "{}://{}:{}/metrics",
+            url.scheme(),
+            url.host()
+                .ok_or("ABCI_PROMETHEUS_BIND_ADDRESS must contain valid host".to_string())?,
+            url.port().unwrap_or(DEFAULT_PROMETHEUS_PORT)
+        );
+
+        let body: String = ureq::get(&addr)
+            .set("Content-type", "text/plain")
+            .call()
+            .map_err(|e| e.to_string())?
+            .into_string()
+            .map_err(|e| e.to_string())?;
+
+        println!("{}", body);
+        Ok(())
+    } else {
+        Err("ABCI_PROMETHEUS_BIND_ADDRESS not defined, cannot check status".to_string())
+    }
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {

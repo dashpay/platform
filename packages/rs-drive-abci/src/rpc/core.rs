@@ -8,6 +8,7 @@ use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::time::Duration;
 use tenderdash_abci::proto::types::CoreChainLock;
 
 /// Information returned by QuorumListExtended
@@ -44,7 +45,7 @@ pub trait CoreRPCLike {
 
     /// Get list of quorums at a given height.
     ///
-    /// See https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-listextended
+    /// See <https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-listextended>
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
@@ -52,7 +53,7 @@ pub trait CoreRPCLike {
 
     /// Get quorum information.
     ///
-    /// See https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-info
+    /// See <https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-info>
     fn get_quorum_info(
         &self,
         quorum_type: QuorumType,
@@ -76,6 +77,34 @@ pub struct DefaultCoreRPC {
     inner: Client,
 }
 
+macro_rules! retry {
+    ($action:expr) => {{
+        const MAX_RETRIES: u32 = 4; // Maximum number of retry attempts
+        const FIB_MULTIPLIER: u64 = 1; // Multiplier for Fibonacci sequence
+
+        fn fibonacci(n: u32) -> u64 {
+            match n {
+                0 => 0,
+                1 => 1,
+                _ => fibonacci(n - 1) + fibonacci(n - 2),
+            }
+        }
+
+        let mut last_err = None;
+        for i in 0..MAX_RETRIES {
+            match $action {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    last_err = Some(e);
+                    let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
+                    std::thread::sleep(Duration::from_secs(delay));
+                }
+            }
+        }
+        Err(last_err.unwrap()) // Return the last error if all attempts fail
+    }};
+}
+
 impl DefaultCoreRPC {
     /// Create new instance
     pub fn open(url: &str, username: String, password: String) -> Result<Self, Error> {
@@ -87,10 +116,11 @@ impl DefaultCoreRPC {
 
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
-        self.inner.get_block_hash(height)
+        retry!(self.inner.get_block_hash(height))
     }
 
     fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
+        //no need to retry on this one
         let GetBestChainLockResult {
             blockhash,
             height,
@@ -105,35 +135,37 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
-        self.inner.get_raw_transaction(tx_id, None)
+        retry!(self.inner.get_raw_transaction(tx_id, None))
     }
 
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
-        self.inner.get_transaction(tx_id, None)
+        retry!(self.inner.get_transaction(tx_id, None))
     }
 
     fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error> {
-        let blockchain_info = self.inner.get_blockchain_info()?;
-        Ok(blockchain_info.bip9_softforks.get(name).cloned())
+        retry!(self
+            .inner
+            .get_blockchain_info()
+            .map(|blockchain_info| blockchain_info.bip9_softforks.get(name).cloned()))
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
-        self.inner.get_block(block_hash)
+        retry!(self.inner.get_block(block_hash))
     }
 
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error> {
-        self.inner.get_block_json(block_hash)
+        retry!(self.inner.get_block_json(block_hash))
     }
 
     fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error> {
-        self.inner.get_chain_tips()
+        retry!(self.inner.get_chain_tips())
     }
 
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        self.inner.get_quorum_listextended(height)
+        retry!(self.inner.get_quorum_listextended(height))
     }
 
     fn get_quorum_info(
@@ -142,8 +174,9 @@ impl CoreRPCLike for DefaultCoreRPC {
         hash: &QuorumHash,
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error> {
-        self.inner
-            .get_quorum_info(quorum_type, hash, include_secret_key_share)
+        retry!(self
+            .inner
+            .get_quorum_info(quorum_type, hash, include_secret_key_share))
     }
 
     fn get_protx_diff_with_masternodes(
@@ -157,7 +190,8 @@ impl CoreRPCLike for DefaultCoreRPC {
             base_block,
             block
         );
-        self.inner
-            .get_protx_listdiff(base_block.unwrap_or(1), block)
+        retry!(self
+            .inner
+            .get_protx_listdiff(base_block.unwrap_or(1), block))
     }
 }

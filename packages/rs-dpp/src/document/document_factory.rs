@@ -271,6 +271,31 @@ where
         DocumentsBatchTransition::from_value_map(raw_batch_transition, data_contracts)
     }
 
+    pub fn create_extended_from_document_buffer(
+        &self,
+        buffer: &[u8],
+        document_type: &str,
+        data_contract: &DataContract,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        let document_type = data_contract.document_types.get(document_type).ok_or(
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "document type was not found in the data contract",
+            )),
+        )?;
+
+        let document = Document::from_bytes(buffer, document_type)?;
+
+        Ok(ExtendedDocument {
+            protocol_version: data_contract.protocol_version,
+            document_type_name: document_type.name.clone(),
+            data_contract_id: data_contract.id,
+            document,
+            data_contract: data_contract.clone(),
+            metadata: None,
+            entropy: Bytes32::default(),
+        })
+    }
+
     pub async fn create_from_buffer(
         &self,
         buffer: impl AsRef<[u8]>,
@@ -467,7 +492,7 @@ mod test {
 
     #[test]
     fn document_with_type_and_data() {
-        let mut data_contract = get_data_contract_fixture(None);
+        let mut data_contract = get_data_contract_fixture(None).data_contract;
         let document_type = "niceDocument";
 
         let factory = DocumentFactory::new(
@@ -529,7 +554,7 @@ mod test {
 
     #[test]
     fn create_transition_mismatch_user_id() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let mut documents = get_extended_documents_fixture(data_contract).unwrap();
 
         let factory = DocumentFactory::new(
@@ -546,7 +571,7 @@ mod test {
 
     #[test]
     fn create_transition_invalid_initial_revision() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let mut documents = get_extended_documents_fixture(data_contract).unwrap();
         documents[0].document.revision = Some(3);
 
@@ -561,7 +586,7 @@ mod test {
 
     #[test]
     fn create_transitions_with_passed_documents() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents = get_extended_documents_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,

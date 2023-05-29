@@ -4,7 +4,10 @@ use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use std::borrow::Cow;
 
+use dpp::dashcore::OutPoint;
+use dpp::platform_value::Bytes36;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -22,6 +25,11 @@ pub enum SystemOperationType {
         /// The amount of credits we are seeking to remove
         amount: Credits,
     },
+    /// Adding a used asset lock
+    AddUsedAssetLock {
+        /// The asset lock outpoint that should be added
+        asset_lock_outpoint: Bytes36,
+    },
 }
 
 impl DriveLowLevelOperationConverter for SystemOperationType {
@@ -36,7 +44,7 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             SystemOperationType::AddToSystemCredits { amount } => drive
-                .add_to_system_credits_operation(
+                .add_to_system_credits_operations(
                     amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
@@ -47,6 +55,12 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
                     estimated_costs_only_with_layer_info,
                     transaction,
                 ),
+            SystemOperationType::AddUsedAssetLock {
+                asset_lock_outpoint,
+            } => drive.add_asset_lock_outpoint_operations(
+                &asset_lock_outpoint,
+                estimated_costs_only_with_layer_info,
+            ),
         }
     }
 }

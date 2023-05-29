@@ -90,7 +90,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 )]),
             },
             offset: None,
-            limit: 1,
+            limit: Some(1),
             order_by: Default::default(),
             start_at: None,
             start_at_included: false,

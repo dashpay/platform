@@ -371,7 +371,7 @@ function configureCoreTaskFactory(
                     result: blockchainInfo,
                   } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
 
-                  isV20Activated = blockchainInfo.bip9_softforks.v20.status === 'active';
+                  isV20Activated = blockchainInfo.bip9_softforks && blockchainInfo.bip9_softforks.v20 && blockchainInfo.bip9_softforks.v20.status === 'active';
                   if (isV20Activated) {
                     break;
                   }

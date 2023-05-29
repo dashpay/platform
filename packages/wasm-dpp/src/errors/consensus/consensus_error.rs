@@ -115,6 +115,8 @@ use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
 use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 use crate::errors::consensus::value_error::ValueErrorWasm;
 
+use super::state::document::DocumentTimestampsAreEqualErrorWasm;
+
 pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     match e {
         DPPConsensusError::FeeError(e) => match e {
@@ -196,6 +198,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::IdentityInsufficientBalanceError(e) => {
             let wasm_error: IdentityInsufficientBalanceErrorWasm = e.into();
             wasm_error.into()
+        }
+        StateError::DocumentTimestampsAreEqualError(e) => {
+            DocumentTimestampsAreEqualErrorWasm::from(e).into()
         }
     }
 }

@@ -232,12 +232,11 @@ mod tests {
     #[test]
     fn data_contract_create_ser_de() {
         let identity = Identity::random_identity(None, 5, Some(5));
-        let mut data_contract = get_data_contract_fixture(Some(identity.id));
-        data_contract.entropy = Default::default();
+        let data_contract = get_data_contract_fixture(Some(identity.id));
         let data_contract_create_transition =
             DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
-                data_contract,
-                entropy: Default::default(),
+                data_contract: data_contract.data_contract,
+                entropy: data_contract.entropy_used,
                 signature_public_key_id: 0,
                 signature: [1u8; 65].to_vec().into(),
             });
@@ -255,7 +254,7 @@ mod tests {
         data_contract.entropy = Default::default();
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
-                data_contract,
+                data_contract: created_data_contract.data_contract,
                 signature_public_key_id: 0,
                 signature: [1u8; 65].to_vec().into(),
             });
@@ -268,8 +267,7 @@ mod tests {
 
     #[test]
     fn document_batch_transition_10_created_documents_ser_de() {
-        let mut data_contract = get_data_contract_fixture(None);
-        data_contract.entropy = Default::default();
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);

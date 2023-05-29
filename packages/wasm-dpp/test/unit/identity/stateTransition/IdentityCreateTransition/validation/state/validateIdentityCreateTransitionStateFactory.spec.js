@@ -1,6 +1,6 @@
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
@@ -11,7 +11,6 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   let stateRepositoryMock;
   let executionContext;
 
-  let IdentityCreateTransition;
   let IdentityPublicKey;
   let IdentityAlreadyExistsError;
   let IdentityCreateTransitionStateValidator;
@@ -19,7 +18,6 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
 
   before(async () => {
     ({
-      IdentityCreateTransition,
       IdentityAlreadyExistsError,
       IdentityPublicKey,
       IdentityCreateTransitionStateValidator,
@@ -35,9 +33,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
     const validator = new IdentityCreateTransitionStateValidator(stateRepositoryMock);
     validateIdentityCreateTransitionState = (st) => validator.validate(st, executionContext);
 
-    stateTransition = new IdentityCreateTransition(
-      getIdentityCreateTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityCreateTransitionFixture();
 
     await stateTransition.signByPrivateKey(privateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 

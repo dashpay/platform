@@ -1,6 +1,6 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
 
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 
 describe('validateDataContractPatterns', () => {
   let DataContractValidator;
@@ -13,8 +13,8 @@ describe('validateDataContractPatterns', () => {
     } = await loadWasmDpp());
   });
 
-  it('should return valid result', () => {
-    const rawDataContract = getDataContractFixture().toObject();
+  it('should return valid result', async () => {
+    const rawDataContract = (await getDataContractFixture()).toObject();
     delete rawDataContract.$defs;
 
     const schema = {
@@ -39,8 +39,8 @@ describe('validateDataContractPatterns', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should return invalid result on incompatible pattern', () => {
-    const rawDataContract = getDataContractFixture().toObject();
+  it('should return invalid result on incompatible pattern', async () => {
+    const rawDataContract = (await getDataContractFixture()).toObject();
     delete rawDataContract.$defs;
 
     const schema = {

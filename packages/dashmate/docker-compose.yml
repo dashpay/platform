@@ -10,6 +10,7 @@ services:
     volumes:
       - core_data:/home/dash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
+      - ${CORE_LOG_DIRECTORY_PATH:?err}:/var/log/dash
     command:
       - dashd
     stop_grace_period: 30s

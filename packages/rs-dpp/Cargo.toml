@@ -6,7 +6,7 @@ authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sa
 
 [dependencies]
 anyhow = { version = "1.0.70" }
-async-trait = { version = "0.1" }
+async-trait = { version = "0.1.68" }
 base64 = "0.20.0"
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "develop" }
 bs58 = "0.4.0"
