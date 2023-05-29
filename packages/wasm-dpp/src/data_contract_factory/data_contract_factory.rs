@@ -1,7 +1,5 @@
-use std::convert::TryFrom;
 use std::sync::Arc;
 
-use dpp::data_contract::CreatedDataContract;
 use dpp::{
     data_contract::{
         validation::data_contract_validator::DataContractValidator, DataContractFactory,
@@ -158,9 +156,7 @@ impl DataContractFactoryWasm {
         data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(
-                CreatedDataContract::try_from(data_contract).with_js_error()?,
-            )
+            .create_data_contract_create_transition(data_contract.clone().into())
             .map(Into::into)
             .with_js_error()
     }

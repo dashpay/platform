@@ -10,7 +10,6 @@ debug=1
 debug={{=category}}{{?}}{{~}}
 debuglogfile=/var/log/dash/core.log
 logips={{=it.core.logIps }}
-fallbackfee=0.00001
 
 # JSONRPC
 server=1
@@ -55,12 +54,7 @@ zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?}}
 
-{{? it.network !== 'mainnet'}}
-fallbackfee=0.00001
-{{?}}
-
 {{? it.network === 'testnet'}}testnet=1
-
 [test]
 {{?? it.network === 'local'}}
 regtest=1

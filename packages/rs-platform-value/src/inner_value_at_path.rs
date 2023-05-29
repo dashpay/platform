@@ -178,7 +178,7 @@ impl Value {
             .collect()
     }
 
-    pub fn get_value_at_path<'a>(&'a self, path: &str) -> Result<&'a Value, Error> {
+    pub fn get_value_at_path<'a, 'b>(&'a self, path: &'b str) -> Result<&'a Value, Error> {
         let split = path.split('.');
         let mut current_value = self;
         for path_component in split {
@@ -272,40 +272,6 @@ impl Value {
             current_value = new_value;
         }
         Ok(Some(current_value))
-    }
-
-    pub fn get_integer_at_path<T>(&self, path: &str) -> Result<T, Error>
-    where
-        T: TryFrom<i128>
-            + TryFrom<u128>
-            + TryFrom<u64>
-            + TryFrom<i64>
-            + TryFrom<u32>
-            + TryFrom<i32>
-            + TryFrom<u16>
-            + TryFrom<i16>
-            + TryFrom<u8>
-            + TryFrom<i8>,
-    {
-        self.get_value_at_path(path)?.to_integer()
-    }
-
-    pub fn get_optional_integer_at_path<T>(&self, path: &str) -> Result<Option<T>, Error>
-    where
-        T: TryFrom<i128>
-            + TryFrom<u128>
-            + TryFrom<u64>
-            + TryFrom<i64>
-            + TryFrom<u32>
-            + TryFrom<i32>
-            + TryFrom<u16>
-            + TryFrom<i16>
-            + TryFrom<u8>
-            + TryFrom<i8>,
-    {
-        self.get_optional_value_at_path(path)?
-            .map(|value| value.to_integer())
-            .transpose()
     }
 
     pub fn set_value_at_full_path(&mut self, path: &str, value: Value) -> Result<(), Error> {

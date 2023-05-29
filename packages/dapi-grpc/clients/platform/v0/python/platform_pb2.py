@@ -11,8 +11,6 @@ from google.protobuf import symbol_database as _symbol_database
 _sym_db = _symbol_database.Default()
 
 
-from google.protobuf import wrappers_pb2 as google_dot_protobuf_dot_wrappers__pb2
-from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
@@ -22,86 +20,11 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"U\n\x05Proof\x12\x15\n\rgrovedb_proof\x18\x01 \x01(\x0c\x12\x13\n\x0bquorum_hash\x18\x02 \x01(\x0c\x12\x11\n\tsignature\x18\x03 \x01(\x0c\x12\r\n\x05round\x18\x04 \x01(\r\"o\n\x10ResponseMetadata\x12\x0e\n\x06height\x18\x01 \x01(\x04\x12 \n\x18\x63ore_chain_locked_height\x18\x02 \x01(\r\x12\x0f\n\x07time_ms\x18\x03 \x01(\x04\x12\x18\n\x10protocol_version\x18\x04 \x01(\r\"L\n\x1dStateTransitionBroadcastError\x12\x0c\n\x04\x63ode\x18\x01 \x01(\r\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\";\n\x1f\x42roadcastStateTransitionRequest\x12\x18\n\x10state_transition\x18\x01 \x01(\x0c\"\"\n BroadcastStateTransitionResponse\"/\n\x12GetIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\x97\x01\n\x13GetIdentityResponse\x12\x10\n\x08identity\x18\x01 \x01(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"2\n\x14GetIdentitiesRequest\x12\x0b\n\x03ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xdb\x03\n\x15GetIdentitiesResponse\x12Q\n\nidentities\x18\x01 \x01(\x0b\x32;.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentitiesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1e\n\rIdentityValue\x12\r\n\x05value\x18\x01 \x01(\x0c\x1ak\n\rIdentityEntry\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12M\n\x05value\x18\x02 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue\x1a\x66\n\nIdentities\x12X\n\x10identity_entries\x18\x01 \x03(\x0b\x32>.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntryB\x08\n\x06result\"\xbb\x01\n\x1aGetIdentityBalanceResponse\x12-\n\x07\x62\x61lance\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.UInt64Value\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"\xf6\x01\n%GetIdentityBalanceAndRevisionResponse\x12-\n\x07\x62\x61lance\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.UInt64Value\x12.\n\x08revision\x18\x02 \x01(\x0b\x32\x1c.google.protobuf.UInt64Value\x12/\n\x05proof\x18\x03 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x04 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"\xd1\x01\n\x0eKeyRequestType\x12\x36\n\x08\x61ll_keys\x18\x01 \x01(\x0b\x32\".org.dash.platform.dapi.v0.AllKeysH\x00\x12@\n\rspecific_keys\x18\x02 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.SpecificKeysH\x00\x12:\n\nsearch_key\x18\x03 \x01(\x0b\x32$.org.dash.platform.dapi.v0.SearchKeyH\x00\x42\t\n\x07request\"\t\n\x07\x41llKeys\"\x1f\n\x0cSpecificKeys\x12\x0f\n\x07key_ids\x18\x01 \x03(\r\"\xb6\x01\n\tSearchKey\x12I\n\x0bpurpose_map\x18\x01 \x03(\x0b\x32\x34.org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry\x1a^\n\x0fPurposeMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12:\n\x05value\x18\x02 \x01(\x0b\x32+.org.dash.platform.dapi.v0.SecurityLevelMap:\x02\x38\x01\"\xbf\x02\n\x10SecurityLevelMap\x12]\n\x12security_level_map\x18\x01 \x03(\x0b\x32\x41.org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry\x1aw\n\x15SecurityLevelMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12M\n\x05value\x18\x02 \x01(\x0e\x32>.org.dash.platform.dapi.v0.SecurityLevelMap.KeyKindRequestType:\x02\x38\x01\"S\n\x12KeyKindRequestType\x12\x1f\n\x1b\x43URRENT_KEY_OF_KIND_REQUEST\x10\x00\x12\x1c\n\x18\x41LL_KEYS_OF_KIND_REQUEST\x10\x01\"\xd8\x01\n\x16GetIdentityKeysRequest\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12?\n\x0crequest_type\x18\x02 \x01(\x0b\x32).org.dash.platform.dapi.v0.KeyRequestType\x12+\n\x05limit\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x04 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\r\n\x05prove\x18\x05 \x01(\x08\"\xfa\x01\n\x17GetIdentityKeysResponse\x12G\n\x04keys\x18\x01 \x01(\x0b\x32\x37.org.dash.platform.dapi.v0.GetIdentityKeysResponse.KeysH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1a\n\x04Keys\x12\x12\n\nkeys_bytes\x18\x01 \x03(\x0c\x42\x08\n\x06result\"\xb2\x04\n\x18GetIdentitiesKeysRequest\x12\x14\n\x0cidentity_ids\x18\x01 \x03(\x0c\x12?\n\x0crequest_type\x18\x02 \x01(\x0b\x32).org.dash.platform.dapi.v0.KeyRequestType\x12+\n\x05limit\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x04 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\r\n\x05prove\x18\x05 \x01(\x08\x1a\xd4\x02\n\x10SecurityLevelMap\x12v\n\x12security_level_map\x18\x01 \x03(\x0b\x32Z.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.SecurityLevelMapEntry\x1a\x90\x01\n\x15SecurityLevelMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12\x66\n\x05value\x18\x02 \x01(\x0e\x32W.org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.KeyKindRequestType:\x02\x38\x01\"5\n\x12KeyKindRequestType\x12\x1f\n\x1b\x43URRENT_KEY_OF_KIND_REQUEST\x10\x00\"\xf4\x03\n\x19GetIdentitiesKeysResponse\x12\\\n\x0bpublic_keys\x18\x01 \x01(\x0b\x32\x45.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1a\n\tPublicKey\x12\r\n\x05value\x18\x01 \x01(\x0c\x1al\n\x0ePublicKeyEntry\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12M\n\x05value\x18\x02 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKey\x1as\n\x10PublicKeyEntries\x12_\n\x12public_key_entries\x18\x01 \x03(\x0b\x32\x43.org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntryB\x08\n\x06result\"\xd7\x04\n\x10GetProofsRequest\x12O\n\nidentities\x18\x01 \x03(\x0b\x32;.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest\x12N\n\tcontracts\x18\x02 \x03(\x0b\x32;.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest\x12N\n\tdocuments\x18\x03 \x03(\x0b\x32;.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest\x1aw\n\x0f\x44ocumentRequest\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12#\n\x1b\x64ocument_type_keeps_history\x18\x03 \x01(\x08\x12\x13\n\x0b\x64ocument_id\x18\x04 \x01(\x0c\x1a\xb0\x01\n\x0fIdentityRequest\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12V\n\x0crequest_type\x18\x02 \x01(\x0e\x32@.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.Type\"0\n\x04Type\x12\x11\n\rFULL_IDENTITY\x10\x00\x12\x0b\n\x07\x42\x41LANCE\x10\x01\x12\x08\n\x04KEYS\x10\x02\x1a&\n\x0f\x43ontractRequest\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\"\x83\x01\n\x11GetProofsResponse\x12/\n\x05proof\x18\x01 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x02 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"3\n\x16GetDataContractRequest\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xa0\x01\n\x17GetDataContractResponse\x12\x15\n\rdata_contract\x18\x01 \x01(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"5\n\x17GetDataContractsRequest\x12\x0b\n\x03ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\x86\x04\n\x18GetDataContractsResponse\x12[\n\x0e\x64\x61ta_contracts\x18\x01 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\"\n\x11\x44\x61taContractValue\x12\r\n\x05value\x18\x01 \x01(\x0c\x1av\n\x11\x44\x61taContractEntry\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12T\n\x05value\x18\x02 \x01(\x0b\x32\x45.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractValue\x1au\n\rDataContracts\x12\x64\n\x15\x64\x61ta_contract_entries\x18\x01 \x03(\x0b\x32\x45.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntryB\x08\n\x06result\"\xb9\x01\n\x13GetDocumentsRequest\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12\r\n\x05where\x18\x03 \x01(\x0c\x12\x10\n\x08order_by\x18\x04 \x01(\x0c\x12\r\n\x05limit\x18\x05 \x01(\r\x12\x15\n\x0bstart_after\x18\x06 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x08 \x01(\x08\x42\x07\n\x05start\"\x99\x01\n\x14GetDocumentsResponse\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"Q\n%GetIdentitiesByPublicKeyHashesRequest\x12\x19\n\x11public_key_hashes\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xac\x01\n&GetIdentitiesByPublicKeyHashesResponse\x12\x12\n\nidentities\x18\x01 \x03(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"M\n#GetIdentityByPublicKeyHashesRequest\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xb6\x01\n$GetIdentityByPublicKeyHashesResponse\x12\x12\n\x08identity\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06result\"S\n#WaitForStateTransitionResultRequest\x12\x1d\n\x15state_transition_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xf0\x01\n$WaitForStateTransitionResultResponse\x12I\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x38.org.dash.platform.dapi.v0.StateTransitionBroadcastErrorH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x0b\n\tresponses\"P\n\x14\x43onsensusParamsBlock\x12\x11\n\tmax_bytes\x18\x01 \x01(\t\x12\x0f\n\x07max_gas\x18\x02 \x01(\t\x12\x14\n\x0ctime_iota_ms\x18\x03 \x01(\t\"b\n\x17\x43onsensusParamsEvidence\x12\x1a\n\x12max_age_num_blocks\x18\x01 \x01(\t\x12\x18\n\x10max_age_duration\x18\x02 \x01(\t\x12\x11\n\tmax_bytes\x18\x03 \x01(\t\":\n\x19GetConsensusParamsRequest\x12\x0e\n\x06height\x18\x01 \x01(\x03\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xa2\x01\n\x1aGetConsensusParamsResponse\x12>\n\x05\x62lock\x18\x01 \x01(\x0b\x32/.org.dash.platform.dapi.v0.ConsensusParamsBlock\x12\x44\n\x08\x65vidence\x18\x02 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.ConsensusParamsEvidence2\xcb\x0e\n\x08Platform\x12\x93\x01\n\x18\x62roadcastStateTransition\x12:.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest\x1a;.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse\x12l\n\x0bgetIdentity\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platform.dapi.v0.GetIdentityResponse\x12r\n\rgetIdentities\x12/.org.dash.platform.dapi.v0.GetIdentitiesRequest\x1a\x30.org.dash.platform.dapi.v0.GetIdentitiesResponse\x12x\n\x0fgetIdentityKeys\x12\x31.org.dash.platform.dapi.v0.GetIdentityKeysRequest\x1a\x32.org.dash.platform.dapi.v0.GetIdentityKeysResponse\x12z\n\x12getIdentityBalance\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a\x35.org.dash.platform.dapi.v0.GetIdentityBalanceResponse\x12\x90\x01\n\x1dgetIdentityBalanceAndRevision\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a@.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse\x12\x66\n\tgetProofs\x12+.org.dash.platform.dapi.v0.GetProofsRequest\x1a,.org.dash.platform.dapi.v0.GetProofsResponse\x12x\n\x0fgetDataContract\x12\x31.org.dash.platform.dapi.v0.GetDataContractRequest\x1a\x32.org.dash.platform.dapi.v0.GetDataContractResponse\x12{\n\x10getDataContracts\x12\x32.org.dash.platform.dapi.v0.GetDataContractsRequest\x1a\x33.org.dash.platform.dapi.v0.GetDataContractsResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsResponse\x12\xa5\x01\n\x1egetIdentitiesByPublicKeyHashes\x12@.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest\x1a\x41.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse\x12\x9f\x01\n\x1cgetIdentityByPublicKeyHashes\x12>.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesRequest\x1a?.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse\x12\x9f\x01\n\x1cwaitForStateTransitionResult\x12>.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest\x1a?.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse\x12\x81\x01\n\x12getConsensusParams\x12\x34.org.dash.platform.dapi.v0.GetConsensusParamsRequest\x1a\x35.org.dash.platform.dapi.v0.GetConsensusParamsResponseb\x06proto3'
+  serialized_pb=b'\n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\x1a\x1fgoogle/protobuf/timestamp.proto\"T\n\x05Proof\x12\x14\n\x0cmerkle_proof\x18\x01 \x01(\x0c\x12\x13\n\x0bquorum_hash\x18\x02 \x01(\x0c\x12\x11\n\tsignature\x18\x03 \x01(\x0c\x12\r\n\x05round\x18\x04 \x01(\r\"o\n\x10ResponseMetadata\x12\x0e\n\x06height\x18\x01 \x01(\x03\x12 \n\x18\x63ore_chain_locked_height\x18\x02 \x01(\r\x12\x0f\n\x07time_ms\x18\x03 \x01(\x04\x12\x18\n\x10protocol_version\x18\x04 \x01(\r\"L\n\x1dStateTransitionBroadcastError\x12\x0c\n\x04\x63ode\x18\x01 \x01(\r\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\";\n\x1f\x42roadcastStateTransitionRequest\x12\x18\n\x10state_transition\x18\x01 \x01(\x0c\"\"\n BroadcastStateTransitionResponse\"/\n\x12GetIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\x97\x01\n\x13GetIdentityResponse\x12\x10\n\x08identity\x18\x01 \x01(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"3\n\x16GetDataContractRequest\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xa0\x01\n\x17GetDataContractResponse\x12\x15\n\rdata_contract\x18\x01 \x01(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"\xb9\x01\n\x13GetDocumentsRequest\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12\r\n\x05where\x18\x03 \x01(\x0c\x12\x10\n\x08order_by\x18\x04 \x01(\x0c\x12\r\n\x05limit\x18\x05 \x01(\r\x12\x15\n\x0bstart_after\x18\x06 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x08 \x01(\x08\x42\x07\n\x05start\"\x99\x01\n\x14GetDocumentsResponse\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"Q\n%GetIdentitiesByPublicKeyHashesRequest\x12\x19\n\x11public_key_hashes\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xac\x01\n&GetIdentitiesByPublicKeyHashesResponse\x12\x12\n\nidentities\x18\x01 \x03(\x0c\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\"S\n#WaitForStateTransitionResultRequest\x12\x1d\n\x15state_transition_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xf0\x01\n$WaitForStateTransitionResultResponse\x12I\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x38.org.dash.platform.dapi.v0.StateTransitionBroadcastErrorH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x0b\n\tresponses\"P\n\x14\x43onsensusParamsBlock\x12\x11\n\tmax_bytes\x18\x01 \x01(\t\x12\x0f\n\x07max_gas\x18\x02 \x01(\t\x12\x14\n\x0ctime_iota_ms\x18\x03 \x01(\t\"b\n\x17\x43onsensusParamsEvidence\x12\x1a\n\x12max_age_num_blocks\x18\x01 \x01(\t\x12\x18\n\x10max_age_duration\x18\x02 \x01(\t\x12\x11\n\tmax_bytes\x18\x03 \x01(\t\":\n\x19GetConsensusParamsRequest\x12\x0e\n\x06height\x18\x01 \x01(\x03\x12\r\n\x05prove\x18\x02 \x01(\x08\"\xa2\x01\n\x1aGetConsensusParamsResponse\x12>\n\x05\x62lock\x18\x01 \x01(\x0b\x32/.org.dash.platform.dapi.v0.ConsensusParamsBlock\x12\x44\n\x08\x65vidence\x18\x02 \x01(\x0b\x32\x32.org.dash.platform.dapi.v0.ConsensusParamsEvidence2\xc7\x07\n\x08Platform\x12\x93\x01\n\x18\x62roadcastStateTransition\x12:.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest\x1a;.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse\x12l\n\x0bgetIdentity\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platform.dapi.v0.GetIdentityResponse\x12x\n\x0fgetDataContract\x12\x31.org.dash.platform.dapi.v0.GetDataContractRequest\x1a\x32.org.dash.platform.dapi.v0.GetDataContractResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsResponse\x12\xa5\x01\n\x1egetIdentitiesByPublicKeyHashes\x12@.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest\x1a\x41.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse\x12\x9f\x01\n\x1cwaitForStateTransitionResult\x12>.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest\x1a?.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse\x12\x81\x01\n\x12getConsensusParams\x12\x34.org.dash.platform.dapi.v0.GetConsensusParamsRequest\x1a\x35.org.dash.platform.dapi.v0.GetConsensusParamsResponseb\x06proto3'
   ,
-  dependencies=[google_dot_protobuf_dot_wrappers__pb2.DESCRIPTOR,google_dot_protobuf_dot_struct__pb2.DESCRIPTOR,google_dot_protobuf_dot_timestamp__pb2.DESCRIPTOR,])
+  dependencies=[google_dot_protobuf_dot_timestamp__pb2.DESCRIPTOR,])
 
 
-
-_SECURITYLEVELMAP_KEYKINDREQUESTTYPE = _descriptor.EnumDescriptor(
-  name='KeyKindRequestType',
-  full_name='org.dash.platform.dapi.v0.SecurityLevelMap.KeyKindRequestType',
-  filename=None,
-  file=DESCRIPTOR,
-  create_key=_descriptor._internal_create_key,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='CURRENT_KEY_OF_KIND_REQUEST', index=0, number=0,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='ALL_KEYS_OF_KIND_REQUEST', index=1, number=1,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-  ],
-  containing_type=None,
-  serialized_options=None,
-  serialized_start=2365,
-  serialized_end=2448,
-)
-_sym_db.RegisterEnumDescriptor(_SECURITYLEVELMAP_KEYKINDREQUESTTYPE)
-
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_KEYKINDREQUESTTYPE = _descriptor.EnumDescriptor(
-  name='KeyKindRequestType',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.KeyKindRequestType',
-  filename=None,
-  file=DESCRIPTOR,
-  create_key=_descriptor._internal_create_key,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='CURRENT_KEY_OF_KIND_REQUEST', index=0, number=0,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-  ],
-  containing_type=None,
-  serialized_options=None,
-  serialized_start=2365,
-  serialized_end=2418,
-)
-_sym_db.RegisterEnumDescriptor(_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_KEYKINDREQUESTTYPE)
-
-_GETPROOFSREQUEST_IDENTITYREQUEST_TYPE = _descriptor.EnumDescriptor(
-  name='Type',
-  full_name='org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.Type',
-  filename=None,
-  file=DESCRIPTOR,
-  create_key=_descriptor._internal_create_key,
-  values=[
-    _descriptor.EnumValueDescriptor(
-      name='FULL_IDENTITY', index=0, number=0,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='BALANCE', index=1, number=1,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-    _descriptor.EnumValueDescriptor(
-      name='KEYS', index=2, number=2,
-      serialized_options=None,
-      type=None,
-      create_key=_descriptor._internal_create_key),
-  ],
-  containing_type=None,
-  serialized_options=None,
-  serialized_start=4502,
-  serialized_end=4550,
-)
-_sym_db.RegisterEnumDescriptor(_GETPROOFSREQUEST_IDENTITYREQUEST_TYPE)
 
 
 _PROOF = _descriptor.Descriptor(
@@ -113,7 +36,7 @@ _PROOF = _descriptor.Descriptor(
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='grovedb_proof', full_name='org.dash.platform.dapi.v0.Proof.grovedb_proof', index=0,
+      name='merkle_proof', full_name='org.dash.platform.dapi.v0.Proof.merkle_proof', index=0,
       number=1, type=12, cpp_type=9, label=1,
       has_default_value=False, default_value=b"",
       message_type=None, enum_type=None, containing_type=None,
@@ -152,8 +75,8 @@ _PROOF = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=140,
-  serialized_end=225,
+  serialized_start=78,
+  serialized_end=162,
 )
 
 
@@ -167,7 +90,7 @@ _RESPONSEMETADATA = _descriptor.Descriptor(
   fields=[
     _descriptor.FieldDescriptor(
       name='height', full_name='org.dash.platform.dapi.v0.ResponseMetadata.height', index=0,
-      number=1, type=4, cpp_type=4, label=1,
+      number=1, type=3, cpp_type=2, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -205,8 +128,8 @@ _RESPONSEMETADATA = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=227,
-  serialized_end=338,
+  serialized_start=164,
+  serialized_end=275,
 )
 
 
@@ -251,8 +174,8 @@ _STATETRANSITIONBROADCASTERROR = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=340,
-  serialized_end=416,
+  serialized_start=277,
+  serialized_end=353,
 )
 
 
@@ -283,8 +206,8 @@ _BROADCASTSTATETRANSITIONREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=418,
-  serialized_end=477,
+  serialized_start=355,
+  serialized_end=414,
 )
 
 
@@ -308,8 +231,8 @@ _BROADCASTSTATETRANSITIONRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=479,
-  serialized_end=513,
+  serialized_start=416,
+  serialized_end=450,
 )
 
 
@@ -347,8 +270,8 @@ _GETIDENTITYREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=515,
-  serialized_end=562,
+  serialized_start=452,
+  serialized_end=499,
 )
 
 
@@ -393,1176 +316,8 @@ _GETIDENTITYRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=565,
-  serialized_end=716,
-)
-
-
-_GETIDENTITIESREQUEST = _descriptor.Descriptor(
-  name='GetIdentitiesRequest',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='ids', full_name='org.dash.platform.dapi.v0.GetIdentitiesRequest.ids', index=0,
-      number=1, type=12, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='prove', full_name='org.dash.platform.dapi.v0.GetIdentitiesRequest.prove', index=1,
-      number=2, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=718,
-  serialized_end=768,
-)
-
-
-_GETIDENTITIESRESPONSE_IDENTITYVALUE = _descriptor.Descriptor(
-  name='IdentityValue',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.value', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=993,
-  serialized_end=1023,
-)
-
-_GETIDENTITIESRESPONSE_IDENTITYENTRY = _descriptor.Descriptor(
-  name='IdentityEntry',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.key', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.value', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1025,
-  serialized_end=1132,
-)
-
-_GETIDENTITIESRESPONSE_IDENTITIES = _descriptor.Descriptor(
-  name='Identities',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identity_entries', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.identity_entries', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1134,
-  serialized_end=1236,
-)
-
-_GETIDENTITIESRESPONSE = _descriptor.Descriptor(
-  name='GetIdentitiesResponse',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identities', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.identities', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.proof', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.metadata', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETIDENTITIESRESPONSE_IDENTITYVALUE, _GETIDENTITIESRESPONSE_IDENTITYENTRY, _GETIDENTITIESRESPONSE_IDENTITIES, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-    _descriptor.OneofDescriptor(
-      name='result', full_name='org.dash.platform.dapi.v0.GetIdentitiesResponse.result',
-      index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-  ],
-  serialized_start=771,
-  serialized_end=1246,
-)
-
-
-_GETIDENTITYBALANCERESPONSE = _descriptor.Descriptor(
-  name='GetIdentityBalanceResponse',
-  full_name='org.dash.platform.dapi.v0.GetIdentityBalanceResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='balance', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceResponse.balance', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceResponse.proof', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceResponse.metadata', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1249,
-  serialized_end=1436,
-)
-
-
-_GETIDENTITYBALANCEANDREVISIONRESPONSE = _descriptor.Descriptor(
-  name='GetIdentityBalanceAndRevisionResponse',
-  full_name='org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='balance', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.balance', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='revision', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.revision', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.proof', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.metadata', index=3,
-      number=4, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1439,
-  serialized_end=1685,
-)
-
-
-_KEYREQUESTTYPE = _descriptor.Descriptor(
-  name='KeyRequestType',
-  full_name='org.dash.platform.dapi.v0.KeyRequestType',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='all_keys', full_name='org.dash.platform.dapi.v0.KeyRequestType.all_keys', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='specific_keys', full_name='org.dash.platform.dapi.v0.KeyRequestType.specific_keys', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='search_key', full_name='org.dash.platform.dapi.v0.KeyRequestType.search_key', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-    _descriptor.OneofDescriptor(
-      name='request', full_name='org.dash.platform.dapi.v0.KeyRequestType.request',
-      index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-  ],
-  serialized_start=1688,
-  serialized_end=1897,
-)
-
-
-_ALLKEYS = _descriptor.Descriptor(
-  name='AllKeys',
-  full_name='org.dash.platform.dapi.v0.AllKeys',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1899,
-  serialized_end=1908,
-)
-
-
-_SPECIFICKEYS = _descriptor.Descriptor(
-  name='SpecificKeys',
-  full_name='org.dash.platform.dapi.v0.SpecificKeys',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key_ids', full_name='org.dash.platform.dapi.v0.SpecificKeys.key_ids', index=0,
-      number=1, type=13, cpp_type=3, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1910,
-  serialized_end=1941,
-)
-
-
-_SEARCHKEY_PURPOSEMAPENTRY = _descriptor.Descriptor(
-  name='PurposeMapEntry',
-  full_name='org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key', full_name='org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry.key', index=0,
-      number=1, type=13, cpp_type=3, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry.value', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=b'8\001',
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=2032,
-  serialized_end=2126,
-)
-
-_SEARCHKEY = _descriptor.Descriptor(
-  name='SearchKey',
-  full_name='org.dash.platform.dapi.v0.SearchKey',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='purpose_map', full_name='org.dash.platform.dapi.v0.SearchKey.purpose_map', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_SEARCHKEY_PURPOSEMAPENTRY, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1944,
-  serialized_end=2126,
-)
-
-
-_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY = _descriptor.Descriptor(
-  name='SecurityLevelMapEntry',
-  full_name='org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key', full_name='org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry.key', index=0,
-      number=1, type=13, cpp_type=3, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry.value', index=1,
-      number=2, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=b'8\001',
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=2244,
-  serialized_end=2363,
-)
-
-_SECURITYLEVELMAP = _descriptor.Descriptor(
-  name='SecurityLevelMap',
-  full_name='org.dash.platform.dapi.v0.SecurityLevelMap',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='security_level_map', full_name='org.dash.platform.dapi.v0.SecurityLevelMap.security_level_map', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY, ],
-  enum_types=[
-    _SECURITYLEVELMAP_KEYKINDREQUESTTYPE,
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=2129,
-  serialized_end=2448,
-)
-
-
-_GETIDENTITYKEYSREQUEST = _descriptor.Descriptor(
-  name='GetIdentityKeysRequest',
-  full_name='org.dash.platform.dapi.v0.GetIdentityKeysRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identity_id', full_name='org.dash.platform.dapi.v0.GetIdentityKeysRequest.identity_id', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='request_type', full_name='org.dash.platform.dapi.v0.GetIdentityKeysRequest.request_type', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='limit', full_name='org.dash.platform.dapi.v0.GetIdentityKeysRequest.limit', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='offset', full_name='org.dash.platform.dapi.v0.GetIdentityKeysRequest.offset', index=3,
-      number=4, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='prove', full_name='org.dash.platform.dapi.v0.GetIdentityKeysRequest.prove', index=4,
-      number=5, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=2451,
-  serialized_end=2667,
-)
-
-
-_GETIDENTITYKEYSRESPONSE_KEYS = _descriptor.Descriptor(
-  name='Keys',
-  full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse.Keys',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='keys_bytes', full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse.Keys.keys_bytes', index=0,
-      number=1, type=12, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=2884,
-  serialized_end=2910,
-)
-
-_GETIDENTITYKEYSRESPONSE = _descriptor.Descriptor(
-  name='GetIdentityKeysResponse',
-  full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='keys', full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse.keys', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse.proof', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse.metadata', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETIDENTITYKEYSRESPONSE_KEYS, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-    _descriptor.OneofDescriptor(
-      name='result', full_name='org.dash.platform.dapi.v0.GetIdentityKeysResponse.result',
-      index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-  ],
-  serialized_start=2670,
-  serialized_end=2920,
-)
-
-
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY = _descriptor.Descriptor(
-  name='SecurityLevelMapEntry',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.SecurityLevelMapEntry',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.SecurityLevelMapEntry.key', index=0,
-      number=1, type=13, cpp_type=3, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.SecurityLevelMapEntry.value', index=1,
-      number=2, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=b'8\001',
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=3286,
-  serialized_end=3430,
-)
-
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP = _descriptor.Descriptor(
-  name='SecurityLevelMap',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='security_level_map', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.security_level_map', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY, ],
-  enum_types=[
-    _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_KEYKINDREQUESTTYPE,
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=3145,
-  serialized_end=3485,
-)
-
-_GETIDENTITIESKEYSREQUEST = _descriptor.Descriptor(
-  name='GetIdentitiesKeysRequest',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identity_ids', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.identity_ids', index=0,
-      number=1, type=12, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='request_type', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.request_type', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='limit', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.limit', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='offset', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.offset', index=3,
-      number=4, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='prove', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.prove', index=4,
-      number=5, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=2923,
-  serialized_end=3485,
-)
-
-
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEY = _descriptor.Descriptor(
-  name='PublicKey',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKey',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKey.value', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=3725,
-  serialized_end=3751,
-)
-
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRY = _descriptor.Descriptor(
-  name='PublicKeyEntry',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntry',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntry.key', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntry.value', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=3753,
-  serialized_end=3861,
-)
-
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRIES = _descriptor.Descriptor(
-  name='PublicKeyEntries',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntries',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='public_key_entries', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntries.public_key_entries', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=3863,
-  serialized_end=3978,
-)
-
-_GETIDENTITIESKEYSRESPONSE = _descriptor.Descriptor(
-  name='GetIdentitiesKeysResponse',
-  full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='public_keys', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.public_keys', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.proof', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.metadata', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETIDENTITIESKEYSRESPONSE_PUBLICKEY, _GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRY, _GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRIES, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-    _descriptor.OneofDescriptor(
-      name='result', full_name='org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.result',
-      index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-  ],
-  serialized_start=3488,
-  serialized_end=3988,
-)
-
-
-_GETPROOFSREQUEST_DOCUMENTREQUEST = _descriptor.Descriptor(
-  name='DocumentRequest',
-  full_name='org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='contract_id', full_name='org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.contract_id', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='document_type', full_name='org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.document_type', index=1,
-      number=2, type=9, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"".decode('utf-8'),
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='document_type_keeps_history', full_name='org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.document_type_keeps_history', index=2,
-      number=3, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='document_id', full_name='org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.document_id', index=3,
-      number=4, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=4252,
-  serialized_end=4371,
-)
-
-_GETPROOFSREQUEST_IDENTITYREQUEST = _descriptor.Descriptor(
-  name='IdentityRequest',
-  full_name='org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identity_id', full_name='org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.identity_id', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='request_type', full_name='org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.request_type', index=1,
-      number=2, type=14, cpp_type=8, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-    _GETPROOFSREQUEST_IDENTITYREQUEST_TYPE,
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=4374,
-  serialized_end=4550,
-)
-
-_GETPROOFSREQUEST_CONTRACTREQUEST = _descriptor.Descriptor(
-  name='ContractRequest',
-  full_name='org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='contract_id', full_name='org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.contract_id', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=4552,
-  serialized_end=4590,
-)
-
-_GETPROOFSREQUEST = _descriptor.Descriptor(
-  name='GetProofsRequest',
-  full_name='org.dash.platform.dapi.v0.GetProofsRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identities', full_name='org.dash.platform.dapi.v0.GetProofsRequest.identities', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='contracts', full_name='org.dash.platform.dapi.v0.GetProofsRequest.contracts', index=1,
-      number=2, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='documents', full_name='org.dash.platform.dapi.v0.GetProofsRequest.documents', index=2,
-      number=3, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETPROOFSREQUEST_DOCUMENTREQUEST, _GETPROOFSREQUEST_IDENTITYREQUEST, _GETPROOFSREQUEST_CONTRACTREQUEST, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=3991,
-  serialized_end=4590,
-)
-
-
-_GETPROOFSRESPONSE = _descriptor.Descriptor(
-  name='GetProofsResponse',
-  full_name='org.dash.platform.dapi.v0.GetProofsResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetProofsResponse.proof', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetProofsResponse.metadata', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=4593,
-  serialized_end=4724,
+  serialized_start=502,
+  serialized_end=653,
 )
 
 
@@ -1600,8 +355,8 @@ _GETDATACONTRACTREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=4726,
-  serialized_end=4777,
+  serialized_start=655,
+  serialized_end=706,
 )
 
 
@@ -1646,198 +401,8 @@ _GETDATACONTRACTRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=4780,
-  serialized_end=4940,
-)
-
-
-_GETDATACONTRACTSREQUEST = _descriptor.Descriptor(
-  name='GetDataContractsRequest',
-  full_name='org.dash.platform.dapi.v0.GetDataContractsRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='ids', full_name='org.dash.platform.dapi.v0.GetDataContractsRequest.ids', index=0,
-      number=1, type=12, cpp_type=9, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='prove', full_name='org.dash.platform.dapi.v0.GetDataContractsRequest.prove', index=1,
-      number=2, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=4942,
-  serialized_end=4995,
-)
-
-
-_GETDATACONTRACTSRESPONSE_DATACONTRACTVALUE = _descriptor.Descriptor(
-  name='DataContractValue',
-  full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractValue',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractValue.value', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=5233,
-  serialized_end=5267,
-)
-
-_GETDATACONTRACTSRESPONSE_DATACONTRACTENTRY = _descriptor.Descriptor(
-  name='DataContractEntry',
-  full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntry',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='key', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntry.key', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='value', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntry.value', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=5269,
-  serialized_end=5387,
-)
-
-_GETDATACONTRACTSRESPONSE_DATACONTRACTS = _descriptor.Descriptor(
-  name='DataContracts',
-  full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContracts',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='data_contract_entries', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.DataContracts.data_contract_entries', index=0,
-      number=1, type=11, cpp_type=10, label=3,
-      has_default_value=False, default_value=[],
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=5389,
-  serialized_end=5506,
-)
-
-_GETDATACONTRACTSRESPONSE = _descriptor.Descriptor(
-  name='GetDataContractsResponse',
-  full_name='org.dash.platform.dapi.v0.GetDataContractsResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='data_contracts', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.data_contracts', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.proof', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.metadata', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[_GETDATACONTRACTSRESPONSE_DATACONTRACTVALUE, _GETDATACONTRACTSRESPONSE_DATACONTRACTENTRY, _GETDATACONTRACTSRESPONSE_DATACONTRACTS, ],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-    _descriptor.OneofDescriptor(
-      name='result', full_name='org.dash.platform.dapi.v0.GetDataContractsResponse.result',
-      index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-  ],
-  serialized_start=4998,
-  serialized_end=5516,
+  serialized_start=709,
+  serialized_end=869,
 )
 
 
@@ -1922,8 +487,8 @@ _GETDOCUMENTSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=5519,
-  serialized_end=5704,
+  serialized_start=872,
+  serialized_end=1057,
 )
 
 
@@ -1968,8 +533,8 @@ _GETDOCUMENTSRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=5707,
-  serialized_end=5860,
+  serialized_start=1060,
+  serialized_end=1213,
 )
 
 
@@ -2007,8 +572,8 @@ _GETIDENTITIESBYPUBLICKEYHASHESREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=5862,
-  serialized_end=5943,
+  serialized_start=1215,
+  serialized_end=1296,
 )
 
 
@@ -2053,98 +618,8 @@ _GETIDENTITIESBYPUBLICKEYHASHESRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=5946,
-  serialized_end=6118,
-)
-
-
-_GETIDENTITYBYPUBLICKEYHASHESREQUEST = _descriptor.Descriptor(
-  name='GetIdentityByPublicKeyHashesRequest',
-  full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesRequest',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='public_key_hash', full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesRequest.public_key_hash', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='prove', full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesRequest.prove', index=1,
-      number=2, type=8, cpp_type=7, label=1,
-      has_default_value=False, default_value=False,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=6120,
-  serialized_end=6197,
-)
-
-
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE = _descriptor.Descriptor(
-  name='GetIdentityByPublicKeyHashesResponse',
-  full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='identity', full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse.identity', index=0,
-      number=1, type=12, cpp_type=9, label=1,
-      has_default_value=False, default_value=b"",
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='proof', full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse.proof', index=1,
-      number=2, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-    _descriptor.FieldDescriptor(
-      name='metadata', full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse.metadata', index=2,
-      number=3, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-    _descriptor.OneofDescriptor(
-      name='result', full_name='org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse.result',
-      index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-  ],
-  serialized_start=6200,
-  serialized_end=6382,
+  serialized_start=1299,
+  serialized_end=1471,
 )
 
 
@@ -2182,8 +657,8 @@ _WAITFORSTATETRANSITIONRESULTREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=6384,
-  serialized_end=6467,
+  serialized_start=1473,
+  serialized_end=1556,
 )
 
 
@@ -2233,8 +708,8 @@ _WAITFORSTATETRANSITIONRESULTRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=6470,
-  serialized_end=6710,
+  serialized_start=1559,
+  serialized_end=1799,
 )
 
 
@@ -2279,8 +754,8 @@ _CONSENSUSPARAMSBLOCK = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=6712,
-  serialized_end=6792,
+  serialized_start=1801,
+  serialized_end=1881,
 )
 
 
@@ -2325,8 +800,8 @@ _CONSENSUSPARAMSEVIDENCE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=6794,
-  serialized_end=6892,
+  serialized_start=1883,
+  serialized_end=1981,
 )
 
 
@@ -2364,8 +839,8 @@ _GETCONSENSUSPARAMSREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=6894,
-  serialized_end=6952,
+  serialized_start=1983,
+  serialized_end=2041,
 )
 
 
@@ -2403,113 +878,14 @@ _GETCONSENSUSPARAMSRESPONSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=6955,
-  serialized_end=7117,
+  serialized_start=2044,
+  serialized_end=2206,
 )
 
 _GETIDENTITYRESPONSE.fields_by_name['proof'].message_type = _PROOF
 _GETIDENTITYRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITIESRESPONSE_IDENTITYVALUE.containing_type = _GETIDENTITIESRESPONSE
-_GETIDENTITIESRESPONSE_IDENTITYENTRY.fields_by_name['value'].message_type = _GETIDENTITIESRESPONSE_IDENTITYVALUE
-_GETIDENTITIESRESPONSE_IDENTITYENTRY.containing_type = _GETIDENTITIESRESPONSE
-_GETIDENTITIESRESPONSE_IDENTITIES.fields_by_name['identity_entries'].message_type = _GETIDENTITIESRESPONSE_IDENTITYENTRY
-_GETIDENTITIESRESPONSE_IDENTITIES.containing_type = _GETIDENTITIESRESPONSE
-_GETIDENTITIESRESPONSE.fields_by_name['identities'].message_type = _GETIDENTITIESRESPONSE_IDENTITIES
-_GETIDENTITIESRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETIDENTITIESRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITIESRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITIESRESPONSE.fields_by_name['identities'])
-_GETIDENTITIESRESPONSE.fields_by_name['identities'].containing_oneof = _GETIDENTITIESRESPONSE.oneofs_by_name['result']
-_GETIDENTITIESRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITIESRESPONSE.fields_by_name['proof'])
-_GETIDENTITIESRESPONSE.fields_by_name['proof'].containing_oneof = _GETIDENTITIESRESPONSE.oneofs_by_name['result']
-_GETIDENTITYBALANCERESPONSE.fields_by_name['balance'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT64VALUE
-_GETIDENTITYBALANCERESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETIDENTITYBALANCERESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITYBALANCEANDREVISIONRESPONSE.fields_by_name['balance'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT64VALUE
-_GETIDENTITYBALANCEANDREVISIONRESPONSE.fields_by_name['revision'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT64VALUE
-_GETIDENTITYBALANCEANDREVISIONRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETIDENTITYBALANCEANDREVISIONRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_KEYREQUESTTYPE.fields_by_name['all_keys'].message_type = _ALLKEYS
-_KEYREQUESTTYPE.fields_by_name['specific_keys'].message_type = _SPECIFICKEYS
-_KEYREQUESTTYPE.fields_by_name['search_key'].message_type = _SEARCHKEY
-_KEYREQUESTTYPE.oneofs_by_name['request'].fields.append(
-  _KEYREQUESTTYPE.fields_by_name['all_keys'])
-_KEYREQUESTTYPE.fields_by_name['all_keys'].containing_oneof = _KEYREQUESTTYPE.oneofs_by_name['request']
-_KEYREQUESTTYPE.oneofs_by_name['request'].fields.append(
-  _KEYREQUESTTYPE.fields_by_name['specific_keys'])
-_KEYREQUESTTYPE.fields_by_name['specific_keys'].containing_oneof = _KEYREQUESTTYPE.oneofs_by_name['request']
-_KEYREQUESTTYPE.oneofs_by_name['request'].fields.append(
-  _KEYREQUESTTYPE.fields_by_name['search_key'])
-_KEYREQUESTTYPE.fields_by_name['search_key'].containing_oneof = _KEYREQUESTTYPE.oneofs_by_name['request']
-_SEARCHKEY_PURPOSEMAPENTRY.fields_by_name['value'].message_type = _SECURITYLEVELMAP
-_SEARCHKEY_PURPOSEMAPENTRY.containing_type = _SEARCHKEY
-_SEARCHKEY.fields_by_name['purpose_map'].message_type = _SEARCHKEY_PURPOSEMAPENTRY
-_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY.fields_by_name['value'].enum_type = _SECURITYLEVELMAP_KEYKINDREQUESTTYPE
-_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY.containing_type = _SECURITYLEVELMAP
-_SECURITYLEVELMAP.fields_by_name['security_level_map'].message_type = _SECURITYLEVELMAP_SECURITYLEVELMAPENTRY
-_SECURITYLEVELMAP_KEYKINDREQUESTTYPE.containing_type = _SECURITYLEVELMAP
-_GETIDENTITYKEYSREQUEST.fields_by_name['request_type'].message_type = _KEYREQUESTTYPE
-_GETIDENTITYKEYSREQUEST.fields_by_name['limit'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT32VALUE
-_GETIDENTITYKEYSREQUEST.fields_by_name['offset'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT32VALUE
-_GETIDENTITYKEYSRESPONSE_KEYS.containing_type = _GETIDENTITYKEYSRESPONSE
-_GETIDENTITYKEYSRESPONSE.fields_by_name['keys'].message_type = _GETIDENTITYKEYSRESPONSE_KEYS
-_GETIDENTITYKEYSRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETIDENTITYKEYSRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITYKEYSRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITYKEYSRESPONSE.fields_by_name['keys'])
-_GETIDENTITYKEYSRESPONSE.fields_by_name['keys'].containing_oneof = _GETIDENTITYKEYSRESPONSE.oneofs_by_name['result']
-_GETIDENTITYKEYSRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITYKEYSRESPONSE.fields_by_name['proof'])
-_GETIDENTITYKEYSRESPONSE.fields_by_name['proof'].containing_oneof = _GETIDENTITYKEYSRESPONSE.oneofs_by_name['result']
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY.fields_by_name['value'].enum_type = _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_KEYKINDREQUESTTYPE
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY.containing_type = _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP.fields_by_name['security_level_map'].message_type = _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP.containing_type = _GETIDENTITIESKEYSREQUEST
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_KEYKINDREQUESTTYPE.containing_type = _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP
-_GETIDENTITIESKEYSREQUEST.fields_by_name['request_type'].message_type = _KEYREQUESTTYPE
-_GETIDENTITIESKEYSREQUEST.fields_by_name['limit'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT32VALUE
-_GETIDENTITIESKEYSREQUEST.fields_by_name['offset'].message_type = google_dot_protobuf_dot_wrappers__pb2._UINT32VALUE
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEY.containing_type = _GETIDENTITIESKEYSRESPONSE
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRY.fields_by_name['value'].message_type = _GETIDENTITIESKEYSRESPONSE_PUBLICKEY
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRY.containing_type = _GETIDENTITIESKEYSRESPONSE
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRIES.fields_by_name['public_key_entries'].message_type = _GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRY
-_GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRIES.containing_type = _GETIDENTITIESKEYSRESPONSE
-_GETIDENTITIESKEYSRESPONSE.fields_by_name['public_keys'].message_type = _GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRIES
-_GETIDENTITIESKEYSRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETIDENTITIESKEYSRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITIESKEYSRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITIESKEYSRESPONSE.fields_by_name['public_keys'])
-_GETIDENTITIESKEYSRESPONSE.fields_by_name['public_keys'].containing_oneof = _GETIDENTITIESKEYSRESPONSE.oneofs_by_name['result']
-_GETIDENTITIESKEYSRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITIESKEYSRESPONSE.fields_by_name['proof'])
-_GETIDENTITIESKEYSRESPONSE.fields_by_name['proof'].containing_oneof = _GETIDENTITIESKEYSRESPONSE.oneofs_by_name['result']
-_GETPROOFSREQUEST_DOCUMENTREQUEST.containing_type = _GETPROOFSREQUEST
-_GETPROOFSREQUEST_IDENTITYREQUEST.fields_by_name['request_type'].enum_type = _GETPROOFSREQUEST_IDENTITYREQUEST_TYPE
-_GETPROOFSREQUEST_IDENTITYREQUEST.containing_type = _GETPROOFSREQUEST
-_GETPROOFSREQUEST_IDENTITYREQUEST_TYPE.containing_type = _GETPROOFSREQUEST_IDENTITYREQUEST
-_GETPROOFSREQUEST_CONTRACTREQUEST.containing_type = _GETPROOFSREQUEST
-_GETPROOFSREQUEST.fields_by_name['identities'].message_type = _GETPROOFSREQUEST_IDENTITYREQUEST
-_GETPROOFSREQUEST.fields_by_name['contracts'].message_type = _GETPROOFSREQUEST_CONTRACTREQUEST
-_GETPROOFSREQUEST.fields_by_name['documents'].message_type = _GETPROOFSREQUEST_DOCUMENTREQUEST
-_GETPROOFSRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETPROOFSRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
 _GETDATACONTRACTRESPONSE.fields_by_name['proof'].message_type = _PROOF
 _GETDATACONTRACTRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETDATACONTRACTSRESPONSE_DATACONTRACTVALUE.containing_type = _GETDATACONTRACTSRESPONSE
-_GETDATACONTRACTSRESPONSE_DATACONTRACTENTRY.fields_by_name['value'].message_type = _GETDATACONTRACTSRESPONSE_DATACONTRACTVALUE
-_GETDATACONTRACTSRESPONSE_DATACONTRACTENTRY.containing_type = _GETDATACONTRACTSRESPONSE
-_GETDATACONTRACTSRESPONSE_DATACONTRACTS.fields_by_name['data_contract_entries'].message_type = _GETDATACONTRACTSRESPONSE_DATACONTRACTENTRY
-_GETDATACONTRACTSRESPONSE_DATACONTRACTS.containing_type = _GETDATACONTRACTSRESPONSE
-_GETDATACONTRACTSRESPONSE.fields_by_name['data_contracts'].message_type = _GETDATACONTRACTSRESPONSE_DATACONTRACTS
-_GETDATACONTRACTSRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETDATACONTRACTSRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETDATACONTRACTSRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETDATACONTRACTSRESPONSE.fields_by_name['data_contracts'])
-_GETDATACONTRACTSRESPONSE.fields_by_name['data_contracts'].containing_oneof = _GETDATACONTRACTSRESPONSE.oneofs_by_name['result']
-_GETDATACONTRACTSRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETDATACONTRACTSRESPONSE.fields_by_name['proof'])
-_GETDATACONTRACTSRESPONSE.fields_by_name['proof'].containing_oneof = _GETDATACONTRACTSRESPONSE.oneofs_by_name['result']
 _GETDOCUMENTSREQUEST.oneofs_by_name['start'].fields.append(
   _GETDOCUMENTSREQUEST.fields_by_name['start_after'])
 _GETDOCUMENTSREQUEST.fields_by_name['start_after'].containing_oneof = _GETDOCUMENTSREQUEST.oneofs_by_name['start']
@@ -2520,14 +896,6 @@ _GETDOCUMENTSRESPONSE.fields_by_name['proof'].message_type = _PROOF
 _GETDOCUMENTSRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
 _GETIDENTITIESBYPUBLICKEYHASHESRESPONSE.fields_by_name['proof'].message_type = _PROOF
 _GETIDENTITIESBYPUBLICKEYHASHESRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE.fields_by_name['proof'].message_type = _PROOF
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITYBYPUBLICKEYHASHESRESPONSE.fields_by_name['identity'])
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE.fields_by_name['identity'].containing_oneof = _GETIDENTITYBYPUBLICKEYHASHESRESPONSE.oneofs_by_name['result']
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE.oneofs_by_name['result'].fields.append(
-  _GETIDENTITYBYPUBLICKEYHASHESRESPONSE.fields_by_name['proof'])
-_GETIDENTITYBYPUBLICKEYHASHESRESPONSE.fields_by_name['proof'].containing_oneof = _GETIDENTITYBYPUBLICKEYHASHESRESPONSE.oneofs_by_name['result']
 _WAITFORSTATETRANSITIONRESULTRESPONSE.fields_by_name['error'].message_type = _STATETRANSITIONBROADCASTERROR
 _WAITFORSTATETRANSITIONRESULTRESPONSE.fields_by_name['proof'].message_type = _PROOF
 _WAITFORSTATETRANSITIONRESULTRESPONSE.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
@@ -2546,31 +914,12 @@ DESCRIPTOR.message_types_by_name['BroadcastStateTransitionRequest'] = _BROADCAST
 DESCRIPTOR.message_types_by_name['BroadcastStateTransitionResponse'] = _BROADCASTSTATETRANSITIONRESPONSE
 DESCRIPTOR.message_types_by_name['GetIdentityRequest'] = _GETIDENTITYREQUEST
 DESCRIPTOR.message_types_by_name['GetIdentityResponse'] = _GETIDENTITYRESPONSE
-DESCRIPTOR.message_types_by_name['GetIdentitiesRequest'] = _GETIDENTITIESREQUEST
-DESCRIPTOR.message_types_by_name['GetIdentitiesResponse'] = _GETIDENTITIESRESPONSE
-DESCRIPTOR.message_types_by_name['GetIdentityBalanceResponse'] = _GETIDENTITYBALANCERESPONSE
-DESCRIPTOR.message_types_by_name['GetIdentityBalanceAndRevisionResponse'] = _GETIDENTITYBALANCEANDREVISIONRESPONSE
-DESCRIPTOR.message_types_by_name['KeyRequestType'] = _KEYREQUESTTYPE
-DESCRIPTOR.message_types_by_name['AllKeys'] = _ALLKEYS
-DESCRIPTOR.message_types_by_name['SpecificKeys'] = _SPECIFICKEYS
-DESCRIPTOR.message_types_by_name['SearchKey'] = _SEARCHKEY
-DESCRIPTOR.message_types_by_name['SecurityLevelMap'] = _SECURITYLEVELMAP
-DESCRIPTOR.message_types_by_name['GetIdentityKeysRequest'] = _GETIDENTITYKEYSREQUEST
-DESCRIPTOR.message_types_by_name['GetIdentityKeysResponse'] = _GETIDENTITYKEYSRESPONSE
-DESCRIPTOR.message_types_by_name['GetIdentitiesKeysRequest'] = _GETIDENTITIESKEYSREQUEST
-DESCRIPTOR.message_types_by_name['GetIdentitiesKeysResponse'] = _GETIDENTITIESKEYSRESPONSE
-DESCRIPTOR.message_types_by_name['GetProofsRequest'] = _GETPROOFSREQUEST
-DESCRIPTOR.message_types_by_name['GetProofsResponse'] = _GETPROOFSRESPONSE
 DESCRIPTOR.message_types_by_name['GetDataContractRequest'] = _GETDATACONTRACTREQUEST
 DESCRIPTOR.message_types_by_name['GetDataContractResponse'] = _GETDATACONTRACTRESPONSE
-DESCRIPTOR.message_types_by_name['GetDataContractsRequest'] = _GETDATACONTRACTSREQUEST
-DESCRIPTOR.message_types_by_name['GetDataContractsResponse'] = _GETDATACONTRACTSRESPONSE
 DESCRIPTOR.message_types_by_name['GetDocumentsRequest'] = _GETDOCUMENTSREQUEST
 DESCRIPTOR.message_types_by_name['GetDocumentsResponse'] = _GETDOCUMENTSRESPONSE
 DESCRIPTOR.message_types_by_name['GetIdentitiesByPublicKeyHashesRequest'] = _GETIDENTITIESBYPUBLICKEYHASHESREQUEST
 DESCRIPTOR.message_types_by_name['GetIdentitiesByPublicKeyHashesResponse'] = _GETIDENTITIESBYPUBLICKEYHASHESRESPONSE
-DESCRIPTOR.message_types_by_name['GetIdentityByPublicKeyHashesRequest'] = _GETIDENTITYBYPUBLICKEYHASHESREQUEST
-DESCRIPTOR.message_types_by_name['GetIdentityByPublicKeyHashesResponse'] = _GETIDENTITYBYPUBLICKEYHASHESRESPONSE
 DESCRIPTOR.message_types_by_name['WaitForStateTransitionResultRequest'] = _WAITFORSTATETRANSITIONRESULTREQUEST
 DESCRIPTOR.message_types_by_name['WaitForStateTransitionResultResponse'] = _WAITFORSTATETRANSITIONRESULTRESPONSE
 DESCRIPTOR.message_types_by_name['ConsensusParamsBlock'] = _CONSENSUSPARAMSBLOCK
@@ -2628,223 +977,6 @@ GetIdentityResponse = _reflection.GeneratedProtocolMessageType('GetIdentityRespo
   })
 _sym_db.RegisterMessage(GetIdentityResponse)
 
-GetIdentitiesRequest = _reflection.GeneratedProtocolMessageType('GetIdentitiesRequest', (_message.Message,), {
-  'DESCRIPTOR' : _GETIDENTITIESREQUEST,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesRequest)
-  })
-_sym_db.RegisterMessage(GetIdentitiesRequest)
-
-GetIdentitiesResponse = _reflection.GeneratedProtocolMessageType('GetIdentitiesResponse', (_message.Message,), {
-
-  'IdentityValue' : _reflection.GeneratedProtocolMessageType('IdentityValue', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITIESRESPONSE_IDENTITYVALUE,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue)
-    })
-  ,
-
-  'IdentityEntry' : _reflection.GeneratedProtocolMessageType('IdentityEntry', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITIESRESPONSE_IDENTITYENTRY,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry)
-    })
-  ,
-
-  'Identities' : _reflection.GeneratedProtocolMessageType('Identities', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITIESRESPONSE_IDENTITIES,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities)
-    })
-  ,
-  'DESCRIPTOR' : _GETIDENTITIESRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesResponse)
-  })
-_sym_db.RegisterMessage(GetIdentitiesResponse)
-_sym_db.RegisterMessage(GetIdentitiesResponse.IdentityValue)
-_sym_db.RegisterMessage(GetIdentitiesResponse.IdentityEntry)
-_sym_db.RegisterMessage(GetIdentitiesResponse.Identities)
-
-GetIdentityBalanceResponse = _reflection.GeneratedProtocolMessageType('GetIdentityBalanceResponse', (_message.Message,), {
-  'DESCRIPTOR' : _GETIDENTITYBALANCERESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityBalanceResponse)
-  })
-_sym_db.RegisterMessage(GetIdentityBalanceResponse)
-
-GetIdentityBalanceAndRevisionResponse = _reflection.GeneratedProtocolMessageType('GetIdentityBalanceAndRevisionResponse', (_message.Message,), {
-  'DESCRIPTOR' : _GETIDENTITYBALANCEANDREVISIONRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse)
-  })
-_sym_db.RegisterMessage(GetIdentityBalanceAndRevisionResponse)
-
-KeyRequestType = _reflection.GeneratedProtocolMessageType('KeyRequestType', (_message.Message,), {
-  'DESCRIPTOR' : _KEYREQUESTTYPE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.KeyRequestType)
-  })
-_sym_db.RegisterMessage(KeyRequestType)
-
-AllKeys = _reflection.GeneratedProtocolMessageType('AllKeys', (_message.Message,), {
-  'DESCRIPTOR' : _ALLKEYS,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.AllKeys)
-  })
-_sym_db.RegisterMessage(AllKeys)
-
-SpecificKeys = _reflection.GeneratedProtocolMessageType('SpecificKeys', (_message.Message,), {
-  'DESCRIPTOR' : _SPECIFICKEYS,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.SpecificKeys)
-  })
-_sym_db.RegisterMessage(SpecificKeys)
-
-SearchKey = _reflection.GeneratedProtocolMessageType('SearchKey', (_message.Message,), {
-
-  'PurposeMapEntry' : _reflection.GeneratedProtocolMessageType('PurposeMapEntry', (_message.Message,), {
-    'DESCRIPTOR' : _SEARCHKEY_PURPOSEMAPENTRY,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry)
-    })
-  ,
-  'DESCRIPTOR' : _SEARCHKEY,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.SearchKey)
-  })
-_sym_db.RegisterMessage(SearchKey)
-_sym_db.RegisterMessage(SearchKey.PurposeMapEntry)
-
-SecurityLevelMap = _reflection.GeneratedProtocolMessageType('SecurityLevelMap', (_message.Message,), {
-
-  'SecurityLevelMapEntry' : _reflection.GeneratedProtocolMessageType('SecurityLevelMapEntry', (_message.Message,), {
-    'DESCRIPTOR' : _SECURITYLEVELMAP_SECURITYLEVELMAPENTRY,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry)
-    })
-  ,
-  'DESCRIPTOR' : _SECURITYLEVELMAP,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.SecurityLevelMap)
-  })
-_sym_db.RegisterMessage(SecurityLevelMap)
-_sym_db.RegisterMessage(SecurityLevelMap.SecurityLevelMapEntry)
-
-GetIdentityKeysRequest = _reflection.GeneratedProtocolMessageType('GetIdentityKeysRequest', (_message.Message,), {
-  'DESCRIPTOR' : _GETIDENTITYKEYSREQUEST,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityKeysRequest)
-  })
-_sym_db.RegisterMessage(GetIdentityKeysRequest)
-
-GetIdentityKeysResponse = _reflection.GeneratedProtocolMessageType('GetIdentityKeysResponse', (_message.Message,), {
-
-  'Keys' : _reflection.GeneratedProtocolMessageType('Keys', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITYKEYSRESPONSE_KEYS,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityKeysResponse.Keys)
-    })
-  ,
-  'DESCRIPTOR' : _GETIDENTITYKEYSRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityKeysResponse)
-  })
-_sym_db.RegisterMessage(GetIdentityKeysResponse)
-_sym_db.RegisterMessage(GetIdentityKeysResponse.Keys)
-
-GetIdentitiesKeysRequest = _reflection.GeneratedProtocolMessageType('GetIdentitiesKeysRequest', (_message.Message,), {
-
-  'SecurityLevelMap' : _reflection.GeneratedProtocolMessageType('SecurityLevelMap', (_message.Message,), {
-
-    'SecurityLevelMapEntry' : _reflection.GeneratedProtocolMessageType('SecurityLevelMapEntry', (_message.Message,), {
-      'DESCRIPTOR' : _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY,
-      '__module__' : 'platform_pb2'
-      # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap.SecurityLevelMapEntry)
-      })
-    ,
-    'DESCRIPTOR' : _GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysRequest.SecurityLevelMap)
-    })
-  ,
-  'DESCRIPTOR' : _GETIDENTITIESKEYSREQUEST,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysRequest)
-  })
-_sym_db.RegisterMessage(GetIdentitiesKeysRequest)
-_sym_db.RegisterMessage(GetIdentitiesKeysRequest.SecurityLevelMap)
-_sym_db.RegisterMessage(GetIdentitiesKeysRequest.SecurityLevelMap.SecurityLevelMapEntry)
-
-GetIdentitiesKeysResponse = _reflection.GeneratedProtocolMessageType('GetIdentitiesKeysResponse', (_message.Message,), {
-
-  'PublicKey' : _reflection.GeneratedProtocolMessageType('PublicKey', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITIESKEYSRESPONSE_PUBLICKEY,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKey)
-    })
-  ,
-
-  'PublicKeyEntry' : _reflection.GeneratedProtocolMessageType('PublicKeyEntry', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRY,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntry)
-    })
-  ,
-
-  'PublicKeyEntries' : _reflection.GeneratedProtocolMessageType('PublicKeyEntries', (_message.Message,), {
-    'DESCRIPTOR' : _GETIDENTITIESKEYSRESPONSE_PUBLICKEYENTRIES,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysResponse.PublicKeyEntries)
-    })
-  ,
-  'DESCRIPTOR' : _GETIDENTITIESKEYSRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesKeysResponse)
-  })
-_sym_db.RegisterMessage(GetIdentitiesKeysResponse)
-_sym_db.RegisterMessage(GetIdentitiesKeysResponse.PublicKey)
-_sym_db.RegisterMessage(GetIdentitiesKeysResponse.PublicKeyEntry)
-_sym_db.RegisterMessage(GetIdentitiesKeysResponse.PublicKeyEntries)
-
-GetProofsRequest = _reflection.GeneratedProtocolMessageType('GetProofsRequest', (_message.Message,), {
-
-  'DocumentRequest' : _reflection.GeneratedProtocolMessageType('DocumentRequest', (_message.Message,), {
-    'DESCRIPTOR' : _GETPROOFSREQUEST_DOCUMENTREQUEST,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest)
-    })
-  ,
-
-  'IdentityRequest' : _reflection.GeneratedProtocolMessageType('IdentityRequest', (_message.Message,), {
-    'DESCRIPTOR' : _GETPROOFSREQUEST_IDENTITYREQUEST,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest)
-    })
-  ,
-
-  'ContractRequest' : _reflection.GeneratedProtocolMessageType('ContractRequest', (_message.Message,), {
-    'DESCRIPTOR' : _GETPROOFSREQUEST_CONTRACTREQUEST,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest)
-    })
-  ,
-  'DESCRIPTOR' : _GETPROOFSREQUEST,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetProofsRequest)
-  })
-_sym_db.RegisterMessage(GetProofsRequest)
-_sym_db.RegisterMessage(GetProofsRequest.DocumentRequest)
-_sym_db.RegisterMessage(GetProofsRequest.IdentityRequest)
-_sym_db.RegisterMessage(GetProofsRequest.ContractRequest)
-
-GetProofsResponse = _reflection.GeneratedProtocolMessageType('GetProofsResponse', (_message.Message,), {
-  'DESCRIPTOR' : _GETPROOFSRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetProofsResponse)
-  })
-_sym_db.RegisterMessage(GetProofsResponse)
-
 GetDataContractRequest = _reflection.GeneratedProtocolMessageType('GetDataContractRequest', (_message.Message,), {
   'DESCRIPTOR' : _GETDATACONTRACTREQUEST,
   '__module__' : 'platform_pb2'
@@ -2858,44 +990,6 @@ GetDataContractResponse = _reflection.GeneratedProtocolMessageType('GetDataContr
   # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDataContractResponse)
   })
 _sym_db.RegisterMessage(GetDataContractResponse)
-
-GetDataContractsRequest = _reflection.GeneratedProtocolMessageType('GetDataContractsRequest', (_message.Message,), {
-  'DESCRIPTOR' : _GETDATACONTRACTSREQUEST,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDataContractsRequest)
-  })
-_sym_db.RegisterMessage(GetDataContractsRequest)
-
-GetDataContractsResponse = _reflection.GeneratedProtocolMessageType('GetDataContractsResponse', (_message.Message,), {
-
-  'DataContractValue' : _reflection.GeneratedProtocolMessageType('DataContractValue', (_message.Message,), {
-    'DESCRIPTOR' : _GETDATACONTRACTSRESPONSE_DATACONTRACTVALUE,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractValue)
-    })
-  ,
-
-  'DataContractEntry' : _reflection.GeneratedProtocolMessageType('DataContractEntry', (_message.Message,), {
-    'DESCRIPTOR' : _GETDATACONTRACTSRESPONSE_DATACONTRACTENTRY,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntry)
-    })
-  ,
-
-  'DataContracts' : _reflection.GeneratedProtocolMessageType('DataContracts', (_message.Message,), {
-    'DESCRIPTOR' : _GETDATACONTRACTSRESPONSE_DATACONTRACTS,
-    '__module__' : 'platform_pb2'
-    # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDataContractsResponse.DataContracts)
-    })
-  ,
-  'DESCRIPTOR' : _GETDATACONTRACTSRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDataContractsResponse)
-  })
-_sym_db.RegisterMessage(GetDataContractsResponse)
-_sym_db.RegisterMessage(GetDataContractsResponse.DataContractValue)
-_sym_db.RegisterMessage(GetDataContractsResponse.DataContractEntry)
-_sym_db.RegisterMessage(GetDataContractsResponse.DataContracts)
 
 GetDocumentsRequest = _reflection.GeneratedProtocolMessageType('GetDocumentsRequest', (_message.Message,), {
   'DESCRIPTOR' : _GETDOCUMENTSREQUEST,
@@ -2924,20 +1018,6 @@ GetIdentitiesByPublicKeyHashesResponse = _reflection.GeneratedProtocolMessageTyp
   # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse)
   })
 _sym_db.RegisterMessage(GetIdentitiesByPublicKeyHashesResponse)
-
-GetIdentityByPublicKeyHashesRequest = _reflection.GeneratedProtocolMessageType('GetIdentityByPublicKeyHashesRequest', (_message.Message,), {
-  'DESCRIPTOR' : _GETIDENTITYBYPUBLICKEYHASHESREQUEST,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesRequest)
-  })
-_sym_db.RegisterMessage(GetIdentityByPublicKeyHashesRequest)
-
-GetIdentityByPublicKeyHashesResponse = _reflection.GeneratedProtocolMessageType('GetIdentityByPublicKeyHashesResponse', (_message.Message,), {
-  'DESCRIPTOR' : _GETIDENTITYBYPUBLICKEYHASHESRESPONSE,
-  '__module__' : 'platform_pb2'
-  # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashesResponse)
-  })
-_sym_db.RegisterMessage(GetIdentityByPublicKeyHashesResponse)
 
 WaitForStateTransitionResultRequest = _reflection.GeneratedProtocolMessageType('WaitForStateTransitionResultRequest', (_message.Message,), {
   'DESCRIPTOR' : _WAITFORSTATETRANSITIONRESULTREQUEST,
@@ -2982,9 +1062,6 @@ GetConsensusParamsResponse = _reflection.GeneratedProtocolMessageType('GetConsen
 _sym_db.RegisterMessage(GetConsensusParamsResponse)
 
 
-_SEARCHKEY_PURPOSEMAPENTRY._options = None
-_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY._options = None
-_GETIDENTITIESKEYSREQUEST_SECURITYLEVELMAP_SECURITYLEVELMAPENTRY._options = None
 
 _PLATFORM = _descriptor.ServiceDescriptor(
   name='Platform',
@@ -2993,8 +1070,8 @@ _PLATFORM = _descriptor.ServiceDescriptor(
   index=0,
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_start=7120,
-  serialized_end=8987,
+  serialized_start=2209,
+  serialized_end=3176,
   methods=[
   _descriptor.MethodDescriptor(
     name='broadcastStateTransition',
@@ -3017,59 +1094,9 @@ _PLATFORM = _descriptor.ServiceDescriptor(
     create_key=_descriptor._internal_create_key,
   ),
   _descriptor.MethodDescriptor(
-    name='getIdentities',
-    full_name='org.dash.platform.dapi.v0.Platform.getIdentities',
-    index=2,
-    containing_service=None,
-    input_type=_GETIDENTITIESREQUEST,
-    output_type=_GETIDENTITIESRESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
-    name='getIdentityKeys',
-    full_name='org.dash.platform.dapi.v0.Platform.getIdentityKeys',
-    index=3,
-    containing_service=None,
-    input_type=_GETIDENTITYKEYSREQUEST,
-    output_type=_GETIDENTITYKEYSRESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
-    name='getIdentityBalance',
-    full_name='org.dash.platform.dapi.v0.Platform.getIdentityBalance',
-    index=4,
-    containing_service=None,
-    input_type=_GETIDENTITYREQUEST,
-    output_type=_GETIDENTITYBALANCERESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
-    name='getIdentityBalanceAndRevision',
-    full_name='org.dash.platform.dapi.v0.Platform.getIdentityBalanceAndRevision',
-    index=5,
-    containing_service=None,
-    input_type=_GETIDENTITYREQUEST,
-    output_type=_GETIDENTITYBALANCEANDREVISIONRESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
-    name='getProofs',
-    full_name='org.dash.platform.dapi.v0.Platform.getProofs',
-    index=6,
-    containing_service=None,
-    input_type=_GETPROOFSREQUEST,
-    output_type=_GETPROOFSRESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
     name='getDataContract',
     full_name='org.dash.platform.dapi.v0.Platform.getDataContract',
-    index=7,
+    index=2,
     containing_service=None,
     input_type=_GETDATACONTRACTREQUEST,
     output_type=_GETDATACONTRACTRESPONSE,
@@ -3077,19 +1104,9 @@ _PLATFORM = _descriptor.ServiceDescriptor(
     create_key=_descriptor._internal_create_key,
   ),
   _descriptor.MethodDescriptor(
-    name='getDataContracts',
-    full_name='org.dash.platform.dapi.v0.Platform.getDataContracts',
-    index=8,
-    containing_service=None,
-    input_type=_GETDATACONTRACTSREQUEST,
-    output_type=_GETDATACONTRACTSRESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
     name='getDocuments',
     full_name='org.dash.platform.dapi.v0.Platform.getDocuments',
-    index=9,
+    index=3,
     containing_service=None,
     input_type=_GETDOCUMENTSREQUEST,
     output_type=_GETDOCUMENTSRESPONSE,
@@ -3099,7 +1116,7 @@ _PLATFORM = _descriptor.ServiceDescriptor(
   _descriptor.MethodDescriptor(
     name='getIdentitiesByPublicKeyHashes',
     full_name='org.dash.platform.dapi.v0.Platform.getIdentitiesByPublicKeyHashes',
-    index=10,
+    index=4,
     containing_service=None,
     input_type=_GETIDENTITIESBYPUBLICKEYHASHESREQUEST,
     output_type=_GETIDENTITIESBYPUBLICKEYHASHESRESPONSE,
@@ -3107,19 +1124,9 @@ _PLATFORM = _descriptor.ServiceDescriptor(
     create_key=_descriptor._internal_create_key,
   ),
   _descriptor.MethodDescriptor(
-    name='getIdentityByPublicKeyHashes',
-    full_name='org.dash.platform.dapi.v0.Platform.getIdentityByPublicKeyHashes',
-    index=11,
-    containing_service=None,
-    input_type=_GETIDENTITYBYPUBLICKEYHASHESREQUEST,
-    output_type=_GETIDENTITYBYPUBLICKEYHASHESRESPONSE,
-    serialized_options=None,
-    create_key=_descriptor._internal_create_key,
-  ),
-  _descriptor.MethodDescriptor(
     name='waitForStateTransitionResult',
     full_name='org.dash.platform.dapi.v0.Platform.waitForStateTransitionResult',
-    index=12,
+    index=5,
     containing_service=None,
     input_type=_WAITFORSTATETRANSITIONRESULTREQUEST,
     output_type=_WAITFORSTATETRANSITIONRESULTRESPONSE,
@@ -3129,7 +1136,7 @@ _PLATFORM = _descriptor.ServiceDescriptor(
   _descriptor.MethodDescriptor(
     name='getConsensusParams',
     full_name='org.dash.platform.dapi.v0.Platform.getConsensusParams',
-    index=13,
+    index=6,
     containing_service=None,
     input_type=_GETCONSENSUSPARAMSREQUEST,
     output_type=_GETCONSENSUSPARAMSRESPONSE,

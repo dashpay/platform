@@ -60,15 +60,18 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinonSandbox.stub();
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
-    executionContext = new StateTransitionExecutionContext();
     const validator = new IdentityUpdateTransitionStateValidator(stateRepositoryMock, blsAdapter);
-    validateIdentityUpdateTransitionState = (st) => validator.validate(st, executionContext);
+    validateIdentityUpdateTransitionState = (st) => validator.validate(st);
 
     stateTransition = await getIdentityUpdateTransitionFixture();
 
     stateTransition.setRevision(identity.getRevision() + 1);
     stateTransition.setPublicKeyIdsToDisable(undefined);
     stateTransition.setPublicKeysDisabledAt(undefined);
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
@@ -269,10 +272,10 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
     // Make code that executes after dry run check to fail
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves({});
 
-    executionContext.enableDryRun();
+    stateTransition.getExecutionContext().enableDryRun();
     const result = await validateIdentityUpdateTransitionState(stateTransition);
 
-    executionContext.disableDryRun();
+    stateTransition.getExecutionContext().disableDryRun();
 
     expect(result.isValid()).to.be.true();
 

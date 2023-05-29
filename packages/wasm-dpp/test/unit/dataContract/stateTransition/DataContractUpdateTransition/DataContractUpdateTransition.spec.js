@@ -1,3 +1,4 @@
+const varint = require('varint');
 const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
@@ -63,10 +64,11 @@ describe('DataContractUpdateTransition', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return serialized State Transition', () => {
+    it('should return serialized State Transition that starts with protocol version', () => {
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.getProtocolVersion()));
+
       const result = stateTransition.toBuffer();
-      expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(2239);
+      expect(result.compare(protocolVersionBytes, 0, 1, 0, 1)).equals(0);
     });
   });
 

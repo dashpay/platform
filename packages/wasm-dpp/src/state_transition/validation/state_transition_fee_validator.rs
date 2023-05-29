@@ -7,7 +7,6 @@ use wasm_bindgen::JsValue;
 use crate::state_transition::conversion::create_state_transition_from_wasm_instance;
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
-use crate::StateTransitionExecutionContextWasm;
 
 #[wasm_bindgen(js_name=StateTransitionFeeValidator)]
 pub struct StateTransitionFeeValidatorWasm(
@@ -27,12 +26,11 @@ impl StateTransitionFeeValidatorWasm {
     pub async fn validate(
         &self,
         state_transition: &JsValue,
-        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let st = create_state_transition_from_wasm_instance(state_transition)?;
         Ok(self
             .0
-            .validate(&st, &execution_context.to_owned().into())
+            .validate(&st)
             .await
             .map(|v| v.map(|_| JsValue::undefined()))
             .with_js_error()?

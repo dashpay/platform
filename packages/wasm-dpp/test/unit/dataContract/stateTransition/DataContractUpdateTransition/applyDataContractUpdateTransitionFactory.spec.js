@@ -31,6 +31,8 @@ describe('applyDataContractUpdateTransitionFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
+    stateTransition.setExecutionContext(executionContext);
+
     const stateRepositoryLike = {
       updateDataContract: async () => {
         dataContractStored = true;
@@ -43,7 +45,7 @@ describe('applyDataContractUpdateTransitionFactory', () => {
   });
 
   it('should store a data contract from state transition in the repository', async () => {
-    await factory.applyDataContractUpdateTransition(stateTransition, executionContext);
+    await factory.applyDataContractUpdateTransition(stateTransition);
     expect(dataContractStored).to.be.true();
   });
 });

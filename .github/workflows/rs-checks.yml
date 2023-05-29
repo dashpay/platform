@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: ./.github/actions/rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           components: clippy
@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: ./.github/actions/rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           components: rustfmt
@@ -74,7 +74,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: ./.github/actions/rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -107,7 +107,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: ./.github/actions/rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown

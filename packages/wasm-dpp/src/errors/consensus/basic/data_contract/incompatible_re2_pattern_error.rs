@@ -19,17 +19,17 @@ impl From<&IncompatibleRe2PatternError> for IncompatibleRe2PatternErrorWasm {
 impl IncompatibleRe2PatternErrorWasm {
     #[wasm_bindgen(js_name=getPattern)]
     pub fn get_pattern(&self) -> String {
-        self.inner.pattern()
+        self.inner.pattern().to_string()
     }
 
     #[wasm_bindgen(js_name=getPath)]
     pub fn get_path(&self) -> String {
-        self.inner.path()
+        self.inner.path().to_string()
     }
 
     #[wasm_bindgen(js_name=getMessage)]
     pub fn get_message(&self) -> String {
-        self.inner.message()
+        self.inner.message().clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -46,7 +46,7 @@ impl IncompatibleRe2PatternErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(JsError::from)?;
+            .map_err(|e| JsError::from(e))?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

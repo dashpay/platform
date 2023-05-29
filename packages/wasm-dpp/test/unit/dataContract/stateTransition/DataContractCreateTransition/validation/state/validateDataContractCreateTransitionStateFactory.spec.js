@@ -37,6 +37,8 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
+    stateTransition.setExecutionContext(executionContext);
+
     dataContractFetched = false;
 
     const stateRepositoryLike = {
@@ -45,26 +47,22 @@ describe('validateDataContractCreateTransitionStateFactory', () => {
       },
     };
 
-    factory = (t) => validateDataContractCreateTransitionState(
-      stateRepositoryLike, t, executionContext,
-    );
+    factory = (t) => validateDataContractCreateTransitionState(stateRepositoryLike, t);
   });
 
   it('should return invalid result if Data Contract is already exist', async () => {
     // This time our state repository should return a data contract on fetch
     const validator = new DataContractValidator();
     const dataContractFactory = new DataContractFactory(1, validator);
-    const reCreatedDataContract = await dataContractFactory
-      .createFromBuffer(dataContract.toBuffer());
+    const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLikeWithContract = {
-      fetchDataContract: async () => reCreatedDataContract,
+      fetchDataContract: async () => wasmDataContract,
     };
 
     const result = await validateDataContractCreateTransitionState(
       stateRepositoryLikeWithContract,
       stateTransition,
-      executionContext,
     );
     const [error] = result.getErrors();
 

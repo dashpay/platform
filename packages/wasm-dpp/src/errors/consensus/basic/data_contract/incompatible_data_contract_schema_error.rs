@@ -24,12 +24,12 @@ impl IncompatibleDataContractSchemaErrorWasm {
 
     #[wasm_bindgen(js_name=getOperation)]
     pub fn get_operation(&self) -> String {
-        self.inner.operation()
+        self.inner.operation().to_string()
     }
 
     #[wasm_bindgen(js_name=getFieldPath)]
     pub fn get_field_path(&self) -> String {
-        self.inner.field_path()
+        self.inner.field_path().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -46,7 +46,7 @@ impl IncompatibleDataContractSchemaErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(JsError::from)?;
+            .map_err(|e| JsError::from(e))?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

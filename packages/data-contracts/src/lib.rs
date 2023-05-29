@@ -1,11 +1,5 @@
 use serde_json::{Error, Value};
 
-pub use dashpay_contract;
-pub use dpns_contract;
-pub use feature_flags_contract;
-pub use masternode_reward_shares_contract;
-pub use withdrawals_contract;
-
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Ord, PartialOrd)]
 pub enum SystemDataContract {

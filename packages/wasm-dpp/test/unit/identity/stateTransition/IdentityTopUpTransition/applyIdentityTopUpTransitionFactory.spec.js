@@ -41,10 +41,11 @@ describe('applyIdentityTopUpTransitionFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
+    stateTransition.setExecutionContext(executionContext);
+
     applyIdentityTopUpTransition = (st) => applyIdentityTopUpTransitionDPP(
       stateRepositoryMock,
       st,
-      executionContext,
     );
   });
 

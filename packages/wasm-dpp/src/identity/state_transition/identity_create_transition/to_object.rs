@@ -1,5 +1,5 @@
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
@@ -20,7 +20,7 @@ pub struct ToObject {
     pub protocol_version: u32,
     pub identity_id: Identifier,
     pub asset_lock_proof: AssetLockProof,
-    pub public_keys: Vec<IdentityPublicKeyInCreation>,
+    pub public_keys: Vec<IdentityPublicKeyWithWitness>,
     pub signature: Option<Vec<u8>>,
 }
 

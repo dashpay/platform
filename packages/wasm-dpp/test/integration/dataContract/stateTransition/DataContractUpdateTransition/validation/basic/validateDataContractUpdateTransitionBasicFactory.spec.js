@@ -55,10 +55,9 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
 
     const validator = new DataContractValidator();
     const dataContractFactory = new DataContractFactory(getLatestProtocolVersion(), validator);
-    const reCreatedDataContract = await dataContractFactory
-      .createFromBuffer(dataContract.toBuffer());
+    const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDataContract.resolves(reCreatedDataContract);
+    stateRepositoryMock.fetchDataContract.resolves(wasmDataContract);
 
     executionContext = new StateTransitionExecutionContext();
 

@@ -92,6 +92,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     executionContext = new StateTransitionExecutionContext();
 
     stateTransitionJs.setExecutionContext(executionContextJs);
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
@@ -123,9 +124,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock.fetchDataContract.resolves(null);
 
     try {
-      await validateDocumentsBatchTransitionState(
-        stateRepositoryMock, stateTransition, executionContext,
-      );
+      await validateDocumentsBatchTransitionState(stateRepositoryMock, stateTransition);
 
       expect.fail('should throw DataContractNotPresentError');
     } catch (e) {
@@ -143,7 +142,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock.fetchDocuments.resolves([documents[0].getDocument()]);
 
     const result = await validateDocumentsBatchTransitionState(
-      stateRepositoryMock, stateTransition, executionContext,
+      stateRepositoryMock, stateTransition,
     );
 
     expect(result.isValid()).is.not.true();
@@ -171,7 +170,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }, [dataContract]);
 
     const result = await validateDocumentsBatchTransitionState(
-      stateRepositoryMock, stateTransition, executionContext,
+      stateRepositoryMock, stateTransition,
     );
     expect(result).is.instanceOf(ValidationResult);
 
@@ -201,7 +200,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }, [dataContract]);
 
     const result = await validateDocumentsBatchTransitionState(
-      stateRepositoryMock, stateTransition, executionContext,
+      stateRepositoryMock, stateTransition,
     );
 
     expect(result).is.instanceOf(ValidationResult);
@@ -238,7 +237,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock.fetchDocuments.resolves([documents[0].getDocument()]);
 
     const result = await validateDocumentsBatchTransitionState(
-      stateRepositoryMock, stateTransition, executionContext,
+      stateRepositoryMock, stateTransition,
     );
 
     expect(result).is.instanceOf(ValidationResult);
@@ -281,7 +280,6 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     const result = await validateDocumentsBatchTransitionState(
       stateRepositoryMock,
       stateTransition,
-      executionContext,
     );
 
     expect(result).is.instanceOf(ValidationResult);
@@ -359,7 +357,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransition.setTransitions(transitions);
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).is.instanceOf(ValidationResult);
@@ -389,7 +387,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransition.setTransitions(transitions);
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).is.instanceOf(ValidationResult);
@@ -427,7 +425,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransition.setTransitions(transitions);
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).is.instanceOf(ValidationResult);
@@ -473,10 +471,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
           t.setCreatedAt(undefined);
         });
         stateTransition.setTransitions(transitions);
-        executionContext.enableDryRun();
+        stateTransition.getExecutionContext().enableDryRun();
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).to.be.an.instanceOf(ValidationResult);
@@ -503,10 +501,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
           // eslint-disable-next-line no-param-reassign
           t.setUpdatedAt(new Date());
         });
-        executionContext.enableDryRun();
+        stateTransition.getExecutionContext().enableDryRun();
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).to.be.an.instanceOf(ValidationResult);
@@ -542,7 +540,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateTransition.setTransitions(transitions);
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).is.instanceOf(ValidationResult);
@@ -587,10 +585,10 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
           t.setUpdatedAt(new Date(createdAtMinus6Mins));
         });
         stateTransition.setTransitions(transitions);
-        executionContext.enableDryRun();
+        stateTransition.getExecutionContext().enableDryRun();
 
         const result = await validateDocumentsBatchTransitionState(
-          stateRepositoryMock, stateTransition, executionContext,
+          stateRepositoryMock, stateTransition,
         );
 
         expect(result).to.be.an.instanceOf(ValidationResult);
@@ -623,7 +621,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }, [dataContract]);
 
     const result = await validateDocumentsBatchTransitionState(
-      stateRepositoryMock, stateTransition, executionContext,
+      stateRepositoryMock, stateTransition,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);
@@ -660,7 +658,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     }, [dataContract]);
 
     const result = await validateDocumentsBatchTransitionState(
-      stateRepositoryMock, stateTransition, executionContext,
+      stateRepositoryMock, stateTransition,
     );
 
     expect(result).to.be.an.instanceOf(ValidationResult);

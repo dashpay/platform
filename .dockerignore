@@ -2,11 +2,7 @@
 .idea
 .vscode
 .nyc_output
-*.log
-Dockerfile
-**/*.spec.ts
 
-tmp
 logs
 db
 scripts
@@ -16,12 +12,10 @@ packages/*/.nyc_output
 packages/*/.ultra.cache.json
 packages/*/test
 packages/*/tests
-packages/*/build
 packages/*/doc
 packages/*/docs
 packages/*/dist
 packages/*/wasm
-packages/*/lib/wasm
 packages/*/node_modules
 
 !packages/platform-test-suite/test
@@ -30,8 +24,6 @@ packages/*/node_modules
 .yarn/build-state.yml
 .yarn/install-state.gz
 .yarn/unplugged
-
-.yo-repository
 
 # Rust
 target

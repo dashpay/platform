@@ -103,6 +103,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     executionContext = new StateTransitionExecutionContext();
 
     stateTransitionJs.setExecutionContext(executionContextJs);
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMockJs.fetchDataContract.resolves(dataContractJs);
@@ -161,7 +162,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
   });
 
   it('should call `store`, `replace` and `remove` functions for specific type of transitions - Rust', async () => {
-    await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition, executionContext);
+    await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
     expect(stateRepositoryMock.createDocument).to.have.been.calledOnce();
 
     const [fetchContractId, fetchDocumentType] = stateRepositoryMock
@@ -201,7 +202,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     const replaceDocumentTransition = documentTransitionsJs[1];
 
     try {
-      await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition, executionContext);
+      await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
       expect.fail('Error was not thrown');
     } catch (e) {
       expect(e).to.be.an.instanceOf(DocumentNotProvidedError);
@@ -225,11 +226,11 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-    executionContext.enableDryRun();
+    stateTransition.getExecutionContext().enableDryRun();
 
-    await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition, executionContext);
+    await applyDocumentsBatchTransition(stateRepositoryMock, stateTransition);
 
-    executionContext.disableDryRun();
+    stateTransition.getExecutionContext().disableDryRun();
 
     const [documentTransition] = stateTransition.getTransitions();
 

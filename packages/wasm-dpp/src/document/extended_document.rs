@@ -7,7 +7,6 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::serialization_traits::PlatformSerializable;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -199,9 +198,6 @@ impl ExtendedDocumentWasm {
                 Value::Bytes(bytes) => {
                     return Buffer::from_bytes(bytes).into();
                 }
-                Value::Bytes20(bytes) => {
-                    return Buffer::from_bytes(bytes.as_slice()).into();
-                }
                 Value::Bytes32(bytes) => {
                     return Buffer::from_bytes(bytes.as_slice()).into();
                 }
@@ -326,7 +322,8 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize(&self.0.clone()).with_js_error()?;
+        let bytes = self.0.to_buffer().with_js_error()?;
+
         Ok(Buffer::from_bytes(&bytes))
     }
 

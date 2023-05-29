@@ -70,13 +70,12 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     identity.addPublicKey(identityPublicKey);
 
     stateTransition.sign(identity.getPublicKeyById(2), privateKey, getBlsMock());
+    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
-    validateStateTransitionIdentitySignature = (st) => validate(
-      stateRepositoryMock, st, executionContext, blsMock,
-    );
+    validateStateTransitionIdentitySignature = (st) => validate(stateRepositoryMock, st, blsMock);
   });
 
   it('should pass properly signed state transition', async () => {
@@ -228,13 +227,10 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
       expect(error).to.be.instanceOf(InvalidSignaturePublicKeySecurityLevelError);
       expect(error.getPublicKeySecurityLevel()).to.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
-      expect(error.getKeySecurityLevelRequirement()).to.deep.equal([2]);
+      expect(error.getKeySecurityLevelRequirement()).to.equal(2);
     });
 
-    // TODO: the error is not used anymore,
-    //  remove the test and remaining `match` variants in rs-dpp
-    //  that still expecting to receive this error?
-    it.skip('should return PublicKeySecurityLevelNotMetConsensusError if PublicKeySecurityLevelNotMetError was thrown', async () => {
+    it('should return PublicKeySecurityLevelNotMetConsensusError if PublicKeySecurityLevelNotMetError was thrown', async () => {
       const publicKeys = identity.getPublicKeys();
       publicKeys[2].setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
       identity.setPublicKeys(publicKeys);

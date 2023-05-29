@@ -193,7 +193,6 @@ impl From<Value> for Option<PlatformItemKey> {
             Value::U8(i) => Some(PlatformItemKey::Index(i as u64)),
             Value::I8(i) => Some(PlatformItemKey::SignedIndex(i as i64)),
             Value::Bytes(bytes) => Some(PlatformItemKey::Bytes(bytes)),
-            Value::Bytes20(bytes) => Some(PlatformItemKey::Bytes(bytes.into())),
             Value::Bytes32(bytes) => Some(PlatformItemKey::Bytes(bytes.into())),
             Value::Bytes36(bytes) => Some(PlatformItemKey::Bytes(bytes.into())),
             Value::EnumU8(_) => None,

@@ -1,21 +1,20 @@
 use crate::errors::protocol_error::from_protocol_error;
-use std::convert::TryFrom;
 
 use crate::{
     js_value_to_data_contract_value, DataContractCreateTransitionWasm,
     DataContractUpdateTransitionWasm, DataContractWasm,
 };
-use dpp::data_contract::{CreatedDataContract, DataContract, DataContractFacade};
+use dpp::data_contract::{DataContract, DataContractFacade};
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{get_bool_from_options, IntoWasm, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
 use crate::validation::ValidationResultWasm;
-
+use dpp::platform_value::Value;
 use dpp::{Convertible, ProtocolError};
 use std::sync::Arc;
-
+use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractFacade)]
@@ -115,9 +114,7 @@ impl DataContractFacadeWasm {
         data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(
-                CreatedDataContract::try_from(data_contract).with_js_error()?,
-            )
+            .create_data_contract_create_transition(data_contract.clone().into())
             .map(DataContractCreateTransitionWasm::from)
             .with_js_error()
     }

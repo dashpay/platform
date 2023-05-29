@@ -19,8 +19,6 @@ use serde::{Deserialize, Serialize};
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -30,7 +28,7 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError},
-    IdentityPublicKeyWasm,
+    IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;
@@ -81,11 +79,9 @@ impl DocumentsBatchTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let documents_batch_transition = DocumentsBatchTransition::from_raw_object_with_contracts(
-            batch_transition_value,
-            data_contracts,
-        )
-        .with_js_error()?;
+        let documents_batch_transition =
+            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
+                .with_js_error()?;
 
         Ok(documents_batch_transition.into())
     }
@@ -331,12 +327,8 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
-    pub fn get_security_level_requirement(&self) -> js_sys::Array {
-        let array = js_sys::Array::new();
-        for security_level in self.0.get_security_level_requirement() {
-            array.push(&JsValue::from(security_level as u32));
-        }
-        array
+    pub fn get_security_level_requirement(&self) -> u8 {
+        self.0.get_security_level_requirement() as u8
     }
 
     // AbstractStateTransition methods
@@ -370,11 +362,26 @@ impl DocumentsBatchTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
+    #[wasm_bindgen(js_name=setExecutionContext)]
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().clone().into()
+    }
+
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::DocumentsBatch(self.0.clone()))
-                .with_js_error()?;
+    pub fn to_buffer(&self, options: &JsValue) -> Result<Buffer, JsValue> {
+        let skip_signature = if options.is_object() {
+            let options = options.with_serde_to_json_value()?;
+            options.get_bool("skipSignature").unwrap_or_default()
+        } else {
+            false
+        };
+        let bytes = self.0.to_buffer(skip_signature).with_js_error()?;
+
         Ok(Buffer::from_bytes(&bytes))
     }
 

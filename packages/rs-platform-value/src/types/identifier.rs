@@ -1,10 +1,9 @@
-use bincode::{Decode, Encode};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 
-use serde::de::Visitor;
+use serde::de::{Error as SerdeDeError, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -14,31 +13,13 @@ use crate::{string_encoding, Error, Value};
 
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Encode, Decode)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy)]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
 #[derive(
-    Default,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-    Copy,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
+    Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Serialize, Deserialize,
 )]
 pub struct Identifier(pub IdentifierBytes32);
-
-impl AsRef<[u8]> for Identifier {
-    fn as_ref(&self) -> &[u8] {
-        &(self.0 .0)
-    }
-}
 
 impl Serialize for IdentifierBytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -103,7 +84,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                         return Err(E::invalid_length(v.len(), &self));
                     }
                     let mut array = [0u8; 32];
-                    array.copy_from_slice(v);
+                    array.copy_from_slice(&v);
 
                     Ok(IdentifierBytes32(array))
                 }

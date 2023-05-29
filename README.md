@@ -53,26 +53,20 @@ this repository may be used on the following networks:
   - [node.js](https://nodejs.org/) v16
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [rust](https://www.rust-lang.org/tools/install) v1.67+
-  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
+  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/): 
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
       - `brew install llvm`
       - LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
-    - install `protoc` - protobuf compiler:
-      - on debian/ubuntu: `apt install -y protobuf-compiler`
-      - on Mac: `brew install protobuf`
-      - on other systems, install most recent version from [Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases) (tested with protobuf 22.4)
-      - if needed, set PROTOC environment variable to location of `protoc` binary
-    - `cargo install wasm-bindgen-cli@0.2.85`
-      - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
-      - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
+    - `cargo install wasm-bindgen-cli` 
+      - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)_
     - `rustup target add wasm32-unknown-unknown`
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources
-- Run `yarn test` to run the whole test suite (note that running tests requires a running node,
- so be sure to call `yarn start` first). Alternatively, you can run tests for a specific
- package by running `yarn workspace <package_name> test`, for example running
- `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see
+- Run `yarn test` to run the whole test suite (note that running tests requires a running node, 
+ so be sure to call `yarn start` first). Alternatively, you can run tests for a specific 
+ package by running `yarn workspace <package_name> test`, for example running 
+ `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see 
  all available packages, please see the [packages readme](./packages/README.md)
 - `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
  so it is best to stop the local node when not in use

@@ -1,4 +1,4 @@
-use crate::{BinaryData, Bytes20, Bytes32, Bytes36, Error, Identifier, Value};
+use crate::{BinaryData, Bytes32, Bytes36, Error, Identifier, Value};
 
 impl Value {
     /// If the `Value` is a `Bytes`, a `Text` using base 58 or Vector of `U8`, returns the
@@ -202,7 +202,6 @@ impl Value {
                 })
                 .collect::<Result<Vec<u8>, Error>>(),
             Value::Bytes(vec) => Ok(vec.clone()),
-            Value::Bytes20(vec) => Ok(vec.to_vec()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
             Value::Bytes36(vec) => Ok(vec.to_vec()),
             Value::Identifier(identifier) => Ok(Vec::from(identifier.as_slice())),
@@ -323,102 +322,6 @@ impl Value {
             },
             Value::Identifier(identifier) => Ok(identifier.to_owned()),
             _other => Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())),
-        }
-    }
-
-    /// If the `Value` is a `Bytes`, a `Text` using base 64 or Vector of `U8`, returns the
-    /// associated `Bytes20` data as `Ok`.
-    /// Returns `Err(Error::Structure("reason"))` otherwise.
-    ///
-    /// ```
-    /// # use platform_value::{Bytes20, Error, Value};
-    ///
-    /// #
-    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108]);
-    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108])));    ///
-    ///
-    /// let value = Value::Text("WRdZY72e8yUfNJ5VC9ckzga7ysE=".to_string());
-    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([89, 23, 89, 99, 189, 158, 243, 37, 31, 52, 158, 85, 11, 215, 36, 206, 6, 187, 202, 193])));
-    ///
-    /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.into_bytes_20(), Err(Error::ByteLengthNot20BytesError("buffer was not 20 bytes long".to_string())));
-    ///
-    /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.into_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
-    ///
-    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104)]);
-    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104])));
-    ///
-    /// let value = Value::Bool(true);
-    /// assert_eq!(value.into_bytes_20(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
-    /// ```
-    pub fn into_bytes_20(self) -> Result<Bytes20, Error> {
-        match self {
-            Value::Text(text) => Bytes20::from_vec(base64::decode(text).map_err(|_| {
-                Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
-                )
-            })?),
-            Value::Array(array) => Bytes20::from_vec(
-                array
-                    .into_iter()
-                    .map(|byte| byte.into_integer())
-                    .collect::<Result<Vec<u8>, Error>>()?,
-            ),
-            Value::Bytes20(bytes) => Ok(Bytes20::new(bytes)),
-            Value::Bytes(vec) => Bytes20::from_vec(vec),
-            _other => Err(Error::StructureError(
-                "value are not bytes, a string, or an array of values representing bytes"
-                    .to_string(),
-            )),
-        }
-    }
-
-    /// If the `Value` is a `Bytes`, a `Text` using base 64 or Vector of `U8`, returns the
-    /// associated `Bytes20` data as `Ok`.
-    /// Returns `Err(Error::Structure("reason"))` otherwise.
-    ///
-    /// ```
-    /// # use platform_value::{Bytes20, Error, Value};
-    ///
-    /// #
-    /// let value = Value::Bytes(vec![104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108]);
-    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108])));    ///
-    ///
-    /// let value = Value::Text("WRdZY72e8yUfNJ5VC9ckzga7ysE=".to_string());
-    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([89, 23, 89, 99, 189, 158, 243, 37, 31, 52, 158, 85, 11, 215, 36, 206, 6, 187, 202, 193])));
-    ///
-    /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.to_bytes_20(), Err(Error::ByteLengthNot20BytesError("buffer was not 20 bytes long".to_string())));
-    ///
-    /// let value = Value::Text("a811Ii".to_string());
-    /// assert_eq!(value.to_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
-    ///
-    /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104)]);
-    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104])));
-    ///
-    /// let value = Value::Bool(true);
-    /// assert_eq!(value.to_bytes_20(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
-    /// ```
-    pub fn to_bytes_20(&self) -> Result<Bytes20, Error> {
-        match self {
-            Value::Text(text) => Bytes20::from_vec(base64::decode(text).map_err(|_| {
-                Error::StructureError(
-                    "value was a string, but could not be decoded from base 64".to_string(),
-                )
-            })?),
-            Value::Array(array) => Bytes20::from_vec(
-                array
-                    .iter()
-                    .map(|byte| byte.to_integer())
-                    .collect::<Result<Vec<u8>, Error>>()?,
-            ),
-            Value::Bytes20(bytes) => Ok(Bytes20::new(*bytes)),
-            Value::Bytes(vec) => Bytes20::from_vec(vec.clone()),
-            _other => Err(Error::StructureError(
-                "value are not bytes, a string, or an array of values representing bytes"
-                    .to_string(),
-            )),
         }
     }
 

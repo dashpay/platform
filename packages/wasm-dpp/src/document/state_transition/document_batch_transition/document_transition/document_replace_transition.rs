@@ -2,7 +2,7 @@ use std::convert;
 use std::convert::TryInto;
 
 use dpp::document::document_transition::document_base_transition::JsonValue;
-
+use dpp::identity::TimestampMillis;
 use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
 };

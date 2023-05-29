@@ -6,8 +6,10 @@ describe('applyDataContractCreateTransitionFactory', () => {
   let stateTransition;
   let dataContract;
   let factory;
+  let executionContext;
   let DataContractCreateTransition;
   let ApplyDataContractCreateTransition;
+  let StateTransitionExecutionContext;
 
   let dataContractStored;
 
@@ -15,6 +17,7 @@ describe('applyDataContractCreateTransitionFactory', () => {
     ({
       DataContractCreateTransition,
       ApplyDataContractCreateTransition,
+      StateTransitionExecutionContext,
     } = await loadWasmDpp());
   });
 
@@ -26,6 +29,10 @@ describe('applyDataContractCreateTransitionFactory', () => {
       dataContract: dataContract.toObject(),
       entropy: Buffer.alloc(32),
     });
+
+    executionContext = new StateTransitionExecutionContext();
+
+    stateTransition.setExecutionContext(executionContext);
 
     const stateRepositoryLike = {
       createDataContract: async () => {

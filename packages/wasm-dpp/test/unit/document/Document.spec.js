@@ -412,15 +412,15 @@ describe('Document', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return serialized Document', () => {
+    it('returned bytes should be the same as JS version', () => {
+      const jsBuffer = documentJs.toBuffer();
       const buffer = document.toBuffer();
-      expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer.length).to.equal(509);
+
+      expect(jsBuffer.length).to.equal(buffer.length);
+      expect(jsBuffer).to.deep.equal(buffer);
     });
 
-    // TODO: remove or replace?
-    //  can not be compared to JS buffers anymore because uses bin code
-    it.skip('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+    it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
       const jsId = generateRandomIdentifier();
       const id = new Identifier(jsId.toBuffer());
       const path = 'dataObject.binaryObject.identifier';
@@ -439,9 +439,7 @@ describe('Document', () => {
       expect(jsBuffer).to.deep.equal(buffer);
     });
 
-    // TODO: remove or replace?
-    //  can not be compared to JS buffers anymore because uses bin code
-    it.skip('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
+    it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
       const data = Buffer.alloc(32);
       const path = 'dataObject.binaryObject.binaryData';
 

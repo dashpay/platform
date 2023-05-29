@@ -3,7 +3,7 @@ use crate::identity::identity_public_key_transitions::IdentityPublicKeyWithWitne
 use crate::utils::{generic_of_js_val, to_vec_of_platform_values};
 use crate::{create_asset_lock_proof_from_wasm_instance, IdentityPublicKeyWasm};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use std::collections::BTreeMap;
 use wasm_bindgen::__rt::Ref;
@@ -26,7 +26,7 @@ pub fn parse_create_args(
     Ok((asset_lock_proof, public_keys))
 }
 
-type AddPublicKeys = Option<Vec<IdentityPublicKeyInCreation>>;
+type AddPublicKeys = Option<Vec<IdentityPublicKeyWithWitness>>;
 type DisablePublicKeys = Option<Vec<KeyID>>;
 
 pub fn parse_create_identity_update_transition_keys(
@@ -44,7 +44,7 @@ pub fn parse_create_identity_update_transition_keys(
                     .to_js_value()
             })?;
 
-        let keys: Vec<IdentityPublicKeyInCreation> = add_public_keys_array
+        let keys: Vec<IdentityPublicKeyWithWitness> = add_public_keys_array
             .iter()
             .map(|key| {
                 let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
@@ -55,7 +55,7 @@ pub fn parse_create_identity_update_transition_keys(
 
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
 
         add_public_keys = Some(keys)
     }

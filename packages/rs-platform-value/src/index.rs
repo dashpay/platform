@@ -162,7 +162,6 @@ impl<'a> Display for Type<'a> {
             Value::U8(_) => formatter.write_str("u8"),
             Value::I8(_) => formatter.write_str("i8"),
             Value::Bytes(_) => formatter.write_str("bytes"),
-            Value::Bytes20(_) => formatter.write_str("bytes20"),
             Value::Bytes32(_) => formatter.write_str("bytes32"),
             Value::Bytes36(_) => formatter.write_str("bytes36"),
             Value::Identifier(_) => formatter.write_str("identifier"),

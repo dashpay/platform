@@ -13,7 +13,6 @@ let {
   StateTransitionMaxSizeExceededError,
   JsonSchemaError,
   ValidationResult,
-  StateTransitionExecutionContext,
 } = require('../../../..');
 
 describe('validateStateTransitionBasicFactory', () => {
@@ -21,7 +20,6 @@ describe('validateStateTransitionBasicFactory', () => {
   let dataContract;
   let stateTransition;
   let dpp;
-  let executionContext;
 
   beforeEach(async function beforeEach() {
     ({
@@ -29,7 +27,6 @@ describe('validateStateTransitionBasicFactory', () => {
       MissingStateTransitionTypeError,
       InvalidStateTransitionTypeError,
       StateTransitionMaxSizeExceededError,
-      StateTransitionExecutionContext,
       JsonSchemaError,
       ValidationResult,
     } = await loadWasmDpp());
@@ -48,14 +45,12 @@ describe('validateStateTransitionBasicFactory', () => {
     await stateTransition.sign(identityPublicKey, privateKey, getBlsMock());
 
     rawStateTransition = stateTransition.toObject();
-
-    executionContext = new StateTransitionExecutionContext();
   });
 
   it('should return invalid result if ST type is missing', async () => {
     delete rawStateTransition.type;
 
-    const result = await dpp.stateTransition.validateBasic(rawStateTransition, executionContext);
+    const result = await dpp.stateTransition.validateBasic(rawStateTransition);
 
     await expectValidationError(result);
 
@@ -67,7 +62,7 @@ describe('validateStateTransitionBasicFactory', () => {
   it('should return invalid result if ST type is not valid', async () => {
     rawStateTransition.type = 66;
 
-    const result = await dpp.stateTransition.validateBasic(rawStateTransition, executionContext);
+    const result = await dpp.stateTransition.validateBasic(rawStateTransition);
 
     await expectValidationError(result);
 
@@ -78,7 +73,7 @@ describe('validateStateTransitionBasicFactory', () => {
 
   it('should return invalid result if ST is invalid against validation function', async () => {
     delete rawStateTransition.signaturePublicKeyId;
-    const result = await dpp.stateTransition.validateBasic(rawStateTransition, executionContext);
+    const result = await dpp.stateTransition.validateBasic(rawStateTransition);
 
     await expectValidationError(result);
 
@@ -87,11 +82,11 @@ describe('validateStateTransitionBasicFactory', () => {
     expect(error).to.instanceof(JsonSchemaError);
   });
 
-  it('should return invalid result if ST size is more than 25 kb', async () => {
+  it('should return invalid result if ST size is more than 16 kb', async () => {
     const largeDocument = rawStateTransition.dataContract.documents.niceDocument;
 
     // generate big state transition
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 6; i++) {
       largeDocument.properties[`name${i}`] = { type: 'string' };
     }
     for (let i = 0; i < 90; i++) {
@@ -100,7 +95,6 @@ describe('validateStateTransitionBasicFactory', () => {
 
     const result = await dpp.stateTransition.validateBasic(
       rawStateTransition,
-      executionContext,
     );
 
     await expectValidationError(result, StateTransitionMaxSizeExceededError);
@@ -111,7 +105,7 @@ describe('validateStateTransitionBasicFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await dpp.stateTransition.validateBasic(rawStateTransition, executionContext);
+    const result = await dpp.stateTransition.validateBasic(rawStateTransition);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();

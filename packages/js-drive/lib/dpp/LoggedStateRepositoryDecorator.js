@@ -1,0 +1,721 @@
+/**
+ * @implements StateRepository
+ */
+class LoggedStateRepositoryDecorator {
+  /**
+   * @param {DriveStateRepository|CachedStateRepositoryDecorator} stateRepository
+   * @param {BlockExecutionContext} blockExecutionContext
+   */
+  constructor(
+    stateRepository,
+    blockExecutionContext,
+  ) {
+    this.stateRepository = stateRepository;
+    this.blockExecutionContext = blockExecutionContext;
+  }
+
+  /**
+   * @private
+   * @param {string} method - state repository method name
+   * @param {object} parameters - parameters of the state repository call
+   * @param {object} response - response of the state repository call
+   */
+  log(method, parameters, response) {
+    const logger = this.blockExecutionContext.getContextLogger();
+
+    logger.trace({
+      stateRepository: {
+        method,
+        parameters,
+        response,
+      },
+    }, `StateRepository#${method}`);
+  }
+
+  /**
+   * Fetch Identity by ID
+   *
+   * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @return {Promise<Identity|null>}
+   */
+  async fetchIdentity(id, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchIdentity(id, executionContext);
+    } finally {
+      this.log(
+        'fetchIdentity',
+        {
+          id,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Create identity
+   *
+   * @param {Identity} identity
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async createIdentity(identity, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.createIdentity(identity, executionContext);
+    } finally {
+      this.log(
+        'createIdentity',
+        {
+          identity,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Add keys to identity
+   *
+   * @param {Identifier} identityId
+   * @param {IdentityPublicKey[]} keys
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addKeysToIdentity(identityId, keys, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.addKeysToIdentity(identityId, keys, executionContext);
+    } finally {
+      this.log(
+        'addKeysToIdentity',
+        {
+          identityId,
+          keys,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(identityId, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchIdentityBalance(
+        identityId,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchIdentityBalance',
+        {
+          identityId,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch identity balance with debt
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>} - Balance can be negative in case of debt
+   */
+  async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchIdentityBalanceWithDebt(
+        identityId,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchIdentityBalanceWithDebt',
+        {
+          identityId,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Add to identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToIdentityBalance(identityId, amount, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.addToIdentityBalance(
+        identityId,
+        amount,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'addToIdentityBalance',
+        {
+          identityId,
+          amount,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Add to system credits
+   *
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(amount, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.addToSystemCredits(
+        amount,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'addToSystemCredits',
+        {
+          amount,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Disable identity keys
+   *
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async disableIdentityKeys(identityId, keyIds, disableAt, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.disableIdentityKeys(
+        identityId,
+        keyIds,
+        disableAt,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'disableIdentityKeys',
+        {
+          identityId,
+          keyIds,
+          disableAt,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Update identity revision
+   *
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async updateIdentityRevision(identityId, revision, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateIdentityRevision(
+        identityId,
+        revision,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'updateIdentityRevision',
+        {
+          identityId,
+          revision,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Store spent asset lock transaction
+   *
+   * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @return {Promise<void>}
+   */
+  async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.markAssetLockTransactionOutPointAsUsed(
+        outPointBuffer,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'markAssetLockTransactionOutPointAsUsed',
+        {
+          outPointBuffer: outPointBuffer.toString('base64'),
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Check if spent asset lock transaction is stored
+   *
+   * @param {Buffer} outPointBuffer
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @return {Promise<boolean>}
+   */
+  async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.isAssetLockTransactionOutPointAlreadyUsed(
+        outPointBuffer,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'isAssetLockTransactionOutPointAlreadyUsed',
+        {
+          outPointBuffer: outPointBuffer.toString('base64'),
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch Data Contract by ID
+   *
+   * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<DataContract|null>}
+   */
+  async fetchDataContract(id, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchDataContract(id, executionContext);
+    } finally {
+      this.log(
+        'fetchDataContract',
+        {
+          id,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Store Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async createDataContract(dataContract, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.createDataContract(dataContract, executionContext);
+    } finally {
+      this.log('createDataContract', { dataContract }, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Store Data Contract
+   *
+   * @param {DataContract} dataContract
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDataContract(dataContract, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateDataContract(dataContract, executionContext);
+    } finally {
+      this.log('updateDataContract', { dataContract }, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<Document[]>}
+   */
+  async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchDocuments(
+        contractId,
+        type,
+        options,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchDocuments',
+        {
+          contractId,
+          type,
+          options,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchExtendedDocuments(
+        contractId,
+        type,
+        options,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchExtendedDocuments',
+        {
+          contractId,
+          type,
+          options,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Create document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async createDocument(document, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.createDocument(document, executionContext);
+    } finally {
+      this.log(
+        'createDocument',
+        {
+          document,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Update document
+   *
+   * @param {Document} document
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async updateDocument(document, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.updateDocument(document, executionContext);
+    } finally {
+      this.log(
+        'updateDocument',
+        {
+          document,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Remove document
+   *
+   * @param {DataContract} dataContract
+   * @param {string} type
+   * @param {Identifier} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<void>}
+   */
+  async removeDocument(dataContract, type, id, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.removeDocument(
+        dataContract,
+        type,
+        id,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'removeDocument',
+        {
+          dataContract,
+          type,
+          id,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch transaction by ID
+   *
+   * @param {string} id
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<Object|null>}
+   */
+  async fetchTransaction(id, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchTransaction(id, executionContext);
+    } finally {
+      this.log(
+        'fetchTransaction',
+        {
+          id,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch the latest platform block height
+   *
+   * @return {Promise<Long>}
+   */
+  async fetchLatestPlatformBlockHeight() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestPlatformBlockHeight();
+    } finally {
+      this.log('fetchLatestPlatformBlockHeight', {}, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestPlatformCoreChainLockedHeight();
+    } finally {
+      this.log('fetchLatestPlatformCoreChainLockedHeight', {}, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Verify instant lock
+   *
+   * @param {InstantLock} instantLock
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @return {Promise<boolean>}
+   */
+  async verifyInstantLock(instantLock, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.verifyInstantLock(instantLock, executionContext);
+    } finally {
+      this.log('verifyInstantLock', { instantLock }, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Returns block time
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestPlatformBlockTime() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestPlatformBlockTime();
+    } finally {
+      this.log('fetchLatestPlatformBlockTime', { }, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Fetch the latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchLatestWithdrawalTransactionIndex();
+    } finally {
+      this.log('fetchLatestWithdrawalTransactionIndex', {}, response);
+    }
+
+    return response;
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    let response;
+
+    try {
+      response = await this.stateRepository.enqueueWithdrawalTransaction(
+        index,
+        transactionBytes,
+      );
+    } finally {
+      this.log('enqueueWithdrawalTransaction', { index, transactionBytes }, response);
+    }
+  }
+
+  /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    return this.stateRepository.isInTheValidMasterNodesList(masternodeId);
+  }
+}
+
+module.exports = LoggedStateRepositoryDecorator;

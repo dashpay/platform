@@ -1,3 +1,4 @@
+use dpp::dashcore::anyhow::Context;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::util::json_schema::JsonSchemaExt;
 
@@ -10,7 +11,7 @@ use crate::buffer::Buffer;
 
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
-use crate::utils::WithJsError;
+use crate::utils::{try_to_u64, WithJsError};
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::DataContractWasm;
@@ -26,7 +27,7 @@ pub mod state_transition;
 mod validator;
 
 pub use document_batch_transition::DocumentsBatchTransitionWasm;
-
+use dpp::data_contract::DriveContractExt;
 use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS};
 
 pub use extended_document::ExtendedDocumentWasm;
@@ -168,9 +169,6 @@ impl DocumentWasm {
                 Value::Bytes(bytes) => {
                     return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
-                Value::Bytes20(bytes) => {
-                    return Ok(Buffer::from_bytes(bytes.as_slice()).into());
-                }
                 Value::Bytes32(bytes) => {
                     return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
@@ -238,7 +236,7 @@ impl DocumentWasm {
         let mut value = self.0.to_object().with_js_error()?;
 
         let (identifiers_paths, binary_paths) =
-            Document::get_identifiers_and_binary_paths(data_contract.inner(), document_type_name)
+            Document::get_identifiers_and_binary_paths(&data_contract.0, document_type_name)
                 .with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
@@ -287,12 +285,12 @@ impl DocumentWasm {
         document_type_name: String,
     ) -> Result<Buffer, JsValue> {
         let document_type = data_contract
-            .inner()
+            .0
             .document_type_for_name(document_type_name.as_str())
             .with_js_error()?;
         let bytes = self
             .0
-            .hash(data_contract.inner(), document_type)
+            .hash(&data_contract.0, document_type)
             .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
@@ -311,7 +309,7 @@ impl DocumentWasm {
         document_type_name: String,
     ) -> BinaryType {
         let maybe_binary_properties = data_contract
-            .inner()
+            .0
             .get_binary_properties(document_type_name.as_str());
 
         if let Ok(binary_properties) = maybe_binary_properties {

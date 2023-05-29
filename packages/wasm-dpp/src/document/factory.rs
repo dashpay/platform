@@ -212,23 +212,6 @@ impl DocumentFactoryWASM {
 
         Ok(document.into())
     }
-
-    #[wasm_bindgen(js_name=createExtendedDocumentFromDocumentBuffer)]
-    pub fn create_extended_from_document_buffer(
-        &self,
-        buffer: Vec<u8>,
-        document_type: &str,
-        data_contract: &DataContractWasm,
-    ) -> Result<ExtendedDocumentWasm, JsValue> {
-        self.0
-            .create_extended_from_document_buffer(
-                buffer.as_slice(),
-                document_type,
-                &data_contract.to_owned().into(),
-            )
-            .map(|document| document.into())
-            .with_js_error()
-    }
 }
 
 fn extract_documents_by_action(

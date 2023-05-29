@@ -3,7 +3,7 @@ use crate::Serialize;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::PublicKeySecurityLevelNotMetError;
 use dpp::consensus::ConsensusError;
-
+use dpp::identity::SecurityLevel;
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize)]
@@ -44,7 +44,7 @@ impl PublicKeySecurityLevelNotMetErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(JsError::from)?;
+            .map_err(|e| JsError::from(e))?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

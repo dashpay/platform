@@ -1,6 +1,5 @@
 [package]
 name = "platform-value"
-authors = ["Samuel Westrich <sam@dash.org>"]
 description = "A simple value module"
 version = "0.1.0"
 edition = "2021"
@@ -8,7 +7,6 @@ license = "MIT"
 private = true
 
 [dependencies]
-bincode = { version="2.0.0-rc.3", features=["serde"] }
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
 thiserror = "1.0.30"
 bs58 = "0.4.0"

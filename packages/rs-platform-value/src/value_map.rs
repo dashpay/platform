@@ -19,7 +19,6 @@ pub trait ValueMapHelper {
     fn remove_key(&mut self, search_key: &str) -> Result<Value, Error>;
     fn remove_optional_key(&mut self, key: &str) -> Option<Value>;
     fn remove_optional_key_if_null(&mut self, search_key: &str);
-    fn remove_optional_key_if_empty_array(&mut self, search_key: &str);
     fn remove_optional_key_value(&mut self, search_key_value: &Value) -> Option<Value>;
 }
 
@@ -178,26 +177,6 @@ impl ValueMapHelper for ValueMap {
                 if let Value::Text(text) = key {
                     if text == search_key {
                         value.is_null()
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            })
-            .map(|pos| self.remove(pos).1);
-    }
-
-    fn remove_optional_key_if_empty_array(&mut self, search_key: &str) {
-        self.iter()
-            .position(|(key, value)| {
-                if let Value::Text(text) = key {
-                    if text == search_key {
-                        if let Some(v) = value.as_array() {
-                            v.is_empty()
-                        } else {
-                            false
-                        }
                     } else {
                         false
                     }

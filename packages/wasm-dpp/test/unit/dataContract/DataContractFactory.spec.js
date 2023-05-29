@@ -1,6 +1,6 @@
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
 
-const { default: loadWasmDpp, UnsupportedProtocolVersionError } = require('../../..');
+const { default: loadWasmDpp } = require('../../..');
 const { getLatestProtocolVersion } = require('../../..');
 
 describe('DataContractFactory', () => {
@@ -8,10 +8,11 @@ describe('DataContractFactory', () => {
   let DataContractValidator;
   let DataContract;
   let InvalidDataContractError;
+  let SerializedObjectParsingError;
   let JsonSchemaError;
 
   let factory;
-  let dataContract;
+  let jsDataContract;
   let rawDataContract;
   let dataContractValidator;
 
@@ -21,13 +22,18 @@ describe('DataContractFactory', () => {
       DataContractValidator,
       DataContract,
       InvalidDataContractError,
+      SerializedObjectParsingError,
       JsonSchemaError,
     } = await loadWasmDpp());
   });
 
-  beforeEach(async () => {
-    dataContract = await getDataContractFixture();
-    rawDataContract = dataContract.toObject();
+  beforeEach(() => {
+    jsDataContract = getDataContractFixture();
+
+    // For some reason fixture has empty $defs which violates meta schema
+    delete jsDataContract.$defs;
+
+    rawDataContract = jsDataContract.toObject();
 
     dataContractValidator = new DataContractValidator();
 
@@ -40,7 +46,7 @@ describe('DataContractFactory', () => {
   describe('create', () => {
     it('should return new Data Contract with specified name and documents definition', () => {
       const result = factory.create(
-        dataContract.getOwnerId(),
+        jsDataContract.ownerId.toBuffer(),
         rawDataContract.documents,
       ).toObject();
 
@@ -55,7 +61,8 @@ describe('DataContractFactory', () => {
     });
 
     it('should return new Data Contract without validation if "skipValidation" option is passed', async () => {
-      const alteredContract = dataContract.toObject();
+      const alteredContract = jsDataContract.toObject();
+      alteredContract.$defs = {}; // Empty defs are bad!
 
       const resultSkipValidation = await factory.createFromObject(alteredContract, true);
 
@@ -63,7 +70,8 @@ describe('DataContractFactory', () => {
     });
 
     it('should throw an error if passed object is not valid', async () => {
-      const alteredContract = dataContract.toObject();
+      const alteredContract = jsDataContract.toObject();
+      alteredContract.$defs = {}; // Empty defs are bad!
 
       try {
         await factory.createFromObject(alteredContract);
@@ -82,24 +90,24 @@ describe('DataContractFactory', () => {
     let serializedDataContract;
 
     beforeEach(() => {
-      serializedDataContract = dataContract.toBuffer();
+      serializedDataContract = jsDataContract.toBuffer();
     });
 
     it('should return new Data Contract from serialized contract', async () => {
       const result = await factory.createFromBuffer(serializedDataContract);
 
-      expect(result.toObject()).to.deep.equal(dataContract.toObject());
+      expect(result.toObject()).to.deep.equal(jsDataContract.toObject());
     });
 
     it('should throw InvalidDataContractError if the decoding fails with consensus error', async () => {
       try {
         // Casually break serialized data contract:
-        serializedDataContract[0] = 3;
+        serializedDataContract[5] += 1337;
         await factory.createFromBuffer(serializedDataContract);
         expect.fail('should throw InvalidDataContractError');
       } catch (e) {
-        expect(e).to.be.an.instanceOf(InvalidDataContractError);
-        expect(e.getErrors()[0]).to.be.an.instanceOf(UnsupportedProtocolVersionError);
+        expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
+        expect(e.getParsingError()).to.equals('Syntax(1)');
       }
     });
   });
@@ -107,14 +115,14 @@ describe('DataContractFactory', () => {
   describe('createDataContractCreateTransition', () => {
     it('should return new DataContractCreateTransition with passed DataContract', async () => {
       // Create wasm version of DataContract
-      const newDataContract = new DataContract(rawDataContract);
-      newDataContract.setEntropy(dataContract.getEntropy());
+      const dataContract = new DataContract(rawDataContract);
+      dataContract.setEntropy(jsDataContract.getEntropy());
 
-      const result = await factory.createDataContractCreateTransition(newDataContract);
+      const result = await factory.createDataContractCreateTransition(dataContract);
 
       expect(result.getProtocolVersion()).to.equal(getLatestProtocolVersion());
-      expect(result.getEntropy()).to.deep.equal(dataContract.getEntropy());
-      expect(result.getDataContract().toObject()).to.deep.equal(dataContract.toObject());
+      expect(result.getEntropy()).to.deep.equal(jsDataContract.getEntropy());
+      expect(result.getDataContract().toObject()).to.deep.equal(jsDataContract.toObject());
     });
   });
 });

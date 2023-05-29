@@ -1,12 +1,11 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
-use bincode::{Decode, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl Serialize for BinaryData {
@@ -168,18 +167,6 @@ impl From<BinaryData> for String {
 impl From<&BinaryData> for String {
     fn from(val: &BinaryData) -> Self {
         val.to_string(Encoding::Base64)
-    }
-}
-
-impl PartialEq<&[u8; 20]> for BinaryData {
-    fn eq(&self, other: &&[u8; 20]) -> bool {
-        self.as_slice() == *other
-    }
-}
-
-impl PartialEq<[u8; 20]> for BinaryData {
-    fn eq(&self, other: &[u8; 20]) -> bool {
-        self.as_slice() == *other
     }
 }
 

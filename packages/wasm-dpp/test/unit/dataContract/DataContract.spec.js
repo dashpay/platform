@@ -1,5 +1,7 @@
 const bs58 = require('bs58');
 
+const JsDataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 const { default: loadWasmDpp } = require('../../../dist');
@@ -8,6 +10,7 @@ describe('DataContract', () => {
   let documentType;
   let documentSchema;
   let documents;
+  let jsDataContract;
   let ownerId;
   let entropy;
   let contractId;
@@ -49,6 +52,16 @@ describe('DataContract', () => {
     contractId = (await generateRandomIdentifier()).toBuffer();
 
     defs = { something: { type: 'string' } };
+
+    jsDataContract = new JsDataContract({
+      $schema: JsDataContract.DEFAULTS.SCHEMA,
+      $id: contractId,
+      version: 1,
+      protocolVersion: 1,
+      ownerId,
+      documents,
+      $defs: defs,
+    });
 
     dataContract = new DataContract({
       $schema: DataContractDefaults.SCHEMA,
@@ -273,21 +286,21 @@ describe('DataContract', () => {
 
   describe('#toBuffer', () => {
     it('should return DataContract as a Buffer', () => {
-      const result = dataContract.toBuffer();
-      expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(251);
+      expect(jsDataContract.getProtocolVersion()).to.deep.equal(dataContract.getProtocolVersion());
+
+      const jsResult = jsDataContract.toBuffer();
+      const wasmResult = dataContract.toBuffer();
+
+      expect(wasmResult).to.deep.equal(jsResult);
     });
   });
 
-  // TODO: can not compare to JS because rust
-  //  DataContract does not match JS anymore
   describe('#hash', () => {
     it('should return DataContract hash', () => {
-      // const jsResult = jsDataContract.hash();
+      const jsResult = jsDataContract.hash();
       const wasmResult = dataContract.hash();
-      //
-      // expect(wasmResult).to.deep.equal(jsResult);
-      expect(wasmResult).to.be.instanceOf(Uint8Array);
+
+      expect(wasmResult).to.deep.equal(jsResult);
     });
   });
 

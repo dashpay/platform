@@ -25,12 +25,8 @@ impl InvalidSignaturePublicKeySecurityLevelErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
-    pub fn get_allowed_key_security_levels(&self) -> js_sys::Array {
-        let array = js_sys::Array::new();
-        for security_level in self.inner.allowed_key_security_levels() {
-            array.push(&JsValue::from(security_level as u32));
-        }
-        array
+    pub fn get_key_security_level_requirement(&self) -> u8 {
+        self.inner.required_key_security_level() as u8
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -47,7 +43,7 @@ impl InvalidSignaturePublicKeySecurityLevelErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(JsError::from)?;
+            .map_err(|e| JsError::from(e))?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

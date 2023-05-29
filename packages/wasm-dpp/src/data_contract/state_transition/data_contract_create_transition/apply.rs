@@ -38,7 +38,7 @@ impl ApplyDataContractCreateTransitionWasm {
         transition: DataContractCreateTransitionWasm,
     ) -> Result<(), JsError> {
         self.0
-            .apply_data_contract_create_transition(&transition.into(), None)
+            .apply_data_contract_create_transition(&transition.into())
             .await
             .map_err(|e| e.deref().into())
     }

@@ -18,7 +18,7 @@ on:
       - packages/dashpay-contract/**
       - packages/wasm-dpp/**
   schedule:
-    - cron: "30 4 * * *"
+    - cron: '30 4 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,14 +30,14 @@ jobs:
     uses: ./.github/workflows/js-checks.yml
     secrets: inherit
     with:
-      package: "@dashevo/wasm-dpp"
+      package: '@dashevo/wasm-dpp'
       install-browsers: true
 
   rs-checks:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: "wasm-dpp"
+      package: 'wasm-dpp'
 
   wasm-errors:
     name: WASM compilation
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: ./.github/actions/rust
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown

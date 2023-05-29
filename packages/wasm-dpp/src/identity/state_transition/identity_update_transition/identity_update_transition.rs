@@ -11,21 +11,24 @@ use crate::identifier::IdentifierWrapper;
 use crate::{
     buffer::Buffer, errors::RustConversionError,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    identity::IdentityPublicKeyWasm, with_js_error,
+    identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
+    with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
+use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
 
+use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
+
 use dpp::consensus::ConsensusError;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::{StateTransitionConvert, StateTransitionIdentitySigned};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -44,7 +47,7 @@ struct IdentityUpdateTransitionParams {
     protocol_version: u32,
     identity_id: Vec<u8>,
     revision: Revision,
-    add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
+    add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
     disable_public_keys: Option<Vec<KeyID>>,
     public_keys_disabled_at: Option<TimestampMillis>,
 }
@@ -103,7 +106,7 @@ impl IdentityUpdateTransitionWasm {
                         )?;
                     Ok(public_key.clone().into())
                 })
-                .collect::<Result<Vec<IdentityPublicKeyInCreation>, JsValue>>()?;
+                .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
         }
 
         self.0.set_public_keys_to_add(keys_to_add);
@@ -286,11 +289,19 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityUpdate(self.0.clone()))
-                .with_js_error()?;
-        Ok(Buffer::from_bytes(&bytes))
+    pub fn to_buffer(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let opts: super::to_object::ToObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let buffer = self
+            .0
+            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+
+        Ok(Buffer::from_bytes(&buffer).into())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -407,6 +418,16 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=setExecutionContext)]
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
     }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]

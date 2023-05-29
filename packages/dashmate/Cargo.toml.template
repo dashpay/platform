@@ -9,8 +9,6 @@ members = [
     "packages/feature-flags-contract",
     "packages/dpns-contract",
     "packages/data-contracts",
-    "packages/rs-platform-serialization",
-    "packages/rs-platform-value-convertible",
     "packages/rs-dpp",
     "packages/wasm-dpp"
 ]

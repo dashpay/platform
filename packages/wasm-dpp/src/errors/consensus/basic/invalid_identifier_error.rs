@@ -41,7 +41,7 @@ impl InvalidIdentifierErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(JsError::from)?;
+            .map_err(|e| JsError::from(e))?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

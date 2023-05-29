@@ -3,19 +3,19 @@ use crate::{
     errors::consensus::consensus_error::from_consensus_error_ref,
     utils::{consensus_errors_from_buffers, WithJsError},
 };
-use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
+use dpp::{consensus::ConsensusError, validation::ValidationResult};
 use js_sys::{JsString, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
 #[derive(Debug)]
-pub struct ValidationResultWasm(ConsensusValidationResult<JsValue>);
+pub struct ValidationResultWasm(ValidationResult<JsValue>);
 
-impl<T> From<ConsensusValidationResult<T>> for ValidationResultWasm
+impl<T> From<ValidationResult<T>> for ValidationResultWasm
 where
     T: Into<JsValue> + Clone,
 {
-    fn from(validation_result: ConsensusValidationResult<T>) -> Self {
+    fn from(validation_result: ValidationResult<T>) -> Self {
         ValidationResultWasm(validation_result.map(Into::into))
     }
 }
@@ -27,12 +27,10 @@ impl ValidationResultWasm {
         if let Some(errors) = errors_option {
             let consensus_errors: Vec<ConsensusError> = consensus_errors_from_buffers(errors)?;
 
-            return Ok(Self(ConsensusValidationResult::new_with_errors(
-                consensus_errors,
-            )));
+            return Ok(Self(ValidationResult::new_with_errors(consensus_errors)));
         }
 
-        Ok(Self(ConsensusValidationResult::new_with_errors(vec![])))
+        Ok(Self(ValidationResult::new_with_errors(vec![])))
     }
 
     /// This is just a test method - doesn't need to be in the resulted binding. Please
@@ -59,10 +57,7 @@ impl ValidationResultWasm {
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> JsValue {
-        self.0
-            .data_as_borrowed()
-            .unwrap_or(&JsValue::undefined())
-            .to_owned()
+        self.0.data().unwrap_or(&JsValue::undefined()).to_owned()
     }
 
     #[wasm_bindgen(js_name=getFirstError)]

@@ -1,3 +1,5 @@
+const varint = require('varint');
+
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const { default: loadWasmDpp } = require('../../../../..');
 const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
@@ -64,9 +66,10 @@ describe('DataContractCreateTransition', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized State Transition', () => {
+      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.getProtocolVersion()));
+
       const result = stateTransition.toBuffer();
-      expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(2271);
+      expect(result.compare(protocolVersionBytes, 0, 1, 0, 1)).equals(0);
     });
   });
 

@@ -105,9 +105,10 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#toBuffer', () => {
     it('should return the same bytes as JS version', () => {
+      const bufferJs = stateTransitionJs.toBuffer();
       const buffer = stateTransition.toBuffer();
-      expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer).to.have.length(23960);
+
+      expect(bufferJs).to.deep.equal(buffer);
     });
   });
 

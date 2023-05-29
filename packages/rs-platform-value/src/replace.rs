@@ -75,9 +75,9 @@ impl Value {
                                 //this already exists
                                 Ok(vec![array.get_mut(number_part).unwrap()])
                             } else {
-                                Err(Error::StructureError(format!(
+                                return Err(Error::StructureError(format!(
                                     "element at position {number_part} in array does not exist"
-                                )))
+                                )));
                             }
                         } else {
                             // we are replacing all members in array
@@ -235,9 +235,9 @@ impl Value {
                                 //this already exists
                                 Ok(vec![array.get_mut(number_part).unwrap()])
                             } else {
-                                Err(Error::StructureError(format!(
+                                return Err(Error::StructureError(format!(
                                     "element at position {number_part} in array does not exist"
-                                )))
+                                )));
                             }
                         } else {
                             // we are replacing all members in array

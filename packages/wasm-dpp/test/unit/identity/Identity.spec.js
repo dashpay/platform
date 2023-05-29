@@ -1,5 +1,7 @@
 const varint = require('varint');
 
+const JSIdentity = require('@dashevo/dpp/lib/identity/Identity');
+
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
@@ -133,19 +135,14 @@ describe('Identity', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return buffer', () => {
+    it('should return the same buffer as JS Identity', () => {
+      // Due to browser polyfill, we got two different versions of buffers, and makes
+      // the compatibility test to fail in karma, so hence this hack here.
+      rawIdentity.id = Buffer.from(rawIdentity.id.toBuffer());
+      const oldIdentity = new JSIdentity(rawIdentity);
       const result = identity.toBuffer();
-      expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.length(87);
-    });
-  });
 
-  describe('#fromBuffer', () => {
-    it('should re-create identity from buffer', () => {
-      const buffer = identity.toBuffer();
-      const recoveredIdentity = Identity.fromBuffer(buffer);
-      expect(recoveredIdentity.toObject())
-        .to.be.deep.equal(identity.toObject());
+      expect(result).to.deep.eq(oldIdentity.toBuffer());
     });
   });
 

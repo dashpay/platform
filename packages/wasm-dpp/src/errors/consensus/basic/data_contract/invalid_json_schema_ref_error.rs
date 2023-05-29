@@ -19,7 +19,7 @@ impl From<&InvalidJsonSchemaRefError> for InvalidJsonSchemaRefErrorWasm {
 impl InvalidJsonSchemaRefErrorWasm {
     #[wasm_bindgen(js_name=getRefError)]
     pub fn get_ref_error(&self) -> String {
-        self.inner.message()
+        self.inner.message().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -36,7 +36,7 @@ impl InvalidJsonSchemaRefErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(JsError::from)?;
+            .map_err(|e| JsError::from(e))?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

@@ -14,16 +14,17 @@ use crate::{
     identity::state_transition::asset_lock_proof::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
+    state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
+use crate::errors::from_dpp_err;
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionConvert;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::{
@@ -169,11 +170,19 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityTopUp(self.0.clone()))
-                .with_js_error()?;
-        Ok(Buffer::from_bytes(&bytes))
+    pub fn to_buffer(&self, options: JsValue) -> Result<JsValue, JsValue> {
+        let opts: super::to_object::ToObjectOptions = if options.is_object() {
+            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        } else {
+            Default::default()
+        };
+
+        let buffer = self
+            .0
+            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .map_err(from_dpp_err)?;
+
+        Ok(Buffer::from_bytes(&buffer).into())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -251,6 +260,16 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=setExecutionContext)]
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
     }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]

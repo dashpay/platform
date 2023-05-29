@@ -44,7 +44,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:20.0.0-alpha.assetlocks.3',
+      image: 'dashpay/dashd:19.0.0',
     },
     p2p: {
       port: 9999,
@@ -155,7 +155,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.12',
+          image: 'dashpay/tenderdash:0.11.2',
         },
         p2p: {
           port: 26656,
@@ -178,9 +178,6 @@ module.exports = {
           key: null,
         },
         genesis: {
-          genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'devnet', // TODO: Synchronize with RS-Drive-ABCI
-          validator_quorum_type: 4, // TODO: Synchronize with RS-Drive-ABCI
           consensus_params: {
             block: {
               max_bytes: '22020096',

@@ -2,7 +2,7 @@ const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getI
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const { default: loadWasmDpp } = require('../../..');
-const { IdentityPublicKey, SerializedObjectParsingError } = require('../../..');
+const { IdentityPublicKey } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('IdentityFactory', () => {
@@ -21,6 +21,7 @@ describe('IdentityFactory', () => {
   let IdentityUpdateTransition;
   let IdentityPublicKeyWithWitness;
   let InvalidIdentityError;
+  let PlatformValueError;
   let UnsupportedProtocolVersionError;
   let ChainAssetLockProof;
 
@@ -29,7 +30,7 @@ describe('IdentityFactory', () => {
       Identity, IdentityFactory, IdentityValidator,
       InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
       IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
-      InvalidIdentityError, UnsupportedProtocolVersionError,
+      InvalidIdentityError, UnsupportedProtocolVersionError, PlatformValueError,
     } = await loadWasmDpp());
   });
 
@@ -148,7 +149,7 @@ describe('IdentityFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e).to.be.instanceOf(SerializedObjectParsingError);
+        expect(e).to.be.instanceOf(PlatformValueError);
       }
     });
   });

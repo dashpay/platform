@@ -139,7 +139,7 @@ function getPlatformScopeFactory(dockerCompose,
       info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
       const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
-        'drive_abci', 'drive-abci status');
+        'drive_abci', 'yarn workspace @dashevo/drive echo');
 
       if (driveEchoResult.exitCode !== 0) {
         info.serviceStatus = ServiceStatusEnum.error;

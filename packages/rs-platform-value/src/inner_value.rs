@@ -2,7 +2,7 @@ use crate::value_map::{ValueMap, ValueMapHelper};
 use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 impl Value {
     pub fn has(&self, key: &str) -> Result<bool, Error> {
@@ -92,12 +92,6 @@ impl Value {
     pub fn remove_optional_value_if_null(&mut self, key: &str) -> Result<(), Error> {
         let map = self.as_map_mut_ref()?;
         map.remove_optional_key_if_null(key);
-        Ok(())
-    }
-
-    pub fn remove_optional_value_if_empty_array(&mut self, key: &str) -> Result<(), Error> {
-        let map = self.as_map_mut_ref()?;
-        map.remove_optional_key_if_empty_array(key);
         Ok(())
     }
 
@@ -467,67 +461,6 @@ impl Value {
         } else {
             None
         }
-    }
-
-    /// Retrieves the value of a key from a map if it's an array of strings.
-    /// This is useful for constructing the required fields in a contract.
-    /// For the DPNS Contract we would get as a result
-    /// {
-    ///     "label",
-    ///     "normalizedLabel",
-    ///     "normalizedParentDomainName",
-    ///     "preorderSalt",
-    ///     "records",
-    ///     "subdomainRules",
-    ///     "subdomainRules.allowSubdomains",
-    /// }
-    pub fn inner_recursive_optional_array_of_strings<'a>(
-        document_type: &'a [(Value, Value)],
-        prefix: String,
-        recursive_key: &'a str,
-        key: &'a str,
-    ) -> BTreeSet<String> {
-        let mut result = if let Some(key_value) = Self::get_optional_from_map(document_type, key) {
-            if let Value::Array(key_value) = key_value {
-                key_value
-                    .iter()
-                    .filter_map(|v| {
-                        if let Value::Text(text) = v {
-                            Some(format!("{prefix}{text}"))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            } else {
-                BTreeSet::new()
-            }
-        } else {
-            BTreeSet::new()
-        };
-        if let Some(lower_levels) = Self::get_optional_from_map(document_type, recursive_key) {
-            if let Value::Map(lower_level) = lower_levels {
-                for (inner_key, value) in lower_level {
-                    let level_prefix = if let Value::Text(text) = inner_key {
-                        text.as_str()
-                    } else {
-                        continue;
-                    };
-                    let Value::Map(level_map) = value else {
-                        continue;
-                    };
-
-                    let prefix = format!("{prefix}{level_prefix}.");
-                    result.extend(Self::inner_recursive_optional_array_of_strings(
-                        level_map,
-                        prefix,
-                        recursive_key,
-                        key,
-                    ))
-                }
-            }
-        }
-        result
     }
 
     /// Retrieves the value of a key from a map if it's an array of strings.

@@ -8,8 +8,6 @@ pub use validation::*;
 
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::StateTransition;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
     platform_value,
@@ -26,7 +24,7 @@ use crate::errors::protocol_error::from_protocol_error;
 use crate::utils::WithJsError;
 use crate::{
     buffer::Buffer, identifier::IdentifierWrapper, with_js_error, DataContractParameters,
-    DataContractWasm, IdentityPublicKeyWasm,
+    DataContractWasm, IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
 };
 
 #[derive(Clone)]
@@ -109,10 +107,11 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::DataContractCreate(self.0.clone()))
-                .with_js_error()?;
+    pub fn to_buffer(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
+        let bytes = self
+            .0
+            .to_buffer(skip_signature.unwrap_or(false))
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -138,6 +137,16 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
+    }
+
+    #[wasm_bindgen(js_name=setExecutionContext)]
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
+        self.0.set_execution_context(context.into())
+    }
+
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
     }
 
     #[wasm_bindgen(js_name=toObject)]

@@ -77,11 +77,7 @@ describe('DocumentBatchTransition', () => {
 
       // Nice document has medium security level
       expect(stateTransitionFixture.getKeySecurityLevelRequirement())
-        .to.deep.equal([
-          IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
-          IdentityPublicKey.SECURITY_LEVELS.HIGH,
-          IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
-        ]);
+        .to.be.equal(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
       stateTransitionFixture = documentFactory.createStateTransition({
         create: [mediumSecurityDocumentFixture, masterSecurityDocumentFixture],
@@ -91,7 +87,7 @@ describe('DocumentBatchTransition', () => {
 
       // Should be the highest security level out of MEDIUM and MASTER
       expect(stateTransitionFixture.getKeySecurityLevelRequirement())
-        .to.deep.equal([IdentityPublicKey.SECURITY_LEVELS.MASTER]);
+        .to.be.equal(IdentityPublicKey.SECURITY_LEVELS.MASTER);
     });
 
     it('should return default security level if no document has a security level defined - Rust', () => {
@@ -103,10 +99,7 @@ describe('DocumentBatchTransition', () => {
 
       // Should be the default level, which is HIGH
       expect(stateTransitionFixture.getKeySecurityLevelRequirement())
-        .to.deep.equal([
-          IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
-          IdentityPublicKey.SECURITY_LEVELS.HIGH,
-        ]);
+        .to.be.equal(IdentityPublicKey.SECURITY_LEVELS.HIGH);
     });
   });
 });
