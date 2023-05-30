@@ -1,12 +1,24 @@
+use dpp::consensus::basic::identity::{
+    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+};
+use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use dpp::consensus::ConsensusError;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{OutPoint, Txid};
+use dpp::identifier::Identifier;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
+use dpp::platform_value::Bytes36;
 use dpp::serialization_traits::{PlatformMessageSignable, Signable};
 use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
+    NonConsensusError,
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -62,6 +74,35 @@ impl StateTransitionValidation for IdentityCreateTransition {
                 validation_result.add_errors(result.errors);
             }
         }
+
+        // We should validate that the identity id is created from the asset lock proof
+
+        let identifier_from_outpoint = match self.get_asset_lock_proof().create_identifier() {
+            Ok(identifier) => identifier,
+            Err(_) => {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                            IdentityAssetLockTransactionOutputNotFoundError::new(
+                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
+                            ),
+                        ),
+                    ),
+                ))
+            }
+        };
+
+        if identifier_from_outpoint != self.identity_id {
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(BasicError::InvalidIdentifierError(
+                    InvalidIdentifierError::new(
+                        "identity_id".to_string(),
+                        "does not match created identifier from asset lock".to_string(),
+                    ),
+                )),
+            ));
+        }
+
         // We need to set the data, even though we are setting to None,
         // We are really setting to Some(None) internally,
         validation_result.set_data(None);
@@ -85,6 +126,46 @@ impl StateTransitionValidation for IdentityCreateTransition {
                 IdentityAlreadyExistsError::new(identity_id.to_owned()).into(),
             ));
         }
+        let outpoint = match self.asset_lock_proof.out_point() {
+            None => {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                            IdentityAssetLockTransactionOutputNotFoundError::new(
+                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
+                            ),
+                        ),
+                    ),
+                ));
+            }
+            Some(outpoint) => outpoint,
+        };
+
+        // Now we should check that we aren't using an asset lock again
+        let asset_lock_already_found = drive.has_asset_lock_outpoint(&Bytes36(outpoint), tx)?;
+
+        if asset_lock_already_found {
+            let outpoint = OutPoint::from(outpoint);
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
+                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
+                            outpoint.txid,
+                            outpoint.vout as usize,
+                        ),
+                    ),
+                ),
+            ));
+        }
+
+        validation_result.add_errors(
+            validate_unique_identity_public_key_hashes_state(
+                self.public_keys.as_slice(),
+                drive,
+                tx,
+            )?
+            .errors,
+        );
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
@@ -113,16 +194,22 @@ impl StateTransitionValidation for IdentityCreateTransition {
         let tx_out_validation = self
             .asset_lock_proof
             .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
-        if !tx_out_validation.is_valid_with_data() {
+        if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,
             ));
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        validation_result.set_data(
-            IdentityCreateTransitionAction::from_borrowed(self, tx_out.value * 1000).into(),
-        );
+        match IdentityCreateTransitionAction::from_borrowed(self, tx_out.value * 1000) {
+            Ok(action) => {
+                validation_result.set_data(action.into());
+            }
+            Err(error) => {
+                validation_result.add_error(error);
+            }
+        }
+
         Ok(validation_result)
     }
 }

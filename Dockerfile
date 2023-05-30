@@ -120,10 +120,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
-    CARGO_TARGET_DIR=/platform/target \
-    cargo install \
-      --profile "$CARGO_BUILD_PROFILE" \
-      wasm-bindgen-cli@0.2.84
+    export CARGO_TARGET_DIR=/platform/target ; \
+    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
+    cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
 
 
 #
@@ -199,6 +198,9 @@ RUN ldd /usr/bin/drive-abci
 
 # Create a volume
 VOLUME /var/lib/dash
+VOLUME /var/log/dash
+
+RUN mkdir -p /var/log/dash
 
 ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
 
@@ -210,16 +212,19 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 RUN addgroup -g $USER_GID $USERNAME && \
     adduser -D -u $USER_UID -G $USERNAME -h /var/lib/dash/rs-drive-abci $USERNAME && \
-    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci
+    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci /var/log/dash
 
 USER $USERNAME
 
 ENV RUST_BACKTRACE=1
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
-CMD ["-vvvv", "start"]
+CMD ["start"]
 
+# ABCI interface
 EXPOSE 26658
+# Prometheus port
+EXPOSE 29090
 
 #
 # STAGE: DASHMATE HELPER BUILD
@@ -266,6 +271,10 @@ COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/dat
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
 
 USER node
+
+ENV DASHMATE_HOME_DIR=/home/dashmate/.dashmate
+ENV DASHMATE_HELPER=1
+
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 
 #
