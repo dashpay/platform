@@ -44,7 +44,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
@@ -117,7 +117,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: &Transaction,
-        batch: &mut GroveDbOpBatch,
+        batch: &mut Vec<DriveOperation>,
     ) -> Result<Option<ProposersPayouts>, Error> {
         let unpaid_epoch = self.find_oldest_epoch_needing_payment(
             current_epoch_index,
@@ -146,16 +146,20 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             batch,
         )?;
 
+        let mut inner_batch = GroveDbOpBatch::new();
+
         // if less then a limit paid then mark the epoch pool as paid
         if proposers_paid_count < proposers_limit {
             let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
 
-            unpaid_epoch_tree.add_mark_as_paid_operations(batch);
+            unpaid_epoch_tree.add_mark_as_paid_operations(&mut inner_batch);
 
-            batch.push(update_unpaid_epoch_index_operation(
+            inner_batch.push(update_unpaid_epoch_index_operation(
                 unpaid_epoch.next_unpaid_epoch_index,
             ));
         }
+
+        batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
         // We paid to all epoch proposers last block. Since proposers paid count
         // was equal to proposers limit, we paid to 0 proposers this block
@@ -288,7 +292,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         reward_fees: Credits,
         proposers_limit: u16,
         transaction: &Transaction,
-        batch: &mut GroveDbOpBatch,
+        batch: &mut Vec<DriveOperation>,
     ) -> Result<u16, Error> {
         let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
@@ -406,9 +410,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             Some(transaction),
         )?;
 
-        batch.append(&mut operations);
+        unpaid_epoch_tree.add_delete_proposers_operations(proposers_pro_tx_hashes, &mut operations);
 
-        unpaid_epoch_tree.add_delete_proposers_operations(proposers_pro_tx_hashes, batch);
+        batch.push(DriveOperation::GroveDBOpBatch(operations));
 
         Ok(proposers_len)
     }
@@ -423,7 +427,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: &BlockFees,
         cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
-        batch: &mut GroveDbOpBatch,
+        batch: &mut Vec<DriveOperation>,
     ) -> Result<FeesInPools, Error> {
         // update epochs pool processing fees
         let epoch_processing_fees = self
@@ -437,7 +441,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
 
-        batch.push(current_epoch.update_processing_fee_pool_operation(total_processing_fees)?);
+        batch.push(DriveOperation::GroveDBOperation(current_epoch.update_processing_fee_pool_operation(total_processing_fees)?));
 
         // update storage fee pool
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
@@ -449,9 +453,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let total_storage_fees = storage_distribution_credits_in_fee_pool + block_fees.storage_fee;
 
-        batch.push(update_storage_fee_distribution_pool_operation(
+        batch.push(DriveOperation::GroveDBOperation(update_storage_fee_distribution_pool_operation(
             storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
-        )?);
+        )?));
 
         Ok(FeesInPools {
             processing_fees: total_processing_fees,
@@ -482,7 +486,7 @@ mod tests {
 
             let current_epoch_index = 0;
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let proposers_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -549,7 +553,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -561,10 +565,15 @@ mod tests {
                 )
                 .expect("should distribute fees");
 
+            let block_info = BlockInfo {
+                time_ms: 1,
+                height: 2,
+                core_height: 2,
+                epoch: Epoch::new(1).unwrap(),
+            };
+
             platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
+                .drive.apply_drive_operations(batch, true, &block_info, Some(&transaction)).expect("expected to apply batch");
 
             assert!(matches!(
                 proposer_payouts,
@@ -643,7 +652,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -657,7 +666,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             assert!(matches!(
@@ -754,7 +763,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -768,7 +777,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             assert!(matches!(
@@ -828,7 +837,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -842,7 +851,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             assert!(matches!(
@@ -930,7 +939,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -944,7 +953,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             assert_eq!(
@@ -965,7 +974,7 @@ mod tests {
 
             // Process one more block
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let _proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
@@ -979,7 +988,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             let next_unpaid_epoch_index = platform
@@ -1383,7 +1392,7 @@ mod tests {
                     Some(&transaction),
                 );
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let unpaid_epoch = UnpaidEpoch {
                 epoch_index: 0,
@@ -1397,6 +1406,7 @@ mod tests {
             let proposers_paid_count = platform
                 .add_epoch_pool_to_proposers_payout_operations(
                     &unpaid_epoch,
+                    0,
                     proposers_count,
                     &transaction,
                     &mut batch,
@@ -1405,7 +1415,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             assert_eq!(proposers_paid_count, 10);
@@ -1466,7 +1476,7 @@ mod tests {
 
             let current_epoch_tree = Epoch::new(1).unwrap();
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
@@ -1485,7 +1495,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             let stored_processing_fee_credits = platform
@@ -1524,7 +1534,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             let processing_fees = 1000000;
             let storage_fees = 2000000;
@@ -1541,7 +1551,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             let stored_processing_fee_credits = platform

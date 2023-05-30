@@ -37,7 +37,7 @@
 //! storage fee distribution on epoch change.
 //!
 
-use crate::drive::batch::GroveDbOpBatch;
+use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -202,15 +202,20 @@ impl Drive {
 
 /// Adds GroveDB batch operations to update pending epoch storage pool updates
 pub fn add_update_pending_epoch_refunds_operations(
-    batch: &mut GroveDbOpBatch,
+    batch: &mut Vec<DriveOperation>,
     refunds_per_epoch: CreditsPerEpoch,
 ) -> Result<(), Error> {
-    for (epoch_index, credits) in refunds_per_epoch {
-        let epoch_index_key = epoch_index.to_be_bytes().to_vec();
+    if !refunds_per_epoch.is_empty() {
+        let mut inner_batch = GroveDbOpBatch::new();
+        for (epoch_index, credits) in refunds_per_epoch {
+            let epoch_index_key = epoch_index.to_be_bytes().to_vec();
 
-        let element = Element::new_sum_item(-credits.to_signed()?);
+            let element = Element::new_sum_item(-credits.to_signed()?);
 
-        batch.add_insert(pending_epoch_refunds_path_vec(), epoch_index_key, element);
+            inner_batch.add_insert(pending_epoch_refunds_path_vec(), epoch_index_key, element);
+        }
+
+        batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
     }
 
     Ok(())
@@ -223,6 +228,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod fetch_and_add_pending_epoch_refunds_to_collection {
+        use dpp::block::block_info::BlockInfo;
         use super::*;
 
         #[test]
@@ -236,13 +242,14 @@ mod tests {
             let initial_pending_refunds =
                 CreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
                 .expect("should update pending epoch updates");
 
-            drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+            platform
+                .drive
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             // Fetch and merge
@@ -267,6 +274,7 @@ mod tests {
     mod add_delete_pending_epoch_refunds_except_specified_operations {
         use super::*;
         use grovedb::batch::Op;
+        use dpp::block::block_info::BlockInfo;
 
         #[test]
         fn should_add_delete_operations() {
@@ -279,13 +287,14 @@ mod tests {
             let initial_pending_refunds =
                 CreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
-            let mut batch = GroveDbOpBatch::new();
+            let mut batch = vec![];
 
             add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
                 .expect("should update pending epoch updates");
 
-            drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+            platform
+                .drive
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
             // Delete existing pending refunds except specified epochs

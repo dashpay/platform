@@ -39,6 +39,8 @@ use crate::error::Error;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use dpp::block::epoch::Epoch;
+use dpp::ProtocolError;
 
 /// Lifetime of an epoch in milliseconds.
 pub const EPOCH_CHANGE_TIME_MS: u64 = 1576800000;
@@ -137,6 +139,14 @@ impl Default for EpochInfo {
             previous_epoch_index: None,
             is_epoch_change: true,
         }
+    }
+}
+
+impl TryFrom<&EpochInfo> for Epoch {
+    type Error = ProtocolError;
+
+    fn try_from(value: &EpochInfo) -> Result<Self, Self::Error> {
+        Epoch::new(value.current_epoch_index)
     }
 }
 
