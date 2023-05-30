@@ -2188,9 +2188,11 @@ mod tests {
             mut data_contract: DataContract,
             drive: &Drive,
             n: u64,
-        ) {
+        ) -> DataContract {
             data_contract.config.keeps_history = true;
             data_contract.config.readonly = false;
+
+            let original_data_contract = data_contract.clone();
 
             apply_contract(
                 drive,
@@ -2204,6 +2206,8 @@ mod tests {
             );
 
             insert_n_contract_updates(&data_contract, drive, n);
+
+            original_data_contract
         }
 
         pub fn assert_property_exists(data_contract: &DataContract, property: &str) {
@@ -2217,7 +2221,17 @@ mod tests {
                 .as_object()
                 .expect("properties to be an object");
 
-            assert!(properties.contains_key(property));
+            let property_keys = properties
+                .keys()
+                .map(|key| key.to_string())
+                .collect::<Vec<String>>();
+
+            assert!(
+                properties.contains_key(property),
+                "expect property {} to exist. Instead found properties {:?}",
+                property,
+                property_keys
+            );
         }
 
         fn setup_test() -> TestData {
@@ -2603,8 +2617,7 @@ mod tests {
             } else {
                 *data_contract.id.as_bytes()
             };
-            let original_data_contract = data_contract.clone();
-            setup_history_test_with_n_updates(
+            let original_data_contract = setup_history_test_with_n_updates(
                 data_contract,
                 &drive,
                 test_case.total_updates_to_apply as u64,
@@ -2637,17 +2650,29 @@ mod tests {
                             // TODO: this doesn't work because when we deserialize the contract
                             //  keeps_history is false for some reason!
                             assert_eq!(key, &test_case.contract_created_date_ms);
+                            println!("contract config: {:?}", contract.config);
+                            println!(
+                                "original contract config: {:?}",
+                                original_data_contract.config
+                            );
                             assert_eq!(contract, &original_data_contract);
                             continue;
                         }
+
                         let expected_key: u64 = test_case.expected_oldest_update_date_in_result_ms
                             + i as u64 * test_case.update_period_interval_ms;
                         assert_eq!(key, &expected_key);
 
-                        let prop_index =
-                            i + test_case.expected_oldest_update_index_in_result as usize;
-                        // When updating a contract, we add a new property to it
+                        let prop_index = if test_case.expect_result_to_include_original_contract {
+                            // If we expect the result to include the original contract, then
+                            // the first update will be the original contract, so we need to
+                            // offset the index by 1
+                            i - 1 + test_case.expected_oldest_update_index_in_result as usize
+                        } else {
+                            i + test_case.expected_oldest_update_index_in_result as usize
+                        };
 
+                        // When updating a contract, we add a new property to it
                         // TODO: this test actually applies incompatible updates to the contract
                         //  because we don't validate the contract in the apply function
                         assert_property_exists(contract, format!("newProp{}", prop_index).as_str());
