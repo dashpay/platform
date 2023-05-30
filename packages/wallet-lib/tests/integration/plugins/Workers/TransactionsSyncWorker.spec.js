@@ -8,6 +8,7 @@ const LocalForageAdapterMock = require('../../../../src/test/mocks/LocalForageAd
 const { waitOneTick } = require('../../../../src/test/utils');
 const { mockMerkleBlock } = require('../../../../src/test/mocks/dashcore/block');
 const EVENTS = require('../../../../src/EVENTS');
+const { mockInstantLock } = require('../../../../src/test/mocks/dashcore/instantlock');
 
 describe('TransactionsSyncWorker', () => {
   const WALLET_HD_KEY = 'xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ';
@@ -106,6 +107,14 @@ describe('TransactionsSyncWorker', () => {
     continuousStream.sendTransactions(transactions);
 
     return { transactions };
+  };
+
+  const sendNewInstantLocks = ({ forTransactions }) => {
+    const instantLocks = forTransactions.map((tx) => mockInstantLock(tx.hash));
+
+    continuousStream.sendISLocks(instantLocks);
+
+    return instantLocks;
   };
 
   const sendNewMerkleBlock = ({ forTransactions, atHeight, prevMerkleBlock }) => {
@@ -240,6 +249,15 @@ describe('TransactionsSyncWorker', () => {
             .to.deep.equal(allTransactions.map((tx) => tx.hash).sort());
           expect(Object.keys(internalAddresses).length).to.equal(20);
           expect(Object.keys(externalAddresses).length).to.equal(45);
+        });
+
+        // TODO: also implement confirmation with instant locks
+        it('should send instant locks', () => {
+          const sentInstantLocks = sendNewInstantLocks({ forTransactions: transactions });
+          const chainStore = wallet.storage.getDefaultChainStore();
+
+          expect(Array.from(chainStore.state.instantLocks.values()))
+            .to.deep.equal(sentInstantLocks);
         });
 
         it('should confirm transactions with a merkle block', async () => {
