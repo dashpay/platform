@@ -6,7 +6,9 @@ use crate::identity::SecurityLevel;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Invalid security level {public_key_security_level}. This state transition requires at least {required_security_level}")]
 pub struct PublicKeySecurityLevelNotMetError {
     /*

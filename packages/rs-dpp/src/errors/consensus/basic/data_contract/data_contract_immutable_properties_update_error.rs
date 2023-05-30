@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 #[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
 pub struct DataContractImmutablePropertiesUpdateError {
     /*

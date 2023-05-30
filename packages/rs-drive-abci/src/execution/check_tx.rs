@@ -120,10 +120,9 @@ mod tests {
     use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
-    use dpp::dashcore::{signer, KeyPair, PrivateKey};
+    use dpp::dashcore::secp256k1::Secp256k1;
+    use dpp::dashcore::{signer, KeyPair};
     use dpp::data_contracts::dpns_contract;
-    use dpp::data_contracts::SystemDataContract::DPNS;
     use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
     use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};

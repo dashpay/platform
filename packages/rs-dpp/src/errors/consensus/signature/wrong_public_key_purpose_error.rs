@@ -6,7 +6,9 @@ use crate::identity::Purpose;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
 pub struct WrongPublicKeyPurposeError {
     /*

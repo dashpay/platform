@@ -58,9 +58,13 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
 
+use dpp::consensus::ConsensusError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
+use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_repository::StateRepositoryLike;
+use dpp::validation::ValidationResult;
 use dpp::BlsModule;
+use drive::fee::result::FeeResult;
 use serde_json::Map;
 
 impl<'a, C, SR, BLS> tenderdash_abci::Application for AbciApplication<'a, C, SR, BLS>
@@ -536,48 +540,70 @@ where
         let _timer = crate::metrics::abci_request_duration("check_tx");
 
         let RequestCheckTx { tx, .. } = request;
-        let validation_result = self.platform.check_tx(tx.as_slice(), &self.dpp)?;
+        match self.platform.check_tx(tx.as_slice(), &self.dpp) {
+            Ok(validation_result) => {
+                let validation_error = validation_result.errors.first();
 
-        let validation_error = validation_result.errors.first();
+                let (code, info) = if let Some(validation_error) = validation_error {
+                    let serialized_error = platform_value!(validation_error
+                        .serialize()
+                        .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
 
-        let (code, info) = if let Some(validation_error) = validation_error {
-            let serialized_error = platform_value!(validation_error
-                .serialize()
-                .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
+                    let error_data = json!({
+                        "message": "Drive check_tx error",
+                        "data": {
+                            "serializedError": serialized_error
+                        }
+                    });
 
-            let error_data = json!({
-                "message": "Drive check_tx error",
-                "data": {
-                    "serializedError": serialized_error
-                }
-            });
+                    let mut error_data_buffer: Vec<u8> = Vec::new();
+                    ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
+                        .map_err(|e| e.to_string())?;
 
-            let mut error_data_buffer: Vec<u8> = Vec::new();
-            ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
-                .map_err(|e| e.to_string())?;
+                    (
+                        validation_error.code(),
+                        encode(&error_data_buffer, Encoding::Base64),
+                    )
+                } else {
+                    // If there are no execution errors the code will be 0
+                    (0, "".to_string())
+                };
 
-            (
-                validation_error.code(),
-                encode(&error_data_buffer, Encoding::Base64),
-            )
-        } else {
-            // If there are no execution errors the code will be 0
-            (0, "".to_string())
-        };
+                let gas_wanted = validation_result
+                    .data
+                    .map(|fee_result| fee_result.total_base_fee())
+                    .unwrap_or_default();
+                Ok(ResponseCheckTx {
+                    code,
+                    data: vec![],
+                    info,
+                    gas_wanted: gas_wanted as SignedCredits,
+                    codespace: "".to_string(),
+                    sender: "".to_string(),
+                    priority: 0,
+                })
+            }
+            Err(error) => {
+                let error_data = json!({
+                    "message": "Drive check_tx system error",
+                    "error": error.to_string()
+                });
 
-        let gas_wanted = validation_result
-            .data
-            .map(|fee_result| fee_result.total_base_fee())
-            .unwrap_or_default();
-        Ok(ResponseCheckTx {
-            code,
-            data: vec![],
-            info,
-            gas_wanted: gas_wanted as SignedCredits,
-            codespace: "".to_string(),
-            sender: "".to_string(),
-            priority: 0,
-        })
+                let mut error_data_buffer: Vec<u8> = Vec::new();
+                ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
+                    .map_err(|e| e.to_string())?;
+
+                Ok(ResponseCheckTx {
+                    code: 1, //todo: replace with error.code()
+                    data: vec![],
+                    info: encode(&error_data_buffer, Encoding::Base64),
+                    gas_wanted: 0 as SignedCredits,
+                    codespace: "".to_string(),
+                    sender: "".to_string(),
+                    priority: 0,
+                })
+            }
+        }
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {

@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use crate::prelude::Identifier;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
 pub struct InvalidDocumentTypeError {
     /*
