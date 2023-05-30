@@ -23,15 +23,20 @@ export default async function broadcastStateTransition(
   stateTransition: any,
   options: { skipValidation?: boolean; } = {},
 ): Promise<IStateTransitionResult | void> {
-  const { client, dpp } = platform;
+  const { client, dpp, dppValidationData } = platform;
 
   if (!options.skipValidation) {
+    await dppValidationData.fetchForStateTransition(stateTransition);
+
     const result = await dpp.stateTransition.validateBasic(
       stateTransition,
       // TODO(v0.24-backport): get rid of this once decided
       //  whether we need execution context in wasm bindings
       new StateTransitionExecutionContext(),
     );
+
+    // TODO: Should we clear?
+    // dppValidationData.clear();
 
     if (!result.isValid()) {
       const consensusError = result.getFirstError();

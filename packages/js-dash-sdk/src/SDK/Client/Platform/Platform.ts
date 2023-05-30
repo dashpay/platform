@@ -33,7 +33,8 @@ import resolveName from './methods/names/resolve';
 import resolveNameByRecord from './methods/names/resolveByRecord';
 import searchName from './methods/names/search';
 import broadcastStateTransition from './broadcastStateTransition';
-import StateRepository from './StateRepository';
+import SyncStateRepository from '../../../dpp/SyncStateRepository';
+import ValidationData from '../../../dpp/ValidationData';
 
 import logger, { ConfigurableLogger } from '../../../logger';
 
@@ -108,6 +109,9 @@ export class Platform {
   //  whether dpp is initialized instead of ts-ignoring?
   // @ts-ignore
   dpp: DashPlatformProtocol;
+
+  // @ts-ignore
+  dppValidationData: ValidationData;
 
   protocolVersion: number;
 
@@ -207,7 +211,9 @@ export class Platform {
       await Platform.initializeDppModule();
 
       const bls = await getBlsAdapter();
-      const stateRepository = new StateRepository(this.client);
+
+      this.dppValidationData = new ValidationData(this.client);
+      const stateRepository = new SyncStateRepository(this.dppValidationData);
 
       this.dpp = new DashPlatformProtocol(
         bls,

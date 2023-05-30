@@ -22,7 +22,7 @@ export async function createIdentityCreateTransition(
   await platform.initialize();
 
   const account = await platform.client.getWalletAccount();
-  const { dpp } = platform;
+  const { dpp, dppValidationData } = platform;
 
   const identityIndex = await account.getUnusedIdentityIndex();
 
@@ -86,12 +86,16 @@ export async function createIdentityCreateTransition(
   await identityCreateTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
+  await dppValidationData.fetchForStateTransition(identityCreateTransition);
+
   const result = await dpp.stateTransition.validateBasic(
     identityCreateTransition,
     // TODO(v0.24-backport): get rid of this once decided
     //  whether we need execution context in wasm bindings
     new StateTransitionExecutionContext(),
   );
+
+  dppValidationData.clear();
 
   if (!result.isValid()) {
     const messages = result.getErrors().map((error) => error.message);

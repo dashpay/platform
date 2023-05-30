@@ -1,5 +1,5 @@
 import { DataContract, Identity, Identifier } from '@dashevo/wasm-dpp';
-import Client from '../Client';
+import Client from '../SDK/Client/Client';
 
 class StateRepository {
   private readonly client: Client;

@@ -26,7 +26,7 @@ export async function update(
   });
   await this.initialize();
 
-  const { dpp } = this;
+  const { dpp, dppValidationData } = this;
 
   const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
@@ -75,12 +75,16 @@ export async function update(
   await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
   this.logger.silly('[Identity#update] Signed IdentityUpdateTransition');
 
+  await dppValidationData.fetchForStateTransition(identityUpdateTransition);
+
   const result = await dpp.stateTransition.validateBasic(
     identityUpdateTransition,
     // TODO(v0.24-backport): get rid of this once decided
     //  whether we need execution context in wasm bindings
     new StateTransitionExecutionContext(),
   );
+
+  dppValidationData.clear();
 
   if (!result.isValid()) {
     const messages = result.getErrors().map((error) => error.message);
