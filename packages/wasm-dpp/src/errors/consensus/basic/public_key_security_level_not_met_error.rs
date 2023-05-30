@@ -4,6 +4,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::PublicKeySecurityLevelNotMetError;
 use dpp::consensus::ConsensusError;
 
+use dpp::serialization_traits::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize)]
@@ -42,8 +43,7 @@ impl PublicKeySecurityLevelNotMetErrorWasm {
 
     #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
-        let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
+        let bytes = PlatformSerializable::serialize(&ConsensusError::from(self.inner.clone()))
             .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))

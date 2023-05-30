@@ -1,10 +1,11 @@
 use crate::errors::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::errors::consensus::ConsensusError;
+use bincode::{Decode, Encode};
 use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum FeeError {
     /*
 
