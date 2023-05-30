@@ -289,6 +289,37 @@ class TransactionsReader extends EventEmitter {
     });
 
     let lastSyncedBlockHeight = fromBlockHeight;
+    // Array of addresses generated to maintain BIP32 gap
+    let addressesGenerated = [];
+
+    /**
+     * Restarts stream with newly generated addresses.
+     */
+    const expandBloomFilter = () => {
+      if (addressesGenerated.length === 0) {
+        throw new Error('Can\'t expand bloom filter: no new addresses were generated.');
+      }
+
+      // Restart stream to expand bloom filter
+      this.cancelStream(stream);
+      this.continuousSyncStream = null;
+
+      const newAddresses = [...addresses, ...addressesGenerated];
+      addressesGenerated.slice();
+      this.logger.silly('[TransactionsReader] New addresses generated. Restarting continuous sync with', {
+        fromBlockHeight,
+        _addressesCount: newAddresses.length,
+      });
+
+      this.startContinuousSync(
+        fromBlockHeight,
+        newAddresses,
+      ).then((newStream) => {
+        this.continuousSyncStream = newStream;
+      }).catch((e) => {
+        this.emit(EVENTS.ERROR, e);
+      });
+    };
 
     const dataHandler = (data) => {
       const rawTransactions = data.getRawTransactions();
@@ -296,31 +327,20 @@ class TransactionsReader extends EventEmitter {
       const rawMerkleBlock = data.getRawMerkleBlock();
 
       if (rawTransactions) {
+        // Failsafe mechanism to backup bloom filter expansion handled by instant locks.
+        // (in case instant locks were not received by wallet for whatever reason)
+        if (addressesGenerated.length) {
+          expandBloomFilter();
+          return;
+        }
+
         const transactions = parseRawTransactions(rawTransactions, addresses, this.network);
 
         /**
-         * @param {string[]} addressesGenerated
+         * @param {string[]} newAddresses
          */
-        const handleNewAddresses = (addressesGenerated) => {
-          if (addressesGenerated.length) {
-            // Restart stream to expand bloom filter
-            this.cancelStream(stream);
-            this.continuousSyncStream = null;
-
-            const newAddresses = [...addresses, ...addressesGenerated];
-            this.logger.silly('[TransactionsReader] New addresses generated. Restarting continuous sync with', {
-              fromBlockHeight,
-              _addressesCount: newAddresses.length,
-            });
-            this.startContinuousSync(
-              fromBlockHeight,
-              newAddresses,
-            ).then((newStream) => {
-              this.continuousSyncStream = newStream;
-            }).catch((e) => {
-              this.emit(EVENTS.ERROR, e);
-            });
-          }
+        const handleNewAddresses = (newAddresses) => {
+          addressesGenerated = newAddresses;
         };
 
         if (transactions.length) {
@@ -365,10 +385,16 @@ class TransactionsReader extends EventEmitter {
 
         this.emit(EVENTS.MERKLE_BLOCK, { merkleBlock, acceptMerkleBlock, rejectMerkleBlock });
       } else if (rawInstantLocks) {
-        // TODO(spv): write tests
         const instantLocks = parseRawInstantLocks(rawInstantLocks);
         this.logger.debug('[TransactionsReader] Obtained instant locks for transactions', { hashes: instantLocks.map((isLock) => isLock.txid).join(',') });
         this.emit(EVENTS.INSTANT_LOCKS, instantLocks);
+
+        // TODO: implement matching logic between tx hashes that produced new addresses
+        //   and instant locks? (To make sure that all instant locks actually made it to the wallet)
+        // Handle addresses generated as an effect of TX data event
+        if (addressesGenerated.length) {
+          expandBloomFilter();
+        }
       }
     };
 
