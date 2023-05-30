@@ -2232,20 +2232,20 @@ mod tests {
         #[test]
         pub fn should_fetch_10_latest_contract_without_offset_and_limit_and_start_date_0() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 0,
                 limit: None,
                 offset: None,
                 expected_length: 10,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
                 // Contract created at 1000, 20 updates applied. The last update is at 21000
                 // The 5th update from the latest update is 21000 - 10000 = 11000, plus since
                 // the latest update is included into result, the expected oldest update date
                 // is 12000.
-                expected_oldest_update_date_in_result: 12000,
+                expected_oldest_update_date_in_result_ms: 12000,
                 // 10th oldest update after 20 is 10.
                 expected_oldest_update_index_in_result: 10,
                 expect_result_to_include_original_contract: false,
@@ -2257,16 +2257,16 @@ mod tests {
         #[test]
         pub fn should_fetch_with_limit_without_offset() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 0,
                 limit: Some(5),
                 offset: None,
                 expected_length: 5,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 17000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 17000,
                 expected_oldest_update_index_in_result: 15,
                 expect_result_to_include_original_contract: false,
             };
@@ -2277,17 +2277,17 @@ mod tests {
         #[test]
         pub fn should_fetch_without_limit_with_offset() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 0,
                 limit: None,
                 offset: Some(5),
                 expected_length: 10,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
                 // Same as test case above, but with offset 5
-                expected_oldest_update_date_in_result: 7000,
+                expected_oldest_update_date_in_result_ms: 7000,
                 expected_oldest_update_index_in_result: 5,
                 expect_result_to_include_original_contract: false,
             };
@@ -2298,16 +2298,16 @@ mod tests {
         #[test]
         pub fn should_fetch_with_limit_with_offset() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 0,
                 limit: Some(5),
                 offset: Some(5),
                 expected_length: 5,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 12000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 12000,
                 expected_oldest_update_index_in_result: 10,
                 expect_result_to_include_original_contract: false,
             };
@@ -2318,16 +2318,16 @@ mod tests {
         #[test]
         pub fn should_fetch_with_non_zero_start_date() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 5000,
                 limit: None,
                 offset: None,
                 expected_length: 10,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 12000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 12000,
                 expected_oldest_update_index_in_result: 10,
                 expect_result_to_include_original_contract: false,
             };
@@ -2338,7 +2338,7 @@ mod tests {
         #[test]
         pub fn should_fail_with_limit_higher_than_10() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 5000,
                 limit: Some(11),
                 offset: None,
@@ -2347,9 +2347,9 @@ mod tests {
                     11,
                 ))),
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 0,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 0,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2360,7 +2360,7 @@ mod tests {
         #[test]
         pub fn should_fail_with_limit_smaller_than_1() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 5000,
                 limit: Some(0),
                 offset: None,
@@ -2369,9 +2369,9 @@ mod tests {
                     0,
                 ))),
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 0,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 0,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2382,16 +2382,16 @@ mod tests {
         #[test]
         pub fn should_fetch_empty_with_start_date_after_latest_update() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 21001,
                 limit: None,
                 offset: None,
                 expected_length: 0,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 0,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 0,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2402,16 +2402,16 @@ mod tests {
         #[test]
         pub fn should_return_empty_result_with_non_existent_contract_id() {
             let test_case = TestCase {
-                total_updates: 20,
+                total_updates_to_apply: 20,
                 start_at_date: 5000,
                 limit: None,
                 offset: None,
                 expected_length: 0,
                 expected_error: None,
                 query_non_existent_contract_id: true,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 0,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 0,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2423,7 +2423,7 @@ mod tests {
         pub fn should_fetch_only_oldest_updates_with_offset_regardless_of_limit_when_not_enough_updates(
         ) {
             let test_case = TestCase {
-                total_updates: 15,
+                total_updates_to_apply: 15,
                 start_at_date: 0,
                 limit: Some(10),
                 offset: Some(10),
@@ -2431,10 +2431,10 @@ mod tests {
                 expected_length: 6,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
                 // The same as created date, since we only have 5 updates with such offset
-                expected_oldest_update_date_in_result: 1000,
+                expected_oldest_update_date_in_result_ms: 1000,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: true,
             };
@@ -2445,7 +2445,7 @@ mod tests {
         #[test]
         pub fn should_fetch_empty_history_when_offset_is_so_large_that_no_updates_can_be_fetched() {
             let test_case = TestCase {
-                total_updates: 15,
+                total_updates_to_apply: 15,
                 start_at_date: 0,
                 limit: Some(10),
                 offset: Some(20),
@@ -2454,9 +2454,9 @@ mod tests {
                 expected_length: 0,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 0,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 0,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2467,16 +2467,16 @@ mod tests {
         #[test]
         pub fn should_fetch_with_limit_equals_total_updates() {
             let test_case = TestCase {
-                total_updates: 10,
+                total_updates_to_apply: 10,
                 start_at_date: 0,
                 limit: Some(10), // limit equals to total updates
                 offset: None,
                 expected_length: 10, // still should return 10 due to the constraint of maximum 10 results
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 2000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 2000,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2487,16 +2487,16 @@ mod tests {
         #[test]
         pub fn should_fetch_only_latest_updates_if_updates_count_lower_than_the_limit() {
             let test_case = TestCase {
-                total_updates: 7,
+                total_updates_to_apply: 7,
                 start_at_date: 0,
                 limit: Some(10), // limit larger than total updates
                 offset: None,
                 expected_length: 8,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 1000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 1000,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: true,
             };
@@ -2507,16 +2507,16 @@ mod tests {
         #[test]
         pub fn should_handle_when_no_updates_at_all() {
             let test_case = TestCase {
-                total_updates: 0,
+                total_updates_to_apply: 0,
                 start_at_date: 0,
                 limit: None,
                 offset: None,
                 expected_length: 1,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 1000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 1000,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: true,
             };
@@ -2527,16 +2527,16 @@ mod tests {
         #[test]
         pub fn should_fetch_empty_when_start_date_is_in_future() {
             let test_case = TestCase {
-                total_updates: 10,
+                total_updates_to_apply: 10,
                 start_at_date: 20000, // future date
                 limit: None,
                 offset: None,
                 expected_length: 0,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 0,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 0,
                 expected_oldest_update_index_in_result: 0,
                 expect_result_to_include_original_contract: false,
             };
@@ -2547,7 +2547,7 @@ mod tests {
         #[test]
         pub fn should_fetch_when_start_date_is_same_as_latest_update() {
             let test_case = TestCase {
-                total_updates: 10,
+                total_updates_to_apply: 10,
                 // TODO: important! This date is exclusive, that's why we can't query
                 //  with the same date as the latest update. Check if this is the correct
                 //  behavior
@@ -2557,9 +2557,9 @@ mod tests {
                 expected_length: 1,
                 expected_error: None,
                 query_non_existent_contract_id: false,
-                contract_created_date: 1000,
-                update_interval: 1000,
-                expected_oldest_update_date_in_result: 11000,
+                contract_created_date_ms: 1000,
+                update_period_interval_ms: 1000,
+                expected_oldest_update_date_in_result_ms: 11000,
                 expected_oldest_update_index_in_result: 9,
                 expect_result_to_include_original_contract: false,
             };
@@ -2568,18 +2568,25 @@ mod tests {
         }
 
         struct TestCase {
-            total_updates: usize,
-            contract_created_date: u64,
-            update_interval: u64,
+            // Test set up parameters
+            total_updates_to_apply: usize,
+            contract_created_date_ms: u64,
+            update_period_interval_ms: u64,
 
+            // The query parameters
             start_at_date: u64,
             limit: Option<u16>,
             offset: Option<u16>,
             query_non_existent_contract_id: bool,
 
+            // Expected outcomes
             expected_length: usize,
             expected_error: Option<Error>,
-            expected_oldest_update_date_in_result: u64,
+            expected_oldest_update_date_in_result_ms: u64,
+            // The index of the oldest update in the result. So if we expect the oldest result
+            // to be 10th update, then this value should be 9, because the index starts from 0
+            // and not 1. It is used to generate property names in the updated contract, so we
+            // can verify that the result is correct.
             expected_oldest_update_index_in_result: u64,
 
             expect_result_to_include_original_contract: bool,
@@ -2600,7 +2607,7 @@ mod tests {
             setup_history_test_with_n_updates(
                 data_contract,
                 &drive,
-                test_case.total_updates as u64,
+                test_case.total_updates_to_apply as u64,
             );
 
             let contract_history_result = drive.fetch_contract_with_history(
@@ -2629,12 +2636,12 @@ mod tests {
                         if i == 0 && test_case.expect_result_to_include_original_contract {
                             // TODO: this doesn't work because when we deserialize the contract
                             //  keeps_history is false for some reason!
-                            assert_eq!(key, &test_case.contract_created_date);
+                            assert_eq!(key, &test_case.contract_created_date_ms);
                             assert_eq!(contract, &original_data_contract);
                             continue;
                         }
-                        let expected_key: u64 = test_case.expected_oldest_update_date_in_result
-                            + i as u64 * test_case.update_interval;
+                        let expected_key: u64 = test_case.expected_oldest_update_date_in_result_ms
+                            + i as u64 * test_case.update_period_interval_ms;
                         assert_eq!(key, &expected_key);
 
                         let prop_index =
