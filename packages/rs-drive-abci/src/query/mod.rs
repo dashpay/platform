@@ -11,7 +11,8 @@ use dapi_grpc::platform::v0::{
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashesRequest, GetIdentityByPublicKeyHashesResponse,
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, GetIdentityResponse,
-    GetProofsRequest, GetProofsResponse, Proof, ResponseMetadata,
+    GetProofsRequest, GetProofsResponse, Proof, ResponseMetadata, GetDataContractHistoryRequest,
+    GetDataContractHistoryResponse, get_data_contract_history_response
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes20, Bytes32};
@@ -438,6 +439,61 @@ impl<C> Platform<C> {
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
+                };
+                Ok(QueryValidationResult::new_with_data(response_data))
+            }
+            "/dataContractHistory" => {
+                let GetDataContractHistoryRequest { id, limit, offset, start_at_seconds, prove } =
+                    check_validation_result_with_data!(GetDataContractHistoryRequest::decode(query_data));
+                let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
+
+                // TODO: make a cast safe
+                let limit = limit.map(|limit| limit as u16);
+                let offset = offset.map(|offset| offset as u16);
+
+                let response_data = if prove {
+                    // TODO: make proofs work with limit and offset
+                    // let proof = check_validation_result_with_data!(self
+                    //     .drive
+                    //     .prove_contracts(contract_ids.as_slice(), None));
+                    // GetDataContractsResponse {
+                    //     metadata: Some(metadata),
+                    //     result: Some(get_data_contracts_response::Result::Proof(Proof {
+                    //         grovedb_proof: proof,
+                    //         quorum_hash: state.last_quorum_hash().to_vec(),
+                    //         signature: state.last_block_signature().to_vec(),
+                    //         round: state.last_block_round(),
+                    //     })),
+                    // }
+                    //     .encode_to_vec()
+                    vec![]
+                } else {
+                    let contracts = check_validation_result_with_data!(self
+                        .drive
+                        .fetch_contract_with_history(contract_id.to_buffer(), None, start_at_seconds, limit, offset));
+
+                    let contract_historical_entries = check_validation_result_with_data!(contracts
+                        .into_iter()
+                        .map(
+                            |(date_in_seconds, data_contract)| Ok::<DataContractEntry, ProtocolError>(
+                                get_data_contract_history_response::DataContractHistoryEntry {
+                                    date: date_in_seconds,
+                                    value: get_data_contract_history_response::DataContractValue {
+                                        value: data_contract.serialize()?
+                                    }
+                                }
+                            )
+                        )
+                        .collect());
+                    GetDataContractHistoryResponse {
+                        result: Some(get_data_contract_history_response::Result::DataContractHistory(
+                            get_data_contract_history_response::DataContractHistory {
+                                data_contract_entries: contract_historical_entries,
+                            }
+                        )),
+                        metadata: Some(metadata),
+                    }
+                        .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
