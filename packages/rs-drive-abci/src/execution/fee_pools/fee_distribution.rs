@@ -54,6 +54,7 @@ use drive::fee_pools::{
 };
 use drive::grovedb::{Transaction, TransactionArg};
 use drive::{error, grovedb};
+use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -81,6 +82,8 @@ pub struct UnpaidEpoch {
     pub epoch_index: u16,
     /// Block height of the first block in the epoch
     pub start_block_height: u64,
+    /// Block height of the first block in the epoch
+    pub start_block_core_height: u64,
     /// Block height of the last block in the epoch
     pub end_block_height: u64,
     /// Index of the next unpaid epoch
@@ -107,6 +110,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
+        cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: &Transaction,
         batch: &mut GroveDbOpBatch,
     ) -> Result<Option<ProposersPayouts>, Error> {
@@ -191,12 +195,24 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 }
             };
 
-            (current_epoch_index, start_block_height)
+            let start_block_core_height = match cached_current_epoch_start_block_core_height {
+                Some(start_block_core_height) => start_block_core_height,
+                None => {
+                    let current_epoch = Epoch::new(current_epoch_index)?;
+                    self.drive
+                        .get_epoch_start_block_core_height(&current_epoch, transaction)?
+                }
+            };
+            StartBlockInfo {
+                epoch_index: current_epoch_index,
+                start_block_height,
+                start_block_core_height,
+            }
         } else {
             // Find a next epoch with start block height if unpaid epoch was more than one epoch ago
             match self
                 .drive
-                .get_first_epoch_start_block_height_between_epochs(
+                .get_first_epoch_start_block_info_between_epochs(
                     unpaid_epoch.index,
                     current_epoch_index,
                     transaction,

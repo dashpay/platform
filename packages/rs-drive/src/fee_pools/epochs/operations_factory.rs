@@ -37,10 +37,7 @@ use crate::drive::fee_pools::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
-use crate::fee_pools::epochs::epoch_key_constants::{
-    KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
-    KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
-};
+use crate::fee_pools::epochs::epoch_key_constants::{KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME};
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use grovedb::batch::GroveDbOp;
@@ -75,6 +72,8 @@ pub trait EpochOperations {
     fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch start block height.
     fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp;
+    /// Returns a groveDB op which updates the epoch start block height.
+    fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch fee multiplier.
     fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp;
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
@@ -192,6 +191,16 @@ impl EpochOperations for Epoch {
             Element::Item(start_block_height.to_be_bytes().to_vec(), None),
         )
     }
+
+    /// Returns a groveDB op which updates the epoch start block core height.
+    fn update_start_block_core_height_operation(&self, start_block_core_height: u32) -> GroveDbOp {
+        GroveDbOp::insert_op(
+            self.get_path_vec(),
+            KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
+            Element::Item(start_block_core_height.to_be_bytes().to_vec(), None),
+        )
+    }
+
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
     fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
