@@ -16,6 +16,7 @@ const generateTenderdashNodeKey = require("../../src/tenderdash/generateTenderda
 const getSelfSignedCertificate = require("../../src/test/getSelfSignedCertificate");
 const isServiceRunningFactory = require("../../src/test/isServiceRunningFactory");
 const wait = require("../../src/util/wait");
+const createRpcClient = require('../../src/core/createRpcClient');
 
 describe('Testnet Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -32,6 +33,8 @@ describe('Testnet Fullnode', function main() {
   let restartNodeTask;
   let startNodeTask;
   let isServiceRunning;
+  let coreRpcClient;
+  let lastBlockHeight;
 
   const preset = 'testnet';
 
@@ -67,7 +70,7 @@ describe('Testnet Fullnode', function main() {
     startGroupNodesTask = container.resolve('startGroupNodesTask');
     startNodeTask = container.resolve('startNodeTask');
     restartNodeTask = container.resolve('restartNodeTask');
-    stopNodeTask =  container.resolve('stopNodeTask');
+    stopNodeTask = container.resolve('stopNodeTask');
     const configFileRepository = container.resolve('configFileRepository');
 
     dockerCompose = container.resolve('dockerCompose');
@@ -107,6 +110,8 @@ describe('Testnet Fullnode', function main() {
       dockerCompose,
       SERVICES,
     );
+
+    coreRpcClient = createRpcClient();
   });
 
   after(async () => {
@@ -140,7 +145,21 @@ describe('Testnet Fullnode', function main() {
   });
 
   it('#sync', async () => {
+    const bestBlockHash = await client.getBestBlockHash();
+    const { height: bestBlockHeight } = await client.getBlock(bestBlockHash);
 
+    lastBlockHeight = bestBlockHeight;
+
+    await wait(15000);
+
+    const newBestBlockHash = await client.getBestBlockHash();
+    const { height: newBestBlockHeight } = await client.getBlock(newBestBlockHash);
+
+    if (newBestBlockHeight <= lastBlockHeight) {
+      expect.fail('Core is not syncing');
+    }
+
+    lastBlockHeight = newBestBlockHeight;
   });
 
   it('#restart', async () => {
@@ -150,6 +169,15 @@ describe('Testnet Fullnode', function main() {
     const isRunning = await isServiceRunning('core');
 
     expect(isRunning).to.be.true();
+
+    await wait(15000);
+
+    const newBestBlockHash = await client.getBestBlockHash();
+    const { height: newBestBlockHeight } = await client.getBlock(newBestBlockHash);
+
+    if (newBestBlockHeight <= lastBlockHeight) {
+      expect.fail('Core is not syncing after restart');
+    }
   });
 
   it('#stop', async () => {
