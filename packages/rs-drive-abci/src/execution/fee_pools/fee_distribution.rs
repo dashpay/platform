@@ -103,6 +103,9 @@ impl UnpaidEpoch {
     }
 }
 
+/// Constant to be removed
+pub const CORE_BLOCK_DISTRIBUTION: Credits = 70000000000; //todo: update
+
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the op batch which distribute fees
     /// from the oldest unpaid epoch pool to proposers.
@@ -128,10 +131,16 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         };
 
         // Process more proposers at once if we have many unpaid epochs in past
-        let proposers_limit: u16 = (current_epoch_index - unpaid_epoch.epoch_index) * 50;
+        let proposers_limit: u16 = (current_epoch_index - unpaid_epoch.epoch_index) * 5000; //todo: remove this
+
+        let reward_fees = Self::epoch_core_reward_credits_for_distribution(
+            unpaid_epoch.start_block_core_height,
+            unpaid_epoch.next_epoch_start_block_core_height,
+        )?;
 
         let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
             &unpaid_epoch,
+            reward_fees,
             proposers_limit,
             transaction,
             batch,
@@ -255,6 +264,20 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         }))
     }
 
+    /// Gets the amount of core reward fees to be distributed for the Epoch.
+    pub fn epoch_core_reward_credits_for_distribution(
+        epoch_start_block_core_height: u32,
+        next_epoch_start_block_core_height: u32,
+    ) -> Result<Credits, Error> {
+        // The amount of credits given is equal to the amount of blocks
+        let core_block_count =
+            next_epoch_start_block_core_height.saturating_sub(epoch_start_block_core_height);
+
+        //Todo: get the actual distribution based on core epochs (with a reduction of 7% per year).
+
+        Ok(core_block_count as u64 * CORE_BLOCK_DISTRIBUTION)
+    }
+
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
@@ -262,6 +285,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     fn add_epoch_pool_to_proposers_payout_operations(
         &self,
         unpaid_epoch: &UnpaidEpoch,
+        reward_fees: Credits,
         proposers_limit: u16,
         transaction: &Transaction,
         batch: &mut GroveDbOpBatch,
@@ -269,10 +293,16 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
 
-        let total_fees = self
+        let storage_and_processing_fees = self
             .drive
             .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction))
             .map_err(Error::Drive)?;
+
+        let total_fees = storage_and_processing_fees
+            .checked_add(reward_fees)
+            .ok_or_else(|| {
+                Error::Execution(ExecutionError::Overflow("overflow when adding reward fees"))
+            })?;
 
         let mut remaining_fees = total_fees;
 
