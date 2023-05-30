@@ -42,10 +42,13 @@ use dpp::block::epoch::Epoch;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
-use crate::fee_pools::epochs::epoch_key_constants::{KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT};
+use crate::fee_pools::epochs::epoch_key_constants::{
+    KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
+};
 use crate::fee_pools::epochs::paths::EpochProposers;
 
 /// `StartBlockInfo` contains information about the starting block of an epoch.
+#[derive(Debug, PartialEq, Eq)]
 pub struct StartBlockInfo {
     /// The index of the epoch.
     pub epoch_index: EpochIndex,
@@ -147,7 +150,7 @@ impl Drive {
 
         epochs_query.set_subquery(start_block_height_query);
 
-        let sized_query = SizedQuery::new(epochs_query, Some(1), None);
+        let sized_query = SizedQuery::new(epochs_query, Some(2), None);
 
         let path_query = PathQuery::new(pools_vec_path(), sized_query);
 
@@ -171,7 +174,9 @@ impl Drive {
         let (_, key, element) = path_key_elements.next().unwrap();
 
         if key != KEY_START_BLOCK_CORE_HEIGHT.to_vec() {
-            return Err(Error::Drive(DriveError::CorruptedDriveState("start block core height should exist".to_string())));
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "start block core height should exist".to_string(),
+            )));
         }
 
         let Element::Item(item, _) = element else {
@@ -188,7 +193,9 @@ impl Drive {
         let (path, key, element) = path_key_elements.next().unwrap();
 
         if key != KEY_START_BLOCK_HEIGHT.to_vec() {
-            return Err(Error::Drive(DriveError::CorruptedDriveState("start block height should exist".to_string())));
+            return Err(Error::Drive(DriveError::CorruptedDriveState(
+                "start block height should exist".to_string(),
+            )));
         }
 
         let Element::Item(item, _) = element else {
@@ -201,7 +208,6 @@ impl Drive {
                     "start block height must be u64",
                 ))
             })?);
-
 
         let epoch_key = path
             .last()
@@ -393,11 +399,14 @@ mod tests {
                 .get_first_epoch_start_block_info_between_epochs(0, 2, Some(&transaction))
                 .expect("should find next start_block_height");
 
-            assert_eq!(next_epoch_start_block_height_option, Some(StartBlockInfo {
-                epoch_index: 1,
-                start_block_height: 2,
-                start_block_core_height: 2,
-            }));
+            assert_eq!(
+                next_epoch_start_block_height_option,
+                Some(StartBlockInfo {
+                    epoch_index: 1,
+                    start_block_height: 2,
+                    start_block_core_height: 2,
+                })
+            );
         }
 
         #[test]
@@ -447,7 +456,9 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch_tree_0.update_start_block_height_operation(1));
+            batch.push(epoch_tree_0.update_start_block_core_height_operation(1));
             batch.push(epoch_tree_3.update_start_block_height_operation(2));
+            batch.push(epoch_tree_3.update_start_block_core_height_operation(5));
 
             drive
                 .grove_apply_batch(batch, false, Some(&transaction))
@@ -455,9 +466,17 @@ mod tests {
 
             let next_epoch_start_block_height = drive
                 .get_first_epoch_start_block_info_between_epochs(0, 4, Some(&transaction))
+                .expect("should find next start_block_height doesn't error")
                 .expect("should find next start_block_height");
 
-            assert!(matches!(next_epoch_start_block_height, Some((3, 2))));
+            assert_eq!(
+                next_epoch_start_block_height,
+                StartBlockInfo {
+                    epoch_index: 3,
+                    start_block_height: 2,
+                    start_block_core_height: 5,
+                }
+            );
         }
     }
 }

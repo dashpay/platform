@@ -45,6 +45,7 @@ use dpp::ProtocolError;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
@@ -54,7 +55,6 @@ use drive::fee_pools::{
 };
 use drive::grovedb::{Transaction, TransactionArg};
 use drive::{error, grovedb};
-use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
 /// they're to be paid from.
@@ -80,20 +80,22 @@ pub struct FeesInPools {
 pub struct UnpaidEpoch {
     /// Index of the current epoch
     pub epoch_index: u16,
-    /// Block height of the first block in the epoch
-    pub start_block_height: u64,
-    /// Block height of the first block in the epoch
-    pub start_block_core_height: u64,
-    /// Block height of the last block in the epoch
-    pub end_block_height: u64,
     /// Index of the next unpaid epoch
     pub next_unpaid_epoch_index: u16,
+    /// Block height of the first block in the epoch
+    pub start_block_height: u64,
+    /// Block height of the first block in next epoch
+    pub next_epoch_start_block_height: u64,
+    /// Block height of the first block in the epoch
+    pub start_block_core_height: u32,
+    /// Block height of the first block in next epoch
+    pub next_epoch_start_block_core_height: u32,
 }
 
 impl UnpaidEpoch {
     /// Counts and returns the number of blocks in the epoch
     fn block_count(&self) -> Result<u64, error::Error> {
-        self.end_block_height
+        self.next_epoch_start_block_height
             .checked_sub(self.start_block_height)
             .ok_or(error::Error::Fee(FeeError::Overflow(
                 "overflow for get_epoch_block_count",
@@ -117,6 +119,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         let unpaid_epoch = self.find_oldest_epoch_needing_payment(
             current_epoch_index,
             cached_current_epoch_start_block_height,
+            cached_current_epoch_start_block_core_height,
             Some(transaction),
         )?;
 
@@ -162,6 +165,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
+        cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: TransactionArg,
     ) -> Result<Option<UnpaidEpoch>, Error> {
         // Since we are paying for passed epochs there is nothing to do on genesis epoch
@@ -182,9 +186,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .drive
             .get_epoch_start_block_height(&unpaid_epoch, transaction)?;
 
-        let (next_unpaid_epoch_index, end_block_height) = if unpaid_epoch.index
-            == current_epoch_index - 1
-        {
+        let start_block_core_height = self
+            .drive
+            .get_epoch_start_block_core_height(&unpaid_epoch, transaction)?;
+
+        let next_unpaid_epoch_info = if unpaid_epoch.index == current_epoch_index - 1 {
             // Use cached or committed block height for previous epoch
             let start_block_height = match cached_current_epoch_start_block_height {
                 Some(start_block_height) => start_block_height,
@@ -210,24 +216,29 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             }
         } else {
             // Find a next epoch with start block height if unpaid epoch was more than one epoch ago
-            match self
-                .drive
-                .get_first_epoch_start_block_info_between_epochs(
-                    unpaid_epoch.index,
-                    current_epoch_index,
-                    transaction,
-                )? {
+            match self.drive.get_first_epoch_start_block_info_between_epochs(
+                unpaid_epoch.index,
+                current_epoch_index,
+                transaction,
+            )? {
                 // Only possible on epoch change of current epoch, when we have start_block_height batched but not committed yet
-                None => match cached_current_epoch_start_block_height {
-                    None => {
+                None => {
+                    let Some(cached_current_epoch_start_block_height) = cached_current_epoch_start_block_height else {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "start_block_height must be present in current epoch or cached_next_epoch_start_block_height must be passed",
                         )));
+                    };
+                    let Some(cached_current_epoch_start_block_core_height) = cached_current_epoch_start_block_core_height else {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "start_block_core_height must be present in current epoch or cached_next_epoch_start_block_core_height must be passed",
+                        )));
+                    };
+                    StartBlockInfo {
+                        epoch_index: current_epoch_index,
+                        start_block_height: cached_current_epoch_start_block_height,
+                        start_block_core_height: cached_current_epoch_start_block_core_height,
                     }
-                    Some(cached_current_epoch_start_block_height) => {
-                        (current_epoch_index, cached_current_epoch_start_block_height)
-                    }
-                },
+                }
                 Some(next_start_block_info) => next_start_block_info,
             }
         };
@@ -236,9 +247,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         Ok(Some(UnpaidEpoch {
             epoch_index: unpaid_epoch_index,
-            next_unpaid_epoch_index,
+            next_unpaid_epoch_index: next_unpaid_epoch_info.epoch_index,
             start_block_height,
-            end_block_height,
+            next_epoch_start_block_height: next_unpaid_epoch_info.start_block_height,
+            start_block_core_height,
+            next_epoch_start_block_core_height: next_unpaid_epoch_info.start_block_core_height,
         }))
     }
 
@@ -445,6 +458,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
+                    None,
                     &transaction,
                     &mut batch,
                 )
@@ -474,7 +488,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
+            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             batch.push(
                 unpaid_epoch_tree_0
@@ -487,6 +501,7 @@ mod tests {
             epoch_tree_1.add_init_current_operations(
                 1.0,
                 proposers_count as u64 + 1,
+                1,
                 2,
                 &mut batch,
             );
@@ -509,6 +524,7 @@ mod tests {
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
+                    None,
                     None,
                     &transaction,
                     &mut batch,
@@ -550,7 +566,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
+            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             batch.push(
                 unpaid_epoch_tree_0
@@ -563,6 +579,7 @@ mod tests {
             unpaid_epoch_tree_1.add_init_current_operations(
                 1.0,
                 proposers_count as u64 + 1,
+                1,
                 2,
                 &mut batch,
             );
@@ -570,6 +587,7 @@ mod tests {
             epoch_tree_2.add_init_current_operations(
                 1.0,
                 proposers_count as u64 * 2 + 1,
+                1,
                 3,
                 &mut batch,
             );
@@ -600,6 +618,7 @@ mod tests {
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
+                    None,
                     None,
                     &transaction,
                     &mut batch,
@@ -642,7 +661,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, &mut batch);
+            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             batch.push(
                 unpaid_epoch_tree_0
@@ -655,6 +674,7 @@ mod tests {
             unpaid_epoch_tree_1.add_init_current_operations(
                 1.0,
                 proposers_count as u64 + 1,
+                1,
                 2,
                 &mut batch,
             );
@@ -662,6 +682,7 @@ mod tests {
             unpaid_epoch_tree_2.add_init_current_operations(
                 1.0,
                 proposers_count as u64 * 2 + 1,
+                5,
                 3,
                 &mut batch,
             );
@@ -669,6 +690,7 @@ mod tests {
             epoch_tree_3.add_init_current_operations(
                 1.0,
                 proposers_count as u64 * 3 + 1,
+                7,
                 3,
                 &mut batch,
             );
@@ -708,6 +730,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
+                    None,
                     &transaction,
                     &mut batch,
                 )
@@ -746,7 +769,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
+            unpaid_epoch.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             batch.push(
                 unpaid_epoch
@@ -760,7 +783,7 @@ mod tests {
                     .expect("should add operation"),
             );
 
-            current_epoch.add_init_current_operations(1.0, 11, 2, &mut batch);
+            current_epoch.add_init_current_operations(1.0, 11, 3, 2, &mut batch);
 
             platform
                 .drive
@@ -780,6 +803,7 @@ mod tests {
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
+                    None,
                     None,
                     &transaction,
                     &mut batch,
@@ -841,7 +865,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch.add_init_current_operations(1.0, 1, 1, &mut batch);
+            unpaid_epoch.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             batch.push(
                 unpaid_epoch
@@ -858,6 +882,7 @@ mod tests {
             current_epoch.add_init_current_operations(
                 1.0,
                 (proposers_count as u64) + 1,
+                1,
                 2,
                 &mut batch,
             );
@@ -880,6 +905,7 @@ mod tests {
             let proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
+                    None,
                     None,
                     &transaction,
                     &mut batch,
@@ -914,6 +940,7 @@ mod tests {
             let _proposer_payouts = platform
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
+                    None,
                     None,
                     &transaction,
                     &mut batch,
@@ -961,7 +988,12 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(GENESIS_EPOCH_INDEX, None, Some(&transaction))
+                .find_oldest_epoch_needing_payment(
+                    GENESIS_EPOCH_INDEX,
+                    None,
+                    None,
+                    Some(&transaction),
+                )
                 .expect("should find nothing");
 
             assert!(unpaid_epoch.is_none());
@@ -993,7 +1025,12 @@ mod tests {
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(current_epoch_index, None, Some(&transaction))
+                .find_oldest_epoch_needing_payment(
+                    current_epoch_index,
+                    None,
+                    None,
+                    Some(&transaction),
+                )
                 .expect("should find nothing");
 
             assert!(unpaid_epoch.is_none());
@@ -1013,6 +1050,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch_0_tree.update_start_block_height_operation(1));
+            batch.push(epoch_0_tree.update_start_block_core_height_operation(1));
 
             platform
                 .drive
@@ -1021,10 +1059,13 @@ mod tests {
 
             let cached_current_epoch_start_block_height = Some(2);
 
+            let cached_current_epoch_start_block_core_height = Some(2);
+
             let unpaid_epoch = platform
                 .find_oldest_epoch_needing_payment(
                     current_epoch_index,
                     cached_current_epoch_start_block_height,
+                    cached_current_epoch_start_block_core_height,
                     Some(&transaction),
                 )
                 .expect("should find nothing");
@@ -1034,7 +1075,7 @@ mod tests {
                     assert_eq!(unpaid_epoch.epoch_index, 0);
                     assert_eq!(unpaid_epoch.next_unpaid_epoch_index, 1);
                     assert_eq!(unpaid_epoch.start_block_height, 1);
-                    assert_eq!(unpaid_epoch.end_block_height, 2);
+                    assert_eq!(unpaid_epoch.next_epoch_start_block_height, 2);
 
                     let block_count = unpaid_epoch
                         .block_count()
@@ -1063,7 +1104,9 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch_0_tree.update_start_block_height_operation(1));
+            batch.push(epoch_0_tree.update_start_block_core_height_operation(1));
             batch.push(epoch_1_tree.update_start_block_height_operation(2));
+            batch.push(epoch_1_tree.update_start_block_core_height_operation(2));
 
             platform
                 .drive
@@ -1071,7 +1114,12 @@ mod tests {
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(current_epoch_index, None, Some(&transaction))
+                .find_oldest_epoch_needing_payment(
+                    current_epoch_index,
+                    None,
+                    None,
+                    Some(&transaction),
+                )
                 .expect("should find nothing");
 
             match unpaid_epoch {
@@ -1079,7 +1127,7 @@ mod tests {
                     assert_eq!(unpaid_epoch.epoch_index, 0);
                     assert_eq!(unpaid_epoch.next_unpaid_epoch_index, 1);
                     assert_eq!(unpaid_epoch.start_block_height, 1);
-                    assert_eq!(unpaid_epoch.end_block_height, 2);
+                    assert_eq!(unpaid_epoch.next_epoch_start_block_height, 2);
 
                     let block_count = unpaid_epoch
                         .block_count()
@@ -1108,8 +1156,11 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch_0_tree.update_start_block_height_operation(1));
+            batch.push(epoch_0_tree.update_start_block_core_height_operation(1));
             batch.push(epoch_1_tree.update_start_block_height_operation(2));
+            batch.push(epoch_1_tree.update_start_block_core_height_operation(2));
             batch.push(epoch_2_tree.update_start_block_height_operation(3));
+            batch.push(epoch_2_tree.update_start_block_core_height_operation(3));
 
             platform
                 .drive
@@ -1117,7 +1168,12 @@ mod tests {
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(current_epoch_index, None, Some(&transaction))
+                .find_oldest_epoch_needing_payment(
+                    current_epoch_index,
+                    None,
+                    None,
+                    Some(&transaction),
+                )
                 .expect("should find nothing");
 
             match unpaid_epoch {
@@ -1125,7 +1181,7 @@ mod tests {
                     assert_eq!(unpaid_epoch.epoch_index, 0);
                     assert_eq!(unpaid_epoch.next_unpaid_epoch_index, 1);
                     assert_eq!(unpaid_epoch.start_block_height, 1);
-                    assert_eq!(unpaid_epoch.end_block_height, 2);
+                    assert_eq!(unpaid_epoch.next_epoch_start_block_height, 2);
 
                     let block_count = unpaid_epoch
                         .block_count()
@@ -1151,6 +1207,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch_0_tree.update_start_block_height_operation(1));
+            batch.push(epoch_0_tree.update_start_block_core_height_operation(1));
 
             platform
                 .drive
@@ -1158,11 +1215,13 @@ mod tests {
                 .expect("should apply batch");
 
             let cached_current_epoch_start_block_height = Some(2);
+            let cached_current_epoch_start_block_core_height = Some(2);
 
             let unpaid_epoch = platform
                 .find_oldest_epoch_needing_payment(
                     current_epoch_index,
                     cached_current_epoch_start_block_height,
+                    cached_current_epoch_start_block_core_height,
                     Some(&transaction),
                 )
                 .expect("should find nothing");
@@ -1172,7 +1231,7 @@ mod tests {
                     assert_eq!(unpaid_epoch.epoch_index, 0);
                     assert_eq!(unpaid_epoch.next_unpaid_epoch_index, 2);
                     assert_eq!(unpaid_epoch.start_block_height, 1);
-                    assert_eq!(unpaid_epoch.end_block_height, 2);
+                    assert_eq!(unpaid_epoch.next_epoch_start_block_height, 2);
 
                     let block_count = unpaid_epoch
                         .block_count()
@@ -1199,6 +1258,7 @@ mod tests {
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch_0_tree.update_start_block_height_operation(1));
+            batch.push(epoch_0_tree.update_start_block_core_height_operation(1));
 
             platform
                 .drive
@@ -1207,6 +1267,7 @@ mod tests {
 
             let unpaid_epoch = platform.find_oldest_epoch_needing_payment(
                 current_epoch_index,
+                None,
                 None,
                 Some(&transaction),
             );
@@ -1247,7 +1308,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, &mut batch);
+            unpaid_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             batch.push(
                 unpaid_epoch_tree
@@ -1264,6 +1325,7 @@ mod tests {
             next_epoch_tree.add_init_current_operations(
                 1.0,
                 proposers_count as u64 + 1,
+                1,
                 10,
                 &mut batch,
             );
@@ -1296,8 +1358,10 @@ mod tests {
             let unpaid_epoch = UnpaidEpoch {
                 epoch_index: 0,
                 start_block_height: 1,
-                end_block_height: 11,
+                next_epoch_start_block_height: 11,
+                start_block_core_height: 1,
                 next_unpaid_epoch_index: 0,
+                next_epoch_start_block_core_height: 1,
             };
 
             let proposers_paid_count = platform
@@ -1374,7 +1438,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            current_epoch_tree.add_init_current_operations(1.0, 1, 1, &mut batch);
+            current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             let processing_fees = 1000000;
             let storage_fees = 2000000;
@@ -1422,7 +1486,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            current_epoch_tree.add_init_current_operations(1.0, 1, 1, &mut batch);
+            current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
 
             // Apply new pool structure
             platform

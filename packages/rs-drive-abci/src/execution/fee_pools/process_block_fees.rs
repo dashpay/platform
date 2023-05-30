@@ -106,6 +106,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         current_epoch.add_init_current_operations(
             DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
             block_info.height,
+            block_info.core_chain_locked_height,
             block_info.block_time_ms,
             batch,
         );
@@ -179,16 +180,21 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         // Since start_block_height for current epoch is batched and not committed yet
         // we pass it explicitly
-        let cached_current_epoch_start_block_height = if epoch_info.is_epoch_change {
-            Some(block_info.height)
-        } else {
-            None
-        };
+        let (cached_current_epoch_start_block_height, cached_current_epoch_start_block_core_height) =
+            if epoch_info.is_epoch_change {
+                (
+                    Some(block_info.height),
+                    Some(block_info.core_chain_locked_height),
+                )
+            } else {
+                (None, None)
+            };
 
         let payouts = self
             .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                 epoch_info.current_epoch_index,
                 cached_current_epoch_start_block_height,
+                cached_current_epoch_start_block_core_height,
                 transaction,
                 &mut batch,
             )?;

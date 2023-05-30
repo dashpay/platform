@@ -37,7 +37,10 @@ use crate::drive::fee_pools::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
-use crate::fee_pools::epochs::epoch_key_constants::{KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS, KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME};
+use crate::fee_pools::epochs::epoch_key_constants::{
+    KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
+    KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
+};
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use grovedb::batch::GroveDbOp;
@@ -63,6 +66,7 @@ pub trait EpochOperations {
         &self,
         multiplier: f64,
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
+        start_block_core_height: u32,
         start_time_ms: u64,
         batch: &mut GroveDbOpBatch,
     );
@@ -153,10 +157,13 @@ impl EpochOperations for Epoch {
         &self,
         multiplier: f64,
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
+        start_block_core_height: u32,
         start_time_ms: u64,
         batch: &mut GroveDbOpBatch,
     ) {
         batch.push(self.update_start_block_height_operation(start_block_height));
+
+        batch.push(self.update_start_block_core_height_operation(start_block_core_height));
 
         batch.push(self.init_proposers_tree_operation());
 
@@ -200,7 +207,6 @@ impl EpochOperations for Epoch {
             Element::Item(start_block_core_height.to_be_bytes().to_vec(), None),
         )
     }
-
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
     fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
@@ -439,6 +445,7 @@ mod tests {
             let multiplier = 42.0;
             let start_time = 1;
             let start_block_height = 2;
+            let start_block_core_height = 5;
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -449,6 +456,7 @@ mod tests {
             epoch.add_init_current_operations(
                 multiplier,
                 start_block_height,
+                start_block_core_height,
                 start_time,
                 &mut batch,
             );
@@ -475,6 +483,12 @@ mod tests {
 
             assert_eq!(stored_block_height, start_block_height);
 
+            let stored_block_core_height = drive
+                .get_epoch_start_block_core_height(&epoch, Some(&transaction))
+                .expect("should get start block core height");
+
+            assert_eq!(stored_block_core_height, start_block_core_height);
+
             drive
                 .get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction))
                 .expect_err("should not get processing fee");
@@ -499,7 +513,7 @@ mod tests {
 
             let mut batch = GroveDbOpBatch::new();
 
-            epoch.add_init_current_operations(1.0, 2, 3, &mut batch);
+            epoch.add_init_current_operations(1.0, 2, 5, 3, &mut batch);
 
             // Apply init current
             drive
@@ -616,6 +630,28 @@ mod tests {
         let actual_start_block_height = drive
             .get_epoch_start_block_height(&epoch, Some(&transaction))
             .expect("should get start block height");
+
+        assert_eq!(start_block_height, actual_start_block_height);
+    }
+
+    #[test]
+    fn test_update_epoch_start_block_core_height() {
+        let drive = setup_drive_with_initial_state_structure();
+        let transaction = drive.grove.start_transaction();
+
+        let epoch = Epoch::new(0).unwrap();
+
+        let start_block_height = 1;
+
+        let op = epoch.update_start_block_core_height_operation(start_block_height);
+
+        drive
+            .grove_apply_operation(op, false, Some(&transaction))
+            .expect("should apply batch");
+
+        let actual_start_block_height = drive
+            .get_epoch_start_block_core_height(&epoch, Some(&transaction))
+            .expect("should get start block core height");
 
         assert_eq!(start_block_height, actual_start_block_height);
     }
