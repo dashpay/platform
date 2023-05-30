@@ -33,7 +33,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::abci::config::Keys;
+use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
 
 /// Configuration for Dash Core RPC client
@@ -212,7 +212,17 @@ pub trait FromEnv {
     }
 }
 
-impl FromEnv for PlatformConfig {}
+impl FromEnv for PlatformConfig {
+    fn from_env() -> Result<Self, Error>
+    where
+        Self: Sized + DeserializeOwned,
+    {
+        let mut me = envy::from_env::<Self>().map_err(Error::from)?;
+        me.abci.log = LogConfigs::from_env()?;
+
+        Ok(me)
+    }
+}
 
 impl Default for PlatformConfig {
     fn default() -> Self {
@@ -223,13 +233,7 @@ impl Default for PlatformConfig {
             block_spacing_ms: 5000,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
-            abci: AbciConfig {
-                bind_address: "tcp://127.0.0.1:1234".to_string(),
-                keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
-                genesis_height: AbciConfig::default_genesis_height(),
-                genesis_core_height: AbciConfig::default_genesis_core_height(),
-                chain_id: "chain_id".to_string(),
-            },
+            abci: Default::default(),
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
@@ -274,6 +278,13 @@ mod tests {
 
     #[test]
     fn test_config_from_env() {
+        // ABCI log configs are parsed manually, so they deserve separate handling
+        // Notat that STDOUT is also defined in .env.example, but env var should overwrite it.
+        let log_ids = &["STDOUT", "UPPERCASE", "lowercase", "miXedC4s3", "123"];
+        for id in log_ids {
+            env::set_var(format!("ABCI_LOG_{}_DESTINATION", id), "bytes");
+        }
+
         let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
@@ -282,5 +293,8 @@ mod tests {
         let config = super::PlatformConfig::from_env().unwrap();
         assert!(config.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
+        for id in log_ids {
+            assert_eq!(config.abci.log[*id].destination.as_str(), "bytes");
+        }
     }
 }

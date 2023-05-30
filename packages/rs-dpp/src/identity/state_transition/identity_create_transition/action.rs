@@ -1,7 +1,13 @@
+use crate::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::identifier::Identifier;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::identity::{IdentityPublicKey, PartialIdentity};
+use crate::ProtocolError;
+use dashcore::OutPoint;
+use platform_value::Bytes36;
 use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_CREATE_TRANSITION_ACTION_VERSION: u32 = 0;
@@ -13,6 +19,7 @@ pub struct IdentityCreateTransitionAction {
     pub public_keys: Vec<IdentityPublicKey>,
     pub initial_balance_amount: u64,
     pub identity_id: Identifier,
+    pub asset_lock_outpoint: Bytes36,
 }
 
 impl From<IdentityCreateTransitionAction> for PartialIdentity {
@@ -54,13 +61,27 @@ impl IdentityCreateTransitionAction {
         IDENTITY_CREATE_TRANSITION_ACTION_VERSION
     }
 
-    pub fn from(value: IdentityCreateTransition, initial_balance_amount: u64) -> Self {
+    pub fn from(
+        value: IdentityCreateTransition,
+        initial_balance_amount: u64,
+    ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransition {
             public_keys,
             identity_id,
+            asset_lock_proof,
             ..
         } = value;
-        IdentityCreateTransitionAction {
+        let asset_lock_outpoint = asset_lock_proof
+            .out_point()
+            .ok_or(ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                    IdentityAssetLockTransactionOutputNotFoundError::new(
+                        asset_lock_proof.instant_lock_output_index().unwrap(),
+                    ),
+                ),
+            ))?
+            .into();
+        Ok(IdentityCreateTransitionAction {
             version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
             public_keys: public_keys
                 .into_iter()
@@ -68,16 +89,31 @@ impl IdentityCreateTransitionAction {
                 .collect(),
             initial_balance_amount,
             identity_id,
-        }
+            asset_lock_outpoint,
+        })
     }
 
-    pub fn from_borrowed(value: &IdentityCreateTransition, initial_balance_amount: u64) -> Self {
+    pub fn from_borrowed(
+        value: &IdentityCreateTransition,
+        initial_balance_amount: u64,
+    ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransition {
             public_keys,
             identity_id,
+            asset_lock_proof,
             ..
         } = value;
-        IdentityCreateTransitionAction {
+        let asset_lock_outpoint = asset_lock_proof
+            .out_point()
+            .ok_or(ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                    IdentityAssetLockTransactionOutputNotFoundError::new(
+                        asset_lock_proof.instant_lock_output_index().unwrap(),
+                    ),
+                ),
+            ))?
+            .into();
+        Ok(IdentityCreateTransitionAction {
             version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
             public_keys: public_keys
                 .iter()
@@ -85,6 +121,7 @@ impl IdentityCreateTransitionAction {
                 .collect(),
             initial_balance_amount,
             identity_id: *identity_id,
-        }
+            asset_lock_outpoint,
+        })
     }
 }

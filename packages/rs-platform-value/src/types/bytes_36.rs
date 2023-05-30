@@ -164,6 +164,18 @@ impl From<&Bytes36> for Value {
     }
 }
 
+impl From<[u8; 36]> for Bytes36 {
+    fn from(value: [u8; 36]) -> Self {
+        Bytes36(value)
+    }
+}
+
+impl From<&[u8; 36]> for Bytes36 {
+    fn from(value: &[u8; 36]) -> Self {
+        Bytes36(*value)
+    }
+}
+
 impl TryFrom<String> for Bytes36 {
     type Error = Error;
 

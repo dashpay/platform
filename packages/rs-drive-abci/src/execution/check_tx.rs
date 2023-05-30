@@ -68,10 +68,9 @@ where
     ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
     pub fn check_tx(
         &self,
-        raw_tx: Vec<u8>,
+        raw_tx: &[u8],
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition =
-            StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
+        let state_transition = StateTransition::deserialize(raw_tx).map_err(Error::Protocol)?;
         let state_read_guard = self.state.read().unwrap();
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -105,11 +104,24 @@ mod tests {
     use crate::platform::Platform;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
-    use dpp::identity::Identity;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::signature::SignatureError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
+    use dpp::dashcore::{signer, KeyPair, PrivateKey};
+    use dpp::data_contracts::dpns_contract;
+    use dpp::data_contracts::SystemDataContract::DPNS;
+    use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+    use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization_traits::{PlatformDeserializable, Signable};
-    use dpp::state_transition::StateTransition;
+    use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
     use dpp::state_transition::StateTransition::DataContractCreate;
+    use dpp::state_transition::{StateTransition, StateTransitionType};
+    use dpp::version::LATEST_VERSION;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::collections::BTreeMap;
     use tenderdash_abci::proto::abci::RequestInitChain;
     use tenderdash_abci::proto::google::protobuf::Timestamp;
@@ -144,7 +156,9 @@ mod tests {
             .add_new_identity(identity, &BlockInfo::default(), true, None)
             .expect("expected to insert identity");
 
-        let validation_result = platform.check_tx(serialized).expect("expected to check tx");
+        let validation_result = platform
+            .check_tx(serialized.as_slice())
+            .expect("expected to check tx");
 
         //todo fix
         // assert!(validation_result.errors.is_empty());
@@ -192,7 +206,7 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(document_update)
+            .check_tx(document_update.as_slice())
             .expect("expected to check tx");
 
         dbg!(&validation_result.errors);
@@ -215,7 +229,7 @@ mod tests {
             .expect("expected to create genesis state");
 
         let validation_result = platform
-            .check_tx(identity_top_up.clone())
+            .check_tx(identity_top_up.as_slice())
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -233,6 +247,109 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+    }
+
+    #[test]
+    fn identity_cant_double_top_up() {
+        let identity_top_up = hex::decode("04030000c601018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000007f1df760772c7ab48c042c01319bd553b7a635936e9a06fa382eb5037638e6ba077a524aa82c6b20e7b8dcadafa46f8ecc59b2dea8c3d6269a24cd5cad74b712ae5a460d11242bd345e168028b3e8442439a63847aa736057a6cd587ae9f7bca1f59f3045566233566142cbca5a7b525085bf96c621ba39f838d6c5c31b116e756753177aa303a8ea712e17ad1ff5dfb0b1504c03d5c225c5cbdb1ee8f6636f0df03000000018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000006b483045022100d71b565e319a0b85725d1eca250da27d846c6b015e601254e3f8aeb11c0feab60220381c92a46467d6c5270d424b666b989e444e72955f3d5b77d8be9965335b43bd01210222150e3b66410341308b646234bff9c203172c6720b2ecc838c71d94f670066affffffff02e093040000000000166a144cf5fee3ebdce0f51540a3504091c0dccb0f7d343832963b000000001976a914f3b05a1dda565b0013cb9857e708d840bcd47bef88ac00000000003012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac014120d56826c39c07eaea7157b8b717fdcef73fbc99cc680e34f695e0c763d79531691d8ea117cd4623e96a25cbf673e5b1da6e43a96d5bb2a65fe82c2efd4dc2c6dc").expect("expected to decode");
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_top_up.clone(), &BlockInfo::default(), &transaction)
+            .expect("expected to execute identity top up tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let validation_result = platform
+            .check_tx(identity_top_up.as_slice())
+            .expect("expected to check tx");
+
+        assert!(matches!(
+            validation_result.errors.first().expect("expected an error"),
+            ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn identity_update_doesnt_panic() {
+        let identity_top_up = hex::decode("0601054e683919ac96d2e9b099162d845f7540fb1e776eadaca5d84b28235e298d9224020101000002002103a106d1b2fbe4f47c0f9a6cf89b7ed625b5f5972798c9af73475fb179bcb047364120db77e92f250ff1c1114b26355d0a186ab439cbd26ac18ed89c7c63e32b3aea4b339b10feeb2dffd7efa1bdb3e48332a6cdea1951071fb41ef30011a267eb6bbb000000411f56f03e48506fef87be778167838128eb06edc541667c7f010344bb69e54ba1df2c2818db073cc1f7c3966d1d99f0aa1c5e4e1d21959da7f4b89e6c19c123a8b9").expect("expected to decode");
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let validation_result = platform
+            .check_tx(identity_top_up.as_slice())
+            .expect("expected to check tx");
+
+        assert!(matches!(
+            validation_result.errors.first().expect("expected an error"),
+            ConsensusError::SignatureError(SignatureError::IdentityNotFoundError(_))
+        ));
+    }
+
+    #[test]
+    fn identity_cant_create_with_used_outpoint() {
+        let identity_create = hex::decode("03020200000000002102b60f8631519ee2245dfbd7ff107540d378b9d9ca3e8356d1f791703b3027d71b412039feb0213146906bbe7b5c3edd127d567780258f11fd33475af3d2a48679c05e22c446a312d047ed61e94664a787bcac3aae2ab82417232e4a8edae519c525c4010000020021035f06136d7de4240dcfaa885f0c8236d752f906b3e1e8eb157cb816b5a58d6cd141202a6be48392e482a283380fc4679c0147589a898767897e958b3b85abf5703ef734c2041e172794199ecac63ee37f2744e13b6fc9e7d8265b9f2d0ea5a05e9be30000c601013f4fdb109bcd46a4f8eaf72c8bfca482b028e51a8e136519107c7b2c525a5f4100000000de33c4662f152d963eb1ee779cd11891d77890009e4aeabbfce29af45c402b846cc532593e62741065732e91762ac89822b1a6295c36c82863baf59bc0a0ad0b82f3a8f5d956f005dd505ad7e27cbb75c0196fa92f45f504079edb0ba5b64c2e93830f13a63cf9b7cba5a82836a979c1016378237e48859057bd6d2a09c47f78f0aa56f259aba31f205f68adc9f7b5931ea8929806dcd497c23fca262898a163de03000000013f4fdb109bcd46a4f8eaf72c8bfca482b028e51a8e136519107c7b2c525a5f41000000006a47304402207e065274128f612325de5c4e8332e8d3f49891ef2cd1ce4e57da7520484af7290220095d40dfa4490ea336155e82e969ee0f4b59d12126bec6ec7bfe1fee4cbf27d6012102faf354bb3b1487f939e7d7e2e25ec71ad6e3d9804f649e3765ea143d65042bdfffffffff02a086010000000000166a1445399c0424ad422c9dd1f1798ac570666a23f519d8230900000000001976a9143f10001d7dfcdbe673eccecd0cc5dabf208eb78388ac000000000001411f656fd575598f79545029603db7978810292c4b6d923898a09aaeaee2276c32da66f46fbb9ce3230c2485ae803ed98d3bf415fc31f4f1d8f17c44413580c8f7b6563829f5f8f22a6d3dba3143ac38cff96c1fcef4c18b2dbb7da0a2be80757955").expect("expected to decode");
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_create.clone(), &BlockInfo::default(), &transaction)
+            .expect("expected to execute identity create tx");
+
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let validation_result = platform
+            .check_tx(identity_create.as_slice())
+            .expect("expected to check tx");
+
+        assert!(matches!(
+            validation_result.errors.first().expect("expected an error"),
+            ConsensusError::StateError(StateError::IdentityAlreadyExistsError(_))
+        ));
     }
 
     #[test]
@@ -286,10 +403,8 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(dpns_domain_document.clone())
+            .check_tx(dpns_domain_document.as_slice())
             .expect("expected to check tx");
-
-        dbg!(&validation_result.errors);
 
         assert!(validation_result.errors.is_empty());
 
@@ -306,5 +421,95 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+    }
+
+    #[test]
+    fn identity_update_with_non_master_key_check_tx() {
+        let mut config = PlatformConfig::default();
+
+        let mut rng = StdRng::seed_from_u64(1);
+
+        let secp = Secp256k1::new();
+
+        let master_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let master_secret_key = master_key_pair.secret_key();
+
+        let master_public_key = master_key_pair.public_key();
+
+        config.abci.keys.dpns_master_public_key = master_public_key.serialize().to_vec();
+
+        let high_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let high_secret_key = high_key_pair.secret_key();
+
+        let high_public_key = high_key_pair.public_key();
+
+        config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(config)
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let new_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let mut new_key = IdentityPublicKeyInCreation {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+        };
+
+        let signable_bytes = new_key
+            .signable_bytes()
+            .expect("expected to get signable bytes");
+        let secret = new_key_pair.secret_key();
+        let signature =
+            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+
+        new_key.signature = signature.to_vec().into();
+
+        let mut update_transition = IdentityUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::IdentityUpdate,
+            identity_id: dpns_contract::OWNER_ID_BYTES.into(),
+            revision: 0,
+            add_public_keys: vec![new_key],
+            disable_public_keys: vec![],
+            public_keys_disabled_at: None,
+            signature_public_key_id: 1,
+            signature: Default::default(),
+        };
+
+        let signature = signer::sign(
+            &update_transition
+                .signable_bytes()
+                .expect("expected signable bytes"),
+            &high_secret_key.secret_bytes(),
+        )
+        .expect("expected to sign");
+
+        update_transition.signature = signature.to_vec().into();
+
+        let transition: StateTransition = update_transition.into();
+
+        let update_transition_bytes = transition.serialize().expect("expected to serialize");
+
+        let validation_result = platform
+            .check_tx(update_transition_bytes.as_slice())
+            .expect("expected to execute identity top up tx");
+
+        // Only master keys can sign an update
+
+        validation_result.errors.first().expect("expected an error");
     }
 }
