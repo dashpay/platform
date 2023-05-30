@@ -50,7 +50,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
       .createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLike = {
-      fetchDataContract: async () => reCreatedDataContract,
+      fetchDataContract: () => reCreatedDataContract,
     };
 
     validateTransitionWithExistingContract = (t) => validateDataContractUpdateTransitionState(
@@ -62,7 +62,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
   it('should return invalid result if Data Contract with specified contractId was not found', async () => {
     const stateRepositoryLikeNoDataContract = {
-      fetchDataContract: async () => undefined,
+      fetchDataContract: () => undefined,
     };
 
     const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
@@ -109,7 +109,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
   it('should return valid result on dry run', async () => {
     const stateRepositoryLikeNoDataContract = {
-      fetchDataContract: async () => undefined,
+      fetchDataContract: () => undefined,
     };
 
     const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
