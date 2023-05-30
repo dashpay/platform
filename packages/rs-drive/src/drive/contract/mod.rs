@@ -158,6 +158,31 @@ pub struct ContractFetchInfo {
 
 #[cfg(feature = "full")]
 impl Drive {
+    fn fetch_contract_history_query(
+        contract_id: [u8; 32],
+        start_at_date: u64,
+        limit: Option<u16>,
+        offset: Option<u16>,
+    ) -> Result<PathQuery, Error> {
+        let limit = limit.unwrap_or_else(|| MAX_CONTRACT_HISTORY_FETCH_LIMIT);
+        if limit > MAX_CONTRACT_HISTORY_FETCH_LIMIT || limit < 1 {
+            return Err(Error::Drive(DriveError::InvalidContractHistoryFetchLimit(
+                limit,
+            )));
+        }
+
+        let query = Query::new_single_query_item_with_direction(
+            QueryItem::RangeAfter(std::ops::RangeFrom {
+                start: encode_u64(start_at_date),
+            }),
+            false,
+        );
+
+        Ok(PathQuery::new(
+            paths::contract_keeping_history_storage_path_vec(&contract_id),
+            SizedQuery::new(query, Some(limit), offset),
+        ))
+    }
     /// Adds a contract to storage.
     fn add_contract_to_storage(
         &self,
@@ -1230,25 +1255,10 @@ impl Drive {
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<BTreeMap<u64, Contract>, Error> {
-        let limit = limit.unwrap_or_else(|| MAX_CONTRACT_HISTORY_FETCH_LIMIT);
-        if limit > MAX_CONTRACT_HISTORY_FETCH_LIMIT || limit < 1 {
-            return Err(Error::Drive(DriveError::InvalidContractHistoryFetchLimit(
-                limit,
-            )));
-        }
         let mut ops = Vec::new();
 
-        let query = Query::new_single_query_item_with_direction(
-            QueryItem::RangeAfter(std::ops::RangeFrom {
-                start: encode_u64(start_at_date),
-            }),
-            false,
-        );
-
-        let path_query = PathQuery::new(
-            paths::contract_keeping_history_storage_path_vec(&contract_id),
-            SizedQuery::new(query, Some(limit), offset),
-        );
+        let path_query =
+            Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
 
         let (results, _cost) = self.grove_get_path_query(
             &path_query,

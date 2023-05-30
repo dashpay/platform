@@ -311,7 +311,6 @@ mod tests {
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
-        use drive::drive::contract::ContractHistoryFetchInfo;
         use drive::error::drive::DriveError;
         use drive::error::Error;
         use serde_json::json;
