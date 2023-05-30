@@ -1,3 +1,4 @@
+use crate::block::BlockExecutionContext;
 use crate::platform::PlatformWithBlockContextRef;
 use crate::rpc::core::CoreRPCLike;
 use anyhow::{anyhow, Result as AnyResult};
@@ -138,11 +139,12 @@ where
             _ => Ok(None),
         }?;
 
+        // TODO: We should have required information (epoch and so on) is platform state in case if execution context doesn't exist
+        let initial_block_execution_context = BlockExecutionContext::default();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
+        let block_execution_context = guarded_block_execution_context
+            .as_ref()
+            .unwrap_or(&initial_block_execution_context);
 
         let contract_fetch_info = self
             .platform
@@ -194,11 +196,13 @@ where
         }?;
 
         let state = self.platform.state.read().unwrap();
+
+        // TODO: We should have required information (epoch and so on) is platform state in case if execution context doesn't exist
+        let initial_block_execution_context = BlockExecutionContext::default();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
+        let block_execution_context = guarded_block_execution_context
+            .as_ref()
+            .unwrap_or(&initial_block_execution_context);
 
         let contract_fetch_info = self
             .platform
@@ -365,11 +369,12 @@ where
             _ => Ok(None),
         }?;
 
+        // TODO: We should have required information (epoch and so on) is platform state in case if execution context doesn't exist
+        let initial_block_execution_context = BlockExecutionContext::default();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
+        let block_execution_context = guarded_block_execution_context
+            .as_ref()
+            .unwrap_or(&initial_block_execution_context);
 
         let epoch = Epoch::new(block_execution_context.epoch_info.current_epoch_index)?;
 
@@ -405,11 +410,12 @@ where
             _ => Ok(None),
         }?;
 
+        // TODO: We should have required information (epoch and so on) is platform state in case if execution context doesn't exist
+        let initial_block_execution_context = BlockExecutionContext::default();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
+        let block_execution_context = guarded_block_execution_context
+            .as_ref()
+            .unwrap_or(&initial_block_execution_context);
 
         let epoch = Epoch::new(block_execution_context.epoch_info.current_epoch_index)?;
 
@@ -535,11 +541,12 @@ where
     }
 
     fn fetch_latest_platform_core_chain_locked_height(&self) -> AnyResult<Option<u32>> {
+        // TODO: We should have required information (epoch and so on) is platform state in case if execution context doesn't exist
+        let initial_block_execution_context = BlockExecutionContext::default();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
+        let block_execution_context = guarded_block_execution_context
+            .as_ref()
+            .unwrap_or(&initial_block_execution_context);
 
         Ok(Some(
             block_execution_context
@@ -559,21 +566,41 @@ where
     }
 
     fn fetch_latest_platform_block_time(&self) -> AnyResult<u64> {
+        let guarded_state = self.platform.state.read().unwrap();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
 
-        Ok(block_execution_context.block_state_info.block_time_ms)
+        let mut block_time_ms = guarded_block_execution_context
+            .as_ref()
+            .map(|context| context.block_state_info.block_time_ms)
+            .or_else(|| {
+                guarded_state
+                    .last_committed_block_info
+                    .as_ref()
+                    .map(|info| info.basic_info.time_ms)
+            });
+
+        // If there is no block time, we are in the genesis block
+        // and should use genesis time
+        if block_time_ms.is_none() {
+            let genesis_time_ms = self
+                .platform
+                .drive
+                .get_genesis_time(None)?
+                .unwrap_or_default();
+
+            block_time_ms.replace(genesis_time_ms);
+        }
+
+        Ok(block_time_ms.unwrap())
     }
 
     fn fetch_latest_platform_block_height(&self) -> AnyResult<u64> {
+        // TODO: We should have required information (epoch and so on) is platform state in case if execution context doesn't exist
+        let initial_block_execution_context = BlockExecutionContext::default();
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(anyhow!("there should be an execution context when calling fetch_data_contract from dpp via state repository"))?;
+        let block_execution_context = guarded_block_execution_context
+            .as_ref()
+            .unwrap_or(&initial_block_execution_context);
 
         Ok(block_execution_context.block_state_info.height)
     }

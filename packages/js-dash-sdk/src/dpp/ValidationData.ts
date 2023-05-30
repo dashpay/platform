@@ -183,6 +183,23 @@ class ValidationData {
         }
         break;
       }
+      case StateTransitionTypes.DataContractUpdate: {
+        // Fetch unique data contracts from document transitions
+
+        // @ts-ignore
+        const idBuffer = rawStateTransition?.dataContract?.$id;
+
+        if (idBuffer) {
+          // @ts-ignore
+          const dataContractId = Identifier.from(Buffer.from(idBuffer));
+
+          const dataContract = await this.client.platform.contracts.get(dataContractId);
+
+          this.setDataContract(dataContract.getId(), dataContract);
+        }
+
+        break;
+      }
       default:
     }
   }

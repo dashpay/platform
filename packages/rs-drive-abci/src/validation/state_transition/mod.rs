@@ -50,9 +50,12 @@ where
     SR: StateRepositoryLike + Clone,
     BLS: BlsModule + Clone,
 {
+    // Run DPP validation methods and print consensus errors so we can see
+    // the difference between DPP and Drive-based validation
+
     let execution_context = StateTransitionExecutionContext::default();
 
-    // Basic validation
+    // Basic DPP validation
     let result = dpp
         .state_transitions
         .basic_validator
@@ -63,31 +66,29 @@ where
             &execution_context,
         )?;
 
-    if !result.is_valid() {
+    if result.is_valid() {
+        // Signature validation
+        let result = dpp
+            .state_transitions
+            .validate_signature(state_transition.clone(), &execution_context)?;
+
+        if result.is_valid() {
+            // State validation
+            let result = dpp
+                .state_transitions
+                .validate_state(&state_transition, &execution_context)?;
+
+            if !result.is_valid() {
+                dbg!("State validation errors", &result.errors);
+            }
+        } else {
+            dbg!("Signature validation errors", &result.errors);
+        }
+    } else {
         dbg!("Structure validation errors", &result.errors);
     }
 
-    // Signature
-
-    let result = dpp
-        .state_transitions
-        .validate_signature(state_transition.clone(), &execution_context)?;
-
-    if !result.is_valid() {
-        dbg!("Signature validation errors", &result.errors);
-    }
-
-    // State
-
-    let result = dpp
-        .state_transitions
-        .validate_state(&state_transition, &execution_context)?;
-
-    if !result.is_valid() {
-        dbg!("State validation errors", &result.errors);
-    }
-
-    // TODO: And then we run new validation methods to double check
+    // Run Drive-based validation
 
     // Validating structure
     let result = state_transition.validate_structure(platform.drive, transaction)?;

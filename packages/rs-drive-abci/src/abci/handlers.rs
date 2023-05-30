@@ -584,8 +584,9 @@ where
                 })
             }
             Err(error) => {
+                let message = format!("Drive check_tx system error: {}", error.to_string());
                 let error_data = json!({
-                    "message": "Drive check_tx system error",
+                    "message": message,
                     "error": error.to_string()
                 });
 

@@ -59,7 +59,7 @@ describe('Platform', () => {
     });
 
     it('should fail to create new document with an unknown type', async () => {
-      // Add undefined document type for
+      // Add undefined document type to the contract cache to pass local validation
       client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
         properties: {
