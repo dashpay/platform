@@ -6,7 +6,9 @@ use crate::identity::KeyType;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Unsupported signature type {public_key_type}. Please use ECDSA (0), BLS (1) or ECDSA_HASH160 (2) keys to sign the state transition")]
 pub struct InvalidIdentityPublicKeyTypeError {
     /*

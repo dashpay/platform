@@ -5,11 +5,12 @@ use crate::consensus::signature::{
     SignatureShouldNotBePresentError, WrongPublicKeyPurposeError,
 };
 use crate::consensus::ConsensusError;
+use bincode::{Decode, Encode};
 use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum SignatureError {
     /*
 

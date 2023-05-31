@@ -1,10 +1,11 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use bincode::{Decode, Encode};
 use dashcore::Txid;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Asset lock transaction ${transaction_id:?} output ${output_index:?} already used")]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
     /*
@@ -12,6 +13,7 @@ pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
+    #[bincode(with_serde)]
     transaction_id: Txid,
     output_index: usize,
 }
