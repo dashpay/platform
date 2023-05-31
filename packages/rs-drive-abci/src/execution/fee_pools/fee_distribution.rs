@@ -33,18 +33,20 @@
 //!
 
 use crate::error::execution::ExecutionError;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
+use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
@@ -103,8 +105,25 @@ impl UnpaidEpoch {
     }
 }
 
-/// Constant to be removed
-pub const CORE_BLOCK_DISTRIBUTION: Credits = 70000000000; //todo: update
+/// Taken from Core Chain params
+pub const CORE_SUBSIDY_HALVING_INTERVAL: u32 = 210240;
+/// ORIGINAL CORE BLOCK DISTRIBUTION
+/// STARTS AT 25 Dash
+/// Take 60% for Masternodes
+/// Take 37.5% of that for Platform
+const CORE_BLOCK_START_SUBSIDY: Credits = 585000000000;
+
+lazy_static! {
+    /// The core epoch distribution table
+    pub static ref CORE_EPOCH_DISTRIBUTION: HashMap<EpochIndex, Credits> = {
+        let mut distribution = CORE_BLOCK_START_SUBSIDY;
+        (0..100).into_iter().map(|i| {
+            let old_distribution = distribution;
+            distribution -= distribution / 14;
+            (i, old_distribution)
+        }).collect()
+    };
+}
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the op batch which distribute fees
@@ -131,16 +150,23 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         };
 
         // Process more proposers at once if we have many unpaid epochs in past
-        let proposers_limit: u16 = (current_epoch_index - unpaid_epoch.epoch_index) * 5000; //todo: remove this
+        let proposers_limit: u16 = u16::MAX; //(current_epoch_index - unpaid_epoch.epoch_index) * 50;
 
-        let reward_fees = Self::epoch_core_reward_credits_for_distribution(
+        let subsidized_reward_fees = Self::epoch_core_reward_credits_for_distribution(
             unpaid_epoch.start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
         )?;
 
+        // We must add to the system credits the epoch subsidy
+        batch.push(DriveOperation::SystemOperation(
+            SystemOperationType::AddToSystemCredits {
+                amount: subsidized_reward_fees,
+            },
+        ));
+
         let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
             &unpaid_epoch,
-            reward_fees,
+            subsidized_reward_fees,
             proposers_limit,
             transaction,
             batch,
@@ -273,13 +299,40 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         epoch_start_block_core_height: u32,
         next_epoch_start_block_core_height: u32,
     ) -> Result<Credits, Error> {
-        // The amount of credits given is equal to the amount of blocks
-        let core_block_count =
-            next_epoch_start_block_core_height.saturating_sub(epoch_start_block_core_height);
+        // Calculate the start and end epoch indices
+        let start_epoch_index =
+            (epoch_start_block_core_height / CORE_SUBSIDY_HALVING_INTERVAL) as EpochIndex;
+        let end_epoch_index =
+            (next_epoch_start_block_core_height / CORE_SUBSIDY_HALVING_INTERVAL) as EpochIndex;
 
-        //Todo: get the actual distribution based on core epochs (with a reduction of 7% per year).
+        let mut total_core_rewards = 0;
 
-        Ok(core_block_count as u64 * CORE_BLOCK_DISTRIBUTION)
+        // Iterate through all epochs in the range
+        for epoch_index in start_epoch_index..=end_epoch_index {
+            // Calculate the block count for this epoch
+            let epoch_end_block = if epoch_index == end_epoch_index {
+                next_epoch_start_block_core_height
+            } else {
+                (epoch_index + 1) as u32 * CORE_SUBSIDY_HALVING_INTERVAL
+            };
+
+            let epoch_start_block = if epoch_index == start_epoch_index {
+                epoch_start_block_core_height
+            } else {
+                epoch_index as u32 * CORE_SUBSIDY_HALVING_INTERVAL
+            };
+
+            let block_count = epoch_end_block - epoch_start_block;
+
+            // Fetch the core block distribution for the corresponding epoch from the distribution table
+            // Default to 0 if the epoch index is not found in the distribution table
+            let core_block_distribution = CORE_EPOCH_DISTRIBUTION.get(&epoch_index).unwrap_or(&0);
+
+            // Calculate the core rewards for this epoch and add to the total
+            total_core_rewards += block_count as u64 * *core_block_distribution;
+        }
+
+        Ok(total_core_rewards)
     }
 
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
@@ -441,7 +494,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
 
-        batch.push(DriveOperation::GroveDBOperation(current_epoch.update_processing_fee_pool_operation(total_processing_fees)?));
+        batch.push(DriveOperation::GroveDBOperation(
+            current_epoch.update_processing_fee_pool_operation(total_processing_fees)?,
+        ));
 
         // update storage fee pool
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
@@ -453,9 +508,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let total_storage_fees = storage_distribution_credits_in_fee_pool + block_fees.storage_fee;
 
-        batch.push(DriveOperation::GroveDBOperation(update_storage_fee_distribution_pool_operation(
-            storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
-        )?));
+        batch.push(DriveOperation::GroveDBOperation(
+            update_storage_fee_distribution_pool_operation(
+                storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
+            )?,
+        ));
 
         Ok(FeesInPools {
             processing_fees: total_processing_fees,
@@ -573,7 +630,9 @@ mod tests {
             };
 
             platform
-                .drive.apply_drive_operations(batch, true, &block_info, Some(&transaction)).expect("expected to apply batch");
+                .drive
+                .apply_drive_operations(batch, true, &block_info, Some(&transaction))
+                .expect("expected to apply batch");
 
             assert!(matches!(
                 proposer_payouts,
@@ -1478,7 +1537,11 @@ mod tests {
 
             let mut batch = vec![];
 
-            current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
+            let mut inner_batch = GroveDbOpBatch::new();
+
+            current_epoch_tree.add_init_current_operations(1.0, 1, 1, 1, &mut inner_batch);
+
+            batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
             let processing_fees = 1000000;
             let storage_fees = 2000000;

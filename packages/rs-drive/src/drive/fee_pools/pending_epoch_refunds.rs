@@ -228,8 +228,8 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
     mod fetch_and_add_pending_epoch_refunds_to_collection {
-        use dpp::block::block_info::BlockInfo;
         use super::*;
+        use dpp::block::block_info::BlockInfo;
 
         #[test]
         fn should_fetch_and_merge_pending_updates() {
@@ -247,8 +247,7 @@ mod tests {
             add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
                 .expect("should update pending epoch updates");
 
-            platform
-                .drive
+            drive
                 .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 
@@ -273,8 +272,8 @@ mod tests {
 
     mod add_delete_pending_epoch_refunds_except_specified_operations {
         use super::*;
-        use grovedb::batch::Op;
         use dpp::block::block_info::BlockInfo;
+        use grovedb::batch::Op;
 
         #[test]
         fn should_add_delete_operations() {
@@ -292,8 +291,7 @@ mod tests {
             add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
                 .expect("should update pending epoch updates");
 
-            platform
-                .drive
+            drive
                 .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
                 .expect("should apply batch");
 

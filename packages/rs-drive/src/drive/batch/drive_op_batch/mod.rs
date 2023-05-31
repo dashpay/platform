@@ -52,10 +52,10 @@ pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -143,12 +143,12 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     block_info,
                     transaction,
                 ),
-            DriveOperation::GroveDBOperation(op) => {
-                Ok(vec![GroveOperation(op)])
-            }
-            DriveOperation::GroveDBOpBatch(operations) => {
-                Ok(operations.operations.into_iter().map(|op| GroveOperation(op)).collect())
-            }
+            DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
+            DriveOperation::GroveDBOpBatch(operations) => Ok(operations
+                .operations
+                .into_iter()
+                .map(|op| GroveOperation(op))
+                .collect()),
         }
     }
 }

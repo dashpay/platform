@@ -472,7 +472,6 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
-        assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances

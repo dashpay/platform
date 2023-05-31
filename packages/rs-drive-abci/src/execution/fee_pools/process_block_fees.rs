@@ -90,7 +90,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
     ) -> Result<Option<StorageFeeDistributionOutcome>, Error> {
-
         let mut inner_batch = GroveDbOpBatch::new();
 
         // init next thousandth empty epochs since last initiated
@@ -116,6 +115,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         // Nothing to distribute on genesis epoch start
         if current_epoch.index == GENESIS_EPOCH_INDEX {
+            batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
             return Ok(None);
         }
 
@@ -174,12 +174,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             None
         };
 
-        batch.push(DriveOperation::GroveDBOperation(current_epoch.increment_proposer_block_count_operation(
-            &self.drive,
-            &block_info.proposer_pro_tx_hash,
-            cached_previous_block_count,
-            Some(transaction),
-        )?));
+        batch.push(DriveOperation::GroveDBOperation(
+            current_epoch.increment_proposer_block_count_operation(
+                &self.drive,
+                &block_info.proposer_pro_tx_hash,
+                cached_previous_block_count,
+                Some(transaction),
+            )?,
+        ));
 
         // Distribute fees from unpaid epoch pool to proposers
 
@@ -227,8 +229,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds)?;
 
-        self.drive
-            .apply_drive_operations(batch, true, &block_info.to_block_info(epoch_info.try_into()?), Some(transaction))?;
+        self.drive.apply_drive_operations(
+            batch,
+            true,
+            &block_info.to_block_info(epoch_info.try_into()?),
+            Some(transaction),
+        )?;
 
         let outcome = ProcessedBlockFeesOutcome {
             fees_in_pools,
@@ -277,8 +283,8 @@ mod tests {
         use super::*;
 
         mod helpers {
-            use dpp::block::block_info::BlockInfo;
             use super::*;
+            use dpp::block::block_info::BlockInfo;
             use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate an epoch change
@@ -312,7 +318,12 @@ mod tests {
 
                     platform
                         .drive
-                        .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+                        .apply_drive_operations(
+                            batch,
+                            true,
+                            &BlockInfo::default(),
+                            Some(&transaction),
+                        )
                         .expect("should apply batch");
                 }
 

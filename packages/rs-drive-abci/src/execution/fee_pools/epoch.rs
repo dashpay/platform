@@ -36,11 +36,11 @@
 use crate::block::BlockStateInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::block::epoch::Epoch;
+use dpp::ProtocolError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use dpp::block::epoch::Epoch;
-use dpp::ProtocolError;
 
 /// Lifetime of an epoch in milliseconds.
 pub const EPOCH_CHANGE_TIME_MS: u64 = 1576800000;
