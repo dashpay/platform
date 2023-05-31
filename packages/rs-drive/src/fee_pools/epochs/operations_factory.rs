@@ -494,7 +494,7 @@ mod tests {
                 .expect_err("should not get processing fee");
 
             let proposers = drive
-                .get_epoch_proposers(&epoch, 1, Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(1), Some(&transaction))
                 .expect("should get proposers");
 
             assert_eq!(proposers, vec!());
@@ -827,7 +827,7 @@ mod tests {
                 .expect("should apply batch");
 
             let mut stored_proposers = drive
-                .get_epoch_proposers(&epoch, 20, Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(20), Some(&transaction))
                 .expect("should get proposers");
 
             let mut awaited_result = pro_tx_hashes
@@ -860,7 +860,7 @@ mod tests {
                 .expect("should apply batch");
 
             let stored_proposers = drive
-                .get_epoch_proposers(&epoch, 20, Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(20), Some(&transaction))
                 .expect("should get proposers");
 
             let mut stored_hexes: Vec<String> = stored_proposers

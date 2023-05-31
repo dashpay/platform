@@ -65,25 +65,25 @@ pub struct ProposersPayouts {
     /// Number of proposers to be paid
     pub proposers_paid_count: u16,
     /// Index of last epoch marked as paid
-    pub paid_epoch_index: u16,
+    pub paid_epoch_index: EpochIndex,
 }
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeesInPools {
     /// Amount of processing fees in the distribution pools
-    pub processing_fees: u64,
+    pub processing_fees: Credits,
     /// Amount of storage fees in the distribution pools
-    pub storage_fees: u64,
+    pub storage_fees: Credits,
 }
 
 /// Struct containing info about an epoch containing fees that have not been paid out yet.
 #[derive(Default, PartialEq, Eq)]
 pub struct UnpaidEpoch {
     /// Index of the current epoch
-    pub epoch_index: u16,
+    pub epoch_index: EpochIndex,
     /// Index of the next unpaid epoch
-    pub next_unpaid_epoch_index: u16,
+    pub next_unpaid_epoch_index: EpochIndex,
     /// Block height of the first block in the epoch
     pub start_block_height: u64,
     /// Block height of the first block in next epoch
@@ -105,18 +105,20 @@ impl UnpaidEpoch {
     }
 }
 
-/// Taken from Core Chain params
+/// Actual number of core blocks per calendar year with DGW v3 is ~200700 (for example 449750 - 249050)
 pub const CORE_SUBSIDY_HALVING_INTERVAL: u32 = 210240;
+
 /// ORIGINAL CORE BLOCK DISTRIBUTION
 /// STARTS AT 25 Dash
 /// Take 60% for Masternodes
 /// Take 37.5% of that for Platform
-const CORE_BLOCK_START_SUBSIDY: Credits = 585000000000;
+const CORE_GENESIS_BLOCK_SUBSIDY: Credits = 585000000000;
 
 lazy_static! {
-    /// The core epoch distribution table
-    pub static ref CORE_EPOCH_DISTRIBUTION: HashMap<EpochIndex, Credits> = {
-        let mut distribution = CORE_BLOCK_START_SUBSIDY;
+    /// The Core reward halving distribution table for 100 years
+    /// Yearly decline of production by ~7.1% per year, projected ~18M coins max by year 2050+.
+    pub static ref CORE_HALVING_DISTRIBUTION: HashMap<u16, Credits> = {
+        let mut distribution = CORE_GENESIS_BLOCK_SUBSIDY;
         (0..100).into_iter().map(|i| {
             let old_distribution = distribution;
             distribution -= distribution / 14;
@@ -149,41 +151,36 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             return Ok(None);
         };
 
-        // Process more proposers at once if we have many unpaid epochs in past
-        let proposers_limit: u16 = u16::MAX; //(current_epoch_index - unpaid_epoch.epoch_index) * 50;
-
-        let subsidized_reward_fees = Self::epoch_core_reward_credits_for_distribution(
+        // Calculate core block reward for the unpaid epoch
+        let core_block_rewards = Self::epoch_core_reward_credits_for_distribution(
             unpaid_epoch.start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
         )?;
 
-        // We must add to the system credits the epoch subsidy
+        // We must add to the system credits the epoch core block rewards
+        // On the Core side we move block rewards every block to asset lock pool
         batch.push(DriveOperation::SystemOperation(
             SystemOperationType::AddToSystemCredits {
-                amount: subsidized_reward_fees,
+                amount: core_block_rewards,
             },
         ));
 
         let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
             &unpaid_epoch,
-            subsidized_reward_fees,
-            proposers_limit,
+            core_block_rewards,
             transaction,
             batch,
         )?;
 
         let mut inner_batch = GroveDbOpBatch::new();
 
-        // if less then a limit paid then mark the epoch pool as paid
-        if proposers_paid_count < proposers_limit {
-            let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
+        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
 
-            unpaid_epoch_tree.add_mark_as_paid_operations(&mut inner_batch);
+        unpaid_epoch_tree.add_mark_as_paid_operations(&mut inner_batch);
 
-            inner_batch.push(update_unpaid_epoch_index_operation(
-                unpaid_epoch.next_unpaid_epoch_index,
-            ));
-        }
+        inner_batch.push(update_unpaid_epoch_index_operation(
+            unpaid_epoch.next_unpaid_epoch_index,
+        ));
 
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
@@ -299,37 +296,45 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         epoch_start_block_core_height: u32,
         next_epoch_start_block_core_height: u32,
     ) -> Result<Credits, Error> {
-        // Calculate the start and end epoch indices
-        let start_epoch_index =
+        // Core is halving block rewards every year so we need to pay
+        // core block rewards according to halving ratio for the all years during
+        // the platform epoch payout period (unpaid epoch)
+
+        // Calculate start and end years for the platform epoch payout period
+        // according to start and end core block heights
+        let start_core_reward_year =
             (epoch_start_block_core_height / CORE_SUBSIDY_HALVING_INTERVAL) as EpochIndex;
-        let end_epoch_index =
+        let end_core_reward_year =
             (next_epoch_start_block_core_height / CORE_SUBSIDY_HALVING_INTERVAL) as EpochIndex;
 
         let mut total_core_rewards = 0;
 
-        // Iterate through all epochs in the range
-        for epoch_index in start_epoch_index..=end_epoch_index {
-            // Calculate the block count for this epoch
-            let epoch_end_block = if epoch_index == end_epoch_index {
+        // Calculate block rewards for each core reward year during the platform epoch payout period
+        for core_reward_year in start_core_reward_year..=end_core_reward_year {
+            // Calculate the block count per core reward year
+
+            let core_reward_year_start_block = if core_reward_year == end_core_reward_year {
                 next_epoch_start_block_core_height
             } else {
-                (epoch_index + 1) as u32 * CORE_SUBSIDY_HALVING_INTERVAL
+                (core_reward_year + 1) as u32 * CORE_SUBSIDY_HALVING_INTERVAL
             };
 
-            let epoch_start_block = if epoch_index == start_epoch_index {
+            let core_reward_year_end_block = if core_reward_year == start_core_reward_year {
                 epoch_start_block_core_height
             } else {
-                epoch_index as u32 * CORE_SUBSIDY_HALVING_INTERVAL
+                core_reward_year as u32 * CORE_SUBSIDY_HALVING_INTERVAL
             };
 
-            let block_count = epoch_end_block - epoch_start_block;
+            let block_count = core_reward_year_start_block - core_reward_year_end_block;
 
             // Fetch the core block distribution for the corresponding epoch from the distribution table
-            // Default to 0 if the epoch index is not found in the distribution table
-            let core_block_distribution = CORE_EPOCH_DISTRIBUTION.get(&epoch_index).unwrap_or(&0);
+            // Default to 0 if the core reward year is more than 100 years in the future
+            let core_block_distribution_ratio = CORE_HALVING_DISTRIBUTION
+                .get(&core_reward_year)
+                .unwrap_or(&0);
 
             // Calculate the core rewards for this epoch and add to the total
-            total_core_rewards += block_count as u64 * *core_block_distribution;
+            total_core_rewards += block_count as Credits * *core_block_distribution_ratio;
         }
 
         Ok(total_core_rewards)
@@ -342,8 +347,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     fn add_epoch_pool_to_proposers_payout_operations(
         &self,
         unpaid_epoch: &UnpaidEpoch,
-        reward_fees: Credits,
-        proposers_limit: u16,
+        core_block_rewards: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
     ) -> Result<u16, Error> {
@@ -355,37 +359,35 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction))
             .map_err(Error::Drive)?;
 
-        let total_fees = storage_and_processing_fees
-            .checked_add(reward_fees)
+        let total_payouts = storage_and_processing_fees
+            .checked_add(core_block_rewards)
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::Overflow("overflow when adding reward fees"))
             })?;
 
-        let mut remaining_fees = total_fees;
+        let mut remaining_payouts = total_payouts;
 
         // Calculate block count
         let unpaid_epoch_block_count = unpaid_epoch.block_count()?;
 
         let proposers = self
             .drive
-            .get_epoch_proposers(&unpaid_epoch_tree, proposers_limit, Some(transaction))
+            .get_epoch_proposers(&unpaid_epoch_tree, None, Some(transaction))
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
 
-        let mut proposers_pro_tx_hashes = vec![];
-
         for (i, (proposer_tx_hash, proposed_block_count)) in proposers.into_iter().enumerate() {
             let i = i as u16;
 
-            let total_masternode_reward = total_fees
+            let total_masternode_payout = total_payouts
                 .checked_mul(proposed_block_count)
                 .and_then(|r| r.checked_div(unpaid_epoch_block_count))
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow when getting masternode reward division",
                 )))?;
 
-            let mut masternode_reward_leftover = total_masternode_reward;
+            let mut masternode_payout_leftover = total_masternode_payout;
 
             let documents =
                 self.get_reward_shares_list_for_masternode(&proposer_tx_hash, Some(transaction))?;
@@ -410,7 +412,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                         ))
                     })?;
 
-                let share_reward = total_masternode_reward
+                let share_payout = total_masternode_payout
                     .checked_mul(share_percentage)
                     .and_then(|a| a.checked_div(10000))
                     .ok_or(Error::Execution(ExecutionError::Overflow(
@@ -418,29 +420,28 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                     )))?;
 
                 // update masternode reward that would be paid later
-                masternode_reward_leftover = masternode_reward_leftover
-                    .checked_sub(share_reward)
+                masternode_payout_leftover = masternode_payout_leftover
+                    .checked_sub(share_payout)
                     .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow when subtracting for the masternode share leftover",
                 )))?;
 
                 drive_operations.push(IdentityOperation(AddToIdentityBalance {
                     identity_id: pay_to_id.to_buffer(),
-                    added_balance: share_reward,
+                    added_balance: share_payout,
                 }));
             }
 
-            remaining_fees =
-                remaining_fees
-                    .checked_sub(total_masternode_reward)
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "overflow when subtracting for the remaining fees",
-                    )))?;
+            remaining_payouts = remaining_payouts
+                .checked_sub(total_masternode_payout)
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow when subtracting for the remaining fees",
+                )))?;
 
-            let masternode_reward_given = if i == proposers_len - 1 {
-                remaining_fees + masternode_reward_leftover
+            let proposer_payout = if i == proposers_len - 1 {
+                remaining_payouts + masternode_payout_leftover
             } else {
-                masternode_reward_leftover
+                masternode_payout_leftover
             };
 
             let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
@@ -451,19 +452,15 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
             drive_operations.push(IdentityOperation(AddToIdentityBalance {
                 identity_id: proposer,
-                added_balance: masternode_reward_given,
+                added_balance: proposer_payout,
             }));
-
-            proposers_pro_tx_hashes.push(proposer_tx_hash);
         }
 
-        let mut operations = self.drive.convert_drive_operations_to_grove_operations(
+        let operations = self.drive.convert_drive_operations_to_grove_operations(
             drive_operations,
             &BlockInfo::default(),
             Some(transaction),
         )?;
-
-        unpaid_epoch_tree.add_delete_proposers_operations(proposers_pro_tx_hashes, &mut operations);
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
 
@@ -559,296 +556,6 @@ mod tests {
         }
 
         #[test]
-        fn test_set_proposers_limit_50_for_one_unpaid_epoch() {
-            let platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
-
-            let transaction = platform.drive.grove.start_transaction();
-
-            // Create masternode reward shares contract
-            platform.create_mn_shares_contract(Some(&transaction));
-
-            // Create epochs
-
-            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
-
-            let current_epoch_index = GENESIS_EPOCH_INDEX + 1;
-
-            let epoch_tree_1 = Epoch::new(current_epoch_index).unwrap();
-
-            let mut batch = GroveDbOpBatch::new();
-
-            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
-
-            batch.push(
-                unpaid_epoch_tree_0
-                    .update_processing_fee_pool_operation(10000)
-                    .expect("should add operation"),
-            );
-
-            let proposers_count = 100u16;
-
-            epoch_tree_1.add_init_current_operations(
-                1.0,
-                proposers_count as u64 + 1,
-                1,
-                2,
-                &mut batch,
-            );
-
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-
-            create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch_tree_0,
-                proposers_count,
-                Some(59), //random number
-                Some(&transaction),
-            );
-
-            let mut batch = vec![];
-
-            let proposer_payouts = platform
-                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
-                    current_epoch_index,
-                    None,
-                    None,
-                    &transaction,
-                    &mut batch,
-                )
-                .expect("should distribute fees");
-
-            let block_info = BlockInfo {
-                time_ms: 1,
-                height: 2,
-                core_height: 2,
-                epoch: Epoch::new(1).unwrap(),
-            };
-
-            platform
-                .drive
-                .apply_drive_operations(batch, true, &block_info, Some(&transaction))
-                .expect("expected to apply batch");
-
-            assert!(matches!(
-                proposer_payouts,
-                Some(ProposersPayouts {
-                    proposers_paid_count: 50,
-                    paid_epoch_index: 0,
-                })
-            ));
-        }
-
-        #[test]
-        fn test_increased_proposers_limit_to_100_for_two_unpaid_epochs() {
-            let platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
-            let transaction = platform.drive.grove.start_transaction();
-
-            // Create masternode reward shares contract
-            platform.create_mn_shares_contract(Some(&transaction));
-
-            // Create epochs
-
-            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
-            let unpaid_epoch_tree_1 = Epoch::new(GENESIS_EPOCH_INDEX + 1).unwrap();
-
-            let current_epoch_index = GENESIS_EPOCH_INDEX + 2;
-
-            let epoch_tree_2 = Epoch::new(current_epoch_index).unwrap();
-
-            let mut batch = GroveDbOpBatch::new();
-
-            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
-
-            batch.push(
-                unpaid_epoch_tree_0
-                    .update_processing_fee_pool_operation(10000)
-                    .expect("should add operation"),
-            );
-
-            let proposers_count = 100u16;
-
-            unpaid_epoch_tree_1.add_init_current_operations(
-                1.0,
-                proposers_count as u64 + 1,
-                1,
-                2,
-                &mut batch,
-            );
-
-            epoch_tree_2.add_init_current_operations(
-                1.0,
-                proposers_count as u64 * 2 + 1,
-                1,
-                3,
-                &mut batch,
-            );
-
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-
-            create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch_tree_0,
-                proposers_count,
-                Some(57), //random number
-                Some(&transaction),
-            );
-
-            create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch_tree_1,
-                proposers_count,
-                Some(58), //random number
-                Some(&transaction),
-            );
-
-            let mut batch = vec![];
-
-            let proposer_payouts = platform
-                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
-                    current_epoch_index,
-                    None,
-                    None,
-                    &transaction,
-                    &mut batch,
-                )
-                .expect("should distribute fees");
-
-            platform
-                .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
-                .expect("should apply batch");
-
-            assert!(matches!(
-                proposer_payouts,
-                Some(ProposersPayouts {
-                    proposers_paid_count: 100,
-                    paid_epoch_index: 0,
-                })
-            ));
-        }
-
-        #[test]
-        fn test_increased_proposers_limit_to_150_for_three_unpaid_epochs() {
-            let platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
-            let transaction = platform.drive.grove.start_transaction();
-
-            // Create masternode reward shares contract
-            platform.create_mn_shares_contract(Some(&transaction));
-
-            // Create epochs
-
-            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
-            let unpaid_epoch_tree_1 = Epoch::new(GENESIS_EPOCH_INDEX + 1).unwrap();
-            let unpaid_epoch_tree_2 = Epoch::new(GENESIS_EPOCH_INDEX + 2).unwrap();
-
-            let current_epoch_index = GENESIS_EPOCH_INDEX + 3;
-
-            let epoch_tree_3 = Epoch::new(current_epoch_index).unwrap();
-
-            let mut batch = GroveDbOpBatch::new();
-
-            unpaid_epoch_tree_0.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
-
-            batch.push(
-                unpaid_epoch_tree_0
-                    .update_processing_fee_pool_operation(10000)
-                    .expect("should add operation"),
-            );
-
-            let proposers_count = 200u16;
-
-            unpaid_epoch_tree_1.add_init_current_operations(
-                1.0,
-                proposers_count as u64 + 1,
-                1,
-                2,
-                &mut batch,
-            );
-
-            unpaid_epoch_tree_2.add_init_current_operations(
-                1.0,
-                proposers_count as u64 * 2 + 1,
-                5,
-                3,
-                &mut batch,
-            );
-
-            epoch_tree_3.add_init_current_operations(
-                1.0,
-                proposers_count as u64 * 3 + 1,
-                7,
-                3,
-                &mut batch,
-            );
-
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-
-            create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch_tree_0,
-                proposers_count,
-                Some(62), //random number
-                Some(&transaction),
-            );
-
-            create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch_tree_1,
-                proposers_count,
-                Some(61), //random number
-                Some(&transaction),
-            );
-
-            create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch_tree_2,
-                proposers_count,
-                Some(60), //random number
-                Some(&transaction),
-            );
-
-            let mut batch = vec![];
-
-            let proposer_payouts = platform
-                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
-                    current_epoch_index,
-                    None,
-                    None,
-                    &transaction,
-                    &mut batch,
-                )
-                .expect("should distribute fees");
-
-            platform
-                .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
-                .expect("should apply batch");
-
-            assert!(matches!(
-                proposer_payouts,
-                Some(ProposersPayouts {
-                    proposers_paid_count: 150,
-                    paid_epoch_index: 0,
-                })
-            ));
-        }
-
-        #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_proposers_paid() {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -858,9 +565,9 @@ mod tests {
             // Create masternode reward shares contract
             platform.create_mn_shares_contract(Some(&transaction));
 
-            let proposers_count = 10;
-            let processing_fees = 10000;
-            let storage_fees = 10000;
+            let proposers_count = 150;
+            let processing_fees = 100000000;
+            let storage_fees = 10000000;
 
             let unpaid_epoch = Epoch::new(0).unwrap();
             let current_epoch = Epoch::new(1).unwrap();
@@ -881,7 +588,13 @@ mod tests {
                     .expect("should add operation"),
             );
 
-            current_epoch.add_init_current_operations(1.0, 11, 3, 2, &mut batch);
+            current_epoch.add_init_current_operations(
+                1.0,
+                proposers_count as u64 + 1,
+                3,
+                2,
+                &mut batch,
+            );
 
             platform
                 .drive
@@ -920,135 +633,6 @@ mod tests {
                     paid_epoch_index: 0,
                 }) if p == proposers_count
             ));
-
-            let next_unpaid_epoch_index = platform
-                .drive
-                .get_unpaid_epoch_index(Some(&transaction))
-                .expect("should get unpaid epoch index");
-
-            assert_eq!(next_unpaid_epoch_index, current_epoch.index);
-
-            // check we've removed proposers tree
-            let result = platform.drive.get_epochs_proposer_block_count(
-                &unpaid_epoch,
-                &proposers[0],
-                Some(&transaction),
-            );
-
-            assert!(matches!(
-                result,
-                Err(DriveError::GroveDB(
-                    grovedb::Error::PathParentLayerNotFound(_)
-                ))
-            ));
-        }
-
-        #[test]
-        fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_50_proposers_were_paid_last_block(
-        ) {
-            let platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
-            let transaction = platform.drive.grove.start_transaction();
-
-            // Create masternode reward shares contract
-            platform.create_mn_shares_contract(Some(&transaction));
-
-            let proposers_count = 50;
-            let processing_fees = 10000;
-            let storage_fees = 10000;
-
-            let unpaid_epoch = Epoch::new(0).unwrap();
-            let current_epoch = Epoch::new(1).unwrap();
-
-            let mut batch = GroveDbOpBatch::new();
-
-            unpaid_epoch.add_init_current_operations(1.0, 1, 1, 1, &mut batch);
-
-            batch.push(
-                unpaid_epoch
-                    .update_processing_fee_pool_operation(processing_fees)
-                    .expect("should add operation"),
-            );
-
-            batch.push(
-                unpaid_epoch
-                    .update_storage_fee_pool_operation(storage_fees)
-                    .expect("should add operation"),
-            );
-
-            current_epoch.add_init_current_operations(
-                1.0,
-                (proposers_count as u64) + 1,
-                1,
-                2,
-                &mut batch,
-            );
-
-            platform
-                .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
-                .expect("should apply batch");
-
-            let proposers = create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
-                &platform.drive,
-                &unpaid_epoch,
-                proposers_count,
-                Some(66), //random number
-                Some(&transaction),
-            );
-
-            let mut batch = vec![];
-
-            let proposer_payouts = platform
-                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
-                    current_epoch.index,
-                    None,
-                    None,
-                    &transaction,
-                    &mut batch,
-                )
-                .expect("should distribute fees");
-
-            platform
-                .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
-                .expect("should apply batch");
-
-            assert_eq!(
-                proposer_payouts.unwrap(),
-                ProposersPayouts {
-                    proposers_paid_count: proposers_count,
-                    paid_epoch_index: 0,
-                }
-            );
-
-            // The Epoch 0 should still not marked as paid because proposers count == proposers limit
-            let next_unpaid_epoch_index = platform
-                .drive
-                .get_unpaid_epoch_index(Some(&transaction))
-                .expect("should get unpaid epoch index");
-
-            assert_eq!(next_unpaid_epoch_index, unpaid_epoch.index);
-
-            // Process one more block
-
-            let mut batch = vec![];
-
-            let _proposer_payouts = platform
-                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
-                    current_epoch.index,
-                    None,
-                    None,
-                    &transaction,
-                    &mut batch,
-                )
-                .expect("should distribute fees");
-
-            platform
-                .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
-                .expect("should apply batch");
 
             let next_unpaid_epoch_index = platform
                 .drive
@@ -1466,7 +1050,6 @@ mod tests {
                 .add_epoch_pool_to_proposers_payout_operations(
                     &unpaid_epoch,
                     0,
-                    proposers_count,
                     &transaction,
                     &mut batch,
                 )
