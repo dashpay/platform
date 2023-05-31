@@ -105,8 +105,10 @@ macro_rules! retry {
                 Err(e) => {
                     match e {
                         dashcore_rpc::Error::JsonRpc(
+                            // Retry on transport connection error
                             dashcore_rpc::jsonrpc::error::Error::Transport(_)
                             | dashcore_rpc::jsonrpc::error::Error::Rpc(
+                                // Retry on Core RPC "not ready" errors
                                 dashcore_rpc::jsonrpc::error::RpcError {
                                     code:
                                         CORE_RPC_ERROR_IN_WARMUP
