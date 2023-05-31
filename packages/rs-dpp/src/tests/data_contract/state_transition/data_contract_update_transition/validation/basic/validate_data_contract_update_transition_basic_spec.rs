@@ -563,7 +563,7 @@ mod update {
                 }
             },
             "required": [
-            "$createdAt"
+                "$createdAt"
             ],
             "additionalProperties": false
         });
