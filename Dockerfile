@@ -119,7 +119,7 @@ WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     export CARGO_TARGET_DIR=/platform/target ; \
     cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
     cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
@@ -129,7 +129,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
 # LOAD SOURCES
 #
 FROM deps as sources
-
 
 WORKDIR /platform
 
@@ -149,7 +148,7 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
