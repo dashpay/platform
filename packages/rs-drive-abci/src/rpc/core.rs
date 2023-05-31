@@ -106,11 +106,16 @@ macro_rules! retry {
                     match e {
                         dashcore_rpc::Error::JsonRpc(
                             dashcore_rpc::jsonrpc::error::Error::Transport(_)
-                            | dashcore_rpc::jsonrpc::error::Error::Rpc(ref rpc_error),
-                        ) if code == CORE_RPC_ERROR_IN_WARMUP
-                            || code == CORE_RPC_CLIENT_NOT_CONNECTED
-                            || code == CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD =>
-                        {
+                            | dashcore_rpc::jsonrpc::error::Error::Rpc(
+                                dashcore_rpc::jsonrpc::error::RpcError {
+                                    code:
+                                        CORE_RPC_ERROR_IN_WARMUP
+                                        | CORE_RPC_CLIENT_NOT_CONNECTED
+                                        | CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD,
+                                    ..
+                                },
+                            ),
+                        ) => {
                             last_err = Some(e);
                             let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
                             std::thread::sleep(Duration::from_secs(delay));
