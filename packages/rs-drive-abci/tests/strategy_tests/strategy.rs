@@ -606,18 +606,16 @@ impl Strategy {
                         }
                     }
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
-                        // chose 2 random identities
+                        // chose 2 last identities
                         let indices: Vec<usize> =
-                            (0..current_identities.len()).choose_multiple(rng, 2);
+                            vec![current_identities.len() - 2, current_identities.len() - 1];
 
-                        let random_identity = current_identities.get(indices[0]).unwrap();
-                        let random_recipient = current_identities.get(indices[1]).unwrap();
+                        let owner = current_identities.get(indices[0]).unwrap();
+                        let recipient = current_identities.get(indices[1]).unwrap();
 
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
-                                random_identity,
-                                random_recipient,
-                                signer,
+                                owner, recipient, signer, 1000000000,
                             );
                         operations.push(state_transition);
                     }

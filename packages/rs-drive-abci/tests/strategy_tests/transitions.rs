@@ -174,12 +174,13 @@ pub fn create_identity_credit_transfer_transition(
     identity: &Identity,
     recipient: &Identity,
     signer: &mut SimpleSigner,
+    amount: u64,
 ) -> StateTransition {
     let mut transition = IdentityCreditTransferTransition {
         transition_type: StateTransitionType::IdentityCreditTransfer,
         identity_id: identity.id,
         recipient_id: recipient.id,
-        amount: 100000000, // 0.001 Dash
+        amount,
         protocol_version: LATEST_VERSION,
         signature_public_key_id: 0,
         signature: Default::default(),
@@ -195,7 +196,7 @@ pub fn create_identity_credit_transfer_transition(
 
     transition
         .sign_external(identity_public_key, signer)
-        .expect("expected to sign trasfer");
+        .expect("expected to sign transfer");
 
     transition.into()
 }
