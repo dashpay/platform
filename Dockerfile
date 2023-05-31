@@ -135,7 +135,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
-      --package drive-abci \
+      --package drive-abci && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci
 
 #
