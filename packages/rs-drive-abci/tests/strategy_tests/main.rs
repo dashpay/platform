@@ -2386,4 +2386,85 @@ mod tests {
             StrategyRandomness::SeedEntropy(block_start),
         );
     }
+
+    #[test]
+    fn run_chain_top_up_and_transfer_between_identities() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![
+                Operation {
+                    op_type: OperationType::IdentityTopUp,
+                    frequency: Frequency {
+                        times_per_block_range: 1..4,
+                        chance_per_block: None,
+                    },
+                },
+                Operation {
+                    op_type: OperationType::IdentityTransfer,
+                    frequency: Frequency {
+                        times_per_block_range: 1..4,
+                        chance_per_block: None,
+                    },
+                },
+            ],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false, // ???
+        };
+
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let balances = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identities_balances(
+                &outcome
+                    .identities
+                    .into_iter()
+                    .map(|identity| identity.id.to_buffer())
+                    .collect(),
+                None,
+            )
+            .expect("expected to fetch balances");
+
+        // TODO: how to check credits were transferred?
+        assert!(balances.into_iter().any(|(_, balance)| balance > 0));
+    }
 }

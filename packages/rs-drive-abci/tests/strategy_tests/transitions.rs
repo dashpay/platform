@@ -4,6 +4,7 @@ use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, Pooling,
 };
@@ -167,6 +168,36 @@ pub fn create_identity_withdrawal_transition(
         .expect("expected to sign withdrawal");
 
     withdrawal.into()
+}
+
+pub fn create_identity_credit_transfer_transition(
+    identity: &Identity,
+    recipient: &Identity,
+    signer: &mut SimpleSigner,
+) -> StateTransition {
+    let mut transition = IdentityCreditTransferTransition {
+        transition_type: StateTransitionType::IdentityCreditTransfer,
+        identity_id: identity.id,
+        recipient_id: recipient.id,
+        amount: 100000000, // 0.001 Dash
+        protocol_version: LATEST_VERSION,
+        signature_public_key_id: 0,
+        signature: Default::default(),
+    };
+
+    let identity_public_key = identity
+        .get_first_public_key_matching(
+            Purpose::AUTHENTICATION,
+            HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+            HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+        )
+        .expect("expected to get a signing key");
+
+    transition
+        .sign_external(identity_public_key, signer)
+        .expect("expected to sign trasfer");
+
+    transition.into()
 }
 
 pub fn create_identities_state_transitions(

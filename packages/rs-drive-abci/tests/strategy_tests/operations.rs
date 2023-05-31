@@ -49,6 +49,7 @@ pub enum OperationType {
     IdentityWithdrawal,
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(DataContractUpdateOp),
+    IdentityTransfer,
 }
 
 #[derive(Clone, Debug)]

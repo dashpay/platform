@@ -605,6 +605,22 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
+                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                        // chose 2 random identities
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, 2);
+
+                        let random_identity = current_identities.get(indices[0]).unwrap();
+                        let random_recipient = current_identities.get(indices[1]).unwrap();
+
+                        let state_transition =
+                            crate::transitions::create_identity_credit_transfer_transition(
+                                random_identity,
+                                random_recipient,
+                                signer,
+                            );
+                        operations.push(state_transition);
+                    }
                     // OperationType::ContractCreate(new_fields_optional_count_range, new_fields_required_count_range, new_index_count_range, document_type_count)
                     // if !current_identities.is_empty() => {
                     //     DataContract::;
@@ -674,6 +690,7 @@ pub struct ValidatorVersionMigration {
     pub change_block_height: BlockHeight,
 }
 
+#[derive(Debug)]
 pub struct ChainExecutionOutcome<'a> {
     pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
@@ -686,6 +703,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_time_ms: u64,
     pub strategy: Strategy,
     pub withdrawals: Vec<dashcore::Transaction>,
+    // pub transfers: Vec<dashcore::Transaction>,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {

@@ -23,6 +23,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
 
+use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use platform_value::Value;
 use std::sync::Arc;
 
@@ -264,6 +265,21 @@ where
             .map_err(ProtocolError::from)?;
 
         Ok(identity_topup_transition)
+    }
+
+    pub fn create_identity_credit_transfer_transition(
+        &self,
+        identity_id: Identifier,
+        recipient_id: Identifier,
+        amount: u64,
+    ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
+        let mut identity_credit_transfer_transition = IdentityCreditTransferTransition::default();
+        identity_credit_transfer_transition.set_protocol_version(self.protocol_version);
+        identity_credit_transfer_transition.set_identity_id(identity_id);
+        identity_credit_transfer_transition.set_recipient_id(recipient_id);
+        identity_credit_transfer_transition.set_amount(amount);
+
+        Ok(identity_credit_transfer_transition)
     }
 
     pub fn create_identity_update_transition(
