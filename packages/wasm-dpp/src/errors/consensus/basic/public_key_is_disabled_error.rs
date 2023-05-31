@@ -3,6 +3,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::PublicKeyIsDisabledError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::KeyID;
+use dpp::serialization_traits::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=PublicKeyIsDisabledError)]

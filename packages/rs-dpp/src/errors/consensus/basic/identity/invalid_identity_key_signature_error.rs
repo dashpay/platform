@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use crate::identity::KeyID;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Identity key {public_key_id} has invalid signature")]
 pub struct InvalidIdentityKeySignatureError {
     /*
