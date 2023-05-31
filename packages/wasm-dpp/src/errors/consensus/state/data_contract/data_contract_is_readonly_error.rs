@@ -5,6 +5,7 @@ use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataC
 use dpp::consensus::ConsensusError;
 
 use wasm_bindgen::prelude::*;
+use dpp::serialization_traits::PlatformSerializable;
 
 #[wasm_bindgen(js_name=DataContractIsReadonlyError)]
 pub struct DataContractIsReadonlyErrorWasm {
