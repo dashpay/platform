@@ -95,9 +95,16 @@ macro_rules! retry {
             match $action {
                 Ok(result) => return Ok(result),
                 Err(e) => {
-                    last_err = Some(e);
-                    let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
-                    std::thread::sleep(Duration::from_secs(delay));
+                    match e {
+                        dashcore_rpc::Error::JsonRpc(
+                            dashcore_rpc::jsonrpc::error::Error::Transport(_),
+                        ) => {
+                            last_err = Some(e);
+                            let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
+                            std::thread::sleep(Duration::from_secs(delay));
+                        }
+                        _ => return Err(e),
+                    };
                 }
             }
         }
