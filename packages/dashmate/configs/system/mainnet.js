@@ -16,7 +16,7 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.2.2',
+      image: 'dashpay/dashd:19.1.0',
     },
     indexes: false,
     log: {
