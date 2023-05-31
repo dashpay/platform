@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -29,7 +30,7 @@ use crate::consensus::ConsensusError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum StateError {
     /*
 

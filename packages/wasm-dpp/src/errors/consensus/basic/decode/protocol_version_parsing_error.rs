@@ -2,6 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::basic::decode::ProtocolVersionParsingError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::errors::consensus::ConsensusError;
+use dpp::serialization_traits::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ProtocolVersionParsingError)]

@@ -1,10 +1,12 @@
+use bincode::{Decode, Encode};
 use dashcore::Txid;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("`Chain Locked transaction {transaction_id:?} could not be validated for the given height {height_reported_not_locked}`")]
 pub struct InvalidIdentityAssetLockProofChainLockValidationError {
+    #[bincode(with_serde)]
     transaction_id: Txid,
     height_reported_not_locked: u32,
 }

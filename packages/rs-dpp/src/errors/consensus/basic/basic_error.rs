@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -48,7 +49,7 @@ use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilatio
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::value_error::ValueError;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum BasicError {
     /*
 
