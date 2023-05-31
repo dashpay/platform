@@ -18,7 +18,7 @@ impl From<&DataContractIsReadonlyError> for DataContractIsReadonlyErrorWasm {
     }
 }
 
-#[wasm_bindgen(js_class=DataContractAlreadyPresentError)]
+#[wasm_bindgen(js_class=DataContractIsReadonlyError)]
 impl DataContractIsReadonlyErrorWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(data_contract_id: IdentifierWrapper) -> Self {
