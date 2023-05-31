@@ -1,9 +1,9 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use bincode::{Decode, Encode};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Can't update document schemas in the Data Contract {data_contract_id}: Data Contract is readonly")]
