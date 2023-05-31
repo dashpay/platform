@@ -136,7 +136,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
-      --config net.git-fetch-with-cli=true && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci
 
 #
