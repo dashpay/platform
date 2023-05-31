@@ -74,13 +74,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# # Install sccache for caching
-# RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
-#     curl -Ls \
-#         https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
-#         tar -C /tmp -xz && \
-#         mv /tmp/sccache-*/sccache /usr/bin/
-
 # Configure Node.js
 RUN npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
@@ -90,19 +83,7 @@ RUN npm install -g npm@9.6.6 && \
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
-#
-# Configure sccache
-#
-# Activate sccache for Rust code
-ENV RUSTC_WRAPPER=
-# Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
-ARG SCCACHE_GHA_ENABLED
-ARG ACTIONS_CACHE_URL
-ARG ACTIONS_RUNTIME_TOKEN
-# Alternative solution is to use memcache
-ARG SCCACHE_MEMCACHED
-
-# Disable incremental buildings, not supported by sccache
+# Enable incremental building to benefit from cache mounts
 ARG CARGO_INCREMENTAL=true
 
 # Select whether we want dev or release
@@ -115,6 +96,7 @@ ENV NODE_ENV ${NODE_ENV}
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 WORKDIR /platform
+RUN echo "bust cache a"
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
@@ -144,7 +126,7 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-
+RUN echo "bust cache a"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
