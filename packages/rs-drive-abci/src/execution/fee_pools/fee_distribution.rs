@@ -119,7 +119,7 @@ lazy_static! {
     /// Yearly decline of production by ~7.1% per year, projected ~18M coins max by year 2050+.
     pub static ref CORE_HALVING_DISTRIBUTION: HashMap<u16, Credits> = {
         let mut distribution = CORE_GENESIS_BLOCK_SUBSIDY;
-        (0..100).into_iter().map(|i| {
+        (0..100).map(|i| {
             let old_distribution = distribution;
             distribution -= distribution / 14;
             (i, old_distribution)
