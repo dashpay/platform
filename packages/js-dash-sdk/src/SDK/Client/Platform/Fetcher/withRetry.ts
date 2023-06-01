@@ -27,10 +27,6 @@ const withRetry = async <T>(
         throw e;
       }
       const delay = fibonacci(attempt) * delayMulMs;
-      console.log('Retry failed fetch attempt', {
-        attempt,
-        delay,
-      });
       await wait(delay);
     }
   }
