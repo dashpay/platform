@@ -6,7 +6,9 @@ import {
 } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
 
 import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
+import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
 import withRetry from './withRetry';
+import { FetchOpts } from '../methods/documents/get';
 
 type FetcherOptions = {
   /**
@@ -20,7 +22,7 @@ type FetcherOptions = {
 };
 
 const DEFAULT_DELAY_MUL_MS = 1000;
-const DEFAULT_MAX_ATTEMPTS = 6;
+const DEFAULT_MAX_ATTEMPTS = 7;
 
 /**
  * Fetcher class that handles retry attempts for acknowledged identifiers
@@ -62,6 +64,14 @@ class Fetcher {
    */
   public acknowledgeKey(key: string) {
     this.acknowledgedKeys.add(key);
+  }
+
+  /**
+   * Forgets string key to stop retrying on it in get methods
+   * @param key
+   */
+  public forgetKey(key: string) {
+    this.acknowledgedKeys.delete(key);
   }
 
   /**
@@ -121,6 +131,36 @@ class Fetcher {
     // In case we acknowledged this identifier, we want to retry to mitigate
     // state transition propagation lag. Otherwise, we want to try only once.
     const retryAttempts = this.hasIdentifier(id) ? this.maxAttempts : 1;
+    return withRetry(query, retryAttempts, this.delayMulMs);
+  }
+
+  /**
+   * Fetches documents by data contract id and type
+   * @param {Identifier} contractId - data contract ID
+   * @param {string} type - document name
+   * @param {FetchOpts} opts - query
+   */
+  public async fetchDocuments(
+    contractId: Identifier,
+    type: string,
+    opts: FetchOpts,
+  ): Promise<GetDocumentsResponse> {
+    // Define query
+    const query = async (): Promise<GetDocumentsResponse> => {
+      const result = await this.dapiClient.platform
+        .getDocuments(contractId, type, opts);
+
+      if (result.getDocuments().length === 0) {
+        throw new NotFoundError(`Documents of type "${type}" not found for the data contract ${contractId}`);
+      }
+      return result;
+    };
+
+    // Define retry attempts.
+    // In case we acknowledged this identifier, we want to retry to mitigate
+    // state transition propagation lag. Otherwise, we want to try only once.
+    const documentLocator = `${contractId.toString()}/${type}`;
+    const retryAttempts = this.hasKey(documentLocator) ? this.maxAttempts : 1;
     return withRetry(query, retryAttempts, this.delayMulMs);
   }
 }

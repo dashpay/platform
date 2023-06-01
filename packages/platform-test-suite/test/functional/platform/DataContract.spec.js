@@ -175,9 +175,6 @@ describe('Platform', () => {
         create: [document],
       }, identity);
 
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       const [fetchedDocument] = await client.platform.documents.get(
         `customContract.${newDocumentType}`,
         { where: [['firstName', '==', 'myName']] },

@@ -1,4 +1,6 @@
 import { Identifier, ExtendedDocument, Metadata } from '@dashevo/wasm-dpp';
+import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
 import { Platform } from '../../Platform';
 
 /**
@@ -8,7 +10,7 @@ import { Platform } from '../../Platform';
  * @param {string|Buffer|ExtendedDocument|Identifier} [startAt] - start value (included)
  * @param {string|Buffer|ExtendedDocument|Identifier} [startAfter] - start value (not included)
  */
-declare interface FetchOpts {
+export interface FetchOpts {
   where?: WhereCondition[];
   orderBy?: OrderByCondition[];
   limit?: number;
@@ -140,21 +142,29 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
     opts.startAfter = Identifier.from(opts.startAfter);
   }
 
-  // @ts-ignore
-  const documentsResponse = await this.client.getDAPIClient().platform.getDocuments(
-    appDefinition.contractId,
-    fieldType,
-    opts,
-  );
+  let documentsResponse: GetDocumentsResponse;
+
+  try {
+    documentsResponse = await this.client.getDAPIClient().platform.getDocuments(
+      appDefinition.contractId,
+      fieldType,
+      opts,
+    );
+  } catch (e) {
+    if (e instanceof NotFoundError) {
+      this.logger.debug(`[Documents#get] Obtained 0 documents for "${typeLocator}"`);
+      return [];
+    }
+
+    throw e;
+  }
 
   const rawDocuments = documentsResponse.getDocuments();
-
-  this.logger.silly(`[Documents#get] Obtained ${rawDocuments.length} raw document(s)"`);
 
   const result = await Promise.all(
     rawDocuments.map(async (rawDocument) => {
       const document = await this.dpp.document.createExtendedDocumentFromDocumentBuffer(
-        rawDocument, fieldType, appDefinition.contract,
+        rawDocument as Uint8Array, fieldType, appDefinition.contract,
       );
 
       let metadata;

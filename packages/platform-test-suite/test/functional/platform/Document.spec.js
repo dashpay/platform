@@ -174,9 +174,6 @@ describe('Platform', () => {
       await client.platform.documents.broadcast({
         create: [document],
       }, identity);
-
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
     });
 
     it('should fetch created document', async () => {
