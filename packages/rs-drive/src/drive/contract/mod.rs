@@ -72,7 +72,6 @@ use dpp::Convertible;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::{PathQuery, SizedQuery};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
@@ -119,7 +118,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
-use crate::query::{Query, QueryItem, QueryResultEncoding};
+use crate::query::QueryResultEncoding;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
 use dpp::platform_value::string_encoding::Encoding;

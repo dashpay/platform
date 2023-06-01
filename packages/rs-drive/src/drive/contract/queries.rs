@@ -1,14 +1,14 @@
+use crate::common::encode::encode_u64;
 use crate::drive::contract::paths::{
     contract_keeping_history_storage_path_vec, contract_root_path_vec,
 };
+use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
-use grovedb::{PathQuery, SizedQuery};
-use crate::common::encode::encode_u64;
-use crate::drive::contract::{MAX_CONTRACT_HISTORY_FETCH_LIMIT, paths};
-use crate::error::drive::DriveError;
 use crate::query::{Query, QueryItem};
+use grovedb::{PathQuery, SizedQuery};
 
 impl Drive {
     /// Creates a path query for a specified contract.
