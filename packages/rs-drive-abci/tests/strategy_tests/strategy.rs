@@ -613,9 +613,18 @@ impl Strategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
+                        let fetched_owner = platform
+                            .drive
+                            .fetch_identity_with_balance(owner.id.to_buffer(), None)
+                            .expect("expected to be able to get identity")
+                            .expect("expected to get an identity");
+
                         let state_transition =
                             crate::transitions::create_identity_credit_transfer_transition(
-                                owner, recipient, signer, 1000000000,
+                                owner,
+                                recipient,
+                                signer,
+                                fetched_owner.balance.unwrap() - 100,
                             );
                         operations.push(state_transition);
                     }
@@ -701,7 +710,6 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_time_ms: u64,
     pub strategy: Strategy,
     pub withdrawals: Vec<dashcore::Transaction>,
-    // pub transfers: Vec<dashcore::Transaction>,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {

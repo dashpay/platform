@@ -2391,22 +2391,13 @@ mod tests {
     fn run_chain_top_up_and_transfer_between_identities() {
         let strategy = Strategy {
             contracts_with_updates: vec![],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::IdentityTopUp,
-                    frequency: Frequency {
-                        times_per_block_range: 1..4,
-                        chance_per_block: None,
-                    },
+            operations: vec![Operation {
+                op_type: OperationType::IdentityTransfer,
+                frequency: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
                 },
-                Operation {
-                    op_type: OperationType::IdentityTransfer,
-                    frequency: Frequency {
-                        times_per_block_range: 1..4,
-                        chance_per_block: None,
-                    },
-                },
-            ],
+            }],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -2450,20 +2441,34 @@ mod tests {
             });
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
-        let balances = outcome
+        let balances = &outcome
             .abci_app
             .platform
             .drive
             .fetch_identities_balances(
                 &outcome
                     .identities
-                    .into_iter()
+                    .iter()
                     .map(|identity| identity.id.to_buffer())
                     .collect(),
                 None,
             )
             .expect("expected to fetch balances");
 
-        // TODO: how to check credits were transferred?
+        assert_eq!(outcome.identities.len(), 10);
+
+        let len = outcome.identities.len();
+
+        for identity in &outcome.identities[..len - 1] {
+            let new_balance = balances[&identity.id.to_buffer()];
+            // All identity balances decreased
+            // as we transferred funds to the last identity
+            assert_eq!(new_balance, 0);
+        }
+
+        let last_identity = &outcome.identities[len - 1];
+        let last_identity_balance = balances[&last_identity.id.to_buffer()];
+        // We transferred funds to the last identity, so we need to check that last identity balance was increased
+        assert!(last_identity_balance > 100000000000u64);
     }
 }
