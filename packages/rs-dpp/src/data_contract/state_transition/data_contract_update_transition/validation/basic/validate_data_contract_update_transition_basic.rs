@@ -7,6 +7,8 @@ use crate::consensus::basic::data_contract::{
 };
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::document::DataContractNotPresentError;
+use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use crate::data_contract::DocumentName;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
@@ -29,8 +31,6 @@ use platform_value::patch::PatchOperation;
 use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
-use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
-use crate::data_contract::DocumentName;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -280,10 +280,15 @@ where
             .and_then(|a| a.clone().try_into())
             .map_err(ProtocolError::ValueError)?;
 
-        println!("Any changes: {}", any_schema_changes(&existing_data_contract.documents, &new_documents));
+        println!(
+            "Any changes: {}",
+            any_schema_changes(&existing_data_contract.documents, &new_documents)
+        );
         println!("Readonly: {}", existing_data_contract.config.readonly);
 
-        if existing_data_contract.config.readonly && any_schema_changes(&existing_data_contract.documents, &new_documents) {
+        if existing_data_contract.config.readonly
+            && any_schema_changes(&existing_data_contract.documents, &new_documents)
+        {
             validation_result.add_error(DataContractIsReadonlyError::new(data_contract_id));
         }
 
