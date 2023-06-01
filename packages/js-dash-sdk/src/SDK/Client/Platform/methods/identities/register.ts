@@ -1,6 +1,5 @@
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
-import { wait } from '../../../../../utils/wait';
 
 /**
  * Register identities to the platform
