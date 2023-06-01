@@ -155,7 +155,7 @@ pub struct ContractFetchInfo {
 
 #[cfg(feature = "full")]
 impl Drive {
-    fn fetch_contract_history_query(
+    pub(crate) fn fetch_contract_history_query(
         contract_id: [u8; 32],
         start_at_date: u64,
         limit: Option<u16>,

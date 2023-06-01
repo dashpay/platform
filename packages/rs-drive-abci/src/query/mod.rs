@@ -849,6 +849,7 @@ mod test {
         use drive::error::contract::ContractError;
         use prost::Message;
         use serde_json::json;
+        use drive::drive::Drive;
 
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
@@ -1061,6 +1062,42 @@ mod test {
                 }
                 get_data_contract_history_response::Result::Proof(proof) => proof,
             };
+
+            // Check that the proof has correct values inside
+            let (root_hash, contract_history) = Drive::verify_contract_history(
+                &contract_proof.grovedb_proof,
+                original_data_contract.id.to_buffer(),
+                request.start_at_seconds(),
+                Some(10),
+                Some(0)
+            ).expect("To verify contract history");
+
+            let mut history_entries = contract_history.expect("history to exist");
+
+           assert_eq!(history_entries.len(), 2);
+
+            // Taking entries by date
+            let first_data_contract_update = history_entries.remove(&1000).expect("first entry to exist");
+            let second_data_contract_update = history_entries.remove(&2000).expect("second entry to exist");
+
+            assert_eq!(first_data_contract_update, original_data_contract);
+
+            let updated_doc = second_data_contract_update
+                .documents
+                .get("niceDocument")
+                .expect("To have niceDocument document");
+            assert!(
+                updated_doc
+                    .as_object()
+                    .unwrap()
+                    .get("properties")
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .get("newProp")
+                    .is_some(),
+                "expect data contract to have newProp field",
+            );
         }
 
         #[test]
