@@ -57,12 +57,8 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
-
-use dpp::consensus::ConsensusError;
-use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
-use dpp::validation::ValidationResult;
-use drive::fee::result::FeeResult;
+use dpp::platform_value::string_encoding::{encode, Encoding};
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>

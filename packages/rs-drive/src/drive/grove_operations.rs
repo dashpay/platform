@@ -41,15 +41,11 @@ use grovedb::batch::{
     key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op, OpsByLevelPath,
 };
 use grovedb::{
-    Element, ElementFlags, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg,
+    Element,  EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg,
 };
-
-use grovedb::element::MaxReferenceHop;
 use std::collections::HashMap;
-
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
     PathKeyUnknownElementSize,
@@ -68,7 +64,6 @@ use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{
     PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
 };
-use grovedb::reference_path::ReferencePathType;
 use grovedb::Error as GroveError;
 use integer_encoding::VarInt;
 
