@@ -88,12 +88,9 @@ use crate::drive::flags::StorageFlags;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 
-use crate::drive::contract;
+use crate::drive::contract::paths::contract_keeping_history_storage_path;
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::contract_root_path;
-use crate::drive::contract::paths::{
-    contract_keeping_history_storage_path, contract_storage_path_vec,
-};
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 #[cfg(feature = "full")]
@@ -122,7 +119,6 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
-use crate::query::QueryItem::RangeFull;
 use crate::query::{Query, QueryItem, QueryResultEncoding};
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
