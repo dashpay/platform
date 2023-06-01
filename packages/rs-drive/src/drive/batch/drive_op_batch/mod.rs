@@ -52,6 +52,7 @@ pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
@@ -89,6 +90,10 @@ pub enum DriveOperation<'a> {
     IdentityOperation(IdentityOperationType),
     /// A system operation
     SystemOperation(SystemOperationType),
+    /// A single low level groveDB operation
+    GroveDBOperation(GroveDbOp),
+    /// Multiple low level groveDB operations
+    GroveDBOpBatch(GroveDbOpBatch),
 }
 
 impl DriveLowLevelOperationConverter for DriveOperation<'_> {
@@ -138,6 +143,12 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     block_info,
                     transaction,
                 ),
+            DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
+            DriveOperation::GroveDBOpBatch(operations) => Ok(operations
+                .operations
+                .into_iter()
+                .map(|op| GroveOperation(op))
+                .collect()),
         }
     }
 }
