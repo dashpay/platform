@@ -105,9 +105,6 @@ describe('e2e', () => {
 
         await bobClient.platform.contracts.publish(dataContract, bobIdentity);
 
-        // Additional wait time to mitigate testnet latency
-        await waitForSTPropagated();
-
         bobClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
           contract: dataContract,

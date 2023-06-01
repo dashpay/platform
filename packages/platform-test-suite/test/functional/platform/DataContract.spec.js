@@ -56,18 +56,12 @@ describe('Platform', () => {
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       dataContractFixture = await getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
     });
 
     it('should be able to get newly created data contract', async () => {
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );
@@ -77,9 +71,6 @@ describe('Platform', () => {
     });
 
     it('should not be able to update an existing data contract if version is incorrect', async () => {
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );
@@ -100,9 +91,6 @@ describe('Platform', () => {
     });
 
     it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );
@@ -125,9 +113,6 @@ describe('Platform', () => {
     });
 
     it('should be able to update an existing data contract', async () => {
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       const fetchedDataContract = await client.platform.contracts.get(
         dataContractFixture.getId(),
       );

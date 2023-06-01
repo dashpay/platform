@@ -1,6 +1,9 @@
 import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp/dist';
-import { GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
+import {
+  GetDataContractResponse,
+  GetIdentityResponse,
+} from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
 
 import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
 import withRetry from './withRetry';
@@ -85,7 +88,31 @@ class Fetcher {
 
       // TODO(rs-drive-abci): Remove this when rs-drive-abci returns error instead of empty bytes
       if (result.getIdentity().length === 0) {
-        throw new NotFoundError(`Identity ${id} not found`);
+        throw new NotFoundError(`Identity with id "${id}" not found`);
+      }
+      return result;
+    };
+
+    // Define retry attempts.
+    // In case we acknowledged this identifier, we want to retry to mitigate
+    // state transition propagation lag. Otherwise, we want to try only once.
+    const retryAttempts = this.hasIdentifier(id) ? this.maxAttempts : 1;
+    return withRetry(query, retryAttempts, this.delayMulMs);
+  }
+
+  /**
+   * Fetches data contract by it's ID
+   * @param id
+   */
+  public async fetchDataContract(id: Identifier): Promise<GetDataContractResponse> {
+    // Define query
+    const query = async (): Promise<GetDataContractResponse> => {
+      const result = await this.dapiClient.platform
+        .getDataContract(id);
+
+      // TODO(rs-drive-abci): Remove this when rs-drive-abci returns error instead of empty bytes
+      if (result.getDataContract().length === 0) {
+        throw new NotFoundError(`DataContract with id "${id}" not found`);
       }
       return result;
     };
