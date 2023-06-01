@@ -40,7 +40,7 @@ use std::borrow::Cow;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<GroveDbOp>,
