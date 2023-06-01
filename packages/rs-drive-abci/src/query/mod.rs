@@ -846,10 +846,10 @@ mod test {
         use dpp::check_validation_result_with_data;
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;
+        use drive::drive::Drive;
         use drive::error::contract::ContractError;
         use prost::Message;
         use serde_json::json;
-        use drive::drive::Drive;
 
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
@@ -1069,16 +1069,20 @@ mod test {
                 original_data_contract.id.to_buffer(),
                 request.start_at_seconds(),
                 Some(10),
-                Some(0)
-            ).expect("To verify contract history");
+                Some(0),
+            )
+            .expect("To verify contract history");
 
             let mut history_entries = contract_history.expect("history to exist");
 
-           assert_eq!(history_entries.len(), 2);
+            assert_eq!(history_entries.len(), 2);
 
             // Taking entries by date
-            let first_data_contract_update = history_entries.remove(&1000).expect("first entry to exist");
-            let second_data_contract_update = history_entries.remove(&2000).expect("second entry to exist");
+            let first_data_contract_update =
+                history_entries.remove(&1000).expect("first entry to exist");
+            let second_data_contract_update = history_entries
+                .remove(&2000)
+                .expect("second entry to exist");
 
             assert_eq!(first_data_contract_update, original_data_contract);
 

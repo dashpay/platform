@@ -1,4 +1,6 @@
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path, contract_storage_path_vec};
+use crate::drive::contract::paths::{
+    contract_keeping_history_storage_path, contract_root_path, contract_storage_path_vec,
+};
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -9,8 +11,8 @@ use dpp::prelude::DataContract;
 use std::collections::BTreeMap;
 
 use crate::common::decode;
-use grovedb::GroveDb;
 use crate::error::drive::DriveError;
+use grovedb::GroveDb;
 
 impl Drive {
     /// Verifies that the contract is in the Proof
