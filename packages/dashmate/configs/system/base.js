@@ -256,4 +256,5 @@ module.exports = {
   externalIp: null,
   network: NETWORK_TESTNET,
   environment: 'production',
+  homeDirHash: null,
 };

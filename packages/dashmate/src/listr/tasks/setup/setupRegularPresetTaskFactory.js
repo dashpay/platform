@@ -7,6 +7,7 @@ const {
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
+  HOME_DIR_PATH,
 } = require('../../../constants');
 
 const systemConfigs = require('../../../../configs/system');
@@ -19,6 +20,7 @@ const {
 
 const Config = require('../../../config/Config');
 const generateRandomString = require('../../../util/generateRandomString');
+const getHomeDirHash = require('../../../util/getHomeDirHash');
 
 /**
  * @param {ConfigFile} configFile
@@ -83,6 +85,7 @@ function setupRegularPresetTaskFactory(
 
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
+          ctx.config.set('homeDirHash', getHomeDirHash(HOME_DIR_PATH));
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 

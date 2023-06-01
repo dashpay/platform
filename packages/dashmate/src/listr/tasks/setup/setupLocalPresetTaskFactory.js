@@ -10,6 +10,7 @@ const {
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
 const generateRandomString = require('../../../util/generateRandomString');
+const getHomeDirHash = require('../../../util/getHomeDirHash');
 
 /**
  * @param {ConfigFile} configFile
@@ -178,6 +179,7 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.user', generateRandomString(8));
                 config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
+                config.set('homeDirHash', getHomeDirHash(HOME_DIR_PATH));
 
                 config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
 

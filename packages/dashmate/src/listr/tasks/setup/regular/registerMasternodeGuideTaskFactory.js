@@ -9,6 +9,7 @@ const {
   MASTERNODE_COLLATERAL_AMOUNT,
   HPMN_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
+  HOME_DIR_PATH,
 } = require('../../../../constants');
 
 const systemConfigs = require('../../../../../configs/system');
@@ -25,6 +26,7 @@ const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 const getBLSPublicKeyFromPrivateKeyHex = require('../../../../core/getBLSPublicKeyFromPrivateKeyHex');
+const getHomeDirHash = require('../../../../util/getHomeDirHash');
 
 /**
  * @return {registerMasternodeGuideTask}
@@ -270,6 +272,7 @@ function registerMasternodeGuideTaskFactory() {
           ctx.config.set('core.masternode.operator.privateKey', state.operator.privateKey);
 
           ctx.config.set('externalIp', state.ipAndPorts.ip);
+          ctx.config.set('homeDirHash', getHomeDirHash(HOME_DIR_PATH));
           ctx.config.set('core.p2p.port', state.ipAndPorts.coreP2PPort);
 
           if (ctx.isHP) {

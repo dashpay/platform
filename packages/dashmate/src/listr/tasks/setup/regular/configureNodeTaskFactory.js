@@ -6,6 +6,7 @@ const {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
   NODE_TYPE_FULLNODE,
+  HOME_DIR_PATH,
 } = require('../../../../constants');
 
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
@@ -13,6 +14,7 @@ const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeK
 const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
+const getHomeDirHash = require('../../../../util/getHomeDirHash');
 
 function configureNodeTaskFactory() {
   /**
@@ -74,6 +76,7 @@ function configureNodeTaskFactory() {
             }));
 
             ctx.config.set('externalIp', form.ip);
+            ctx.config.set('homeDirHash', getHomeDirHash(HOME_DIR_PATH));
             ctx.config.set('core.p2p.port', form.coreP2PPort);
 
             if (ctx.isHP) {
