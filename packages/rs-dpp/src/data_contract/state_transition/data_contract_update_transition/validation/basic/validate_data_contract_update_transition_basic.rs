@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
@@ -28,6 +29,8 @@ use platform_value::patch::PatchOperation;
 use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
+use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use crate::data_contract::DocumentName;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -42,6 +45,22 @@ lazy_static! {
     pub static ref DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
         JsonSchemaValidator::new(DATA_CONTRACT_UPDATE_SCHEMA.clone())
             .expect("unable to compile jsonschema");
+}
+
+pub fn any_schema_changes(
+    old_schema: &BTreeMap<DocumentName, JsonValue>,
+    new_schema: &JsonValue,
+) -> bool {
+    let changes = old_schema
+        .iter()
+        .filter(|(document_type, original_schema)| {
+            let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
+            let diff = json_patch::diff(original_schema, new_document_schema);
+            diff.0.len() > 0
+        })
+        .count();
+
+    changes > 0
 }
 
 pub struct DataContractUpdateTransitionBasicValidator<SR> {
@@ -260,9 +279,18 @@ where
             .get_value("documents")
             .and_then(|a| a.clone().try_into())
             .map_err(ProtocolError::ValueError)?;
+
+        println!("Any changes: {}", any_schema_changes(&existing_data_contract.documents, &new_documents));
+        println!("Readonly: {}", existing_data_contract.config.readonly);
+
+        if existing_data_contract.config.readonly && any_schema_changes(&existing_data_contract.documents, &new_documents) {
+            validation_result.add_error(DataContractIsReadonlyError::new(data_contract_id));
+        }
+
         let new_documents = new_documents
             .as_object()
             .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
+
         let result = validate_indices_are_backward_compatible(
             existing_data_contract.documents.iter(),
             new_documents,

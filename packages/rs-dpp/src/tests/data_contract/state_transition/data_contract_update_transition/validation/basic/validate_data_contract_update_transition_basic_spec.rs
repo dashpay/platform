@@ -461,6 +461,9 @@ async fn should_not_check_data_contract_on_dry_run() {
 
 mod update {
     use super::*;
+    use crate::assert_state_consensus_errors;
+    use crate::consensus::state::state_error::StateError::DataContractIsReadonlyError;
+    use crate::consensus::ConsensusError::StateError;
     use crate::data_contract::JsonSchema;
     use serde_json::json;
 
@@ -536,14 +539,12 @@ mod update {
             mut data_contract,
         } = setup_test();
 
-        data_contract.config.documents_mutable_contract_default = false;
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+
+        data_contract.config.readonly = true;
         let first_revision_data_contract = data_contract.clone();
 
-        assert!(
-            !first_revision_data_contract
-                .config
-                .documents_mutable_contract_default
-        );
+        assert!(first_revision_data_contract.config.readonly);
 
         state_repository_mock
             .expect_fetch_data_contract()
@@ -572,7 +573,7 @@ mod update {
             .set_document_schema("niceDocument".into(), updated_document)
             .expect("to be able to set document schema");
 
-        assert!(!data_contract.config.documents_mutable_contract_default);
+        assert!(data_contract.config.readonly);
 
         let state_transition = DataContractUpdateTransition {
             protocol_version: LATEST_VERSION,
@@ -598,5 +599,6 @@ mod update {
         println!("{:?}", result);
 
         assert!(!result.is_valid());
+        assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
     }
 }
