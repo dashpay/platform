@@ -69,7 +69,6 @@ use grovedb::reference_path::ReferencePathType::SiblingReference;
 
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::Convertible;
-use grovedb::batch::key_info;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -97,6 +96,7 @@ use crate::drive::contract::paths::{
 };
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+#[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
@@ -104,6 +104,7 @@ use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElementSize,
 };
+#[cfg(feature = "full")]
 use crate::drive::object_size_info::PathKeyInfo;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
