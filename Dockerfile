@@ -105,7 +105,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     export CARGO_TARGET_DIR=/platform/target ; \
     export RUSTFLAGS="-C target-feature=-crt-static" ; \
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
-    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 -- -C target-feature=-crt-static && \
+    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
     cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
 
 
