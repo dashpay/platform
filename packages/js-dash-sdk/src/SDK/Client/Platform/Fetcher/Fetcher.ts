@@ -1,0 +1,101 @@
+import DAPIClient from '@dashevo/dapi-client';
+import { Identifier } from '@dashevo/wasm-dpp/dist';
+import { GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
+
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
+import withRetry from './withRetry';
+
+type FetcherOptions = {
+  /**
+   * Multiplier for delay between retry attempts
+   */
+  delayMulMs?: number;
+  /**
+   * Maximum number of retry attempts
+   */
+  maxAttempts?: number;
+};
+
+const DEFAULT_DELAY_MUL_MS = 1000;
+const DEFAULT_MAX_ATTEMPTS = 6;
+
+/**
+ * Fetcher class that handles retry attempts for acknowledged identifiers
+ * Primary goal of this class is to mitigate network propagation lag
+ * where we query platform entities right after their creation
+ *
+ * Should be used until fully functioning state transition acknowledgement is implemented
+ */
+class Fetcher {
+  public dapiClient: DAPIClient;
+
+  private acknowledgedKeys: Set<string>;
+
+  readonly delayMulMs: number;
+
+  readonly maxAttempts: number;
+
+  constructor(dapiClient: DAPIClient, options: FetcherOptions = {}) {
+    this.dapiClient = dapiClient;
+    this.acknowledgedKeys = new Set();
+
+    this.delayMulMs = typeof options.delayMulMs === 'number'
+      ? options.delayMulMs : DEFAULT_DELAY_MUL_MS;
+    this.maxAttempts = typeof options.maxAttempts === 'number'
+      ? options.maxAttempts : DEFAULT_MAX_ATTEMPTS;
+  }
+
+  /**
+   * Acknowledges DPP Identifier to retry on it in get methods
+   * @param identifier
+   */
+  public acknowledgeIdentifier(identifier: Identifier) {
+    this.acknowledgedKeys.add(identifier.toString());
+  }
+
+  /**
+   * Acknowledges string key to retry on it in get methods
+   * @param key
+   */
+  public acknowledgeKey(key: string) {
+    this.acknowledgedKeys.add(key);
+  }
+
+  /**
+   * Checks if identifier was acknowledged
+   * @param identifier
+   */
+  public hasIdentifier(identifier: Identifier): boolean {
+    return this.acknowledgedKeys.has(identifier.toString());
+  }
+
+  public hasKey(key: string): boolean {
+    return this.acknowledgedKeys.has(key);
+  }
+
+  /**
+   * Fetches identity by it's ID
+   * @param id
+   */
+  public async fetchIdentity(id: Identifier): Promise<GetIdentityResponse> {
+    // Define query
+    const query = async (): Promise<GetIdentityResponse> => {
+      const result = await this.dapiClient.platform
+        .getIdentity(id);
+
+      // TODO(rs-drive-abci): Remove this when rs-drive-abci returns error instead of empty bytes
+      if (result.getIdentity().length === 0) {
+        throw new NotFoundError(`Identity ${id} not found`);
+      }
+      return result;
+    };
+
+    // Define retry attempts.
+    // In case we acknowledged this identifier, we want to retry to mitigate
+    // state transition propagation lag. Otherwise, we want to try only once.
+    const retryAttempts = this.hasIdentifier(id) ? this.maxAttempts : 1;
+    return withRetry(query, retryAttempts, this.delayMulMs);
+  }
+}
+
+export default Fetcher;

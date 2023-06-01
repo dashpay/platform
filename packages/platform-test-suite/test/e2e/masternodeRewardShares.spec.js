@@ -174,9 +174,6 @@ describe('Masternode Reward Shares', () => {
     it('should be able to create reward shares with existing identity', async () => {
       anotherIdentity = await client.platform.identities.register(100000);
 
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       rewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
         masternodeOwnerIdentity,
@@ -299,9 +296,6 @@ describe('Masternode Reward Shares', () => {
     it('should not be able to share more than 100% of rewards', async () => {
       anotherIdentity = await client.platform.identities.register(100000);
 
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
-
       anotherRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
         masternodeOwnerIdentity,
@@ -365,9 +359,6 @@ describe('Masternode Reward Shares', () => {
 
     before(async () => {
       identity = await client.platform.identities.register(200000);
-
-      // Additional wait time to mitigate testnet latency
-      await waitForSTPropagated();
     });
 
     it('should not be able to share rewards', async () => {

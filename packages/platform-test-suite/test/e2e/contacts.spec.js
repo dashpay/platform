@@ -94,9 +94,6 @@ describe('e2e', () => {
 
         bobIdentity = await bobClient.platform.identities.register(300000);
 
-        // Additional wait time to mitigate testnet latency
-        await waitForSTPropagated();
-
         expect(bobIdentity.constructor.name).to.be.equal('Identity');
       });
 
@@ -159,9 +156,6 @@ describe('e2e', () => {
         });
 
         aliceIdentity = await aliceClient.platform.identities.register(300000);
-
-        // Additional wait time to mitigate testnet latency
-        await waitForSTPropagated();
 
         expect(aliceIdentity.constructor.name).to.be.equal('Identity');
       });
