@@ -94,6 +94,9 @@ describe('e2e', () => {
 
         bobIdentity = await bobClient.platform.identities.register(300000);
 
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
         expect(bobIdentity.constructor.name).to.be.equal('Identity');
       });
 
@@ -104,6 +107,9 @@ describe('e2e', () => {
         );
 
         await bobClient.platform.contracts.publish(dataContract, bobIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
 
         bobClient.getApps().set('contacts', {
           contractId: dataContract.getId(),
@@ -129,6 +135,9 @@ describe('e2e', () => {
           create: [profile],
         }, bobIdentity);
 
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
         // 2. Fetch and compare profiles
         const [fetchedProfile] = await bobClient.platform.documents.get(
           'contacts.profile',
@@ -151,6 +160,9 @@ describe('e2e', () => {
 
         aliceIdentity = await aliceClient.platform.identities.register(300000);
 
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
         expect(aliceIdentity.constructor.name).to.be.equal('Identity');
       });
 
@@ -164,6 +176,9 @@ describe('e2e', () => {
         await aliceClient.platform.documents.broadcast({
           create: [aliceProfile],
         }, aliceIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
 
         // 2. Fetch and compare profile
         const [fetchedProfile] = await aliceClient.platform.documents.get(
@@ -211,6 +226,9 @@ describe('e2e', () => {
           create: [bobContactRequest],
         }, bobIdentity);
 
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
         // 2. Fetch and compare contacts
         const [fetchedContactRequest] = await bobClient.platform.documents.get(
           'contacts.contact',
@@ -234,6 +252,9 @@ describe('e2e', () => {
         await aliceClient.platform.documents.broadcast({
           create: [aliceContactAcceptance],
         }, aliceIdentity);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
 
         // 2. Fetch and compare contacts
         const [fetchedAliceContactAcceptance] = await aliceClient.platform.documents.get(

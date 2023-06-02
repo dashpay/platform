@@ -32,6 +32,9 @@ describe('Platform', () => {
 
       identity = await client.platform.identities.register(1000000);
 
+      // Additional wait time to mitigate testnet latency
+      await waitForSTPropagated();
+
       dataContractFixture = await getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
@@ -174,6 +177,9 @@ describe('Platform', () => {
       await client.platform.documents.broadcast({
         create: [document],
       }, identity);
+
+      // Additional wait time to mitigate testnet latency
+      await waitForSTPropagated();
     });
 
     it('should fetch created document', async () => {
