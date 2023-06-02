@@ -142,11 +142,6 @@ jobs:
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
 
-      # - name: Setup Rust compilation cache
-      #   uses: mozilla-actions/sccache-action@v0.0.3
-      #   with:
-      #     version: "v0.4.1"
-
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
@@ -280,11 +275,6 @@ jobs:
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
 
-      # - name: Setup Rust compilation cache
-      #   uses: mozilla-actions/sccache-action@v0.0.3
-      #   with:
-      #     version: "v0.4.1"
-
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
@@ -335,6 +325,7 @@ jobs:
         with:
           result-encoding: string
           script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
+
       - name: Set suffix
         uses: actions/github-script@v6
         id: suffix
@@ -390,7 +381,6 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
-    if: false
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
@@ -411,18 +401,13 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      # - name: Setup Cargo cache
-      #   uses: Swatinem/rust-cache@v2
-      #   with:
-      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
-      #     cache-targets: false
-      #     # We set a shared key, as our cache is reusable between jobs
-      #     shared-key: rust-cargo
-
-      # - name: Setup Rust compilation cache
-      #   uses: mozilla-actions/sccache-action@v0.0.3
-      #   with:
-      #     version: "v0.4.1"
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -435,13 +420,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      # - name: Enable Yarn unplugged modules cache
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ".yarn/unplugged"
-      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-yarn-unplugged-
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: ".yarn/unplugged"
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -459,28 +444,21 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
-
-      # - name: Enable docker cache mount
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: /tmp/buildkit-cache/buildkit-state.tar
-      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-buildkit
-
-      # - name: Load docker cache mount
-      #   uses: dashevo/gh-action-cache-buildkit-state@master
-      #   with:
-      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-      #     cache-path: /tmp/buildkit-cache
-      #     cache-max-size: 3g
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
       - name: Get tag
         uses: actions/github-script@v6
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -511,6 +489,9 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
+      - name: inject go-build-cache into docker
+        uses: dcginfra/buildkit-cache-dance/inject@main
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v3
         with:
@@ -525,17 +506,15 @@ jobs:
           build-args: |
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
-          cache-from: |
-            type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
-          cache-to: |
-            type=gha,mode=min
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
+
+      - name: extract go-build-cache from docker
+        uses: dcginfra/buildkit-cache-dance/extract@main
 
   release-envoy-docker-image:
     name: Release Envoy to Docker Hub
     runs-on: ubuntu-22.04
-    if: false
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -560,7 +539,7 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -591,6 +570,9 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
+      - name: inject go-build-cache into docker
+        uses: dcginfra/buildkit-cache-dance/inject@main
+
       - name: Build and push Docker image for Envoy
         uses: docker/build-push-action@v3
         with:
@@ -600,12 +582,16 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
+
+      - name: extract go-build-cache from docker
+        uses: dcginfra/buildkit-cache-dance/extract@main
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
     runs-on: self-hosted
-    if: false
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
@@ -620,24 +606,19 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      # - name: Setup Cargo cache
-      #   uses: Swatinem/rust-cache@v2
-      #   with:
-      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
-      #     cache-targets: false
-      #     # We set a shared key, as our cache is reusable between jobs
-      #     shared-key: rust-cargo
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # - name: Setup Rust compilation cache
-      #   uses: mozilla-actions/sccache-action@v0.0.3
-      #   with:
-      #     version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -650,13 +631,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      # - name: Enable Yarn unplugged modules cache
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ".yarn/unplugged"
-      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-yarn-unplugged-
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: ".yarn/unplugged"
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -675,27 +656,12 @@ jobs:
         with:
           install: true
 
-      # - name: Enable docker cache mount
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: /tmp/buildkit-cache/buildkit-state.tar
-      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-buildkit
-
-      # - name: Load docker cache mount
-      #   uses: dashevo/gh-action-cache-buildkit-state@master
-      #   with:
-      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-      #     cache-path: /tmp/buildkit-cache
-      #     cache-max-size: 3g
-
       - name: Get tag
         uses: actions/github-script@v6
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -726,6 +692,9 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
+      - name: inject go-build-cache into docker
+        uses: dcginfra/buildkit-cache-dance/inject@main
+
       - name: Build and push Docker image for Dashmate helper
         uses: docker/build-push-action@v3
         with:
@@ -740,6 +709,9 @@ jobs:
           build-args: |
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
+
+      - name: extract go-build-cache from docker
+        uses: dcginfra/buildkit-cache-dance/extract@main
 
   release-dashmate:
     name: Release Dashmate packages
@@ -809,18 +781,13 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      # - name: Setup Cargo cache
-      #   uses: Swatinem/rust-cache@v2
-      #   with:
-      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
-      #     cache-targets: false
-      #     # We set a shared key, as our cache is reusable between jobs
-      #     shared-key: rust-cargo
-
-      # - name: Setup Rust compilation cache
-      #   uses: mozilla-actions/sccache-action@v0.0.3
-      #   with:
-      #     version: "v0.4.1"
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
 
       - name: Enable corepack
         run: corepack enable
@@ -828,13 +795,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      # - name: Enable Yarn unplugged modules cache
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: ".yarn/unplugged"
-      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-yarn-unplugged-
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: ".yarn/unplugged"
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install

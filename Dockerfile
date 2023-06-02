@@ -206,10 +206,8 @@ FROM build-js AS build-dashmate-helper
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production dashmate && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
+    yarn workspaces focus --production dashmate
 
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
@@ -257,10 +255,8 @@ FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/platform-test-suite && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
+    yarn workspaces focus --production @dashevo/platform-test-suite
 
 #
 #  STAGE: FINAL TEST SUITE IMAGE
