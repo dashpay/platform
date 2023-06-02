@@ -8,7 +8,7 @@ import {
 import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
 import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
 import withRetry from './withRetry';
-import { FetchOpts } from '../methods/documents/get';
+import { QueryOptions } from '../types';
 
 type FetcherOptions = {
   /**
@@ -138,12 +138,12 @@ class Fetcher {
    * Fetches documents by data contract id and type
    * @param {Identifier} contractId - data contract ID
    * @param {string} type - document name
-   * @param {FetchOpts} opts - query
+   * @param {QueryOptions} opts - query
    */
   public async fetchDocuments(
     contractId: Identifier,
     type: string,
-    opts: FetchOpts,
+    opts: QueryOptions,
   ): Promise<GetDocumentsResponse> {
     // Define query
     const query = async (): Promise<GetDocumentsResponse> => {
