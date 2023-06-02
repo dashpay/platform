@@ -6053,6 +6053,7 @@ __metadata:
   dependencies:
     "@dashevo/bls": ~1.2.9
     "@dashevo/dapi-client": "workspace:*"
+    "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": ~0.20.6
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
@@ -6075,6 +6076,7 @@ __metadata:
     bs58: ^4.0.1
     buffer: ^6.0.3
     chai: ^4.3.4
+    chai-as-promised: ^7.1.1
     chance: ^1.1.6
     crypto-browserify: ^3.12.0
     dirty-chai: ^2.0.1
