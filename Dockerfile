@@ -146,7 +146,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
-    --mount=type=cache,sharing=shared,id=target_unplugged,target=/platform/.yarn/unplugged \
+    --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
     yarn build
@@ -318,7 +318,7 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,id=target_unplugged,target=/platform/.yarn/unplugged \
+RUN --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
     yarn workspaces focus --production @dashevo/dapi
 
 #
