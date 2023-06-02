@@ -1,16 +1,15 @@
 //! Main server process for RS-Drive-ABCI
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
+
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
-
+use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
+use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
+use itertools::Itertools;
 use std::path::PathBuf;
 use tracing::warn;
-use tracing_log::LogTracer;
-use tracing_subscriber::prelude::*;
-
-// struct aaa {}
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -25,11 +24,12 @@ struct Cli {
     /// Path to the config (.env) file.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath) ]
     config: Option<std::path::PathBuf>,
+
     /// Enable verbose logging. Use multiple times for even more logs.
     ///
     /// Repeat `v` multiple times to increase log verbosity:
     ///
-    /// * none     - `warn` unless overriden by RUST_LOG variable{n}
+    /// * none     - use RUST_LOG variable, default to `info`{n}
     /// * `-v`     - `info` from Drive, `error` from libraries{n}
     /// * `-vv`    - `debug` from Drive, `info` from libraries{n}
     /// * `-vvv`   - `debug` from all components{n}
@@ -56,13 +56,19 @@ enum Commands {
     /// WARNING: output can contain sensitive data!
     #[command()]
     Config {},
+
+    /// Check status.
+    ///
+    /// Returns 0 on success.
+    #[command()]
+    Status {},
 }
 
-pub fn main() {
+pub fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
-    configure_logging(&cli);
+    configure_logging(&cli, &config).expect("failed to configure logging");
 
     install_panic_hook();
 
@@ -74,17 +80,69 @@ pub fn main() {
                 config.core.rpc.password.clone(),
             )
             .unwrap();
-            drive_abci::abci::start(&config, core_rpc).unwrap()
+            let _prometheus = start_prometheus(&config)?;
+
+            drive_abci::abci::start(&config, core_rpc).unwrap();
+            Ok(())
         }
         Commands::Config {} => dump_config(&config),
+        Commands::Status {} => check_status(&config),
     }
 }
 
-fn dump_config(config: &PlatformConfig) {
+/// Start prometheus exporter if it's configured.
+fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, String> {
+    let prometheus_addr = config
+        .abci
+        .prometheus_bind_address
+        .clone()
+        .filter(|s| !s.is_empty());
+
+    if let Some(addr) = prometheus_addr {
+        let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
+        Ok(Some(
+            drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?,
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
+fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     let serialized =
         serde_json::to_string_pretty(config).expect("failed to generate configuration");
 
     println!("{}", serialized);
+
+    Ok(())
+}
+
+/// Check status of ABCI server.
+fn check_status(config: &PlatformConfig) -> Result<(), String> {
+    if let Some(prometheus_addr) = &config.abci.prometheus_bind_address {
+        let url =
+            url::Url::parse(prometheus_addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
+
+        let addr = format!(
+            "{}://{}:{}/metrics",
+            url.scheme(),
+            url.host()
+                .ok_or("ABCI_PROMETHEUS_BIND_ADDRESS must contain valid host".to_string())?,
+            url.port().unwrap_or(DEFAULT_PROMETHEUS_PORT)
+        );
+
+        let body: String = ureq::get(&addr)
+            .set("Content-type", "text/plain")
+            .call()
+            .map_err(|e| e.to_string())?
+            .into_string()
+            .map_err(|e| e.to_string())?;
+
+        println!("{}", body);
+        Ok(())
+    } else {
+        Err("ABCI_PROMETHEUS_BIND_ADDRESS not defined, cannot check status".to_string())
+    }
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
@@ -111,31 +169,28 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     config.expect("cannot parse configuration file")
 }
 
-fn configure_logging(cli: &Cli) {
-    use tracing_subscriber::*;
+fn configure_logging(
+    cli: &Cli,
+    config: &PlatformConfig,
+) -> Result<Loggers, drive_abci::logging::Error> {
+    let mut configs = config.abci.log.clone();
+    if configs.is_empty() || cli.verbose > 0 {
+        let cli_config = LogConfig {
+            destination: "stderr".to_string(),
+            verbosity: cli.verbose,
+            color: cli.color,
+            ..Default::default()
+        };
+        // we use key with underscores which are not allowed in config read from env
+        configs.insert("cli_verbosity".to_string(), cli_config);
+    }
 
-    let env_filter = match cli.verbose {
-        0 => EnvFilter::builder()
-            .with_default_directive(
-                "error,tenderdash_abci=warn,drive_abci=warn"
-                    .parse()
-                    .unwrap(),
-            )
-            .from_env_lossy(),
-        1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
-        2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
-        3 => EnvFilter::new("debug"),
-        4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
-        5 => EnvFilter::new("trace"),
-        _ => panic!("max verbosity level is 5"),
-    };
+    let loggers = LogBuilder::new().with_configs(&configs)?.build();
+    loggers.install();
 
-    let ansi = cli.color.unwrap_or(atty::is(atty::Stream::Stdout));
-    let layer = fmt::layer().with_ansi(ansi);
+    tracing::info!("Configured log destinations: {}", configs.keys().join(","));
 
-    registry().with(layer).with(env_filter).init();
-
-    LogTracer::init().expect("cannot initialize LogTracer");
+    Ok(loggers)
 }
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.

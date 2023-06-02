@@ -270,6 +270,31 @@ where
         DocumentsBatchTransition::from_value_map(raw_batch_transition, data_contracts)
     }
 
+    pub fn create_extended_from_document_buffer(
+        &self,
+        buffer: &[u8],
+        document_type: &str,
+        data_contract: &DataContract,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        let document_type = data_contract.document_types.get(document_type).ok_or(
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "document type was not found in the data contract",
+            )),
+        )?;
+
+        let document = Document::from_bytes(buffer, document_type)?;
+
+        Ok(ExtendedDocument {
+            protocol_version: data_contract.protocol_version,
+            document_type_name: document_type.name.clone(),
+            data_contract_id: data_contract.id,
+            document,
+            data_contract: data_contract.clone(),
+            metadata: None,
+            entropy: Bytes32::default(),
+        })
+    }
+
     pub async fn create_from_buffer(
         &self,
         buffer: impl AsRef<[u8]>,

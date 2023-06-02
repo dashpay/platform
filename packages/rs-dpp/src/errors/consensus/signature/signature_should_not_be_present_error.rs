@@ -3,7 +3,9 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Encode, Decode)]
 #[error("signature should be empty {message}")]
 pub struct SignatureShouldNotBePresentError {
     message: String,

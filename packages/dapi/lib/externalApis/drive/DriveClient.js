@@ -59,7 +59,7 @@ class DriveClient {
    */
   async fetchDataContract(request) {
     return this.request(
-      '/dataContracts',
+      '/dataContract',
       request.serializeBinary(),
     );
   }
@@ -73,7 +73,7 @@ class DriveClient {
    */
   async fetchDocuments(request) {
     return this.request(
-      '/dataContracts/documents',
+      '/dataContract/documents',
       request.serializeBinary(),
     );
   }

@@ -4,7 +4,9 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Pattern '{pattern}' at '{path}' is not not compatible with Re2: {message}")]
 pub struct IncompatibleRe2PatternError {
     /*

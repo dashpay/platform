@@ -18,7 +18,7 @@ use crate::{
 
 /// ValidatorSet contains validators that should be in use at a given height.
 ///
-/// You can easily convert ValidatorSet into [tenderdash_abci::proto::abci::ValdiatorSetUpdate] using [From].
+/// You can easily convert ValidatorSet into [tenderdash_abci::proto::abci::ValidatorSetUpdate] using [From].
 pub struct ValidatorSet {
     quorum_info: QuorumInfoResult,
 }

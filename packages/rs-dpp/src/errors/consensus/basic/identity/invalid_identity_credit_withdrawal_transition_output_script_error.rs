@@ -5,7 +5,9 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identity::core_script::CoreScript;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Output script must be either p2pkh or p2sh")]
 pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
     output_script: CoreScript,
