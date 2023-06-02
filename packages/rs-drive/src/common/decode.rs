@@ -32,8 +32,8 @@
 //! This module defines decoding functions.
 //!
 
-use std::io;
 use byteorder::{BigEndian, ReadBytesExt};
+use std::io;
 
 /// Decoding error.
 #[derive(Debug, thiserror::Error)]
