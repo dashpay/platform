@@ -142,20 +142,14 @@ FROM sources AS build-js
 
 RUN mkdir /artifacts
 
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_wasm_${TARGETARCH},target=/platform/target \
-    --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target_unplugged,target=/platform/.yarn/unplugged \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
-    yarn build && \
-    cp -R /platform/.yarn/unplugged /tmp/ && \
-    sccache --show-stats
+    yarn build
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
@@ -324,10 +318,8 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/dapi && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN --mount=type=cache,sharing=shared,id=target_unplugged,target=/platform/.yarn/unplugged \
+    yarn workspaces focus --production @dashevo/dapi
 
 #
 # STAGE: FINAL DAPI IMAGE
