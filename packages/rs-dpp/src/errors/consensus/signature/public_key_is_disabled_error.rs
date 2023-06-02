@@ -5,7 +5,9 @@ use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Identity key {public_key_id} is disabled")]
 pub struct PublicKeyIsDisabledError {
     /*

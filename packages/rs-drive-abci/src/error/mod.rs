@@ -1,6 +1,7 @@
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
+use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
@@ -39,6 +40,9 @@ pub enum Error {
     /// Configuration Error
     #[error("configuration: {0}")]
     Configuration(#[from] envy::Error),
+    /// Logging error
+    #[error("logging: {0}")]
+    Logging(#[from] logging::Error),
     /// Error from metrics subsystem
     #[error("metrics: {0}")]
     Metrics(#[from] crate::metrics::Error),

@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
+use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 #[error("Can't read protocol version from serialized object: {parsing_error}")]
 pub struct ProtocolVersionParsingError {
     /*

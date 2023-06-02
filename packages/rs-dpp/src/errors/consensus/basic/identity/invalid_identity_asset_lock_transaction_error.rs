@@ -3,7 +3,9 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 #[error("Invalid asset lock transaction: ${message}")]
 pub struct InvalidIdentityAssetLockTransactionError {
     /*

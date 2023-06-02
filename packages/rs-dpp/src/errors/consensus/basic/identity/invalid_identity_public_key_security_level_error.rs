@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use crate::identity::{KeyID, Purpose, SecurityLevel};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]
 pub struct InvalidIdentityPublicKeySecurityLevelError {
     /*
