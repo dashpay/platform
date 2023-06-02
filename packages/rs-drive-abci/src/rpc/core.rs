@@ -1,3 +1,5 @@
+use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
@@ -70,6 +72,15 @@ pub trait CoreRPCLike {
 
     // /// Get the detailed information about a deterministic masternode
     // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+
+    /// Verify a chain lock signature
+    /// If `max_height` is provided the chain lock will be verified
+    /// against quorums available at this height
+    fn verify_chain_lock(
+        &self,
+        chain_lock: &ChainLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -193,5 +204,27 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_protx_listdiff(base_block.unwrap_or(1), block))
+    }
+
+    /// Verify a chain lock signature
+    /// If `max_height` is provided the chain lock will be verified
+    /// against quorums available at this height
+    fn verify_chain_lock(
+        &self,
+        chain_lock: &ChainLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error> {
+        tracing::debug!(
+            method = "verify_chain_lock",
+            "chain lock {:?} max height {:?}",
+            chain_lock,
+            max_height,
+        );
+
+        retry!(self.inner.get_verifychainlock(
+            chain_lock.block_hash.to_hex().as_str(),
+            chain_lock.signature.to_hex().as_str(),
+            max_height
+        ))
     }
 }
