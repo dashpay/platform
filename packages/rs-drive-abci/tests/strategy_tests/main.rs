@@ -426,6 +426,61 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_core_height_randomly_increasing_with_epoch_change() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+        };
+        let hour_in_ms = 1000 * 60 * 60;
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+    }
+
+    #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
         let strategy = Strategy {
             contracts_with_updates: vec![],
@@ -842,7 +897,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "00e215e827e562b98024c7737b33afd27f0c110327ce20eb372767238cad57b3".to_string()
+            "8e90cef4a253c8a6e2d9364f14d5b37b53a41e1f2aff9a0085c311d4e23df038".to_string()
         )
     }
 
@@ -1366,7 +1421,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "9a5917416dcf3dc6e125c347b6d0be8bff8d56eb3f09b05a3cab68026911569c".to_string()
+            "839048d5a1b50ad80658f02aee27a20e9a05d2eecfde9170ffe2242bd5bfd20f".to_string()
         )
     }
 

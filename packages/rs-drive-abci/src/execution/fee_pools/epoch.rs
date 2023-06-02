@@ -36,6 +36,8 @@
 use crate::block::BlockStateInfo;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::block::epoch::Epoch;
+use dpp::ProtocolError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -137,6 +139,14 @@ impl Default for EpochInfo {
             previous_epoch_index: None,
             is_epoch_change: true,
         }
+    }
+}
+
+impl TryFrom<&EpochInfo> for Epoch {
+    type Error = ProtocolError;
+
+    fn try_from(value: &EpochInfo) -> Result<Self, Self::Error> {
+        Epoch::new(value.current_epoch_index)
     }
 }
 

@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
@@ -7,7 +8,7 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {
     /*
 

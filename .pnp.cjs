@@ -7012,6 +7012,20 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             "chai"\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1", {\
+          "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-bf848fb7b9/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-7262868a5b.zip/node_modules/chai-as-promised/",\
+          "packageDependencies": [\
+            ["chai-as-promised", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1"],\
+            ["@types/chai", "npm:4.2.22"],\
+            ["chai", "npm:4.3.4"],\
+            ["check-error", "npm:1.0.2"]\
+          ],\
+          "packagePeers": [\
+            "@types/chai",\
+            "chai"\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["chai-exclude", [\
@@ -8098,6 +8112,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["dash", "workspace:packages/js-dash-sdk"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
+            ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dashcore-lib", "npm:0.20.6"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -8120,6 +8135,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["chai", "npm:4.3.4"],\
+            ["chai-as-promised", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1"],\
             ["chance", "npm:1.1.8"],\
             ["crypto-browserify", "npm:3.12.0"],\
             ["dirty-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:2.0.1"],\
