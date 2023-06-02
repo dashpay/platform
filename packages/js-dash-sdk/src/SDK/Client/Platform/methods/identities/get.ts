@@ -1,5 +1,6 @@
 // @ts-ignore
 import { Identifier, Metadata } from '@dashevo/wasm-dpp';
+import { GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
@@ -16,10 +17,9 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
 
   const identifier = Identifier.from(id);
 
-  let identityResponse;
+  let identityResponse: GetIdentityResponse;
   try {
-    identityResponse = await this.client.getDAPIClient().platform
-      .getIdentity(identifier);
+    identityResponse = await this.fetcher.fetchIdentity(identifier);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -27,8 +27,7 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
 
     throw e;
   }
-
-  const identity = this.dpp.identity.createFromBuffer(identityResponse.getIdentity());
+  const identity = this.dpp.identity.createFromBuffer(identityResponse.getIdentity() as Uint8Array);
 
   let metadata;
   const responseMetadata = identityResponse.getMetadata();
