@@ -502,7 +502,7 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           build-args: |
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
@@ -705,7 +705,7 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           build-args: |
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
