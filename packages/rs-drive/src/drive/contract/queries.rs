@@ -97,8 +97,8 @@ impl Drive {
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<PathQuery, Error> {
-        let limit = limit.unwrap_or_else(|| MAX_CONTRACT_HISTORY_FETCH_LIMIT);
-        if limit > MAX_CONTRACT_HISTORY_FETCH_LIMIT || limit < 1 {
+        let limit = limit.unwrap_or(MAX_CONTRACT_HISTORY_FETCH_LIMIT);
+        if !(1..=MAX_CONTRACT_HISTORY_FETCH_LIMIT).contains(&limit) {
             return Err(Error::Drive(DriveError::InvalidContractHistoryFetchLimit(
                 limit,
             )));

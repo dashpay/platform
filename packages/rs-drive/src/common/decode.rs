@@ -34,10 +34,16 @@
 
 use byteorder::{BigEndian, ReadBytesExt};
 
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeError {
+    #[error("can't create a u64 from &[u8]: expected size 8, got {0}")]
+    InvalidLength(usize),
+}
+
 /// Decodes an unsigned integer on 64 bits.
-pub fn decode_u64(val: &[u8]) -> Result<u64, ()> {
+pub fn decode_u64(val: &[u8]) -> Result<u64, DecodeError> {
     if val.len() != 8 {
-        return Err(());
+        return Err(DecodeError::InvalidLength(val.len()));
     }
 
     // Flip the sign bit

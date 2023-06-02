@@ -56,7 +56,7 @@ pub fn any_schema_changes(
         .filter(|(document_type, original_schema)| {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
             let diff = json_patch::diff(original_schema, new_document_schema);
-            diff.0.len() > 0
+            !diff.0.is_empty()
         })
         .count();
 

@@ -6,7 +6,6 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
-use bincode::serde::decode_from_reader;
 use dpp::prelude::DataContract;
 use std::collections::BTreeMap;
 
@@ -52,12 +51,10 @@ impl Drive {
                         "we did not get back an element for the correct path for the historical contract",
                     )));
                 }
-            } else {
-                if path != contract_root_path(&contract_id) {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
+            } else if path != contract_root_path(&contract_id) {
+                return Err(Error::Proof(ProofError::CorruptedProof(
                         "we did not get back an element for the correct path for the historical contract",
                     )));
-                }
             };
 
             if key != vec![0] {

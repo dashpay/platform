@@ -1282,8 +1282,7 @@ impl Drive {
                     })?;
                     match value {
                         Element::Item(a, _flags) => {
-                            let contract =
-                                DataContract::deserialize(a).map_err(|e| Error::Protocol(e))?;
+                            let contract = DataContract::deserialize(a).map_err(Error::Protocol)?;
                             Ok((contract_time, contract))
                         }
                         _ => Err(Error::Drive(DriveError::CorruptedContractPath(
