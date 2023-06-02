@@ -230,7 +230,6 @@ where
             .try_into()
             .map_err(ProtocolError::ValueError)?;
 
-        // println!("Fetched config: {:?}", existing_data_contract.config);
         if !existing_data_contract
             .config
             .documents_mutable_contract_default
@@ -242,7 +241,6 @@ where
             for (document_type, original_schema) in old_schema.iter() {
                 let new_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
                 let patch = json_patch::diff(original_schema, new_schema);
-                println!("patch: {:?}", patch);
             }
         }
 
@@ -279,12 +277,6 @@ where
             .get_value("documents")
             .and_then(|a| a.clone().try_into())
             .map_err(ProtocolError::ValueError)?;
-
-        println!(
-            "Any changes: {}",
-            any_schema_changes(&existing_data_contract.documents, &new_documents)
-        );
-        println!("Readonly: {}", existing_data_contract.config.readonly);
 
         if existing_data_contract.config.readonly
             && any_schema_changes(&existing_data_contract.documents, &new_documents)

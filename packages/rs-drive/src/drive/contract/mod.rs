@@ -2662,11 +2662,6 @@ mod tests {
                             // TODO: this doesn't work because when we deserialize the contract
                             //  keeps_history is false for some reason!
                             assert_eq!(key, &test_case.contract_created_date_ms);
-                            println!("contract config: {:?}", contract.config);
-                            println!(
-                                "original contract config: {:?}",
-                                original_data_contract.config
-                            );
                             assert_eq!(contract, &original_data_contract);
                             continue;
                         }
