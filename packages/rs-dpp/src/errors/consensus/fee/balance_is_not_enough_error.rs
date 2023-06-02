@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
 pub struct BalanceIsNotEnoughError {
     /*

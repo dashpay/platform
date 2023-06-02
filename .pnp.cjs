@@ -16596,7 +16596,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["engine.io", "npm:6.4.2"],\
             ["socket.io-adapter", "npm:2.4.0"],\
-            ["socket.io-parser", "npm:4.2.1"]\
+            ["socket.io-parser", "npm:4.2.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -16611,10 +16611,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["socket.io-parser", [\
-        ["npm:4.2.1", {\
-          "packageLocation": "./.yarn/cache/socket.io-parser-npm-4.2.1-7ef513b498-2582202f22.zip/node_modules/socket.io-parser/",\
+        ["npm:4.2.3", {\
+          "packageLocation": "./.yarn/cache/socket.io-parser-npm-4.2.3-c3c994950a-f14030d09c.zip/node_modules/socket.io-parser/",\
           "packageDependencies": [\
-            ["socket.io-parser", "npm:4.2.1"],\
+            ["socket.io-parser", "npm:4.2.3"],\
             ["@socket.io/component-emitter", "npm:3.1.0"],\
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"]\
           ],\

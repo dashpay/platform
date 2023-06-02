@@ -118,7 +118,7 @@ describe('DriveClient', () => {
       const result = await drive.fetchDataContract(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: '/dataContracts',
+        path: '/dataContract',
         data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
       expect(result).to.be.deep.equal(responseBytes);
@@ -154,7 +154,7 @@ describe('DriveClient', () => {
       const result = await drive.fetchDocuments(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: '/dataContracts/documents',
+        path: '/dataContract/documents',
         data: Buffer.from(request.serializeBinary()).toString('hex'), // cbor encoded empty object
       });
       expect(result).to.be.deep.equal(responseBytes);

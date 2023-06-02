@@ -5,6 +5,7 @@ const TransactionsReader = require('./TransactionsReader');
 const TxStreamMock = require('../../../test/mocks/TxStreamMock');
 const { createBloomFilter } = require('./utils');
 const { mockMerkleBlock } = require('../../../test/mocks/dashcore/block');
+const { mockInstantLock } = require('../../../test/mocks/dashcore/instantlock');
 const { waitOneTick } = require('../../../test/utils');
 
 describe('TransactionsReader - unit', () => {
@@ -612,27 +613,46 @@ describe('TransactionsReader - unit', () => {
             'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
           ];
 
-          it('should expand bloom filter in case new addresses were generated', async () => {
+          // This test checks failsafe logic of bloom filter expansion
+          // In general, we are expanding bloom filters after instant locks arrival.
+          // If for some reason instant lock was delayed or missed, we expand bloom filter
+          // when the next batch of transactions is received
+          it('should trigger fail-safe mechanism to expand bloom filter in case it wasnt triggered by IS lock', async () => {
             await transactionsReader.startContinuousSync(
               fromBlockHeight, DEFAULT_ADDRESSES,
             );
 
+            // Handle new transactions
             transactionsReader
               .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ handleNewAddresses }) => {
+                // and simulate new addresses generation in response
                 handleNewAddresses(newAddresses);
               });
 
-            const transactions = [
+            // Sending a TX. This should trigger EVENTS.NEW_TRANSACTIONS
+            // and reader will memorize addresses generated
+            continuousSyncStream.sendTransactions([
               new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
-            ];
+            ]);
+            await waitOneTick();
 
-            continuousSyncStream.sendTransactions(transactions);
+            // Sending second TX, it should trigger failsafe mechanism for
+            // bloom filter expansion
+            continuousSyncStream.sendTransactions([
+              new Transaction({}).to(DEFAULT_ADDRESSES[1], 1000),
+            ]);
             await waitOneTick();
 
             expect(transactionsReader.createContinuousSyncStream).to.have.been.calledTwice();
             const { secondCall } = transactionsReader.createContinuousSyncStream;
 
             const newStream = await secondCall.returnValue;
+
+            // Tx reader must not process second batch of transactions
+            // in case of failsafe logic. It will restart stream, and process these transactions
+            // after
+            expect(transactionsReader.emit)
+              .to.have.been.calledOnce();
 
             expect(secondCall.args).to.deep.equal([
               createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
@@ -645,7 +665,7 @@ describe('TransactionsReader - unit', () => {
             expect(transactionsReader.continuousSyncStream).to.equal(newStream);
           });
 
-          it('should handle stream restart error', async () => {
+          it('should handle stream restart error in fail-safe mechanism', async () => {
             await transactionsReader.startContinuousSync(
               fromBlockHeight, DEFAULT_ADDRESSES,
             );
@@ -664,8 +684,13 @@ describe('TransactionsReader - unit', () => {
             });
 
             const transactions = [
-              new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000),
+              new Transaction({}).to(DEFAULT_ADDRESSES[1], 1000),
             ];
+            // Send first batch of transactions to update generated addresses
+            continuousSyncStream.sendTransactions(transactions);
+            await waitOneTick();
+
+            // Send first batch of transactions to trigger bloom filter restart
             continuousSyncStream.sendTransactions(transactions);
             await waitOneTick();
 
@@ -823,6 +848,68 @@ describe('TransactionsReader - unit', () => {
 
             expect(emittedError)
               .to.equal(rejectedMerkleBlockWith);
+          });
+        });
+      });
+
+      context('Instant locks', () => {
+        it('should process instant lock', async () => {
+          await transactionsReader.startContinuousSync(fromBlockHeight, DEFAULT_ADDRESSES);
+
+          const instantLock = mockInstantLock(Buffer.alloc(32).toString('hex'));
+          continuousSyncStream.sendISLocks([instantLock]);
+
+          expect(transactionsReader.emit).to.have.been.calledOnce();
+          const { firstCall } = transactionsReader.emit;
+          expect(firstCall.args[0]).to.equal(TransactionsReader.EVENTS.INSTANT_LOCKS);
+          const emittedInstantLocks = firstCall.args[1];
+          expect(emittedInstantLocks).to.deep.equal([instantLock]);
+        });
+
+        context('Bloom filter expansion', () => {
+          const newAddresses = [
+            'XcPmHAafCTrXe15auqobQkMrqMhwCt6KkC',
+            'XeTVfNCZVzLSFvPBXuKRE1R8XVjgKKwUy8',
+          ];
+
+          it('should expand Bloom filter in case new addresses were generated by TX', async () => {
+            await transactionsReader.startContinuousSync(
+              fromBlockHeight, DEFAULT_ADDRESSES,
+            );
+
+            // Handle new transactions
+            transactionsReader
+              .on(TransactionsReader.EVENTS.NEW_TRANSACTIONS, ({ handleNewAddresses }) => {
+                // and simulate new addresses generation in response
+                handleNewAddresses(newAddresses);
+              });
+
+            const tx = new Transaction({}).to(DEFAULT_ADDRESSES[0], 1000);
+            // Sending a TX. This should trigger EVENTS.NEW_TRANSACTIONS
+            // and reader will memorize addresses generated
+            continuousSyncStream.sendTransactions([tx]);
+            await waitOneTick();
+
+            // Sending a corresponding instant lock. It should trigger stream restart
+            // with expanded bloom filter
+            const instantLock = mockInstantLock(tx.hash);
+            continuousSyncStream.sendISLocks([instantLock]);
+            await waitOneTick();
+
+            expect(transactionsReader.createContinuousSyncStream).to.have.been.calledTwice();
+            const { secondCall } = transactionsReader.createContinuousSyncStream;
+
+            const newStream = await secondCall.returnValue;
+
+            expect(secondCall.args).to.deep.equal([
+              createBloomFilter([...DEFAULT_ADDRESSES, ...newAddresses]),
+              {
+                fromBlockHeight, // Reconnect
+                count: 0,
+              },
+            ]);
+
+            expect(transactionsReader.continuousSyncStream).to.equal(newStream);
           });
         });
       });

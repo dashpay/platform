@@ -665,6 +665,34 @@ impl Drive {
                         )));
                     }
                 }
+            } else {
+                // no change occurred on index, we need to refresh the references
+
+                // We can only trust the reference content has not changed if there are no storage flags
+                let trust_refresh_reference = storage_flags.is_none();
+
+                // unique indexes will be stored under key "0"
+                // non unique indices should have a tree at key "0" that has all elements based off of primary key
+                if !index.unique || all_fields_null {
+                    index_path.push(vec![0]);
+
+                    // here we should return an error if the element already exists
+                    self.batch_refresh_reference(
+                        index_path,
+                        document.id.to_vec(),
+                        document_reference.clone(),
+                        trust_refresh_reference,
+                        &mut batch_operations,
+                    )?;
+                } else {
+                    self.batch_refresh_reference(
+                        index_path,
+                        vec![0],
+                        document_reference.clone(),
+                        trust_refresh_reference,
+                        &mut batch_operations,
+                    )?;
+                }
             }
         }
         Ok(batch_operations)

@@ -42,8 +42,11 @@ use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{
     key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op, OpsByLevelPath,
 };
-use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
+use grovedb::{
+    Element, ElementFlags, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg,
+};
 
+use grovedb::element::MaxReferenceHop;
 use std::collections::HashMap;
 
 use crate::drive::flags::StorageFlags;
@@ -67,6 +70,7 @@ use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{
     PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
 };
+use grovedb::reference_path::ReferencePathType;
 use grovedb::Error as GroveError;
 use integer_encoding::VarInt;
 
@@ -1655,6 +1659,31 @@ impl Drive {
             .into_iter()
             .for_each(|op| drive_operations.push(GroveOperation(op)));
 
+        Ok(())
+    }
+
+    /// Pushes an "refresh reference" operation to `drive_operations`.
+    pub(crate) fn batch_refresh_reference(
+        &self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        document_reference: Element,
+        trust_refresh_reference: bool,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        let Element::Reference(reference_path_type, max_reference_hop, flags) = document_reference else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution("expected a reference on refresh")));
+        };
+        drive_operations.push(
+            LowLevelDriveOperation::refresh_reference_for_known_path_key_reference_info(
+                path,
+                key,
+                reference_path_type,
+                max_reference_hop,
+                flags,
+                trust_refresh_reference,
+            ),
+        );
         Ok(())
     }
 
