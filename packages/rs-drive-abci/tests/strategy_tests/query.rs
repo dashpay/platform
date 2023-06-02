@@ -1,31 +1,157 @@
 use crate::frequency::Frequency;
 use crate::strategy::StrategyRandomness;
 use dapi_grpc::platform::v0::{
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
+    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
+use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::{Identity, PartialIdentity};
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::validation::SimpleValidationResult;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
-use drive_abci::abci::AbciApplication;
-
+use drive_abci::abci::{AbciApplication, AbciError};
 use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{HashMap, HashSet};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+use tenderdash_abci::signatures::{SignBytes, SignDigest};
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {
     pub query_identities_by_public_key_hashes: Frequency,
 }
 
-#[derive(Debug)]
+/// ProofVerification contains trusted data from Platform chain (Tenderdash) needed to verify proofs at given `height`.
+///
+/// See https://github.com/dashpay/tenderdash/blob/v0.12-dev/spec/consensus/signing.md#block-signature-verification-on-light-client
+#[derive(Debug, Clone)]
 pub struct ProofVerification<'a> {
-    pub root_app_hash: &'a [u8; 32],
-    pub block_signature: &'a Vec<u8>,
+    /// Chain ID
+    pub chain_id: String,
+
+    /// Type of quorum
+    pub quorum_type: QuorumType,
+
+    /// Quorum hash
     pub quorum_hash: &'a [u8; 32],
+
+    /// Commit height
+    pub height: i64,
+
+    /// Hash of CanonicalBlockID
+    pub block_hash: &'a [u8; 32],
+
+    /// Version of ABCI app used to generate this commit
+    pub app_version: u64,
+
+    /// App hash for the `height`
+    pub app_hash: &'a [u8; 32],
+
+    /// Core chain locked height in use when generating block
+    pub core_chain_locked_height: u32,
+
+    /// Block generation time
+    pub time: Timestamp,
+
+    /// Block signature
+    pub signature: &'a [u8; 96],
+
+    /// Threshold key used to verify the signature
+    pub public_key: &'a dpp::bls_signatures::PublicKey,
+}
+
+impl<'a> ProofVerification<'a> {
+    /// Verify proof signature
+    ///
+    /// Constructs new signature for provided state ID and checks if signature is still valid.
+    ///
+    /// Implements algorithm described at:
+    /// https://github.com/dashpay/tenderdash/blob/v0.12-dev/spec/consensus/signing.md#block-signature-verification-on-light-client
+    fn verify_signature(&self, state_id: StateId, round: u32) -> SimpleValidationResult<AbciError> {
+        let state_id_hash = match state_id.sha256(&self.chain_id, self.height, round as i32) {
+            Ok(s) => s,
+            Err(e) => return SimpleValidationResult::new_with_error(AbciError::from(e)),
+        };
+
+        let v = CanonicalVote {
+            block_id: self.block_hash.to_vec(),
+            state_id: state_id_hash,
+            chain_id: self.chain_id.clone(),
+            height: self.height,
+            round: round as i64,
+            r#type: SignedMsgType::Precommit.into(),
+        };
+
+        let digest = match v.sign_digest(
+            &self.chain_id,
+            self.quorum_type as u8,
+            self.quorum_hash,
+            self.height,
+            round as i32,
+        ) {
+            Ok(h) => h,
+            Err(e) => return SimpleValidationResult::new_with_error(e.into()),
+        };
+        // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
+        let signature = match dpp::bls_signatures::Signature::from_bytes(self.signature) {
+            Ok(signature) => signature,
+            Err(e) => {
+                return SimpleValidationResult::new_with_error(
+                    AbciError::BlsErrorOfTenderdashThresholdMechanism(
+                        e,
+                        format!("Malformed signature data: {}", hex::encode(&self.signature)),
+                    ),
+                )
+            }
+        };
+        tracing::trace!(
+            digest=hex::encode(&digest),
+            ?state_id,
+            commit = ?v,
+            verification_context = ?self,
+            "Proof verification"
+        );
+        match self.public_key.verify(&signature, &digest) {
+            true => SimpleValidationResult::default(),
+            false => {
+                SimpleValidationResult::new_with_error(AbciError::BadCommitSignature(format!(
+                    "commit signature {} is wrong",
+                    hex::encode(signature.to_bytes().as_slice())
+                )))
+            }
+        }
+    }
+
+    /// Verify proof returned by the Platform.
+    pub fn verify_proof(&self, app_hash: &[u8], proof: Proof) -> Result<(), String> {
+        tracing::debug!(?proof, app_hash = hex::encode(&app_hash), "verifying proof");
+
+        // TODO: define and return valid errors
+        if self.app_hash != app_hash {
+            return Err("Invalid root app hash".to_string());
+        }
+
+        if proof.signature != self.signature {
+            return Err("Proof signature mismatch".to_string());
+        }
+
+        let state_id = StateId {
+            app_hash: app_hash.to_vec(),
+            app_version: self.app_version,
+            core_chain_locked_height: self.core_chain_locked_height,
+            height: self.height as u64,
+            time: Some(self.time.clone()),
+        };
+        if let Some(e) = self.verify_signature(state_id, proof.round).first_error() {
+            Err(e.to_string())
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl QueryStrategy {
@@ -136,7 +262,11 @@ impl QueryStrategy {
                         )
                     })
                     .collect();
-                assert_eq!(proof_verification.root_app_hash, &proof_root_hash);
+                assert_eq!(proof_verification.app_hash, &proof_root_hash);
+                assert_eq!(
+                    proof_verification.verify_proof(&proof_root_hash, proof),
+                    Ok(())
+                );
                 assert_eq!(identities, public_key_hashes);
             } else {
                 let identities_returned = response
