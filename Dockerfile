@@ -96,7 +96,6 @@ ENV NODE_ENV ${NODE_ENV}
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 WORKDIR /platform
-RUN echo "bust cache g"
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
@@ -104,7 +103,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     export CARGO_TARGET_DIR=/platform/target ; \
     export RUSTFLAGS="-C target-feature=-crt-static" ; \
-    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
     cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
 
@@ -128,12 +126,10 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-RUN echo "bust cache h"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
-    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci && \
