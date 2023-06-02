@@ -32,12 +32,18 @@
 //! This module defines decoding functions.
 //!
 
+use std::io;
 use byteorder::{BigEndian, ReadBytesExt};
 
+/// Decoding error.
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
+    /// Slice passed to decode_u64 is not 8 bytes long.
     #[error("can't create a u64 from &[u8]: expected size 8, got {0}")]
     InvalidLength(usize),
+    /// Unexpected IO error.
+    #[error("can't create a u64 from &[u8]: expected size 8, got {0}")]
+    ReadFailed(io::Error),
 }
 
 /// Decodes an unsigned integer on 64 bits.
@@ -63,5 +69,5 @@ pub fn decode_u64(val: &[u8]) -> Result<u64, DecodeError> {
     // and a bigger negative number would be greater than a smaller one
     // maintains sort order for each domain
     let mut rdr = val.as_slice();
-    rdr.read_u64::<BigEndian>().map_err(|_| ())
+    rdr.read_u64::<BigEndian>().map_err(DecodeError::ReadFailed)
 }
