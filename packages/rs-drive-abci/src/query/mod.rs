@@ -3,18 +3,18 @@ use crate::error::Error;
 use crate::platform::Platform;
 use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
-    get_data_contract_response, get_data_contracts_response, get_documents_response,
-    get_identities_by_public_key_hashes_response, get_identities_response,
+    get_data_contract_history_response, get_data_contract_response, get_data_contracts_response,
+    get_documents_response, get_identities_by_public_key_hashes_response, get_identities_response,
     get_identity_balance_and_revision_response, get_identity_balance_response,
     get_identity_by_public_key_hashes_response, get_identity_keys_response, get_identity_response,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse,
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
-    GetIdentitiesRequest, GetIdentitiesResponse, GetIdentityBalanceAndRevisionResponse,
-    GetIdentityBalanceResponse, GetIdentityByPublicKeyHashesRequest,
-    GetIdentityByPublicKeyHashesResponse, GetIdentityKeysRequest, GetIdentityKeysResponse,
-    GetIdentityRequest, GetIdentityResponse, GetProofsRequest, GetProofsResponse, Proof,
-    ResponseMetadata,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetIdentitiesByPublicKeyHashesRequest,
+    GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse,
+    GetIdentityByPublicKeyHashesRequest, GetIdentityByPublicKeyHashesResponse,
+    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, GetIdentityResponse,
+    GetProofsRequest, GetProofsResponse, Proof, ResponseMetadata,
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes20, Bytes32};
