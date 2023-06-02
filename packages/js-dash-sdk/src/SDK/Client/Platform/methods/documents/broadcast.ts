@@ -40,6 +40,23 @@ export default async function broadcast(
   // Broadcast state transition also wait for the result to be obtained
   await broadcastStateTransition(this, documentsBatchTransition);
 
+  // Acknowledge documents identifiers to handle retry attempts to mitigate
+  // state transition propagation lag
+  if (documents.create) {
+    documents.create.forEach((document) => {
+      const documentLocator = `${document.getDataContractId().toString()}/${document.getType()}`;
+      this.fetcher.acknowledgeKey(documentLocator);
+    });
+  }
+
+  // Forget documents identifiers to not retry on them anymore
+  if (documents.delete) {
+    documents.delete.forEach((document) => {
+      const documentLocator = `${document.getDataContractId().toString()}/${document.getType()}`;
+      this.fetcher.forgetKey(documentLocator);
+    });
+  }
+
   this.logger.debug('[Document#broadcast] Broadcasted documents', {
     create: documents.create?.length || 0,
     replace: documents.replace?.length || 0,

@@ -1,6 +1,5 @@
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
-import { wait } from '../../../../../utils/wait';
 
 /**
  * Register identities to the platform
@@ -44,30 +43,24 @@ export default async function register(
   });
   this.logger.silly('[Identity#register] Broadcasted IdentityCreateTransition');
 
+  const identityId = identity.getId();
+
   // If state transition was broadcast without any errors, import identity to the account
   account.storage
     .getWalletStore(account.walletId)
     .insertIdentityIdAtIndex(
-      identity.getId().toString(),
+      identityId.toString(),
       identityIndex,
     );
 
-  // Fetch identity from the network because the current identity object
-  // doesn't have metadata and balance information. Due to replication lag
-  // some nodes couldn't have it yet, so we need to try multiple times
-  const maxAttempts = 20;
-  let attempt = 0;
-  let registeredIdentity: any = null; // We don't have Identity type yet
+  // Acknowledge identifier to handle retry attempts to mitigate
+  // state transition propagation lag
+  this.fetcher.acknowledgeIdentifier(identityId);
 
-  while (registeredIdentity === null && attempt < maxAttempts) {
-    await wait(100);
-
-    registeredIdentity = await this.identities.get(identity.getId());
-    attempt += 1;
-  }
+  const registeredIdentity = await this.identities.get(identityId);
 
   if (registeredIdentity === null) {
-    throw new Error(`Can't fetch created identity with id ${identity.getId()}`);
+    throw new Error(`Can't fetch created identity with id ${identityId}`);
   }
 
   // We cannot just return registeredIdentity as we want to
@@ -76,7 +69,7 @@ export default async function register(
   identity.setBalance(registeredIdentity.getBalance());
   identity.setPublicKeys(registeredIdentity.getPublicKeys());
 
-  this.logger.debug(`[Identity#register] Registered identity "${identity.getId()}"`);
+  this.logger.debug(`[Identity#register] Registered identity "${identityId}"`);
 
   return identity;
 }
