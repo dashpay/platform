@@ -30,6 +30,9 @@ const DEFAULT_MAX_ATTEMPTS = 7;
  * where we query platform entities right after their creation
  *
  * Should be used until fully functioning state transition acknowledgement is implemented
+ *
+ * Note: possible collisions of acknowledged keys
+ * should be resolved externally by user of this class
  */
 class Fetcher {
   public dapiClient: DAPIClient;
