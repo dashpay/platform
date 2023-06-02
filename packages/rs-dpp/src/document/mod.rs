@@ -6,6 +6,8 @@ pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 mod document;
 
 mod accessors;
+pub mod document_facade;
+pub mod document_factory;
 mod document_patch;
 pub mod errors;
 pub mod extended_document;
@@ -14,8 +16,6 @@ pub mod generate_document_id;
 mod serde_serialize;
 pub mod state_transition;
 mod v0;
-pub mod document_facade;
-pub mod document_factory;
 
 pub use v0::*;
 

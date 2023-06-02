@@ -9,7 +9,6 @@ use crate::errors::consensus::codes::ErrorWithCode;
 use crate::tests::utils::json_schema_error;
 use crate::{
     consensus::{basic::json_schema_error::JsonSchemaError, ConsensusError},
-    data_contract::validation::data_contract_validation::DataContractValidator,
     prelude::*,
     tests::fixtures::get_data_contract_fixture,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},

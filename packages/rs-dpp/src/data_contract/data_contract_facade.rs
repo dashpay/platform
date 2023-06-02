@@ -1,15 +1,13 @@
-
 use crate::data_contract::contract_config::ContractConfigV0;
-use crate::data_contract::validation::data_contract_validation::DataContractValidator;
-use crate::data_contract::{CreatedDataContract, DataContract, DataContractFactory};
+use crate::data_contract::{DataContract, DataContractFactory};
 
+use crate::data_contract::CreatedDataContract;
 use crate::prelude::Identifier;
 use crate::util::entropy_generator::EntropyGenerator;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use std::sync::Arc;
-use crate::data_contract::created_data_contract::CreatedDataContract;
 
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;

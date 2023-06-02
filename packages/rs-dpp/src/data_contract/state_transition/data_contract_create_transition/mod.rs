@@ -414,7 +414,10 @@ mod test {
                     .default_current_version
                     .into(),
             ),
-            (property_names::ENTROPY, created_data_contract.entropy_used.into()),
+            (
+                property_names::ENTROPY,
+                created_data_contract.entropy_used.into(),
+            ),
             (
                 DATA_CONTRACT,
                 created_data_contract.data_contract.to_object().unwrap(),

@@ -5,13 +5,11 @@ use platform_value::platform_value;
 use crate::data_contract::CreatedDataContract;
 use crate::prelude::*;
 use crate::{
-    data_contract::validation::data_contract_validation::DataContractValidator,
     data_contract::DataContractFactory,
     identifier,
     tests::utils::generate_random_identifier_struct,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
-use crate::data_contract::created_data_contract::CreatedDataContract;
 
 pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
     let defs = platform_value!(

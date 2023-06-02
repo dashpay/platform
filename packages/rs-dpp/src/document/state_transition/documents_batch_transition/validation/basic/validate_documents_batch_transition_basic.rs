@@ -135,7 +135,8 @@ pub async fn validate_documents_batch_transition_basic(
         .get_identifier(property_names::OWNER_ID)
         .map_err(ProtocolError::ValueError)?;
 
-    let protocol_version = state_transition_map.get_integer(property_names::STATE_TRANSITION_PROTOCOL_VERSION)?;
+    let protocol_version =
+        state_transition_map.get_integer(property_names::STATE_TRANSITION_PROTOCOL_VERSION)?;
     let validation_result = protocol_version_validator.validate(protocol_version)?;
     result.merge(validation_result);
     if !result.is_valid() {

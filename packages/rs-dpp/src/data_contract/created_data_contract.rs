@@ -1,7 +1,7 @@
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Bytes32, Error, Value};
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::{Bytes32, Error, Value};
 
 #[derive(Clone, Debug)]
 pub struct CreatedDataContract {

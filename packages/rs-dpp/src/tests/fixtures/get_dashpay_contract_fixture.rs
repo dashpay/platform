@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    data_contract::{
-        validation::data_contract_validation::DataContractValidator, DataContract,
-        DataContractFactory,
-    },
+    data_contract::{DataContract, DataContractFactory},
     prelude::Identifier,
     tests::utils::generate_random_identifier_struct,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},

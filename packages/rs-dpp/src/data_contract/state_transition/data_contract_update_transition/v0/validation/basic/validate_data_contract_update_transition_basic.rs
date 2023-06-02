@@ -12,8 +12,7 @@ use crate::version::PlatformVersion;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
-        property_names as contract_property_names, state_transition::property_names,
-        validation::data_contract_validation::DataContractValidator, DataContract,
+        property_names as contract_property_names, state_transition::property_names, DataContract,
     },
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,

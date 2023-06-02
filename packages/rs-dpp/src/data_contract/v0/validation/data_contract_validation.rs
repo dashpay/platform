@@ -11,6 +11,7 @@ use crate::consensus::basic::data_contract::{
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
 };
 use crate::consensus::ConsensusError;
+use crate::data_contract::data_contract::DataContractV0;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
     consensus::basic::BasicError,
@@ -26,7 +27,6 @@ use crate::{
     version::ProtocolVersionValidator,
     ProtocolError,
 };
-use crate::data_contract::data_contract::DataContractV0;
 
 use super::{
     multi_validator::{

@@ -742,7 +742,6 @@ mod tests {
     use std::option::Option::None;
     use std::sync::Arc;
 
-    use dpp::data_contract::validation::data_contract_validation::DataContractValidator;
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;

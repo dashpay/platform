@@ -3,6 +3,7 @@ mod v0;
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -33,7 +34,7 @@ impl DataContractFactory {
         documents: Value,
         config: Option<Value>,
         definitions: Option<Value>,
-    ) -> Result<DataContract, ProtocolError> {
+    ) -> Result<CreatedDataContract, ProtocolError> {
         match self {
             DataContractFactory::V0(v0) => v0.create(owner_id, documents, config, definitions),
         }

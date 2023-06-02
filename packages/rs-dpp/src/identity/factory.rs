@@ -1,4 +1,3 @@
-use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -12,8 +11,6 @@ use crate::prelude::Identifier;
 use crate::{BlsModule, Convertible, ProtocolError};
 
 use dashcore::{InstantLock, Transaction};
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::iter::FromIterator;
@@ -22,13 +19,10 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::version::LATEST_PLATFORM_VERSION;
 
+use crate::identity::v0::identity::IdentityV0;
 use platform_value::Value;
 use std::sync::Arc;
-use crate::identity::v0::identity::IdentityV0;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -64,7 +58,8 @@ where
             revision: 0,
             asset_lock_proof: Some(asset_lock_proof),
             metadata: None,
-        }.into();
+        }
+        .into();
 
         Ok(identity)
     }

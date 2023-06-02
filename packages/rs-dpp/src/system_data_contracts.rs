@@ -1,4 +1,3 @@
-use crate::data_contract::validation::data_contract_validation::DataContractValidator;
 use crate::data_contract::DataContractFactory;
 use crate::prelude::*;
 use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};

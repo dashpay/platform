@@ -10,14 +10,16 @@ use platform_value::{Bytes32, Error, Value};
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::errors::InvalidDataContractError;
 
-use crate::data_contract::property_names::{PROTOCOL_VERSION, SYSTEM_VERSION};
+use crate::data_contract::property_names::SYSTEM_VERSION;
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::state_transition::data_contract_create_transition::property_names::DATA_CONTRACT_PROTOCOL_VERSION;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::data_contract::validation::data_contract_validation::DataContractValidator;
+use crate::data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransitionType;
@@ -29,9 +31,6 @@ use crate::{
     prelude::Identifier,
     Convertible,
 };
-use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::state_transition::data_contract_create_transition::property_names::DATA_CONTRACT_PROTOCOL_VERSION;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -77,7 +76,7 @@ impl DataContractFactoryV0 {
         &self,
         owner_id: Identifier,
         documents: Value,
-        config: Option<ContractConfigV0>,
+        config: Option<Value>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);
@@ -127,8 +126,7 @@ impl DataContractFactoryV0 {
         } else {
             None
         };
-        let mut data_contract = DataContract {
-            data_contract_protocol_version: self.protocol_version,
+        let mut data_contract = DataContractV0 {
             id: data_contract_id,
             schema: data_contract::SCHEMA_URI.to_string(),
             version: 1,
@@ -139,7 +137,8 @@ impl DataContractFactoryV0 {
             documents,
             defs: json_defs,
             binary_properties: Default::default(),
-        };
+        }
+        .into();
 
         data_contract.generate_binary_properties();
         Ok(CreatedDataContract {
@@ -172,7 +171,9 @@ impl DataContractFactoryV0 {
         };
         match version {
             0 => Ok(DataContractV0::from_raw_object(data_contract_object)?.into()),
-            _ => Err(ProtocolError::UnknownVersionError("unknown contract version when creating from object in factory".to_string()))
+            _ => Err(ProtocolError::UnknownVersionError(
+                "unknown contract version when creating from object in factory".to_string(),
+            )),
         }
     }
 
