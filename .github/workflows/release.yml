@@ -580,8 +580,6 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64
-          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
-          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
