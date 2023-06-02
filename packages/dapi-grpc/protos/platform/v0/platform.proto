@@ -254,6 +254,37 @@ message GetDataContractsResponse {
   }
   ResponseMetadata metadata = 3;
 }
+
+message GetDataContractHistoryRequest {
+  bytes id = 1;
+  optional uint32 limit = 2;
+  optional uint32 offset = 3;
+  optional uint64 start_at_seconds = 4;
+  bool prove = 5;
+}
+
+message GetDataContractHistoryResponse {
+  message DataContractValue {
+    bytes value = 1;
+  }
+
+  message DataContractHistoryEntry {
+    uint64 date = 1;
+    DataContractValue value = 2;
+  }
+
+  message DataContractHistory {
+    repeated DataContractHistoryEntry data_contract_entries = 1;
+  }
+
+  oneof result {
+    DataContractHistory data_contract_history = 1;
+    Proof proof = 2;
+  }
+
+  ResponseMetadata metadata = 3;
+}
+
 message GetDocumentsRequest {
   bytes data_contract_id = 1;
   string document_type = 2;

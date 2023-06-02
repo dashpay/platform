@@ -1,6 +1,7 @@
 use self::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
+use contract::ContractError;
 use document::DocumentError;
 use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
@@ -8,6 +9,8 @@ use fee::FeeError;
 use identity::IdentityError;
 use query::QuerySyntaxError;
 
+/// Contract errors
+pub mod contract;
 /// Document module
 pub mod document;
 /// Drive module
@@ -56,4 +59,7 @@ pub enum Error {
     /// Value error
     #[error("value: {0}")]
     Value(#[from] ValueError),
+    /// Contract error
+    #[error("contract: {0}")]
+    Contract(#[from] ContractError),
 }
