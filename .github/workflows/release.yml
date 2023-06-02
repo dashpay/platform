@@ -570,9 +570,6 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
-      - name: inject go-build-cache into docker
-        uses: dcginfra/buildkit-cache-dance/inject@main
-
       - name: Build and push Docker image for Envoy
         uses: docker/build-push-action@v3
         with:
@@ -585,9 +582,6 @@ jobs:
           platforms: linux/amd64
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
-
-      - name: extract go-build-cache from docker
-        uses: dcginfra/buildkit-cache-dance/extract@main
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
