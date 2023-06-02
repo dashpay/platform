@@ -5,6 +5,7 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const { use } = require('chai');
 const dirtyChai = require('dirty-chai');
+const chaiAsPromised = require('chai-as-promised');
 
 dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
@@ -12,6 +13,7 @@ dotenvSafe.config({
 
 use(dirtyChai);
 use(sinonChai);
+use(chaiAsPromised);
 
 before(function before() {
   if (!this.sinon) {

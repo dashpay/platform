@@ -10324,6 +10324,1211 @@ $root.org = (function() {
                         return GetDataContractsResponse;
                     })();
 
+                    v0.GetDataContractHistoryRequest = (function() {
+
+                        /**
+                         * Properties of a GetDataContractHistoryRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDataContractHistoryRequest
+                         * @property {Uint8Array|null} [id] GetDataContractHistoryRequest id
+                         * @property {number|null} [limit] GetDataContractHistoryRequest limit
+                         * @property {number|null} [offset] GetDataContractHistoryRequest offset
+                         * @property {number|Long|null} [startAtSeconds] GetDataContractHistoryRequest startAtSeconds
+                         * @property {boolean|null} [prove] GetDataContractHistoryRequest prove
+                         */
+
+                        /**
+                         * Constructs a new GetDataContractHistoryRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDataContractHistoryRequest.
+                         * @implements IGetDataContractHistoryRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest=} [properties] Properties to set
+                         */
+                        function GetDataContractHistoryRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDataContractHistoryRequest id.
+                         * @member {Uint8Array} id
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @instance
+                         */
+                        GetDataContractHistoryRequest.prototype.id = $util.newBuffer([]);
+
+                        /**
+                         * GetDataContractHistoryRequest limit.
+                         * @member {number} limit
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @instance
+                         */
+                        GetDataContractHistoryRequest.prototype.limit = 0;
+
+                        /**
+                         * GetDataContractHistoryRequest offset.
+                         * @member {number} offset
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @instance
+                         */
+                        GetDataContractHistoryRequest.prototype.offset = 0;
+
+                        /**
+                         * GetDataContractHistoryRequest startAtSeconds.
+                         * @member {number|Long} startAtSeconds
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @instance
+                         */
+                        GetDataContractHistoryRequest.prototype.startAtSeconds = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * GetDataContractHistoryRequest prove.
+                         * @member {boolean} prove
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @instance
+                         */
+                        GetDataContractHistoryRequest.prototype.prove = false;
+
+                        /**
+                         * Creates a new GetDataContractHistoryRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryRequest} GetDataContractHistoryRequest instance
+                         */
+                        GetDataContractHistoryRequest.create = function create(properties) {
+                            return new GetDataContractHistoryRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDataContractHistoryRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest} message GetDataContractHistoryRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDataContractHistoryRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.id != null && Object.hasOwnProperty.call(message, "id"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.id);
+                            if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                            if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
+                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.offset);
+                            if (message.startAtSeconds != null && Object.hasOwnProperty.call(message, "startAtSeconds"))
+                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtSeconds);
+                            if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDataContractHistoryRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest} message GetDataContractHistoryRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDataContractHistoryRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDataContractHistoryRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryRequest} GetDataContractHistoryRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDataContractHistoryRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.id = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.limit = reader.uint32();
+                                    break;
+                                case 3:
+                                    message.offset = reader.uint32();
+                                    break;
+                                case 4:
+                                    message.startAtSeconds = reader.uint64();
+                                    break;
+                                case 5:
+                                    message.prove = reader.bool();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDataContractHistoryRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryRequest} GetDataContractHistoryRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDataContractHistoryRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDataContractHistoryRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDataContractHistoryRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.id != null && message.hasOwnProperty("id"))
+                                if (!(message.id && typeof message.id.length === "number" || $util.isString(message.id)))
+                                    return "id: buffer expected";
+                            if (message.limit != null && message.hasOwnProperty("limit"))
+                                if (!$util.isInteger(message.limit))
+                                    return "limit: integer expected";
+                            if (message.offset != null && message.hasOwnProperty("offset"))
+                                if (!$util.isInteger(message.offset))
+                                    return "offset: integer expected";
+                            if (message.startAtSeconds != null && message.hasOwnProperty("startAtSeconds"))
+                                if (!$util.isInteger(message.startAtSeconds) && !(message.startAtSeconds && $util.isInteger(message.startAtSeconds.low) && $util.isInteger(message.startAtSeconds.high)))
+                                    return "startAtSeconds: integer|Long expected";
+                            if (message.prove != null && message.hasOwnProperty("prove"))
+                                if (typeof message.prove !== "boolean")
+                                    return "prove: boolean expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDataContractHistoryRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryRequest} GetDataContractHistoryRequest
+                         */
+                        GetDataContractHistoryRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDataContractHistoryRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryRequest();
+                            if (object.id != null)
+                                if (typeof object.id === "string")
+                                    $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
+                                else if (object.id.length >= 0)
+                                    message.id = object.id;
+                            if (object.limit != null)
+                                message.limit = object.limit >>> 0;
+                            if (object.offset != null)
+                                message.offset = object.offset >>> 0;
+                            if (object.startAtSeconds != null)
+                                if ($util.Long)
+                                    (message.startAtSeconds = $util.Long.fromValue(object.startAtSeconds)).unsigned = true;
+                                else if (typeof object.startAtSeconds === "string")
+                                    message.startAtSeconds = parseInt(object.startAtSeconds, 10);
+                                else if (typeof object.startAtSeconds === "number")
+                                    message.startAtSeconds = object.startAtSeconds;
+                                else if (typeof object.startAtSeconds === "object")
+                                    message.startAtSeconds = new $util.LongBits(object.startAtSeconds.low >>> 0, object.startAtSeconds.high >>> 0).toNumber(true);
+                            if (object.prove != null)
+                                message.prove = Boolean(object.prove);
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDataContractHistoryRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDataContractHistoryRequest} message GetDataContractHistoryRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDataContractHistoryRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                if (options.bytes === String)
+                                    object.id = "";
+                                else {
+                                    object.id = [];
+                                    if (options.bytes !== Array)
+                                        object.id = $util.newBuffer(object.id);
+                                }
+                                object.limit = 0;
+                                object.offset = 0;
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.startAtSeconds = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.startAtSeconds = options.longs === String ? "0" : 0;
+                                object.prove = false;
+                            }
+                            if (message.id != null && message.hasOwnProperty("id"))
+                                object.id = options.bytes === String ? $util.base64.encode(message.id, 0, message.id.length) : options.bytes === Array ? Array.prototype.slice.call(message.id) : message.id;
+                            if (message.limit != null && message.hasOwnProperty("limit"))
+                                object.limit = message.limit;
+                            if (message.offset != null && message.hasOwnProperty("offset"))
+                                object.offset = message.offset;
+                            if (message.startAtSeconds != null && message.hasOwnProperty("startAtSeconds"))
+                                if (typeof message.startAtSeconds === "number")
+                                    object.startAtSeconds = options.longs === String ? String(message.startAtSeconds) : message.startAtSeconds;
+                                else
+                                    object.startAtSeconds = options.longs === String ? $util.Long.prototype.toString.call(message.startAtSeconds) : options.longs === Number ? new $util.LongBits(message.startAtSeconds.low >>> 0, message.startAtSeconds.high >>> 0).toNumber(true) : message.startAtSeconds;
+                            if (message.prove != null && message.hasOwnProperty("prove"))
+                                object.prove = message.prove;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDataContractHistoryRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDataContractHistoryRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return GetDataContractHistoryRequest;
+                    })();
+
+                    v0.GetDataContractHistoryResponse = (function() {
+
+                        /**
+                         * Properties of a GetDataContractHistoryResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDataContractHistoryResponse
+                         * @property {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistory|null} [dataContractHistory] GetDataContractHistoryResponse dataContractHistory
+                         * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDataContractHistoryResponse proof
+                         * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDataContractHistoryResponse metadata
+                         */
+
+                        /**
+                         * Constructs a new GetDataContractHistoryResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDataContractHistoryResponse.
+                         * @implements IGetDataContractHistoryResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryResponse=} [properties] Properties to set
+                         */
+                        function GetDataContractHistoryResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDataContractHistoryResponse dataContractHistory.
+                         * @member {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistory|null|undefined} dataContractHistory
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @instance
+                         */
+                        GetDataContractHistoryResponse.prototype.dataContractHistory = null;
+
+                        /**
+                         * GetDataContractHistoryResponse proof.
+                         * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @instance
+                         */
+                        GetDataContractHistoryResponse.prototype.proof = null;
+
+                        /**
+                         * GetDataContractHistoryResponse metadata.
+                         * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @instance
+                         */
+                        GetDataContractHistoryResponse.prototype.metadata = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDataContractHistoryResponse result.
+                         * @member {"dataContractHistory"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetDataContractHistoryResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["dataContractHistory", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDataContractHistoryResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} GetDataContractHistoryResponse instance
+                         */
+                        GetDataContractHistoryResponse.create = function create(properties) {
+                            return new GetDataContractHistoryResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDataContractHistoryResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryResponse} message GetDataContractHistoryResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDataContractHistoryResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.dataContractHistory != null && Object.hasOwnProperty.call(message, "dataContractHistory"))
+                                $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.encode(message.dataContractHistory, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDataContractHistoryResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryResponse} message GetDataContractHistoryResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDataContractHistoryResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDataContractHistoryResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} GetDataContractHistoryResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDataContractHistoryResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.dataContractHistory = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                    break;
+                                case 3:
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDataContractHistoryResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} GetDataContractHistoryResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDataContractHistoryResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDataContractHistoryResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDataContractHistoryResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.dataContractHistory != null && message.hasOwnProperty("dataContractHistory")) {
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.verify(message.dataContractHistory);
+                                    if (error)
+                                        return "dataContractHistory." + error;
+                                }
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                            }
+                            if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                if (error)
+                                    return "metadata." + error;
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDataContractHistoryResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} GetDataContractHistoryResponse
+                         */
+                        GetDataContractHistoryResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse();
+                            if (object.dataContractHistory != null) {
+                                if (typeof object.dataContractHistory !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.dataContractHistory: object expected");
+                                message.dataContractHistory = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.fromObject(object.dataContractHistory);
+                            }
+                            if (object.proof != null) {
+                                if (typeof object.proof !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.proof: object expected");
+                                message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                            }
+                            if (object.metadata != null) {
+                                if (typeof object.metadata !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.metadata: object expected");
+                                message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDataContractHistoryResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} message GetDataContractHistoryResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDataContractHistoryResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                object.metadata = null;
+                            if (message.dataContractHistory != null && message.hasOwnProperty("dataContractHistory")) {
+                                object.dataContractHistory = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.toObject(message.dataContractHistory, options);
+                                if (options.oneofs)
+                                    object.result = "dataContractHistory";
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
+                                object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
+                            if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDataContractHistoryResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDataContractHistoryResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDataContractHistoryResponse.DataContractValue = (function() {
+
+                            /**
+                             * Properties of a DataContractValue.
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                             * @interface IDataContractValue
+                             * @property {Uint8Array|null} [value] DataContractValue value
+                             */
+
+                            /**
+                             * Constructs a new DataContractValue.
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                             * @classdesc Represents a DataContractValue.
+                             * @implements IDataContractValue
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue=} [properties] Properties to set
+                             */
+                            function DataContractValue(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DataContractValue value.
+                             * @member {Uint8Array} value
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @instance
+                             */
+                            DataContractValue.prototype.value = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new DataContractValue instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue instance
+                             */
+                            DataContractValue.create = function create(properties) {
+                                return new DataContractValue(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DataContractValue message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue} message DataContractValue message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractValue.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.value);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DataContractValue message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue} message DataContractValue message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractValue.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DataContractValue message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractValue.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.value = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DataContractValue message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractValue.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DataContractValue message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DataContractValue.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    if (!(message.value && typeof message.value.length === "number" || $util.isString(message.value)))
+                                        return "value: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DataContractValue message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue
+                             */
+                            DataContractValue.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue();
+                                if (object.value != null)
+                                    if (typeof object.value === "string")
+                                        $util.base64.decode(object.value, message.value = $util.newBuffer($util.base64.length(object.value)), 0);
+                                    else if (object.value.length >= 0)
+                                        message.value = object.value;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DataContractValue message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} message DataContractValue
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DataContractValue.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.value = "";
+                                    else {
+                                        object.value = [];
+                                        if (options.bytes !== Array)
+                                            object.value = $util.newBuffer(object.value);
+                                    }
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    object.value = options.bytes === String ? $util.base64.encode(message.value, 0, message.value.length) : options.bytes === Array ? Array.prototype.slice.call(message.value) : message.value;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DataContractValue to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DataContractValue.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return DataContractValue;
+                        })();
+
+                        GetDataContractHistoryResponse.DataContractHistoryEntry = (function() {
+
+                            /**
+                             * Properties of a DataContractHistoryEntry.
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                             * @interface IDataContractHistoryEntry
+                             * @property {number|Long|null} [date] DataContractHistoryEntry date
+                             * @property {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue|null} [value] DataContractHistoryEntry value
+                             */
+
+                            /**
+                             * Constructs a new DataContractHistoryEntry.
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                             * @classdesc Represents a DataContractHistoryEntry.
+                             * @implements IDataContractHistoryEntry
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistoryEntry=} [properties] Properties to set
+                             */
+                            function DataContractHistoryEntry(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DataContractHistoryEntry date.
+                             * @member {number|Long} date
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @instance
+                             */
+                            DataContractHistoryEntry.prototype.date = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * DataContractHistoryEntry value.
+                             * @member {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue|null|undefined} value
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @instance
+                             */
+                            DataContractHistoryEntry.prototype.value = null;
+
+                            /**
+                             * Creates a new DataContractHistoryEntry instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistoryEntry=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry} DataContractHistoryEntry instance
+                             */
+                            DataContractHistoryEntry.create = function create(properties) {
+                                return new DataContractHistoryEntry(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DataContractHistoryEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistoryEntry} message DataContractHistoryEntry message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractHistoryEntry.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.date != null && Object.hasOwnProperty.call(message, "date"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.date);
+                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                    $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.encode(message.value, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DataContractHistoryEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistoryEntry} message DataContractHistoryEntry message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractHistoryEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DataContractHistoryEntry message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry} DataContractHistoryEntry
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractHistoryEntry.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.date = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.value = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DataContractHistoryEntry message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry} DataContractHistoryEntry
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractHistoryEntry.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DataContractHistoryEntry message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DataContractHistoryEntry.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.date != null && message.hasOwnProperty("date"))
+                                    if (!$util.isInteger(message.date) && !(message.date && $util.isInteger(message.date.low) && $util.isInteger(message.date.high)))
+                                        return "date: integer|Long expected";
+                                if (message.value != null && message.hasOwnProperty("value")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.verify(message.value);
+                                    if (error)
+                                        return "value." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DataContractHistoryEntry message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry} DataContractHistoryEntry
+                             */
+                            DataContractHistoryEntry.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry();
+                                if (object.date != null)
+                                    if ($util.Long)
+                                        (message.date = $util.Long.fromValue(object.date)).unsigned = true;
+                                    else if (typeof object.date === "string")
+                                        message.date = parseInt(object.date, 10);
+                                    else if (typeof object.date === "number")
+                                        message.date = object.date;
+                                    else if (typeof object.date === "object")
+                                        message.date = new $util.LongBits(object.date.low >>> 0, object.date.high >>> 0).toNumber(true);
+                                if (object.value != null) {
+                                    if (typeof object.value !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.value: object expected");
+                                    message.value = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.fromObject(object.value);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DataContractHistoryEntry message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry} message DataContractHistoryEntry
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DataContractHistoryEntry.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.date = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.date = options.longs === String ? "0" : 0;
+                                    object.value = null;
+                                }
+                                if (message.date != null && message.hasOwnProperty("date"))
+                                    if (typeof message.date === "number")
+                                        object.date = options.longs === String ? String(message.date) : message.date;
+                                    else
+                                        object.date = options.longs === String ? $util.Long.prototype.toString.call(message.date) : options.longs === Number ? new $util.LongBits(message.date.low >>> 0, message.date.high >>> 0).toNumber(true) : message.date;
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    object.value = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.toObject(message.value, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DataContractHistoryEntry to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DataContractHistoryEntry.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return DataContractHistoryEntry;
+                        })();
+
+                        GetDataContractHistoryResponse.DataContractHistory = (function() {
+
+                            /**
+                             * Properties of a DataContractHistory.
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                             * @interface IDataContractHistory
+                             * @property {Array.<org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistoryEntry>|null} [dataContractEntries] DataContractHistory dataContractEntries
+                             */
+
+                            /**
+                             * Constructs a new DataContractHistory.
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
+                             * @classdesc Represents a DataContractHistory.
+                             * @implements IDataContractHistory
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistory=} [properties] Properties to set
+                             */
+                            function DataContractHistory(properties) {
+                                this.dataContractEntries = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DataContractHistory dataContractEntries.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistoryEntry>} dataContractEntries
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @instance
+                             */
+                            DataContractHistory.prototype.dataContractEntries = $util.emptyArray;
+
+                            /**
+                             * Creates a new DataContractHistory instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistory=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory} DataContractHistory instance
+                             */
+                            DataContractHistory.create = function create(properties) {
+                                return new DataContractHistory(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DataContractHistory message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistory} message DataContractHistory message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractHistory.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractEntries != null && message.dataContractEntries.length)
+                                    for (var i = 0; i < message.dataContractEntries.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.encode(message.dataContractEntries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DataContractHistory message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractHistory} message DataContractHistory message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DataContractHistory.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DataContractHistory message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory} DataContractHistory
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractHistory.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.dataContractEntries && message.dataContractEntries.length))
+                                            message.dataContractEntries = [];
+                                        message.dataContractEntries.push($root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DataContractHistory message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory} DataContractHistory
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DataContractHistory.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DataContractHistory message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DataContractHistory.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractEntries != null && message.hasOwnProperty("dataContractEntries")) {
+                                    if (!Array.isArray(message.dataContractEntries))
+                                        return "dataContractEntries: array expected";
+                                    for (var i = 0; i < message.dataContractEntries.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.verify(message.dataContractEntries[i]);
+                                        if (error)
+                                            return "dataContractEntries." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DataContractHistory message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory} DataContractHistory
+                             */
+                            DataContractHistory.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory();
+                                if (object.dataContractEntries) {
+                                    if (!Array.isArray(object.dataContractEntries))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.dataContractEntries: array expected");
+                                    message.dataContractEntries = [];
+                                    for (var i = 0; i < object.dataContractEntries.length; ++i) {
+                                        if (typeof object.dataContractEntries[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory.dataContractEntries: object expected");
+                                        message.dataContractEntries[i] = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.fromObject(object.dataContractEntries[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DataContractHistory message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory} message DataContractHistory
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DataContractHistory.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.dataContractEntries = [];
+                                if (message.dataContractEntries && message.dataContractEntries.length) {
+                                    object.dataContractEntries = [];
+                                    for (var j = 0; j < message.dataContractEntries.length; ++j)
+                                        object.dataContractEntries[j] = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.toObject(message.dataContractEntries[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DataContractHistory to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistory
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DataContractHistory.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return DataContractHistory;
+                        })();
+
+                        return GetDataContractHistoryResponse;
+                    })();
+
                     v0.GetDocumentsRequest = (function() {
 
                         /**
