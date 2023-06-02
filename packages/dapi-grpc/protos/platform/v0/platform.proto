@@ -59,8 +59,10 @@ message GetIdentityRequest {
 }
 
 message GetIdentityResponse {
-  bytes identity = 1;
-  Proof proof = 2;
+  oneof result {
+    bytes identity = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 
@@ -91,16 +93,24 @@ message GetIdentitiesResponse {
 }
 
 message GetIdentityBalanceResponse {
-  google.protobuf.UInt64Value balance = 1;
-  Proof proof = 2;
+  oneof result {
+    google.protobuf.UInt64Value balance = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 
 message GetIdentityBalanceAndRevisionResponse {
-  google.protobuf.UInt64Value  balance = 1;
-  google.protobuf.UInt64Value  revision = 2;
-  Proof proof = 3;
-  ResponseMetadata metadata = 4;
+  message BalanceAndRevision {
+    google.protobuf.UInt64Value balance = 1;
+    google.protobuf.UInt64Value revision = 2;
+  }
+
+  oneof result {
+    BalanceAndRevision balance_and_revision = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
 }
 
 message KeyRequestType {
@@ -224,8 +234,10 @@ message GetDataContractRequest {
 }
 
 message GetDataContractResponse {
-  bytes data_contract = 1;
-  Proof proof = 2;
+  oneof result {
+    bytes data_contract = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 
@@ -272,8 +284,14 @@ message GetDocumentsRequest {
 }
 
 message GetDocumentsResponse {
-  repeated bytes documents = 1;
-  Proof proof = 2;
+  message Documents {
+    repeated bytes documents = 1;
+  }
+
+  oneof result {
+    Documents documents = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 
@@ -283,8 +301,14 @@ message GetIdentitiesByPublicKeyHashesRequest {
 }
 
 message GetIdentitiesByPublicKeyHashesResponse {
-  repeated bytes identities = 1;
-  Proof proof = 2;
+  message Identities {
+    repeated bytes identities = 1;
+  }
+
+  oneof result {
+    Identities identities = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 
@@ -307,7 +331,7 @@ message WaitForStateTransitionResultRequest {
 }
 
 message WaitForStateTransitionResultResponse {
-  oneof responses {
+  oneof result {
     StateTransitionBroadcastError error = 1;
     Proof proof = 2;
   }

@@ -32,7 +32,10 @@ describe('GetDocumentsResponse', () => {
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 
-    proto.setDocumentsList(serializedDocuments);
+    const documentsList = new GetDocumentsResponse.Documents();
+    documentsList.setDocumentsList(serializedDocuments);
+
+    proto.setDocuments(documentsList);
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -94,7 +97,6 @@ describe('GetDocumentsResponse', () => {
     proofProto.setSignature(proofFixture.signature);
     proofProto.setGrovedbProof(proofFixture.merkleProof);
 
-    proto.setDocumentsList([]);
     proto.setProof(proofProto);
 
     getDocumentsResponse = GetDocumentsResponseClass.createFromProto(proto);

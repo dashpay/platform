@@ -79,7 +79,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     response = new GetDocumentsResponse();
     response.setProof(proofMock);
-    response.setDocumentsList(documentsSerialized);
+    response.setDocuments(documentsSerialized);
 
     driveStateRepositoryMock = {
       fetchDocuments: this.sinon.stub().resolves(response.serializeBinary()),

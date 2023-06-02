@@ -141,7 +141,7 @@ describe('DriveClient', () => {
       request.setWhere(cbor.encode({ where: options.where }));
 
       const response = new GetDocumentsResponse();
-      response.setDocumentsList([]);
+      response.setDocuments([]);
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')

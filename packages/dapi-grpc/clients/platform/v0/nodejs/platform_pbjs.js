@@ -1980,6 +1980,20 @@ $root.org = (function() {
                          */
                         GetIdentityResponse.prototype.metadata = null;
 
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityResponse result.
+                         * @member {"identity"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["identity", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
                         /**
                          * Creates a new GetIdentityResponse instance using the specified properties.
                          * @function create
@@ -2088,13 +2102,21 @@ $root.org = (function() {
                         GetIdentityResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
-                            if (message.identity != null && message.hasOwnProperty("identity"))
+                            var properties = {};
+                            if (message.identity != null && message.hasOwnProperty("identity")) {
+                                properties.result = 1;
                                 if (!(message.identity && typeof message.identity.length === "number" || $util.isString(message.identity)))
                                     return "identity: buffer expected";
+                            }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                 var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -2147,21 +2169,18 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.defaults) {
-                                if (options.bytes === String)
-                                    object.identity = "";
-                                else {
-                                    object.identity = [];
-                                    if (options.bytes !== Array)
-                                        object.identity = $util.newBuffer(object.identity);
-                                }
-                                object.proof = null;
+                            if (options.defaults)
                                 object.metadata = null;
-                            }
-                            if (message.identity != null && message.hasOwnProperty("identity"))
+                            if (message.identity != null && message.hasOwnProperty("identity")) {
                                 object.identity = options.bytes === String ? $util.base64.encode(message.identity, 0, message.identity.length) : options.bytes === Array ? Array.prototype.slice.call(message.identity) : message.identity;
-                            if (message.proof != null && message.hasOwnProperty("proof"))
+                                if (options.oneofs)
+                                    object.result = "identity";
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                             return object;
@@ -3361,6 +3380,20 @@ $root.org = (function() {
                          */
                         GetIdentityBalanceResponse.prototype.metadata = null;
 
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityBalanceResponse result.
+                         * @member {"balance"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityBalanceResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["balance", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
                         /**
                          * Creates a new GetIdentityBalanceResponse instance using the specified properties.
                          * @function create
@@ -3469,15 +3502,24 @@ $root.org = (function() {
                         GetIdentityBalanceResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
+                            var properties = {};
                             if (message.balance != null && message.hasOwnProperty("balance")) {
-                                var error = $root.google.protobuf.UInt64Value.verify(message.balance);
-                                if (error)
-                                    return "balance." + error;
+                                properties.result = 1;
+                                {
+                                    var error = $root.google.protobuf.UInt64Value.verify(message.balance);
+                                    if (error)
+                                        return "balance." + error;
+                                }
                             }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                 var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -3530,15 +3572,18 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.defaults) {
-                                object.balance = null;
-                                object.proof = null;
+                            if (options.defaults)
                                 object.metadata = null;
-                            }
-                            if (message.balance != null && message.hasOwnProperty("balance"))
+                            if (message.balance != null && message.hasOwnProperty("balance")) {
                                 object.balance = $root.google.protobuf.UInt64Value.toObject(message.balance, options);
-                            if (message.proof != null && message.hasOwnProperty("proof"))
+                                if (options.oneofs)
+                                    object.result = "balance";
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                             return object;
@@ -3564,8 +3609,7 @@ $root.org = (function() {
                          * Properties of a GetIdentityBalanceAndRevisionResponse.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetIdentityBalanceAndRevisionResponse
-                         * @property {google.protobuf.IUInt64Value|null} [balance] GetIdentityBalanceAndRevisionResponse balance
-                         * @property {google.protobuf.IUInt64Value|null} [revision] GetIdentityBalanceAndRevisionResponse revision
+                         * @property {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.IBalanceAndRevision|null} [balanceAndRevision] GetIdentityBalanceAndRevisionResponse balanceAndRevision
                          * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentityBalanceAndRevisionResponse proof
                          * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentityBalanceAndRevisionResponse metadata
                          */
@@ -3586,20 +3630,12 @@ $root.org = (function() {
                         }
 
                         /**
-                         * GetIdentityBalanceAndRevisionResponse balance.
-                         * @member {google.protobuf.IUInt64Value|null|undefined} balance
+                         * GetIdentityBalanceAndRevisionResponse balanceAndRevision.
+                         * @member {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.IBalanceAndRevision|null|undefined} balanceAndRevision
                          * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse
                          * @instance
                          */
-                        GetIdentityBalanceAndRevisionResponse.prototype.balance = null;
-
-                        /**
-                         * GetIdentityBalanceAndRevisionResponse revision.
-                         * @member {google.protobuf.IUInt64Value|null|undefined} revision
-                         * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse
-                         * @instance
-                         */
-                        GetIdentityBalanceAndRevisionResponse.prototype.revision = null;
+                        GetIdentityBalanceAndRevisionResponse.prototype.balanceAndRevision = null;
 
                         /**
                          * GetIdentityBalanceAndRevisionResponse proof.
@@ -3616,6 +3652,20 @@ $root.org = (function() {
                          * @instance
                          */
                         GetIdentityBalanceAndRevisionResponse.prototype.metadata = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentityBalanceAndRevisionResponse result.
+                         * @member {"balanceAndRevision"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentityBalanceAndRevisionResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["balanceAndRevision", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
 
                         /**
                          * Creates a new GetIdentityBalanceAndRevisionResponse instance using the specified properties.
@@ -3641,14 +3691,12 @@ $root.org = (function() {
                         GetIdentityBalanceAndRevisionResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
-                            if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
-                                $root.google.protobuf.UInt64Value.encode(message.balance, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                            if (message.revision != null && Object.hasOwnProperty.call(message, "revision"))
-                                $root.google.protobuf.UInt64Value.encode(message.revision, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            if (message.balanceAndRevision != null && Object.hasOwnProperty.call(message, "balanceAndRevision"))
+                                $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.encode(message.balanceAndRevision, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
-                                $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             return writer;
                         };
 
@@ -3684,15 +3732,12 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.balance = $root.google.protobuf.UInt64Value.decode(reader, reader.uint32());
+                                    message.balanceAndRevision = $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.decode(reader, reader.uint32());
                                     break;
                                 case 2:
-                                    message.revision = $root.google.protobuf.UInt64Value.decode(reader, reader.uint32());
-                                    break;
-                                case 3:
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
                                     break;
-                                case 4:
+                                case 3:
                                     message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
                                     break;
                                 default:
@@ -3730,20 +3775,24 @@ $root.org = (function() {
                         GetIdentityBalanceAndRevisionResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
-                            if (message.balance != null && message.hasOwnProperty("balance")) {
-                                var error = $root.google.protobuf.UInt64Value.verify(message.balance);
-                                if (error)
-                                    return "balance." + error;
-                            }
-                            if (message.revision != null && message.hasOwnProperty("revision")) {
-                                var error = $root.google.protobuf.UInt64Value.verify(message.revision);
-                                if (error)
-                                    return "revision." + error;
+                            var properties = {};
+                            if (message.balanceAndRevision != null && message.hasOwnProperty("balanceAndRevision")) {
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.verify(message.balanceAndRevision);
+                                    if (error)
+                                        return "balanceAndRevision." + error;
+                                }
                             }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                 var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -3765,15 +3814,10 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse();
-                            if (object.balance != null) {
-                                if (typeof object.balance !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.balance: object expected");
-                                message.balance = $root.google.protobuf.UInt64Value.fromObject(object.balance);
-                            }
-                            if (object.revision != null) {
-                                if (typeof object.revision !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.revision: object expected");
-                                message.revision = $root.google.protobuf.UInt64Value.fromObject(object.revision);
+                            if (object.balanceAndRevision != null) {
+                                if (typeof object.balanceAndRevision !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.balanceAndRevision: object expected");
+                                message.balanceAndRevision = $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.fromObject(object.balanceAndRevision);
                             }
                             if (object.proof != null) {
                                 if (typeof object.proof !== "object")
@@ -3801,18 +3845,18 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.defaults) {
-                                object.balance = null;
-                                object.revision = null;
-                                object.proof = null;
+                            if (options.defaults)
                                 object.metadata = null;
+                            if (message.balanceAndRevision != null && message.hasOwnProperty("balanceAndRevision")) {
+                                object.balanceAndRevision = $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.toObject(message.balanceAndRevision, options);
+                                if (options.oneofs)
+                                    object.result = "balanceAndRevision";
                             }
-                            if (message.balance != null && message.hasOwnProperty("balance"))
-                                object.balance = $root.google.protobuf.UInt64Value.toObject(message.balance, options);
-                            if (message.revision != null && message.hasOwnProperty("revision"))
-                                object.revision = $root.google.protobuf.UInt64Value.toObject(message.revision, options);
-                            if (message.proof != null && message.hasOwnProperty("proof"))
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                             return object;
@@ -3828,6 +3872,226 @@ $root.org = (function() {
                         GetIdentityBalanceAndRevisionResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
+
+                        GetIdentityBalanceAndRevisionResponse.BalanceAndRevision = (function() {
+
+                            /**
+                             * Properties of a BalanceAndRevision.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse
+                             * @interface IBalanceAndRevision
+                             * @property {google.protobuf.IUInt64Value|null} [balance] BalanceAndRevision balance
+                             * @property {google.protobuf.IUInt64Value|null} [revision] BalanceAndRevision revision
+                             */
+
+                            /**
+                             * Constructs a new BalanceAndRevision.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse
+                             * @classdesc Represents a BalanceAndRevision.
+                             * @implements IBalanceAndRevision
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.IBalanceAndRevision=} [properties] Properties to set
+                             */
+                            function BalanceAndRevision(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * BalanceAndRevision balance.
+                             * @member {google.protobuf.IUInt64Value|null|undefined} balance
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @instance
+                             */
+                            BalanceAndRevision.prototype.balance = null;
+
+                            /**
+                             * BalanceAndRevision revision.
+                             * @member {google.protobuf.IUInt64Value|null|undefined} revision
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @instance
+                             */
+                            BalanceAndRevision.prototype.revision = null;
+
+                            /**
+                             * Creates a new BalanceAndRevision instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.IBalanceAndRevision=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision} BalanceAndRevision instance
+                             */
+                            BalanceAndRevision.create = function create(properties) {
+                                return new BalanceAndRevision(properties);
+                            };
+
+                            /**
+                             * Encodes the specified BalanceAndRevision message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.IBalanceAndRevision} message BalanceAndRevision message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            BalanceAndRevision.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
+                                    $root.google.protobuf.UInt64Value.encode(message.balance, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.revision != null && Object.hasOwnProperty.call(message, "revision"))
+                                    $root.google.protobuf.UInt64Value.encode(message.revision, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified BalanceAndRevision message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.IBalanceAndRevision} message BalanceAndRevision message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            BalanceAndRevision.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a BalanceAndRevision message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision} BalanceAndRevision
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            BalanceAndRevision.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.balance = $root.google.protobuf.UInt64Value.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.revision = $root.google.protobuf.UInt64Value.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a BalanceAndRevision message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision} BalanceAndRevision
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            BalanceAndRevision.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a BalanceAndRevision message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            BalanceAndRevision.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.balance != null && message.hasOwnProperty("balance")) {
+                                    var error = $root.google.protobuf.UInt64Value.verify(message.balance);
+                                    if (error)
+                                        return "balance." + error;
+                                }
+                                if (message.revision != null && message.hasOwnProperty("revision")) {
+                                    var error = $root.google.protobuf.UInt64Value.verify(message.revision);
+                                    if (error)
+                                        return "revision." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a BalanceAndRevision message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision} BalanceAndRevision
+                             */
+                            BalanceAndRevision.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision();
+                                if (object.balance != null) {
+                                    if (typeof object.balance !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.balance: object expected");
+                                    message.balance = $root.google.protobuf.UInt64Value.fromObject(object.balance);
+                                }
+                                if (object.revision != null) {
+                                    if (typeof object.revision !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision.revision: object expected");
+                                    message.revision = $root.google.protobuf.UInt64Value.fromObject(object.revision);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a BalanceAndRevision message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision} message BalanceAndRevision
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            BalanceAndRevision.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.balance = null;
+                                    object.revision = null;
+                                }
+                                if (message.balance != null && message.hasOwnProperty("balance"))
+                                    object.balance = $root.google.protobuf.UInt64Value.toObject(message.balance, options);
+                                if (message.revision != null && message.hasOwnProperty("revision"))
+                                    object.revision = $root.google.protobuf.UInt64Value.toObject(message.revision, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this BalanceAndRevision to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.BalanceAndRevision
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            BalanceAndRevision.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return BalanceAndRevision;
+                        })();
 
                         return GetIdentityBalanceAndRevisionResponse;
                     })();
@@ -8710,6 +8974,20 @@ $root.org = (function() {
                          */
                         GetDataContractResponse.prototype.metadata = null;
 
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDataContractResponse result.
+                         * @member {"dataContract"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetDataContractResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetDataContractResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["dataContract", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
                         /**
                          * Creates a new GetDataContractResponse instance using the specified properties.
                          * @function create
@@ -8818,13 +9096,21 @@ $root.org = (function() {
                         GetDataContractResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
-                            if (message.dataContract != null && message.hasOwnProperty("dataContract"))
+                            var properties = {};
+                            if (message.dataContract != null && message.hasOwnProperty("dataContract")) {
+                                properties.result = 1;
                                 if (!(message.dataContract && typeof message.dataContract.length === "number" || $util.isString(message.dataContract)))
                                     return "dataContract: buffer expected";
+                            }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                 var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -8877,21 +9163,18 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.defaults) {
-                                if (options.bytes === String)
-                                    object.dataContract = "";
-                                else {
-                                    object.dataContract = [];
-                                    if (options.bytes !== Array)
-                                        object.dataContract = $util.newBuffer(object.dataContract);
-                                }
-                                object.proof = null;
+                            if (options.defaults)
                                 object.metadata = null;
-                            }
-                            if (message.dataContract != null && message.hasOwnProperty("dataContract"))
+                            if (message.dataContract != null && message.hasOwnProperty("dataContract")) {
                                 object.dataContract = options.bytes === String ? $util.base64.encode(message.dataContract, 0, message.dataContract.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContract) : message.dataContract;
-                            if (message.proof != null && message.hasOwnProperty("proof"))
+                                if (options.oneofs)
+                                    object.result = "dataContract";
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                             return object;
@@ -10447,7 +10730,7 @@ $root.org = (function() {
                          * Properties of a GetDocumentsResponse.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetDocumentsResponse
-                         * @property {Array.<Uint8Array>|null} [documents] GetDocumentsResponse documents
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.IDocuments|null} [documents] GetDocumentsResponse documents
                          * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsResponse proof
                          * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsResponse metadata
                          */
@@ -10461,7 +10744,6 @@ $root.org = (function() {
                          * @param {org.dash.platform.dapi.v0.IGetDocumentsResponse=} [properties] Properties to set
                          */
                         function GetDocumentsResponse(properties) {
-                            this.documents = [];
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -10470,11 +10752,11 @@ $root.org = (function() {
 
                         /**
                          * GetDocumentsResponse documents.
-                         * @member {Array.<Uint8Array>} documents
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.IDocuments|null|undefined} documents
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
                          * @instance
                          */
-                        GetDocumentsResponse.prototype.documents = $util.emptyArray;
+                        GetDocumentsResponse.prototype.documents = null;
 
                         /**
                          * GetDocumentsResponse proof.
@@ -10491,6 +10773,20 @@ $root.org = (function() {
                          * @instance
                          */
                         GetDocumentsResponse.prototype.metadata = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentsResponse result.
+                         * @member {"documents"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentsResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["documents", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
 
                         /**
                          * Creates a new GetDocumentsResponse instance using the specified properties.
@@ -10516,9 +10812,8 @@ $root.org = (function() {
                         GetDocumentsResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
-                            if (message.documents != null && message.documents.length)
-                                for (var i = 0; i < message.documents.length; ++i)
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documents[i]);
+                            if (message.documents != null && Object.hasOwnProperty.call(message, "documents"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
                                 $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
@@ -10558,9 +10853,7 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    if (!(message.documents && message.documents.length))
-                                        message.documents = [];
-                                    message.documents.push(reader.bytes());
+                                    message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.decode(reader, reader.uint32());
                                     break;
                                 case 2:
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
@@ -10603,17 +10896,24 @@ $root.org = (function() {
                         GetDocumentsResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
+                            var properties = {};
                             if (message.documents != null && message.hasOwnProperty("documents")) {
-                                if (!Array.isArray(message.documents))
-                                    return "documents: array expected";
-                                for (var i = 0; i < message.documents.length; ++i)
-                                    if (!(message.documents[i] && typeof message.documents[i].length === "number" || $util.isString(message.documents[i])))
-                                        return "documents: buffer[] expected";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.verify(message.documents);
+                                    if (error)
+                                        return "documents." + error;
+                                }
                             }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                 var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -10635,15 +10935,10 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse();
-                            if (object.documents) {
-                                if (!Array.isArray(object.documents))
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.documents: array expected");
-                                message.documents = [];
-                                for (var i = 0; i < object.documents.length; ++i)
-                                    if (typeof object.documents[i] === "string")
-                                        $util.base64.decode(object.documents[i], message.documents[i] = $util.newBuffer($util.base64.length(object.documents[i])), 0);
-                                    else if (object.documents[i].length >= 0)
-                                        message.documents[i] = object.documents[i];
+                            if (object.documents != null) {
+                                if (typeof object.documents !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.documents: object expected");
+                                message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.fromObject(object.documents);
                             }
                             if (object.proof != null) {
                                 if (typeof object.proof !== "object")
@@ -10671,19 +10966,18 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.arrays || options.defaults)
-                                object.documents = [];
-                            if (options.defaults) {
-                                object.proof = null;
+                            if (options.defaults)
                                 object.metadata = null;
+                            if (message.documents != null && message.hasOwnProperty("documents")) {
+                                object.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.toObject(message.documents, options);
+                                if (options.oneofs)
+                                    object.result = "documents";
                             }
-                            if (message.documents && message.documents.length) {
-                                object.documents = [];
-                                for (var j = 0; j < message.documents.length; ++j)
-                                    object.documents[j] = options.bytes === String ? $util.base64.encode(message.documents[j], 0, message.documents[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.documents[j]) : message.documents[j];
-                            }
-                            if (message.proof != null && message.hasOwnProperty("proof"))
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                             return object;
@@ -10699,6 +10993,212 @@ $root.org = (function() {
                         GetDocumentsResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
+
+                        GetDocumentsResponse.Documents = (function() {
+
+                            /**
+                             * Properties of a Documents.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
+                             * @interface IDocuments
+                             * @property {Array.<Uint8Array>|null} [documents] Documents documents
+                             */
+
+                            /**
+                             * Constructs a new Documents.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
+                             * @classdesc Represents a Documents.
+                             * @implements IDocuments
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IDocuments=} [properties] Properties to set
+                             */
+                            function Documents(properties) {
+                                this.documents = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Documents documents.
+                             * @member {Array.<Uint8Array>} documents
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @instance
+                             */
+                            Documents.prototype.documents = $util.emptyArray;
+
+                            /**
+                             * Creates a new Documents instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IDocuments=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.Documents} Documents instance
+                             */
+                            Documents.create = function create(properties) {
+                                return new Documents(properties);
+                            };
+
+                            /**
+                             * Encodes the specified Documents message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IDocuments} message Documents message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Documents.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documents != null && message.documents.length)
+                                    for (var i = 0; i < message.documents.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documents[i]);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified Documents message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IDocuments} message Documents message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Documents.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a Documents message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.Documents} Documents
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Documents.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.documents && message.documents.length))
+                                            message.documents = [];
+                                        message.documents.push(reader.bytes());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a Documents message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.Documents} Documents
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Documents.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a Documents message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            Documents.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    if (!Array.isArray(message.documents))
+                                        return "documents: array expected";
+                                    for (var i = 0; i < message.documents.length; ++i)
+                                        if (!(message.documents[i] && typeof message.documents[i].length === "number" || $util.isString(message.documents[i])))
+                                            return "documents: buffer[] expected";
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a Documents message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.Documents} Documents
+                             */
+                            Documents.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.Documents();
+                                if (object.documents) {
+                                    if (!Array.isArray(object.documents))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.Documents.documents: array expected");
+                                    message.documents = [];
+                                    for (var i = 0; i < object.documents.length; ++i)
+                                        if (typeof object.documents[i] === "string")
+                                            $util.base64.decode(object.documents[i], message.documents[i] = $util.newBuffer($util.base64.length(object.documents[i])), 0);
+                                        else if (object.documents[i].length >= 0)
+                                            message.documents[i] = object.documents[i];
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a Documents message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.Documents} message Documents
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            Documents.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.documents = [];
+                                if (message.documents && message.documents.length) {
+                                    object.documents = [];
+                                    for (var j = 0; j < message.documents.length; ++j)
+                                        object.documents[j] = options.bytes === String ? $util.base64.encode(message.documents[j], 0, message.documents[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.documents[j]) : message.documents[j];
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this Documents to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.Documents
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            Documents.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return Documents;
+                        })();
 
                         return GetDocumentsResponse;
                     })();
@@ -10938,7 +11438,7 @@ $root.org = (function() {
                          * Properties of a GetIdentitiesByPublicKeyHashesResponse.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetIdentitiesByPublicKeyHashesResponse
-                         * @property {Array.<Uint8Array>|null} [identities] GetIdentitiesByPublicKeyHashesResponse identities
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.IIdentities|null} [identities] GetIdentitiesByPublicKeyHashesResponse identities
                          * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesByPublicKeyHashesResponse proof
                          * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesByPublicKeyHashesResponse metadata
                          */
@@ -10952,7 +11452,6 @@ $root.org = (function() {
                          * @param {org.dash.platform.dapi.v0.IGetIdentitiesByPublicKeyHashesResponse=} [properties] Properties to set
                          */
                         function GetIdentitiesByPublicKeyHashesResponse(properties) {
-                            this.identities = [];
                             if (properties)
                                 for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                     if (properties[keys[i]] != null)
@@ -10961,11 +11460,11 @@ $root.org = (function() {
 
                         /**
                          * GetIdentitiesByPublicKeyHashesResponse identities.
-                         * @member {Array.<Uint8Array>} identities
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.IIdentities|null|undefined} identities
                          * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse
                          * @instance
                          */
-                        GetIdentitiesByPublicKeyHashesResponse.prototype.identities = $util.emptyArray;
+                        GetIdentitiesByPublicKeyHashesResponse.prototype.identities = null;
 
                         /**
                          * GetIdentitiesByPublicKeyHashesResponse proof.
@@ -10982,6 +11481,20 @@ $root.org = (function() {
                          * @instance
                          */
                         GetIdentitiesByPublicKeyHashesResponse.prototype.metadata = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesByPublicKeyHashesResponse result.
+                         * @member {"identities"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesByPublicKeyHashesResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["identities", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
 
                         /**
                          * Creates a new GetIdentitiesByPublicKeyHashesResponse instance using the specified properties.
@@ -11007,9 +11520,8 @@ $root.org = (function() {
                         GetIdentitiesByPublicKeyHashesResponse.encode = function encode(message, writer) {
                             if (!writer)
                                 writer = $Writer.create();
-                            if (message.identities != null && message.identities.length)
-                                for (var i = 0; i < message.identities.length; ++i)
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identities[i]);
+                            if (message.identities != null && Object.hasOwnProperty.call(message, "identities"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.encode(message.identities, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
                                 $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
@@ -11049,9 +11561,7 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    if (!(message.identities && message.identities.length))
-                                        message.identities = [];
-                                    message.identities.push(reader.bytes());
+                                    message.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.decode(reader, reader.uint32());
                                     break;
                                 case 2:
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
@@ -11094,17 +11604,24 @@ $root.org = (function() {
                         GetIdentitiesByPublicKeyHashesResponse.verify = function verify(message) {
                             if (typeof message !== "object" || message === null)
                                 return "object expected";
+                            var properties = {};
                             if (message.identities != null && message.hasOwnProperty("identities")) {
-                                if (!Array.isArray(message.identities))
-                                    return "identities: array expected";
-                                for (var i = 0; i < message.identities.length; ++i)
-                                    if (!(message.identities[i] && typeof message.identities[i].length === "number" || $util.isString(message.identities[i])))
-                                        return "identities: buffer[] expected";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.verify(message.identities);
+                                    if (error)
+                                        return "identities." + error;
+                                }
                             }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                if (error)
-                                    return "proof." + error;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                 var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -11126,15 +11643,10 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse();
-                            if (object.identities) {
-                                if (!Array.isArray(object.identities))
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.identities: array expected");
-                                message.identities = [];
-                                for (var i = 0; i < object.identities.length; ++i)
-                                    if (typeof object.identities[i] === "string")
-                                        $util.base64.decode(object.identities[i], message.identities[i] = $util.newBuffer($util.base64.length(object.identities[i])), 0);
-                                    else if (object.identities[i].length >= 0)
-                                        message.identities[i] = object.identities[i];
+                            if (object.identities != null) {
+                                if (typeof object.identities !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.identities: object expected");
+                                message.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.fromObject(object.identities);
                             }
                             if (object.proof != null) {
                                 if (typeof object.proof !== "object")
@@ -11162,19 +11674,18 @@ $root.org = (function() {
                             if (!options)
                                 options = {};
                             var object = {};
-                            if (options.arrays || options.defaults)
-                                object.identities = [];
-                            if (options.defaults) {
-                                object.proof = null;
+                            if (options.defaults)
                                 object.metadata = null;
+                            if (message.identities != null && message.hasOwnProperty("identities")) {
+                                object.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.toObject(message.identities, options);
+                                if (options.oneofs)
+                                    object.result = "identities";
                             }
-                            if (message.identities && message.identities.length) {
-                                object.identities = [];
-                                for (var j = 0; j < message.identities.length; ++j)
-                                    object.identities[j] = options.bytes === String ? $util.base64.encode(message.identities[j], 0, message.identities[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identities[j]) : message.identities[j];
-                            }
-                            if (message.proof != null && message.hasOwnProperty("proof"))
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                             return object;
@@ -11190,6 +11701,212 @@ $root.org = (function() {
                         GetIdentitiesByPublicKeyHashesResponse.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
+
+                        GetIdentitiesByPublicKeyHashesResponse.Identities = (function() {
+
+                            /**
+                             * Properties of an Identities.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse
+                             * @interface IIdentities
+                             * @property {Array.<Uint8Array>|null} [identities] Identities identities
+                             */
+
+                            /**
+                             * Constructs a new Identities.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse
+                             * @classdesc Represents an Identities.
+                             * @implements IIdentities
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.IIdentities=} [properties] Properties to set
+                             */
+                            function Identities(properties) {
+                                this.identities = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Identities identities.
+                             * @member {Array.<Uint8Array>} identities
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @instance
+                             */
+                            Identities.prototype.identities = $util.emptyArray;
+
+                            /**
+                             * Creates a new Identities instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.IIdentities=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities} Identities instance
+                             */
+                            Identities.create = function create(properties) {
+                                return new Identities(properties);
+                            };
+
+                            /**
+                             * Encodes the specified Identities message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.IIdentities} message Identities message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Identities.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identities != null && message.identities.length)
+                                    for (var i = 0; i < message.identities.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identities[i]);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified Identities message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.IIdentities} message Identities message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Identities.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an Identities message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities} Identities
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Identities.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.identities && message.identities.length))
+                                            message.identities = [];
+                                        message.identities.push(reader.bytes());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an Identities message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities} Identities
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Identities.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an Identities message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            Identities.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identities != null && message.hasOwnProperty("identities")) {
+                                    if (!Array.isArray(message.identities))
+                                        return "identities: array expected";
+                                    for (var i = 0; i < message.identities.length; ++i)
+                                        if (!(message.identities[i] && typeof message.identities[i].length === "number" || $util.isString(message.identities[i])))
+                                            return "identities: buffer[] expected";
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an Identities message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities} Identities
+                             */
+                            Identities.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities();
+                                if (object.identities) {
+                                    if (!Array.isArray(object.identities))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities.identities: array expected");
+                                    message.identities = [];
+                                    for (var i = 0; i < object.identities.length; ++i)
+                                        if (typeof object.identities[i] === "string")
+                                            $util.base64.decode(object.identities[i], message.identities[i] = $util.newBuffer($util.base64.length(object.identities[i])), 0);
+                                        else if (object.identities[i].length >= 0)
+                                            message.identities[i] = object.identities[i];
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an Identities message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities} message Identities
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            Identities.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.identities = [];
+                                if (message.identities && message.identities.length) {
+                                    object.identities = [];
+                                    for (var j = 0; j < message.identities.length; ++j)
+                                        object.identities[j] = options.bytes === String ? $util.base64.encode(message.identities[j], 0, message.identities[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.identities[j]) : message.identities[j];
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this Identities to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.Identities
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            Identities.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return Identities;
+                        })();
 
                         return GetIdentitiesByPublicKeyHashesResponse;
                     })();
@@ -11956,12 +12673,12 @@ $root.org = (function() {
                         var $oneOfFields;
 
                         /**
-                         * WaitForStateTransitionResultResponse responses.
-                         * @member {"error"|"proof"|undefined} responses
+                         * WaitForStateTransitionResultResponse result.
+                         * @member {"error"|"proof"|undefined} result
                          * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse
                          * @instance
                          */
-                        Object.defineProperty(WaitForStateTransitionResultResponse.prototype, "responses", {
+                        Object.defineProperty(WaitForStateTransitionResultResponse.prototype, "result", {
                             get: $util.oneOfGetter($oneOfFields = ["error", "proof"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
@@ -12076,7 +12793,7 @@ $root.org = (function() {
                                 return "object expected";
                             var properties = {};
                             if (message.error != null && message.hasOwnProperty("error")) {
-                                properties.responses = 1;
+                                properties.result = 1;
                                 {
                                     var error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.verify(message.error);
                                     if (error)
@@ -12084,9 +12801,9 @@ $root.org = (function() {
                                 }
                             }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
-                                if (properties.responses === 1)
-                                    return "responses: multiple values";
-                                properties.responses = 1;
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
                                 {
                                     var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
                                     if (error)
@@ -12149,12 +12866,12 @@ $root.org = (function() {
                             if (message.error != null && message.hasOwnProperty("error")) {
                                 object.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(message.error, options);
                                 if (options.oneofs)
-                                    object.responses = "error";
+                                    object.result = "error";
                             }
                             if (message.proof != null && message.hasOwnProperty("proof")) {
                                 object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
                                 if (options.oneofs)
-                                    object.responses = "proof";
+                                    object.result = "proof";
                             }
                             if (message.metadata != null && message.hasOwnProperty("metadata"))
                                 object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
