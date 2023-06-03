@@ -4274,7 +4274,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"asn1@npm:^0.2.4":
+"asn1@npm:^0.2.6":
   version: 0.2.6
   resolution: "asn1@npm:0.2.6"
   dependencies:
@@ -10918,7 +10918,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"nan@npm:^2.16.0":
+"nan@npm:^2.17.0":
   version: 2.17.0
   resolution: "nan@npm:2.17.0"
   dependencies:
@@ -13546,20 +13546,20 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"ssh2@npm:^1.11.0":
-  version: 1.11.0
-  resolution: "ssh2@npm:1.11.0"
+"ssh2@npm:^1.13.0":
+  version: 1.13.0
+  resolution: "ssh2@npm:1.13.0"
   dependencies:
-    asn1: ^0.2.4
+    asn1: ^0.2.6
     bcrypt-pbkdf: ^1.0.2
-    cpu-features: ~0.0.4
-    nan: ^2.16.0
+    cpu-features: ~0.0.7
+    nan: ^2.17.0
   dependenciesMeta:
     cpu-features:
       optional: true
     nan:
       optional: true
-  checksum: e40cb9f171741a807c170dc555078aa8c49dc93dd36fc9c8be026fce1cfd31f0d37078d9b60a0f2cfb11d0e007ed5407376b72f8a0ef9f2cb89574632bbfb824
+  checksum: 56df3eb9d0c579230001af99b8b83cec12c3cc393720f27af59eefbe542b453a3190ecd1ab56fbb8b71ae3e5381b39387dc3587bc7b413c495ccb74e62f7689f
   languageName: node
   linkType: hard
 
