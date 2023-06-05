@@ -146,7 +146,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
-    --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
+    --mount=type=cache,sharing=shared,id=yarn_unplugged,target=/platform/.yarn/unplugged \
+    --mount=type=cache,sharing=shared,id=yarn_cache,target=/platform/.yarn/cache \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
     yarn build
@@ -206,7 +207,8 @@ FROM build-js AS build-dashmate-helper
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
+RUN --mount=type=cache,sharing=shared,id=yarn_unplugged,target=/platform/.yarn/unplugged \
+    --mount=type=cache,sharing=shared,id=yarn_cache,target=/platform/.yarn/cache \
     yarn workspaces focus --production dashmate
 
 #
@@ -255,7 +257,8 @@ FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
+RUN --mount=type=cache,sharing=shared,id=yarn_unplugged,target=/tmp/unplugged \
+    --mount=type=cache,sharing=shared,id=yarn_cache,target=/platform/.yarn/cache \
     yarn workspaces focus --production @dashevo/platform-test-suite
 
 #
@@ -314,7 +317,8 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
+RUN --mount=type=cache,sharing=shared,id=yarn_unplugged,target=/platform/.yarn/unplugged \
+    --mount=type=cache,sharing=shared,id=yarn_cache,target=/platform/.yarn/cache \
     yarn workspaces focus --production @dashevo/dapi
 
 #
