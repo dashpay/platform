@@ -1,6 +1,8 @@
 use crate::error::Error;
 pub use data_trigger_execution_context::*;
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
+use dpp::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
 use dpp::document::document_transition::{
     Action, DocumentCreateTransitionAction, DocumentTransitionAction,
 };
@@ -157,15 +159,15 @@ impl DataTrigger {
 
         match maybe_execution_result {
             Err(err) => {
-                let consensus_error = DataTriggerActionError::DataTriggerExecutionError {
+                let consensus_error = DataTriggerExecutionError::new(
                     data_contract_id,
-                    document_transition_id: *get_from_transition_action!(document_transition, id),
-                    message: err.to_string(),
-                    execution_error: err.to_string(),
-                    document_transition: None,
-                    owner_id: None,
-                };
-                result.add_error(consensus_error);
+                    *get_from_transition_action!(document_transition, id),
+                    err.to_string(),
+                    err.to_string(),
+                    None,
+                    None,
+                );
+                result.add_error(DataTriggerActionError::from(consensus_error));
                 result
             }
 
@@ -207,11 +209,12 @@ fn create_error(
     dt_create: &DocumentCreateTransitionAction,
     msg: String,
 ) -> DataTriggerActionError {
-    DataTriggerActionError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id,
-        document_transition_id: dt_create.base.id,
-        message: msg,
-        owner_id: Some(*context.owner_id),
-        document_transition: Some(DocumentTransitionAction::CreateAction(dt_create.clone())),
-    }
+    DataTriggerConditionError::new(
+        context.data_contract.id,
+        dt_create.base.id,
+        msg,
+        Some(DocumentTransitionAction::CreateAction(dt_create.clone())),
+        Some(*context.owner_id),
+    )
+    .into()
 }

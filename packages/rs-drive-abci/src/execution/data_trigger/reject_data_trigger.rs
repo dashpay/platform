@@ -1,4 +1,5 @@
 use crate::error::Error;
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::validation::SimpleValidationResult;
@@ -29,13 +30,13 @@ pub fn reject_data_trigger(
 ) -> Result<SimpleValidationResult<DataTriggerActionError>, Error> {
     let mut result = SimpleValidationResult::<DataTriggerActionError>::default();
 
-    result.add_error(DataTriggerActionError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id,
-        document_transition_id: get_from_transition_action!(document_transition, id).to_owned(),
-        message: String::from("Action is not allowed"),
-        document_transition: None,
-        owner_id: None,
-    });
+    result.add_error(DataTriggerConditionError::new(
+        context.data_contract.id,
+        get_from_transition_action!(document_transition, id).to_owned(),
+        String::from("Action is not allowed"),
+        None,
+        None,
+    ));
 
     Ok(result)
 }

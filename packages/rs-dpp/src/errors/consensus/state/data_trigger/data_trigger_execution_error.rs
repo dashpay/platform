@@ -69,3 +69,9 @@ impl From<DataTriggerExecutionError> for StateError {
         StateError::DataTriggerActionError(DataTriggerActionError::DataTriggerExecutionError(err))
     }
 }
+
+impl From<DataTriggerExecutionError> for DataTriggerActionError {
+    fn from(err: DataTriggerExecutionError) -> Self {
+        DataTriggerActionError::DataTriggerExecutionError(err)
+    }
+}

@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -61,15 +62,15 @@ pub fn create_contact_request_data_trigger(
 
     if !is_dry_run {
         if owner_id == &to_user_id {
-            let err = DataTriggerActionError::DataTriggerConditionError {
-                data_contract_id: context.data_contract.id,
-                document_transition_id: document_create_transition.base.id,
-                message: format!("Identity {to_user_id} must not be equal to owner id"),
-                document_transition: Some(DocumentTransitionAction::CreateAction(
+            let err = DataTriggerConditionError::new(
+                context.data_contract.id,
+                document_create_transition.base.id,
+                format!("Identity {to_user_id} must not be equal to owner id"),
+                Some(DocumentTransitionAction::CreateAction(
                     document_create_transition.clone(),
                 )),
-                owner_id: Some(*context.owner_id),
-            };
+                Some(*context.owner_id),
+            );
             result.add_error(err);
             return Ok(result);
         }
@@ -83,18 +84,18 @@ pub fn create_contact_request_data_trigger(
             if core_height_created_at < height_window_start
                 || core_height_created_at > height_window_end
             {
-                let err = DataTriggerActionError::DataTriggerConditionError {
-                    data_contract_id: context.data_contract.id,
-                    document_transition_id: document_create_transition.base.id,
-                    message: format!(
+                let err = DataTriggerConditionError::new(
+                    context.data_contract.id,
+                    document_create_transition.base.id,
+                    format!(
                         "Core height {} is out of block height window from {} to {}",
                         core_height_created_at, height_window_start, height_window_end
                     ),
-                    document_transition: Some(DocumentTransitionAction::CreateAction(
+                    Some(DocumentTransitionAction::CreateAction(
                         document_create_transition.clone(),
                     )),
-                    owner_id: Some(*context.owner_id),
-                };
+                    Some(*context.owner_id),
+                );
                 result.add_error(err);
                 return Ok(result);
             }
@@ -108,15 +109,15 @@ pub fn create_contact_request_data_trigger(
         .fetch_identity_balance(to_user_id.to_buffer(), context.transaction)?;
 
     if !is_dry_run && identity.is_none() {
-        let err = DataTriggerActionError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: document_create_transition.base.id,
-            message: format!("Identity {to_user_id} doesn't exist"),
-            document_transition: Some(DocumentTransitionAction::CreateAction(
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id,
+            document_create_transition.base.id,
+            format!("Identity {to_user_id} doesn't exist"),
+            Some(DocumentTransitionAction::CreateAction(
                 document_create_transition.clone(),
             )),
-            owner_id: Some(*context.owner_id),
-        };
+            Some(*context.owner_id),
+        );
         result.add_error(err);
         return Ok(result);
     }
@@ -267,13 +268,10 @@ mod test {
         assert!(!result.is_valid());
 
         assert!(matches!(
-            &result.errors.first().unwrap(),
-            &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
-                message == &format!("Identity {owner_id} must not be equal to owner id")
-
-
-            }
-        ));
+        &result.errors.first().unwrap(),
+        &DataTriggerActionError::DataTriggerConditionError(data_trigger_condition_error)  if {
+            data_trigger_condition_error.message() == format!("Identity {owner_id} must not be equal to owner id")
+        }));
     }
 
     #[test]
@@ -344,11 +342,9 @@ mod test {
         let data_trigger_error = &result.errors[0];
 
         assert!(matches!(
-            data_trigger_error,
-            DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
-                message == &format!("Identity {contract_request_to_user_id} doesn't exist")
-
-
+            &data_trigger_error,
+            &DataTriggerActionError::DataTriggerConditionError(data_trigger_condition_error)  if {
+                data_trigger_condition_error.message() == &format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));
     }

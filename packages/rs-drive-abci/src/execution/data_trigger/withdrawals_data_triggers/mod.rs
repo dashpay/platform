@@ -2,6 +2,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
 
+use dashcore_rpc::json::Bip125Replaceable::No;
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -74,13 +76,13 @@ pub fn delete_withdrawal_data_trigger(
         .documents;
 
     let Some(withdrawal) = withdrawals.get(0) else {
-        let err = DataTriggerActionError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: dt_delete.base.id,
-            message: "Withdrawal document was not found".to_string(),
-            owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
-        };
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id,
+            dt_delete.base.id,
+            "Withdrawal document was not found".to_string(),
+            Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
+            Some(*context.owner_id),
+        );
 
         result.add_error(err);
 
@@ -95,14 +97,13 @@ pub fn delete_withdrawal_data_trigger(
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
-        let err = DataTriggerActionError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: dt_delete.base.id,
-            message: "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
-                .to_string(),
-            owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
-        };
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id,
+            dt_delete.base.id,
+            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+            Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
+            Some(*context.owner_id),
+        );
 
         result.add_error(err);
 
