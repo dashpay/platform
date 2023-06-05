@@ -55,6 +55,8 @@ where
             context.data_contract.id,
             dt_delete.base.id,
             "Withdrawal document was not found".to_string(),
+            None,
+            None
         ).into());
 
         return Ok(result);
@@ -70,6 +72,8 @@ where
                 context.data_contract.id,
                 dt_delete.base.id,
                 "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+                None,
+                None,
             )
             .into(),
         );

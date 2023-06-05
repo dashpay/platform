@@ -157,7 +157,7 @@ mod test {
 
     use platform_value::Value;
 
-    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use crate::consensus::state::state_error::StateError;
     use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
@@ -236,14 +236,14 @@ mod test {
     fn get_data_trigger_error(
         result: &Result<DataTriggerExecutionResult, anyhow::Error>,
         error_number: usize,
-    ) -> &DataTriggerError {
+    ) -> &DataTriggerActionError {
         let execution_result = result.as_ref().expect("it should return execution result");
         let error = execution_result
             .get_errors()
             .get(error_number)
             .expect("errors should exist");
         match error {
-            StateError::DataTriggerError(error) => error,
+            StateError::DataTriggerActionError(error) => error,
             _ => {
                 panic!("the returned error is not a data trigger error")
             }

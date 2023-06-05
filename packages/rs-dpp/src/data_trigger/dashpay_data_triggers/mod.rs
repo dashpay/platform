@@ -56,6 +56,8 @@ where
                     context.data_contract.id,
                     document_create_transition.base.id,
                     format!("Identity {to_user_id} must not be equal to owner id"),
+                    None,
+                    None,
                 )
                 .into(),
             );
@@ -85,6 +87,8 @@ where
                             "Core height {} is out of block height window from {} to {}",
                             core_height_created_at, height_window_start, height_window_end
                         ),
+                        None,
+                        None,
                     )
                     .into(),
                 );
@@ -109,6 +113,8 @@ where
                 context.data_contract.id,
                 document_create_transition.base.id,
                 format!("Identity {to_user_id} doesn't exist"),
+                None,
+                None,
             )
             .into(),
         );
@@ -126,7 +132,7 @@ mod test {
     use platform_value::platform_value;
 
     use super::create_contact_request_data_trigger;
-    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::Action,
@@ -230,7 +236,7 @@ mod test {
 
         assert!(matches!(
             &data_trigger_error,
-            &DataTriggerError::DataTriggerConditionError(e)  if {
+            &DataTriggerActionError::DataTriggerConditionError(e)  if {
                 e.message() == &format!("Identity {owner_id} must not be equal to owner id")
 
 
@@ -283,7 +289,7 @@ mod test {
 
         assert!(matches!(
             &data_trigger_error,
-            &DataTriggerError::DataTriggerConditionError(e)  if {
+            &DataTriggerActionError::DataTriggerConditionError(e)  if {
                 e.message() == &format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));

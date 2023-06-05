@@ -3,7 +3,7 @@ pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
 
 use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
 use crate::document::document_transition::{Action, DocumentTransition};
 use crate::{get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike};
@@ -97,6 +97,9 @@ impl DataTrigger {
                     data_contract_id,
                     *get_from_transition!(document_transition, id),
                     err.to_string(),
+                    err.to_string(),
+                    None,
+                    None,
                 );
 
                 result.add_error(consensus_error.into());
@@ -144,9 +147,9 @@ fn create_error<SR>(
     context: &DataTriggerExecutionContext<SR>,
     transition_id: Identifier,
     msg: String,
-) -> DataTriggerError
+) -> DataTriggerActionError
 where
     SR: StateRepositoryLike,
 {
-    DataTriggerConditionError::new(context.data_contract.id, transition_id, msg).into()
+    DataTriggerConditionError::new(context.data_contract.id, transition_id, msg, None, None).into()
 }

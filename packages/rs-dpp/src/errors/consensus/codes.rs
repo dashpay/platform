@@ -1,7 +1,5 @@
 use crate::consensus::signature::SignatureError;
-use crate::consensus::state::data_trigger::data_trigger_error::{
-    DataTriggerActionError, DataTriggerError,
-};
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 
 use crate::errors::consensus::{
     basic::BasicError, fee::fee_error::FeeError, state::state_error::StateError, ConsensusError,
@@ -139,7 +137,6 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataContractIsReadonlyError { .. } => 4026,
-            Self::DataTriggerError(ref e) => e.code(),
             Self::DataTriggerActionError(ref e) => e.code(),
 
             // Document
@@ -164,16 +161,6 @@ impl ErrorWithCode for StateError {
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
             Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
             Self::IdentityInsufficientBalanceError(_) => 4024,
-        }
-    }
-}
-
-impl ErrorWithCode for DataTriggerError {
-    fn code(&self) -> u32 {
-        match self {
-            Self::DataTriggerConditionError { .. } => 4001,
-            Self::DataTriggerExecutionError { .. } => 4002,
-            Self::DataTriggerInvalidResultError { .. } => 4003,
         }
     }
 }

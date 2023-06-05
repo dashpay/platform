@@ -4,9 +4,7 @@ use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
-use crate::consensus::state::data_trigger::data_trigger_error::{
-    DataTriggerActionError, DataTriggerError,
-};
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -39,9 +37,6 @@ pub enum StateError {
     */
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
-
-    #[error(transparent)]
-    DataTriggerError(DataTriggerError),
 
     #[error(transparent)]
     DataTriggerActionError(DataTriggerActionError),

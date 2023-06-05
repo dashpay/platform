@@ -21,6 +21,8 @@ where
             context.data_contract.id,
             get_from_transition!(document_transition, id).to_owned(),
             String::from("Action is not allowed"),
+            None,
+            None,
         )
         .into(),
     );
