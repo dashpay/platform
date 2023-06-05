@@ -48,7 +48,7 @@ use dpp::consensus::basic::BasicError::{
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 
-use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::consensus::state::state_error::StateError;
 
 use wasm_bindgen::{JsError, JsValue};
@@ -180,19 +180,20 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::MissingIdentityPublicKeyIdsError(e) => {
             MissingIdentityPublicKeyIdsErrorWasm::from(e).into()
         }
-        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
-            DataTriggerError::DataTriggerConditionError(e) => {
-                DataTriggerConditionErrorWasm::from(e).into()
+        StateError::DataTriggerActionError(data_trigger_error) => {
+            match data_trigger_error.deref() {
+                DataTriggerActionError::DataTriggerConditionError(e) => {
+                    DataTriggerConditionErrorWasm::from(e).into()
+                }
+                DataTriggerActionError::DataTriggerExecutionError(e) => {
+                    DataTriggerExecutionErrorWasm::from(e).into()
+                }
+                DataTriggerActionError::DataTriggerInvalidResultError(e) => {
+                    DataTriggerInvalidResultErrorWasm::from(e).into()
+                }
+                DataTriggerActionError::ValueError(e) => ValueErrorWasm::from(e).into(),
             }
-            DataTriggerError::DataTriggerExecutionError(e) => {
-                DataTriggerExecutionErrorWasm::from(e).into()
-            }
-            DataTriggerError::DataTriggerInvalidResultError(e) => {
-                DataTriggerInvalidResultErrorWasm::from(e).into()
-            }
-        },
-        // TODO(v0.24-backport): this error seems to be used only in drive executor. Do we need binding for it?
-        StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
+        }
         StateError::IdentityAlreadyExistsError(e) => {
             let wasm_error: IdentityAlreadyExistsErrorWasm = e.into();
             wasm_error.into()

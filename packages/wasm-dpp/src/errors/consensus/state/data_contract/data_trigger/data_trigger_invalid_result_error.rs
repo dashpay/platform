@@ -25,9 +25,9 @@ impl DataTriggerInvalidResultErrorWasm {
         Buffer::from_bytes(self.inner.data_contract_id().as_bytes())
     }
 
-    #[wasm_bindgen(js_name=getDocumentId)]
-    pub fn document_id(&self) -> Buffer {
-        Buffer::from_bytes(self.inner.document_id().as_bytes())
+    #[wasm_bindgen(js_name=getDocumentTransitionId)]
+    pub fn document_transition_id(&self) -> Buffer {
+        Buffer::from_bytes(self.inner.document_transition_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getCode)]
