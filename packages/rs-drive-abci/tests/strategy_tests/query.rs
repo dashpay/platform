@@ -127,17 +127,21 @@ impl<'a> ProofVerification<'a> {
     }
 
     /// Verify proof returned by the Platform.
-    pub fn verify_proof(&self, app_hash: &[u8], proof: Proof) -> Result<(), String> {
+    pub fn verify_proof(&self, app_hash: &[u8], proof: Proof) -> SimpleValidationResult<AbciError> {
         tracing::debug!(?proof, app_hash = hex::encode(&app_hash), "verifying proof");
 
-        // TODO: define and return valid errors
         if self.app_hash != app_hash {
-            return Err("Invalid root app hash".to_string());
-        }
+            return SimpleValidationResult::new_with_error(AbciError::InvalidState(
+                "Invalid root app hash".to_string(),
+            ));
+        };
 
         if proof.signature != self.signature {
-            return Err("Proof signature mismatch".to_string());
-        }
+            tracing::error!(?proof.signature,?self.signature, "proof signature mismatch");
+            return SimpleValidationResult::new_with_error(AbciError::BadCommitSignature(
+                "Proof signature mismatch".to_string(),
+            ));
+        };
 
         let state_id = StateId {
             app_hash: app_hash.to_vec(),
@@ -146,11 +150,8 @@ impl<'a> ProofVerification<'a> {
             height: self.height as u64,
             time: Some(self.time.clone()),
         };
-        if let Some(e) = self.verify_signature(state_id, proof.round).first_error() {
-            Err(e.to_string())
-        } else {
-            Ok(())
-        }
+
+        self.verify_signature(state_id, proof.round)
     }
 }
 
@@ -263,10 +264,9 @@ impl QueryStrategy {
                     })
                     .collect();
                 assert_eq!(proof_verification.app_hash, &proof_root_hash);
-                assert_eq!(
-                    proof_verification.verify_proof(&proof_root_hash, proof),
-                    Ok(())
-                );
+                assert!(proof_verification
+                    .verify_proof(&proof_root_hash, proof)
+                    .is_valid());
                 assert_eq!(identities, public_key_hashes);
             } else {
                 let identities_returned = response
