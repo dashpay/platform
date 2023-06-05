@@ -181,6 +181,7 @@ impl IdentityUpdateTransition {
         }
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(
         mut raw_object: Value,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {

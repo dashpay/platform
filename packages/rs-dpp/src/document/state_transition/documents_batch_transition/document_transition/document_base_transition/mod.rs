@@ -1,10 +1,17 @@
 mod v0;
 
-pub use v0::*;
-use serde::{Deserialize, Serialize};
+use crate::version::{LATEST_PLATFORM_VERSION, PLATFORM_VERSIONS};
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+pub use v0::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 pub enum DocumentBaseTransition {
-    V0(DocumentBaseTransitionV0)
+    V0(DocumentBaseTransitionV0),
+}
+
+impl Default for DocumentBaseTransition {
+    fn default() -> Self {
+        DocumentBaseTransition::V0(DocumentBaseTransitionV0::default()) // since only v0
+    }
 }

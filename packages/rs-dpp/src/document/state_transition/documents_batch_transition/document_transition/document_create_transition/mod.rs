@@ -104,6 +104,7 @@ impl DocumentCreateTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
+    #[cfg(feature = "json-object")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
@@ -136,6 +137,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         Ok(document)
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_raw_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -146,6 +148,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         Self::from_value_map(map, data_contract)
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -165,10 +168,12 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
         transition_base_map.insert(
@@ -193,12 +198,14 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         Ok(transition_base_map)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }

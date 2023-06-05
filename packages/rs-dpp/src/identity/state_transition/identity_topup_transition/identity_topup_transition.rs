@@ -90,10 +90,13 @@ impl IdentityTopUpTransition {
 
         Ok(identity_top_up_transition)
     }
+
+    #[cfg(feature = "platform-value")]
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         Self::from_raw_object(raw_state_transition)
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(raw_object: Value) -> Result<IdentityTopUpTransition, ProtocolError> {
         let protocol_version = raw_object
             .get_optional_integer(property_names::PROTOCOL_VERSION)

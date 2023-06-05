@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
@@ -46,11 +45,11 @@ pub struct DocumentBaseTransitionV0 {
     pub data_contract: DataContract,
 }
 
-impl DocumentBaseTransition {
+impl DocumentBaseTransitionV0 {
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,
-    ) -> Result<DocumentBaseTransition, ProtocolError> {
+    ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         Ok(DocumentBaseTransition {
             id: Identifier::from(
                 map.remove_hash256_bytes(property_names::ID)
@@ -73,32 +72,35 @@ impl DocumentBaseTransition {
     }
 }
 
-impl DocumentTransitionObjectLike for DocumentBaseTransition {
+impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
+    #[cfg(feature = "json-object")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let mut document: DocumentBaseTransition = serde_json::from_value(json_value)?;
+        let mut document: DocumentBaseTransitionV0 = serde_json::from_value(json_value)?;
 
         document.data_contract_id = data_contract.id;
         document.data_contract = data_contract;
         Ok(document)
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_raw_object(
         raw_transition: Value,
         data_contract: DataContract,
-    ) -> Result<DocumentBaseTransition, ProtocolError> {
+    ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         let map = raw_transition
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         Self::from_value_map(map, data_contract)
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,
-    ) -> Result<DocumentBaseTransition, ProtocolError> {
+    ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
         Ok(DocumentBaseTransition {
             id: Identifier::from(
                 map.get_hash256_bytes(property_names::ID)
@@ -116,10 +118,12 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut btree_map = BTreeMap::new();
         btree_map.insert(
@@ -141,49 +145,59 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
         Ok(btree_map)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 }
 
 pub trait DocumentTransitionObjectLike {
+    #[cfg(feature = "json-object")]
     /// Creates the Document Transition from JSON representation. The JSON representation contains
     /// binary data encoded in base64, Identifiers encoded in base58
     fn from_json_object(
         json_str: JsonValue,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: std::marker::Sized;
+    where
+        Self: std::marker::Sized;
+    #[cfg(feature = "platform-value")]
     /// Creates the document transition from Raw Object
     fn from_raw_object(
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: std::marker::Sized;
+    where
+        Self: std::marker::Sized;
+    #[cfg(feature = "platform-value")]
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: std::marker::Sized;
+    where
+        Self: std::marker::Sized;
+
+    #[cfg(feature = "platform-value")]
     /// Object is an [`platform::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self) -> Result<Value, ProtocolError>;
 
+    #[cfg(feature = "platform-value")]
     /// Value Map is a Map of string to [`platform::Value`] that represents the state transition
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError>;
 
+    #[cfg(feature = "json-object")]
     /// Object is an [`serde_json::Value`] instance that replaces the binary data with
     ///  - base58 string for Identifiers
     ///  - base64 string for other binary data
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
 }

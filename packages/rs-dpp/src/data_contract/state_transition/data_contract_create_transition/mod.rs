@@ -299,6 +299,7 @@ impl StateTransitionIdentitySigned for DataContractCreateTransition {
 }
 
 impl DataContractCreateTransition {
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(
         mut raw_object: Value,
     ) -> Result<DataContractCreateTransition, ProtocolError> {

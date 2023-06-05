@@ -15,9 +15,10 @@ pub mod extra;
 mod generate_data_contract;
 pub mod state_transition;
 
-mod created_data_contract;
+pub mod created_data_contract;
 mod factory;
 mod v0;
+
 pub use created_data_contract::CreatedDataContract;
 pub use v0::*;
 
@@ -77,6 +78,40 @@ impl DataContract {
             .check_version(data_contract_system_version))
     }
 
+    #[cfg(feature = "platform-value")]
+    pub fn from_raw_object(mut raw_object: Value) -> Result<DataContract, ProtocolError> {
+        let data_contract_system_version =
+            match raw_object.remove_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
+                Ok(Some(data_contract_system_version)) => data_contract_system_version,
+                Ok(None) => {
+                    return Err(ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::VersionError(
+                            "no system version found on data contract object".into(),
+                        ))
+                        .into(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::VersionError(
+                            format!("version error: {}", e.to_string()).into(),
+                        ))
+                        .into(),
+                    ));
+                }
+            };
+        match data_contract_system_version {
+            0 => Ok(DataContractV0::from_raw_object(raw_object).into()),
+            _ => Err(ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::VersionError(
+                    "system version found on data contract object".into(),
+                ))
+                .into(),
+            )),
+        }
+    }
+
+    #[cfg(feature = "validation")]
     pub fn validate(
         active_protocol_version: u32,
         raw_data_contract: &Value,
@@ -103,7 +138,7 @@ impl DataContract {
         if !allow_non_current_data_contract_versions {
             Self::check_version_is_active(active_protocol_version, data_contract_system_version)?;
         }
-        match system_version {
+        match data_contract_system_version {
             0 => DataContractV0::validate(raw_data_contract),
             _ => Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(BasicError::VersionError(

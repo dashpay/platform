@@ -28,6 +28,7 @@ pub struct StateTransitionVersion {
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
     pub documents_batch_state_transition: FeatureVersionBounds,
+    pub document_base_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

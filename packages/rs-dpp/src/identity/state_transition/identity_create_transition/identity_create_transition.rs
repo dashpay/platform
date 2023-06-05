@@ -202,6 +202,7 @@ impl IdentityCreateTransition {
         Ok(identity_create_transition)
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 

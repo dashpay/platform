@@ -40,33 +40,24 @@ pub struct DataContractFactoryV0 {
     /// The feature version used by this factory.
     data_contract_feature_version: FeatureVersion,
 
-    /// A DataContractValidator for validating data contracts.
-    validate_data_contract: Arc<DataContractValidator>,
-
     /// An EntropyGenerator for generating entropy during data contract creation.
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 impl DataContractFactoryV0 {
-    pub fn new(
-        data_contract_feature_version: FeatureVersion,
-        validate_data_contract: Arc<DataContractValidator>,
-    ) -> Self {
+    pub fn new(data_contract_feature_version: FeatureVersion) -> Self {
         Self {
             data_contract_feature_version,
-            validate_data_contract,
             entropy_generator: Box::new(DefaultEntropyGenerator),
         }
     }
 
     pub fn new_with_entropy_generator(
         data_contract_feature_version: FeatureVersion,
-        validate_data_contract: Arc<DataContractValidator>,
         entropy_generator: Box<dyn EntropyGenerator>,
     ) -> Self {
         Self {
             data_contract_feature_version,
-            validate_data_contract,
             entropy_generator,
         }
     }
@@ -128,7 +119,7 @@ impl DataContractFactoryV0 {
         };
         let mut data_contract = DataContractV0 {
             id: data_contract_id,
-            schema: data_contract::SCHEMA_URI.to_string(),
+            schema: data_contract::DATA_CONTRACT_SCHEMA_URI_V0.to_string(),
             version: 1,
             owner_id,
             document_types,
@@ -147,6 +138,7 @@ impl DataContractFactoryV0 {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     /// Create Data Contract from plain object
     pub async fn create_from_object(
         &self,
@@ -198,7 +190,8 @@ impl DataContractFactoryV0 {
     }
 
     pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
-        let result = self.validate_data_contract.validate(raw_data_contract)?;
+        let result =
+            DataContract::validate(self.data_contract_feature_version, raw_data_contract, false)?;
 
         if !result.is_valid() {
             return Err(ProtocolError::InvalidDataContractError(

@@ -7,7 +7,7 @@ pub use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
-use dpp::data_contract::{CreatedDataContract, DataContract, SCHEMA_URI};
+use dpp::data_contract::{CreatedDataContract, DataContract, DATA_CONTRACT_SCHEMA_URI_V0};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
 
@@ -394,6 +394,6 @@ pub struct DataContractDefaults;
 impl DataContractDefaults {
     #[wasm_bindgen(getter = SCHEMA)]
     pub fn get_default_schema() -> String {
-        SCHEMA_URI.to_string()
+        DATA_CONTRACT_SCHEMA_URI_V0.to_string()
     }
 }

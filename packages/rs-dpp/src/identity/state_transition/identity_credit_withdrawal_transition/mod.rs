@@ -114,6 +114,7 @@ impl IdentityCreditWithdrawalTransition {
         Self::from_value(value)
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(
         raw_object: Value,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {

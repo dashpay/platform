@@ -111,6 +111,7 @@ impl DocumentReplaceTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentReplaceTransition {
+    #[cfg(feature = "json-object")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,

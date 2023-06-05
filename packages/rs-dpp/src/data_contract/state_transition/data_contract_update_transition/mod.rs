@@ -284,6 +284,7 @@ impl StateTransitionIdentitySigned for DataContractUpdateTransition {
 }
 
 impl DataContractUpdateTransition {
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(
         mut raw_object: Value,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
@@ -298,6 +299,7 @@ impl DataContractUpdateTransition {
         }
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_value_map(
         mut raw_data_contract_create_transition: BTreeMap<String, Value>,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
@@ -341,6 +343,7 @@ impl DataContractUpdateTransition {
         vec![self.data_contract().id]
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
         DataContractUpdateTransitionLatest::clean_value(value)
     }

@@ -17,6 +17,7 @@ pub struct DocumentDeleteTransition {
 }
 
 impl DocumentTransitionObjectLike for DocumentDeleteTransition {
+    #[cfg(feature = "json-object")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
@@ -27,6 +28,7 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
         Ok(document)
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_raw_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -36,6 +38,7 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
         Ok(DocumentDeleteTransition { base })
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -48,18 +51,22 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
         Ok(DocumentDeleteTransition { base })
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         self.base.to_object()
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         self.base.to_value_map()
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.base.to_json()
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         self.base.to_cleaned_object()
     }

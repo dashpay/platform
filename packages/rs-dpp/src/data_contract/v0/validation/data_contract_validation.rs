@@ -48,6 +48,7 @@ lazy_static! {
 }
 
 impl DataContractV0 {
+    #[cfg(feature = "validation")]
     /// Validate the data contract from a raw value
     pub fn validate(
         raw_data_contract: &Value,

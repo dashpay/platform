@@ -79,6 +79,7 @@ pub fn json_document_to_created_contract(
     })
 }
 
+#[cfg(feature = "platform-value")]
 /// Reads a JSON file and converts it a document.
 pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,

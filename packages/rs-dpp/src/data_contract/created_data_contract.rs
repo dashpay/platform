@@ -1,33 +1,50 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use crate::data_contract::property_names::SYSTEM_VERSION;
+use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 use crate::data_contract::DataContract;
+use crate::version::FeatureVersion;
 use crate::ProtocolError;
+use derive_more::Into;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
 
-#[derive(Clone, Debug)]
-pub struct CreatedDataContract {
-    pub data_contract: DataContract,
-    pub entropy_used: Bytes32,
+#[derive(Clone, Debug, Into)]
+pub enum CreatedDataContract {
+    V0(CreatedDataContractV0),
 }
 
 impl CreatedDataContract {
-    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
-        let mut raw_map = raw_object
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-
-        let raw_data_contract = raw_map.remove(st_prop::DATA_CONTRACT).ok_or_else(|| {
-            Error::StructureError("unable to remove property dataContract".to_string())
-        })?;
-
-        let raw_entropy = raw_map
-            .remove_bytes(st_prop::ENTROPY)
-            .map_err(ProtocolError::ValueError)?;
-
-        let data_contract = DataContract::from_raw_object(raw_data_contract)?;
-
-        Ok(Self {
-            data_contract,
-            entropy_used: Bytes32::from_vec(raw_entropy)?,
-        })
+    #[cfg(feature = "platform-value")]
+    pub fn from_raw_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
+        let data_contract_system_version =
+            match raw_object.remove_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
+                Ok(Some(data_contract_system_version)) => data_contract_system_version,
+                Ok(None) => {
+                    return Err(ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::VersionError(
+                            "no system version found on data contract object".into(),
+                        ))
+                        .into(),
+                    ));
+                }
+                Err(e) => {
+                    return Err(ProtocolError::ConsensusError(
+                        ConsensusError::BasicError(BasicError::VersionError(
+                            format!("version error: {}", e.to_string()).into(),
+                        ))
+                        .into(),
+                    ));
+                }
+            };
+        match data_contract_system_version {
+            0 => Ok(CreatedDataContractV0::from_raw_object(raw_object).into()),
+            _ => Err(ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::VersionError(
+                    "system version found on data contract object".into(),
+                ))
+                .into(),
+            )),
+        }
     }
 }

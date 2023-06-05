@@ -88,6 +88,7 @@ impl Default for DataContractUpdateTransitionV0 {
 }
 
 impl DataContractUpdateTransitionV0 {
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(
         mut raw_object: Value,
     ) -> Result<DataContractUpdateTransitionV0, ProtocolError> {
@@ -111,6 +112,7 @@ impl DataContractUpdateTransitionV0 {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_value_map(
         mut raw_data_contract_update_transition: BTreeMap<String, Value>,
     ) -> Result<DataContractUpdateTransitionV0, ProtocolError> {
@@ -134,6 +136,7 @@ impl DataContractUpdateTransitionV0 {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;

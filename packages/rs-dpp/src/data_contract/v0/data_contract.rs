@@ -41,10 +41,12 @@ type DefinitionName = String;
 type DocumentName = String;
 type PropertyPath = String;
 
-pub const SCHEMA_URI: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
+pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
+    "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
 
-pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::OWNER_ID];
-pub const BINARY_FIELDS: [&str; 1] = [property_names::ENTROPY];
+pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
+    [property_names::ID, property_names::OWNER_ID];
+pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 
 impl Convertible for DataContractV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
@@ -304,6 +306,7 @@ impl DataContractV0 {
         Self::default()
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(raw_object: Value) -> Result<DataContractV0, ProtocolError> {
         let mut data_contract_map = raw_object
             .into_btree_string_map()
@@ -322,10 +325,6 @@ impl DataContractV0 {
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
         )?;
-
-        let protocol_version = data_contract_map
-            .remove_optional_integer(property_names::PROTOCOL_VERSION)?
-            .unwrap_or(LATEST_VERSION);
 
         let documents = data_contract_map
             .remove(property_names::DOCUMENTS)
@@ -366,10 +365,14 @@ impl DataContractV0 {
         Ok(data_contract)
     }
 
+    #[cfg(feature = "json-object")]
     pub fn from_json_object(json_value: JsonValue) -> Result<DataContractV0, ProtocolError> {
         let mut value: Value = json_value.into();
-        value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
-        value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
+        value.replace_at_paths(DATA_CONTRACT_BINARY_FIELDS_V0, ReplacementType::BinaryBytes)?;
+        value.replace_at_paths(
+            DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
+            ReplacementType::Identifier,
+        )?;
         Self::from_raw_object(value)
     }
 
@@ -587,6 +590,7 @@ impl DataContractV0 {
     }
 }
 
+#[cfg(feature = "json-object")]
 impl TryFrom<JsonValue> for DataContractV0 {
     type Error = ProtocolError;
     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
@@ -594,6 +598,7 @@ impl TryFrom<JsonValue> for DataContractV0 {
     }
 }
 
+#[cfg(feature = "platform-value")]
 impl TryFrom<Value> for DataContractV0 {
     type Error = ProtocolError;
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -617,6 +622,7 @@ impl TryFrom<&DataContractV0> for Value {
     }
 }
 
+#[cfg(feature = "platform-value")]
 impl TryFrom<&str> for DataContractV0 {
     type Error = ProtocolError;
     fn try_from(v: &str) -> Result<Self, Self::Error> {
@@ -928,7 +934,7 @@ mod test {
         let data_contract: DataContractV0 = serde_json::from_str(&string_contract)?;
 
         let raw_data_contract = data_contract.to_json_object()?;
-        for path in IDENTIFIER_FIELDS {
+        for path in DATA_CONTRACT_IDENTIFIER_FIELDS_V0 {
             assert!(raw_data_contract
                 .get(path)
                 .expect("the path should exist")
@@ -944,7 +950,7 @@ mod test {
         let string_contract = get_data_from_file("src/tests/payloads/contract_example.json")?;
         let raw_contract: JsonValue = serde_json::from_str(&string_contract)?;
 
-        for path in IDENTIFIER_FIELDS {
+        for path in DATA_CONTRACT_IDENTIFIER_FIELDS_V0 {
             raw_contract.get(path).expect("the path should exist");
         }
 

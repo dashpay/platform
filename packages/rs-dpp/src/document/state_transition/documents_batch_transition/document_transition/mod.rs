@@ -111,6 +111,7 @@ struct TransitionWithAction {
 }
 
 impl DocumentTransitionObjectLike for DocumentTransition {
+    #[cfg(feature = "json-object")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,

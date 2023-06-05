@@ -51,6 +51,7 @@ impl Default for DocumentsBatchTransitionV0 {
 }
 
 impl DocumentsBatchTransitionV0 {
+    #[cfg(feature = "json-object")]
     pub fn from_json_object(
         json_value: JsonValue,
         data_contracts: Vec<DataContract>,

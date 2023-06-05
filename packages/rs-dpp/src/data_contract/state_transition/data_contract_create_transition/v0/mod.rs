@@ -68,6 +68,7 @@ impl Default for DataContractCreateTransitionV0 {
 }
 
 impl DataContractCreateTransitionV0 {
+    #[cfg(feature = "platform-value")]
     pub fn from_raw_object(
         mut raw_object: Value,
     ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
@@ -95,6 +96,7 @@ impl DataContractCreateTransitionV0 {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_value_map(
         mut raw_data_contract_create_transition: BTreeMap<String, Value>,
     ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
@@ -139,6 +141,7 @@ impl DataContractCreateTransitionV0 {
         vec![self.data_contract.id]
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
         value.replace_at_paths(super::IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_at_paths(super::BINARY_FIELDS, ReplacementType::BinaryBytes)?;
