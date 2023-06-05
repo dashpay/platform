@@ -6,6 +6,7 @@ const {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
+  PRESET_MAINNET,
 } = require('../../../constants');
 
 const systemConfigs = require('../../../../configs/system');
@@ -82,7 +83,7 @@ function setupRegularPresetTaskFactory(
 
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
-          ctx.config.set('platform.enable', ctx.isHP);
+          ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
           ctx.config.set('core.rpc.user', generateRandomString(8));
