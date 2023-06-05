@@ -59,7 +59,7 @@ describe('Set Command Status', () => {
       await command.runWithDependencies({ option: 'core.rpc.allowIps', value: '["1337", "36484"]' }, flags, config);
     });
 
-    it.only('should allow replacing part of the json', async () => {
+    it('should allow replacing part of the json', async () => {
       const command = new ConfigSetCommand();
 
       const flags = {};
