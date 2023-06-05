@@ -1,5 +1,6 @@
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const configJsonSchema = require('../../../configs/schema/configJsonSchema');
+const $RefParser = require('@apidevtools/json-schema-ref-parser');
 
 class ConfigSetCommand extends ConfigBaseCommand {
   /**
@@ -26,7 +27,7 @@ class ConfigSetCommand extends ConfigBaseCommand {
 
     const path = optionPath.split('.');
 
-    let schema = configJsonSchema;
+    let schema = await $RefParser.dereference(configJsonSchema)
 
     for (const e of path) {
       if (schema.$ref) {
