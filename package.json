@@ -77,8 +77,7 @@
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0",
     "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz",
-    "socket.io-parser": "^4.2.3",
-    "ssh2": "^1.13.0"
+    "socket.io-parser": "^4.2.3"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"

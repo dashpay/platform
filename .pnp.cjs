@@ -8755,7 +8755,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["readable-stream", "npm:3.6.0"],\
             ["split-ca", "npm:1.0.1"],\
-            ["ssh2", "npm:1.13.0"]\
+            ["ssh2", "npm:1.11.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -16829,10 +16829,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["ssh2", [\
-        ["npm:1.13.0", {\
-          "packageLocation": "./.yarn/unplugged/ssh2-npm-1.13.0-8ea04793c8/node_modules/ssh2/",\
+        ["npm:1.11.0", {\
+          "packageLocation": "./.yarn/unplugged/ssh2-npm-1.11.0-ba52882820/node_modules/ssh2/",\
           "packageDependencies": [\
-            ["ssh2", "npm:1.13.0"],\
+            ["ssh2", "npm:1.11.0"],\
             ["asn1", "npm:0.2.6"],\
             ["bcrypt-pbkdf", "npm:1.0.2"],\
             ["cpu-features", "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"],\
