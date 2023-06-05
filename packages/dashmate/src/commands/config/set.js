@@ -51,7 +51,7 @@ class ConfigSetCommand extends ConfigBaseCommand {
     }
 
     // eslint-disable-next-line no-console
-    console.log(`${optionPath} set to ${config.get(optionPath)}`);
+    console.log(`${optionPath} set to ${JSON.stringify(config.get(optionPath))}`);
   }
 }
 
