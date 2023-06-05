@@ -60,11 +60,6 @@ describe('Testnet Fullnode', function main() {
     const renderServiceTemplates = container.resolve('renderServiceTemplates');
     const writeServiceConfigs = container.resolve('writeServiceConfigs');
 
-    for (const config of group) {
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
-    }
-
     setupRegularPresetTask = container.resolve('setupRegularPresetTask');
     resetNodeTask = container.resolve('resetNodeTask');
     startGroupNodesTask = container.resolve('startGroupNodesTask');
@@ -103,15 +98,24 @@ describe('Testnet Fullnode', function main() {
 
     configFile = container.resolve('configFile');
 
+    const config = configFile.getConfig(preset);
+
+    const serviceConfigFiles = renderServiceTemplates(config);
+    writeServiceConfigs(config.getName(), serviceConfigFiles);
+
     await configFileRepository.write(configFile);
 
     isServiceRunning = isServiceRunningFactory(
-      configFile.getConfig(preset),
+      config,
       dockerCompose,
       SERVICES,
     );
 
-    coreRpcClient = createRpcClient();
+    coreRpcClient = createRpcClient({
+      port: config.get('core.rpc.port'),
+      user: config.get('core.rpc.user'),
+      pass: config.get('core.rpc.password'),
+    });
   });
 
   after(async () => {
@@ -145,21 +149,25 @@ describe('Testnet Fullnode', function main() {
   });
 
   it('#sync', async () => {
-    const bestBlockHash = await client.getBestBlockHash();
-    const { height: bestBlockHeight } = await client.getBlock(bestBlockHash);
+    await wait(360000);
 
-    lastBlockHeight = bestBlockHeight;
+    let blockchainInfo = await coreRpcClient.getBlockchainInfo();
 
-    await wait(15000);
-
-    const newBestBlockHash = await client.getBestBlockHash();
-    const { height: newBestBlockHeight } = await client.getBlock(newBestBlockHash);
-
-    if (newBestBlockHeight <= lastBlockHeight) {
+    if (blockchainInfo.result.headers.length === 0) {
       expect.fail('Core is not syncing');
     }
 
-    lastBlockHeight = newBestBlockHeight;
+    lastBlockHeight = blockchainInfo.result.headers;
+
+    await wait(120000);
+
+    blockchainInfo = await coreRpcClient.getBlockchainInfo();
+
+    if (blockchainInfo.result.headers <= lastBlockHeight) {
+      expect.fail('Core is not syncing');
+    }
+
+    lastBlockHeight = blockchainInfo.result.headers;
   });
 
   it('#restart', async () => {
@@ -170,12 +178,11 @@ describe('Testnet Fullnode', function main() {
 
     expect(isRunning).to.be.true();
 
-    await wait(15000);
+    await wait(120000);
 
-    const newBestBlockHash = await client.getBestBlockHash();
-    const { height: newBestBlockHeight } = await client.getBlock(newBestBlockHash);
+    let blockchainInfo = await coreRpcClient.getBlockchainInfo();
 
-    if (newBestBlockHeight <= lastBlockHeight) {
+    if (blockchainInfo.result.headers <= lastBlockHeight) {
       expect.fail('Core is not syncing after restart');
     }
   });
