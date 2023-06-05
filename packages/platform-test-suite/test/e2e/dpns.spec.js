@@ -88,13 +88,7 @@ describe('DPNS', () => {
       expect(createdTLD.getData().normalizedParentDomainName).to.equal('');
     });
 
-    // TODO(rs-drive-abci): restore
-    //   There are two DataTriggerAction errors now. One is used in rs-drive-abci data trigger (new)
-    //   And other is in dpp data trigger (old). New error is dispatched in this test,
-    //   but it does not have binding yet.
-    //   Decide what to do with rs-dpp data trigger and it's errors,
-    //   and update bindings and test accordingly
-    it.skip('should not be able to update domain', async () => {
+    it('should not be able to update domain', async () => {
       createdTLD.set('label', 'anotherlabel');
 
       let broadcastError;
@@ -112,13 +106,7 @@ describe('DPNS', () => {
       expect(broadcastError.code).to.equal(4001);
     });
 
-    // TODO(rs-drive-abci): restore
-    //   There are two DataTriggerAction errors now. One is used in rs-drive-abci data trigger (new)
-    //   And other is in dpp data trigger (old). New error is dispatched in this test,
-    //   but it does not have binding yet.
-    //   Decide what to do with rs-dpp data trigger and it's errors,
-    //   and update bindings and test accordingly
-    it.skip('should not be able to delete domain', async () => {
+    it('should not be able to delete domain', async () => {
       let broadcastError;
 
       try {
