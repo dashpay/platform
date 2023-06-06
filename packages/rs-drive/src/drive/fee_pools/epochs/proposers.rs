@@ -51,7 +51,7 @@ impl Drive {
     ) -> Result<u64, Error> {
         let element = self
             .grove
-            .get(epoch.get_proposers_path(), proposer_tx_hash, transaction)
+            .get(&epoch.get_proposers_path(), proposer_tx_hash, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -81,7 +81,7 @@ impl Drive {
     ) -> Result<bool, Error> {
         match self
             .grove
-            .is_empty_tree(epoch_tree.get_proposers_path(), transaction)
+            .is_empty_tree(&epoch_tree.get_proposers_path(), transaction)
             .unwrap()
         {
             Ok(result) => Ok(result),
