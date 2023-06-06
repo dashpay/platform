@@ -309,13 +309,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             .expect("cannot calculate state id hash");
 
         let commit = CanonicalVote {
-            block_id: block_id_hash
-                .clone()
-                .try_into()
-                .expect("block hash must be 32 bytes"),
-            state_id: state_id_hash
-                .try_into()
-                .expect("state id hash must be 32 bytes"),
+            block_id: block_id_hash.clone(),
+            state_id: state_id_hash,
             chain_id: CHAIN_ID.to_string(),
             height: height as i64,
             round: ROUND as i64,
@@ -403,7 +398,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             hash: block_header_hash.to_vec(),
             height: height as i64,
             round: ROUND,
-            block: Some(block.clone()),
+            block: Some(block),
             block_id: Some(block_id),
         };
 

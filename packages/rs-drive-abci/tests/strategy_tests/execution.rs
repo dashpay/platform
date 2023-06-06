@@ -709,11 +709,7 @@ pub(crate) fn continue_chain_for_strategy(
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
-                    quorum_hash: current_quorum_with_test_info
-                        .quorum_hash
-                        .as_inner()
-                        .try_into()
-                        .expect("quorum hash mut be 32 bytes"),
+                    quorum_hash: current_quorum_with_test_info.quorum_hash.as_inner(),
                     quorum_type: config.quorum_type(),
                     app_version,
                     chain_id: mimic::CHAIN_ID.to_string(),

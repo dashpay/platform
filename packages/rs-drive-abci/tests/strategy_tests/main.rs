@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_insert_one_new_identity_per_block() {
+    fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
         drive_abci::logging::Loggers::default().try_install().ok();
 
         let strategy = Strategy {
