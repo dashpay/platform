@@ -1,6 +1,7 @@
 const $RefParser = require('@apidevtools/json-schema-ref-parser');
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const configJsonSchema = require('../../../configs/schema/configJsonSchema');
+const getPropertyDefinitionByPath = require('../../util/getPropertyDefinitionByPath');
 
 class ConfigSetCommand extends ConfigBaseCommand {
   /**
@@ -25,12 +26,11 @@ class ConfigSetCommand extends ConfigBaseCommand {
     // check for existence
     config.get(optionPath);
 
-    const path = optionPath.split('.');
+    const configSchema = await $RefParser.dereference(configJsonSchema);
+    const schema = getPropertyDefinitionByPath(configSchema, optionPath);
 
-    let schema = await $RefParser.dereference(configJsonSchema);
-
-    for (const e of path) {
-      schema = schema.properties[e];
+    if (!schema) {
+      throw new Error(`Could not find schema for option path ${optionPath}`);
     }
 
     let schemaType = schema.type;
