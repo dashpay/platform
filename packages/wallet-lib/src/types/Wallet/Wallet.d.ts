@@ -15,7 +15,6 @@ export declare class Wallet {
     walletId: string;
     accounts: [undefined];
     storage: Storage;
-    store: Storage.store;
 
     constructor(opts:Wallet.IWalletOptions)
 

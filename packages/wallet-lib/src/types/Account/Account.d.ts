@@ -12,7 +12,7 @@ import {
     broadcastTransactionOpts,
     Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
 } from "../types";
-import { DerivableKeyChain } from "../DerivableKeyChain/DerivableKeyChain";
+import { KeyChainStore } from "../KeyChainStore/KeyChainStore"
 import { InstantLock } from "@dashevo/dashcore-lib";
 import { Identities, Wallet} from "../../index";
 import { Transport } from "../../transport/Transport";
@@ -34,7 +34,6 @@ export declare class Account {
     keyChainSore: KeyChainStore;
     state: any;
     storage: Storage;
-    store: Storage.store;
     walletId: string;
     transport: Transport;
     identities: Identities;
@@ -70,11 +69,11 @@ export declare class Account {
     getUnusedAddress(type?: AddressType, skip?: number): AddressObj;
     getUnusedIdentityIndex(): Promise<number>;
     getWorker(workerName: string): Object;
-    hasPlugins([Plugin]): {found:Boolean, results:[{name: string}]};
+    hasPlugins(searchedPlugins: any[]): {found:Boolean, results:[{name: string}]};
     injectPlugin(unsafePlugin: Plugins, allowSensitiveOperation?: boolean, awaitOnInjection?: boolean): Promise<any>;
     sign(object: Transaction, privateKeys: [PrivateKey], sigType?: number): Transaction;
-    waitForInstantLock(transactionHash: string): { promise: Promise<InstantLock>, cancel: function };
-    waitForTxMetadata(transactionHash: string): { promise: Promise<Object>, cancel: function };
+    waitForInstantLock(transactionHash: string): { promise: Promise<InstantLock>, cancel: Function };
+    waitForTxMetadata(transactionHash: string): { promise: Promise<Object>, cancel: Function };
 }
 
 export declare interface RecipientOptions {
