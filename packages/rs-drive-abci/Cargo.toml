@@ -51,7 +51,8 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "tracing-log",
 ], optional = true }
 atty = { version = "0.2.14", optional = true }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "master", optional = true }
+#tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/canonical_vote_sign_digest" }
+tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
@@ -62,20 +63,20 @@ metrics = { version = "0.21" }
 metrics-exporter-prometheus = { version = "0.12" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
+tokio = { version = "1", features = [
+    "macros",
+    "signal",
+    "rt-multi-thread",
+    "time",
+] }
+tokio-util = { version = "0.7.8" }
 
 [dev-dependencies]
 base64 = "0.20.0"
 
 [features]
 default = ["server"]
-server = [
-    "tenderdash-abci",
-    "clap",
-    "dotenvy",
-    "tracing-subscriber",
-    "atty",
-    "mockall",
-]
+server = ["clap", "dotenvy", "tracing-subscriber", "atty", "mockall"]
 
 [[bin]]
 name = "drive-abci"

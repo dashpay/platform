@@ -5,6 +5,7 @@ use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core:
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -20,7 +21,11 @@ pub struct AbciApplication<'a, C> {
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(), Error> {
+pub fn start<C: CoreRPCLike>(
+    cancel: CancellationToken,
+    config: &PlatformConfig,
+    core_rpc: C,
+) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
     let platform: Platform<C> =
@@ -28,8 +33,10 @@ pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(),
 
     let abci = AbciApplication::new(&platform)?;
 
-    let server =
-        tenderdash_abci::start_server(&bind_address, abci).map_err(super::AbciError::from)?;
+    let server = tenderdash_abci::ServerBuilder::new(abci, &bind_address)
+        .with_cancel_token(cancel)
+        .build()
+        .map_err(super::AbciError::from)?;
 
     loop {
         tracing::info!("waiting for new connection");

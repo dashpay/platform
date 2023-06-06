@@ -10,7 +10,15 @@ use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
+use std::process::ExitCode;
+use std::sync::Arc;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::task::JoinHandle;
+use tokio::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
+
+const SHUTDOWN_TIMEOUT_MILIS: u64 = 3000;
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -65,7 +73,7 @@ enum Commands {
     Status {},
 }
 
-pub fn main() -> Result<(), String> {
+fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
@@ -73,6 +81,104 @@ pub fn main() -> Result<(), String> {
 
     install_panic_hook();
 
+    // We configure runtime manually to have access to runtime::shutdown
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("cannot start tokio runtime");
+    let rt_guard = runtime.enter();
+
+    let status = match runtime.block_on(tokio_main(config, cli)) {
+        Ok(()) => {
+            tracing::debug!("shutdown complete");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            tracing::error!(errors = e, "execution failed");
+            ExitCode::FAILURE
+        }
+    };
+
+    drop(rt_guard);
+    runtime.shutdown_background();
+    tracing::info!("drive-abci server is down");
+
+    Err(status)
+}
+
+async fn tokio_main(config: PlatformConfig, cli: Cli) -> Result<(), String> {
+    // We use `cancel` to notify other subsystems that the server is shutting down
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel_guard = cancel.clone().drop_guard();
+
+    let mut threads: Vec<JoinHandle<Result<(), String>>> = Vec::new();
+    threads.push(tokio::spawn(main_thread(cancel, config, cli)));
+
+    handle_signals().await.map_err(|e| e.to_string())?;
+
+    tracing::debug!("initiating graceful shutdown");
+    drop(cancel_guard);
+
+    shutdown_threads(threads).await
+}
+
+async fn handle_signals() -> Result<(), std::io::Error> {
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigquit = signal(SignalKind::quit())?;
+
+    tokio::select! {
+      _ = sigint.recv() => (),
+      _ = sigterm.recv() => (),
+      _ = sigquit.recv() => (),
+    };
+
+    Ok(())
+}
+
+async fn shutdown_threads(threads: Vec<JoinHandle<Result<(), String>>>) -> Result<(), String> {
+    let end = tokio::time::Instant::now() + Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS);
+    while end.elapsed() == Duration::ZERO {
+        if threads.iter().all(|hdl| hdl.is_finished()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let mut errors = String::new();
+    // Here we either finished, or timed out
+    for hdl in threads.into_iter() {
+        if !hdl.is_finished() {
+            hdl.abort();
+            errors += &format!("shutdown timeout: {:?}\n", hdl);
+
+            continue;
+        }
+
+        let res = hdl.await;
+        let result = match res {
+            Err(e) => e.to_string(),
+            Ok(Err(e)) => e,
+            Ok(Ok(())) => String::new(),
+        };
+        if !result.is_empty() {
+            errors += &result;
+            errors += "\n";
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+async fn main_thread(
+    cancel: CancellationToken,
+    config: PlatformConfig,
+    cli: Cli,
+) -> Result<(), String> {
     match cli.command {
         Commands::Start {} => {
             let core_rpc = DefaultCoreRPC::open(
@@ -89,12 +195,14 @@ pub fn main() -> Result<(), String> {
             // Tenderdash won't start too until ABCI port is open.
             wait_for_core_to_sync(&core_rpc).unwrap();
 
-            drive_abci::abci::start(&config, core_rpc).unwrap();
-            Ok(())
+            drive_abci::abci::start(cancel, &config, core_rpc).map_err(|e| e.to_string())?;
+            return Ok(());
         }
-        Commands::Config {} => dump_config(&config),
-        Commands::Status {} => check_status(&config),
-    }
+        Commands::Config {} => dump_config(&config)?,
+        Commands::Status {} => check_status(&config)?,
+    };
+
+    Ok(())
 }
 
 /// Start prometheus exporter if it's configured.
