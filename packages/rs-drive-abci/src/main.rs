@@ -4,6 +4,7 @@
 
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
+use drive_abci::core::wait_for_core_to_sync;
 use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
@@ -80,7 +81,29 @@ pub fn main() -> Result<(), String> {
                 config.core.rpc.password.clone(),
             )
             .unwrap();
+
+            /*
+
+              const network = container.resolve('network')
+
+              logger.info(`Connecting to Core in ${network} network...`)
+
+              const waitForCoreSync = container.resolve('waitForCoreSync');
+              await waitForCoreSync((currentBlockHeight, currentHeaderNumber) => {
+                let message = `waiting for core to finish sync ${currentBlockHeight}/${currentHeaderNumber}...`
+
+                if (currentBlockHeight === 0 && currentHeaderNumber === 0) {
+                    message = 'waiting for core to connect to peers...';
+                }
+
+                logger.info(message);
+            })
+
+              */
+
             let _prometheus = start_prometheus(&config)?;
+
+            wait_for_core_to_sync(&core_rpc).unwrap();
 
             drive_abci::abci::start(&config, core_rpc).unwrap();
             Ok(())
