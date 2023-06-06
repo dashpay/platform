@@ -8447,7 +8447,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/dashmate/",\
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
-            ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dashcore-lib", "npm:0.20.6"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\

@@ -47,7 +47,6 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
-    "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dashcore-lib": "~0.20.5",
     "@dashevo/dashd-rpc": "^18.2.0",

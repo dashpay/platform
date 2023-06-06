@@ -1,7 +1,4 @@
-const $RefParser = require('@apidevtools/json-schema-ref-parser');
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const configJsonSchema = require('../../../configs/schema/configJsonSchema');
-const getPropertyDefinitionByPath = require('../../util/getPropertyDefinitionByPath');
 
 class ConfigSetCommand extends ConfigBaseCommand {
   /**
@@ -18,35 +15,21 @@ class ConfigSetCommand extends ConfigBaseCommand {
     flags,
     config,
   ) {
-    if (optionValue === 'null') {
-      // eslint-disable-next-line no-param-reassign
-      optionValue = null;
-    }
-
     // check for existence
     config.get(optionPath);
 
-    const configSchema = await $RefParser.dereference(configJsonSchema);
-    const schema = getPropertyDefinitionByPath(configSchema, optionPath);
+    let value;
 
-    if (!schema) {
-      throw new Error(`Could not find schema for option path ${optionPath}`);
+    try {
+      value = JSON.parse(optionValue);
+    } catch (e) {
+      value = optionValue;
     }
 
-    let schemaType = schema.type;
-
-    if (Array.isArray(schemaType)) {
-      [schemaType] = schemaType;
-    }
-
-    if (schemaType === 'object' || schemaType === 'array') {
-      config.set(optionPath, JSON.parse(optionValue));
-    } else {
-      config.set(optionPath, optionValue);
-    }
+    config.set(optionPath, value);
 
     // eslint-disable-next-line no-console
-    console.log(`${optionPath} set to ${JSON.stringify(config.get(optionPath))}`);
+    console.log(`${optionPath} set to ${optionValue}`);
   }
 }
 
