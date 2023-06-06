@@ -2,7 +2,7 @@ const ConfigSetCommand = require('../../../../src/commands/config/set');
 const Config = require('../../../../src/config/Config');
 const baseConfig = require('../../../../configs/system/base');
 
-describe('Set Command Status', () => {
+describe('Config set command', () => {
   const flags = {};
   let config;
 
