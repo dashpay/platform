@@ -208,7 +208,7 @@ describe('Platform', () => {
       const contractHistory = await client.platform.contracts.history(
         dataContractFixture.getId(), 0, 10, 0,
       );
-      expect(Object.entires(contractHistory)).to.have.lengthOf(2);
+      expect(Object.entries(contractHistory)).to.have.lengthOf(2);
 
       const originalContract = Object.entries(contractHistory)[0];
       const updatedContract = Object.entries(contractHistory)[1];
