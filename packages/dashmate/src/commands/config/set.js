@@ -30,12 +30,7 @@ class ConfigSetCommand extends ConfigBaseCommand {
     let schema = await $RefParser.dereference(configJsonSchema);
 
     for (const e of path) {
-      if (schema.$ref) {
-        const [, , definitionName] = schema.$ref.split('/');
-        schema = configJsonSchema.definitions[definitionName].properties;
-      } else {
-        schema = schema.properties[e];
-      }
+      schema = schema.properties[e];
     }
 
     let schemaType = schema.type;
