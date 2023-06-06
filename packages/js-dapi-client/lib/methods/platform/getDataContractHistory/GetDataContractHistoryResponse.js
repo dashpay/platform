@@ -3,7 +3,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 class GetDataContractHistoryResponse extends AbstractResponse {
   /**
-   * @param {Buffer[]} dataContractHistory
+   * @param {object.<number, Buffer>} dataContractHistory
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,10 +14,10 @@ class GetDataContractHistoryResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {object.<number, Buffer>}
    */
-  getDataContract() {
-    return this.dataContract;
+  getDataContractHistory() {
+    return this.dataContractHistory;
   }
 
   /**
@@ -25,7 +25,7 @@ class GetDataContractHistoryResponse extends AbstractResponse {
    * @returns {GetDataContractHistoryResponse}
    */
   static createFromProto(proto) {
-    // TODO: is that an array of buffers?
+    // History is something that we need to call a method to get a list of entries on
     const dataContractHistory = proto.getDataContractHistory();
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
@@ -33,15 +33,19 @@ class GetDataContractHistoryResponse extends AbstractResponse {
       throw new InvalidResponseError('DataContract is not defined');
     }
 
-    // TODO: stopped here
-    dataContractHistory.map(historyEntry => {
-        if (!historyEntry.getValue()) {
-            throw new InvalidResponseError('DataContract is not defined');
-        }
-    })
+    const history = {};
+
+    if (dataContractHistory) {
+      const dataContractHistoryEntries = dataContractHistory.getDataContractEntriesList();
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const historyEntry of dataContractHistoryEntries) {
+        history[historyEntry.getDate()] = historyEntry.getValue().getValue();
+      }
+    }
 
     return new GetDataContractHistoryResponse(
-      Buffer.from(dataContractHistory),
+      history,
       metadata,
       proof,
     );
