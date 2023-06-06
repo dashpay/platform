@@ -82,27 +82,11 @@ pub fn main() -> Result<(), String> {
             )
             .unwrap();
 
-            /*
-
-              const network = container.resolve('network')
-
-              logger.info(`Connecting to Core in ${network} network...`)
-
-              const waitForCoreSync = container.resolve('waitForCoreSync');
-              await waitForCoreSync((currentBlockHeight, currentHeaderNumber) => {
-                let message = `waiting for core to finish sync ${currentBlockHeight}/${currentHeaderNumber}...`
-
-                if (currentBlockHeight === 0 && currentHeaderNumber === 0) {
-                    message = 'waiting for core to connect to peers...';
-                }
-
-                logger.info(message);
-            })
-
-              */
-
             let _prometheus = start_prometheus(&config)?;
 
+            // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
+            // We need to make sure that Core is ready before we start Drive ABCI app
+            // Tenderdash won't start too until ABCI port is open.
             wait_for_core_to_sync(&core_rpc).unwrap();
 
             drive_abci::abci::start(&config, core_rpc).unwrap();
