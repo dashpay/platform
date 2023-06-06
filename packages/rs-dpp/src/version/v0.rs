@@ -1,7 +1,7 @@
 use crate::version::protocol_version::{
     DriveStructureVersion, FeatureVersionBounds, PlatformVersion, StateTransitionVersion,
 };
-use crate::version::AbciStructureVersion;
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 0,
@@ -71,6 +71,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             max_version: 0,
             default_current_version: 0,
         },
+        document_base_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
     drive_structure: DriveStructureVersion {
         document_indexes: FeatureVersionBounds {
@@ -91,6 +96,13 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     },
     abci_structure: AbciStructureVersion {
         extended_block_info: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+    },
+    platform_architecture: PlatformArchitectureVersion {
+        data_contract_factory: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

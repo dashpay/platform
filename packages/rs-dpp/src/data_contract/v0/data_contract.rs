@@ -49,10 +49,12 @@ pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
 pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 
 impl Convertible for DataContractV0 {
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
         if self.defs.is_none() {
@@ -61,10 +63,12 @@ impl Convertible for DataContractV0 {
         Ok(value)
     }
 
+    #[cfg(feature = "platform-value")]
     fn into_object(self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
         self.to_object()?
             .try_into_validating_json()
@@ -72,6 +76,7 @@ impl Convertible for DataContractV0 {
     }
 
     /// Returns Data Contract as a JSON Value
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_object()?
             .try_into()

@@ -43,6 +43,11 @@ pub struct DriveStructureVersion {
     pub pools: FeatureVersionBounds,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PlatformArchitectureVersion {
+    pub data_contract_factory: FeatureVersionBounds,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: u32,
@@ -55,6 +60,7 @@ pub struct PlatformVersion {
     pub state_transitions: StateTransitionVersion,
     pub drive_structure: DriveStructureVersion,
     pub abci_structure: AbciStructureVersion,
+    pub platform_architecture: PlatformArchitectureVersion,
 }
 
 pub const PLATFORM_VERSIONS: &'static [PlatformVersion] = &[PLATFORM_V1];

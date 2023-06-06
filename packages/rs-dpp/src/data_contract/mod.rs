@@ -113,7 +113,7 @@ impl DataContract {
 
     #[cfg(feature = "validation")]
     pub fn validate(
-        active_protocol_version: u32,
+        protocol_version: u32,
         raw_data_contract: &Value,
         allow_non_current_data_contract_versions: bool,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
@@ -136,7 +136,7 @@ impl DataContract {
                 }
             };
         if !allow_non_current_data_contract_versions {
-            Self::check_version_is_active(active_protocol_version, data_contract_system_version)?;
+            Self::check_version_is_active(protocol_version, data_contract_system_version)?;
         }
         match data_contract_system_version {
             0 => DataContractV0::validate(raw_data_contract),

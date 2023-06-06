@@ -1,4 +1,5 @@
 use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::state_transition::property_names::{DATA_CONTRACT, ENTROPY};
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
@@ -16,19 +17,19 @@ impl CreatedDataContractV0 {
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
-        let raw_data_contract = raw_map.remove(st_prop::DATA_CONTRACT).ok_or_else(|| {
+        let raw_data_contract = raw_map.remove(DATA_CONTRACT).ok_or_else(|| {
             Error::StructureError("unable to remove property dataContract".to_string())
         })?;
 
-        let raw_entropy = raw_map
-            .remove_bytes(st_prop::ENTROPY)
+        let entropy_used = raw_map
+            .remove_bytes_32(ENTROPY)
             .map_err(ProtocolError::ValueError)?;
 
         let data_contract = DataContractV0::from_raw_object(raw_data_contract)?;
 
         Ok(Self {
             data_contract,
-            entropy_used: Bytes32::from_vec(raw_entropy)?,
+            entropy_used,
         })
     }
 }

@@ -2,14 +2,13 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
-use crate::data_contract::DataContract;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
-use derive_more::Into;
+use derive_more::From;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Bytes32, Error, Value};
+use platform_value::Value;
 
-#[derive(Clone, Debug, Into)]
+#[derive(Clone, Debug, From)]
 pub enum CreatedDataContract {
     V0(CreatedDataContractV0),
 }

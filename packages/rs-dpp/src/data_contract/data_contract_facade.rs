@@ -1,13 +1,12 @@
-use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::data_contract::CreatedDataContract;
 use crate::prelude::Identifier;
 use crate::util::entropy_generator::EntropyGenerator;
 use crate::validation::SimpleConsensusValidationResult;
+use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::Value;
-use std::sync::Arc;
 
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -32,25 +31,18 @@ pub struct DataContractFacade {
 impl DataContractFacade {
     pub fn new(
         protocol_version: u32,
-        preferred_default_data_contract_version: Option<u16>,
-    ) -> Self {
-        Self {
-            factory: DataContractFactory::new(protocol_version),
-        }
-    }
-
-    pub fn new_with_entropy_generator(
-        protocol_version: u32,
-        preferred_default_data_contract_version: Option<u16>,
-        entropy_generator: Box<dyn EntropyGenerator>,
-    ) -> Self {
-        Self {
-            factory: DataContractFactory::new_with_entropy_generator(
+        preferred_default_data_contract_factory_version: Option<FeatureVersion>,
+        preferred_default_data_contract_version: Option<FeatureVersion>,
+        entropy_generator: Option<Box<dyn EntropyGenerator>>,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            factory: DataContractFactory::new_from_protocol_version(
                 protocol_version,
-                validator.clone(),
+                preferred_default_data_contract_factory_version,
+                preferred_default_data_contract_version,
                 entropy_generator,
-            ),
-        }
+            )?,
+        })
     }
 
     /// Create Data Contract
@@ -108,16 +100,14 @@ impl DataContractFacade {
     /// Validate Data Contract
     pub async fn validate(
         &self,
-        data_contract: Value,
+        protocol_version: u32,
+        data_contract: &Value,
+        allow_non_current_data_contract_versions: bool,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        DataContract::validate(&data_contract)
-    }
-
-    /// Validate Data Contract for a different version
-    pub async fn validate_for_version(
-        &self,
-        data_contract: Value,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        DataContract::validate(&data_contract)
+        DataContract::validate(
+            protocol_version,
+            &data_contract,
+            allow_non_current_data_contract_versions,
+        )
     }
 }

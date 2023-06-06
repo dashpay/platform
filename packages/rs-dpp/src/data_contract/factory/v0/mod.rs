@@ -45,20 +45,13 @@ pub struct DataContractFactoryV0 {
 }
 
 impl DataContractFactoryV0 {
-    pub fn new(data_contract_feature_version: FeatureVersion) -> Self {
-        Self {
-            data_contract_feature_version,
-            entropy_generator: Box::new(DefaultEntropyGenerator),
-        }
-    }
-
-    pub fn new_with_entropy_generator(
+    pub fn new(
         data_contract_feature_version: FeatureVersion,
-        entropy_generator: Box<dyn EntropyGenerator>,
+        entropy_generator: Option<Box<dyn EntropyGenerator>>,
     ) -> Self {
         Self {
             data_contract_feature_version,
-            entropy_generator,
+            entropy_generator: entropy_generator.unwrap_or(Box::new(DefaultEntropyGenerator)),
         }
     }
 

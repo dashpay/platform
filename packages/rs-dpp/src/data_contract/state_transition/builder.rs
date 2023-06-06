@@ -10,11 +10,8 @@ use crate::identity::{KeyID, PartialIdentity};
 use crate::prelude::DataContract;
 use crate::serialization_traits::Signable;
 use crate::state_transition::StateTransitionLike;
-use platform_value::Bytes32;
-
-use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
-use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError};
+use platform_value::Bytes32;
 
 impl DataContractCreateTransition {
     pub fn new_from_data_contract<S: Signer>(
