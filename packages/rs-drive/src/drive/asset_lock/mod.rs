@@ -67,7 +67,7 @@ impl Drive {
             }
         };
         self.grove_has_raw(
-            asset_lock_storage_path,
+            (&asset_lock_storage_path).into(),
             outpoint.as_slice(),
             query_type,
             transaction,

@@ -43,7 +43,7 @@ impl Drive {
     pub fn get_unpaid_epoch_index(&self, transaction: TransactionArg) -> Result<EpochIndex, Error> {
         let element = self
             .grove
-            .get(pools_path(), KEY_UNPAID_EPOCH_INDEX, transaction)
+            .get(&pools_path(), KEY_UNPAID_EPOCH_INDEX, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -96,7 +96,7 @@ mod tests {
             drive
                 .grove
                 .delete(
-                    pools_path(),
+                    &pools_path(),
                     KEY_UNPAID_EPOCH_INDEX.as_slice(),
                     None,
                     Some(&transaction),
@@ -107,7 +107,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    pools_path(),
+                    &pools_path(),
                     KEY_UNPAID_EPOCH_INDEX.as_slice(),
                     Element::empty_tree(),
                     None,
@@ -132,7 +132,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    pools_path(),
+                    &pools_path(),
                     KEY_UNPAID_EPOCH_INDEX.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,

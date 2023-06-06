@@ -20,7 +20,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let misc_path = misc_path();
-        self.grove.get_raw_optional(misc_path,PROTOCOL_VERSION_STORAGE_KEY, transaction).unwrap().map_err(Error::GroveDB)
+        self.grove.get_raw_optional((&misc_path).into(),PROTOCOL_VERSION_STORAGE_KEY, transaction).unwrap().map_err(Error::GroveDB)
             .map(|maybe_element| {
                 maybe_element.map(|e| {
                     let bytes = e.as_item_bytes()?;
@@ -58,7 +58,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let misc_path = misc_path();
-        self.grove.get_raw_optional(misc_path,NEXT_PROTOCOL_VERSION_STORAGE_KEY, transaction).unwrap().map_err(Error::GroveDB)
+        self.grove.get_raw_optional((&misc_path).into(),NEXT_PROTOCOL_VERSION_STORAGE_KEY, transaction).unwrap().map_err(Error::GroveDB)
             .map(|maybe_element| {
                 maybe_element.map(|e| {
                     let bytes = e.as_item_bytes()?;

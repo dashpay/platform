@@ -200,7 +200,7 @@ impl Drive {
         let identity_path = identity_path(identity_id.as_slice());
 
         match self.grove_get_raw(
-            identity_path,
+            (&identity_path).into(),
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeNegativeCredit),
             direct_query_type,
             transaction,
@@ -273,7 +273,7 @@ impl Drive {
         let balance_path = balance_path();
 
         match self.grove_get_raw(
-            balance_path,
+            (&balance_path).into(),
             identity_id.as_slice(),
             direct_query_type,
             transaction,
