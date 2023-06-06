@@ -147,8 +147,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
+    tree -L 4 /platform/.yarn/unplugged && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
+    tree -L 4 /platform/.yarn/unplugged && \
     yarn build
 
 #
@@ -207,7 +209,9 @@ FROM build-js AS build-dashmate-helper
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
-    yarn workspaces focus --production dashmate
+    tree -L 4 /platform/.yarn/unplugged && \
+    yarn workspaces focus --production dashmate && \
+    tree -L 4 /platform/.yarn/unplugged
 
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
@@ -256,7 +260,9 @@ FROM build-js AS build-test-suite
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
-    yarn workspaces focus --production @dashevo/platform-test-suite
+    tree -L 4 /platform/.yarn/unplugged && \
+    yarn workspaces focus --production @dashevo/platform-test-suite && \
+    tree -L 4 /platform/.yarn/unplugged
 
 #
 #  STAGE: FINAL TEST SUITE IMAGE
@@ -315,7 +321,9 @@ FROM build-js AS build-dapi
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
 RUN --mount=type=cache,sharing=shared,id=unplugged,target=/platform/.yarn/unplugged \
-    yarn workspaces focus --production @dashevo/dapi
+    tree -L 4 /platform/.yarn/unplugged && \
+    yarn workspaces focus --production @dashevo/dapi && \
+    tree -L 4 /platform/.yarn/unplugged
 
 #
 # STAGE: FINAL DAPI IMAGE
