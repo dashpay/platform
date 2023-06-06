@@ -32,6 +32,9 @@ CF_EXTERN_C_BEGIN
 @class ConsensusParamsEvidence;
 @class GPBUInt32Value;
 @class GPBUInt64Value;
+@class GetDataContractHistoryResponse_DataContractHistory;
+@class GetDataContractHistoryResponse_DataContractHistoryEntry;
+@class GetDataContractHistoryResponse_DataContractValue;
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContractValue;
 @class GetDataContractsResponse_DataContracts;
@@ -903,6 +906,109 @@ typedef GPB_ENUM(GetDataContractsResponse_DataContracts_FieldNumber) {
 GPB_FINAL @interface GetDataContractsResponse_DataContracts : GPBMessage
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractsResponse_DataContractEntry*> *dataContractEntriesArray;
+/** The number of items in @c dataContractEntriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger dataContractEntriesArray_Count;
+
+@end
+
+#pragma mark - GetDataContractHistoryRequest
+
+typedef GPB_ENUM(GetDataContractHistoryRequest_FieldNumber) {
+  GetDataContractHistoryRequest_FieldNumber_Id_p = 1,
+  GetDataContractHistoryRequest_FieldNumber_Limit = 2,
+  GetDataContractHistoryRequest_FieldNumber_Offset = 3,
+  GetDataContractHistoryRequest_FieldNumber_StartAtSeconds = 4,
+  GetDataContractHistoryRequest_FieldNumber_Prove = 5,
+};
+
+GPB_FINAL @interface GetDataContractHistoryRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+@property(nonatomic, readwrite) uint32_t offset;
+
+@property(nonatomic, readwrite) BOOL hasOffset;
+@property(nonatomic, readwrite) uint64_t startAtSeconds;
+
+@property(nonatomic, readwrite) BOOL hasStartAtSeconds;
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetDataContractHistoryResponse
+
+typedef GPB_ENUM(GetDataContractHistoryResponse_FieldNumber) {
+  GetDataContractHistoryResponse_FieldNumber_DataContractHistory = 1,
+  GetDataContractHistoryResponse_FieldNumber_Proof = 2,
+  GetDataContractHistoryResponse_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDataContractHistoryResponse_Result_OneOfCase) {
+  GetDataContractHistoryResponse_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDataContractHistoryResponse_Result_OneOfCase_DataContractHistory = 1,
+  GetDataContractHistoryResponse_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetDataContractHistoryResponse : GPBMessage
+
+@property(nonatomic, readonly) GetDataContractHistoryResponse_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDataContractHistoryResponse_DataContractHistory *dataContractHistory;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDataContractHistoryResponse_ClearResultOneOfCase(GetDataContractHistoryResponse *message);
+
+#pragma mark - GetDataContractHistoryResponse_DataContractValue
+
+typedef GPB_ENUM(GetDataContractHistoryResponse_DataContractValue_FieldNumber) {
+  GetDataContractHistoryResponse_DataContractValue_FieldNumber_Value = 1,
+};
+
+GPB_FINAL @interface GetDataContractHistoryResponse_DataContractValue : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
+
+@end
+
+#pragma mark - GetDataContractHistoryResponse_DataContractHistoryEntry
+
+typedef GPB_ENUM(GetDataContractHistoryResponse_DataContractHistoryEntry_FieldNumber) {
+  GetDataContractHistoryResponse_DataContractHistoryEntry_FieldNumber_Date = 1,
+  GetDataContractHistoryResponse_DataContractHistoryEntry_FieldNumber_Value = 2,
+};
+
+GPB_FINAL @interface GetDataContractHistoryResponse_DataContractHistoryEntry : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t date;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDataContractHistoryResponse_DataContractValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+#pragma mark - GetDataContractHistoryResponse_DataContractHistory
+
+typedef GPB_ENUM(GetDataContractHistoryResponse_DataContractHistory_FieldNumber) {
+  GetDataContractHistoryResponse_DataContractHistory_FieldNumber_DataContractEntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDataContractHistoryResponse_DataContractHistory : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDataContractHistoryResponse_DataContractHistoryEntry*> *dataContractEntriesArray;
 /** The number of items in @c dataContractEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger dataContractEntriesArray_Count;
 
