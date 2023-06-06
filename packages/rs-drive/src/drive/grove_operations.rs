@@ -32,6 +32,8 @@
 //! Defines and implements in Drive functions pertinent to groveDB operations.
 //!
 
+use path::SubtreePath;
+
 use crate::drive::batch::GroveDbOpBatch;
 use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use costs::storage_cost::transition::OperationStorageTransitionType;
@@ -312,36 +314,28 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
-    pub fn grove_insert<'p, P>(
+    pub fn grove_insert<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         element: Element,
         transaction: TransactionArg,
         options: Option<InsertOptions>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<(), Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<(), Error> {
         let cost_context = self.grove.insert(path, key, element, options, transaction);
         push_drive_operation_result(cost_context, drive_operations)
     }
 
     /// Pushes the `OperationCost` of inserting an empty tree in groveDB to `drive_operations`.
-    pub fn grove_insert_empty_tree<'p, P>(
+    pub fn grove_insert_empty_tree<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         transaction: TransactionArg,
         options: Option<InsertOptions>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<(), Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<(), Error> {
         let cost_context =
             self.grove
                 .insert(path, key, Element::empty_tree(), options, transaction);
@@ -349,18 +343,14 @@ impl Drive {
     }
 
     /// Pushes the `OperationCost` of inserting an empty sum tree in groveDB to `drive_operations`.
-    pub fn grove_insert_empty_sum_tree<'p, P>(
+    pub fn grove_insert_empty_sum_tree<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         transaction: TransactionArg,
         options: Option<InsertOptions>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<(), Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<(), Error> {
         let cost_context =
             self.grove
                 .insert(path, key, Element::empty_sum_tree(), options, transaction);
@@ -369,18 +359,14 @@ impl Drive {
 
     /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
     /// to `drive_operations`.
-    pub fn grove_insert_if_not_exists<'p, P>(
+    pub fn grove_insert_if_not_exists<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         element: Element,
         transaction: TransactionArg,
         drive_operations: Option<&mut Vec<LowLevelDriveOperation>>,
-    ) -> Result<bool, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<bool, Error> {
         let cost_context = self
             .grove
             .insert_if_not_exists(path, key, element, transaction);
@@ -388,17 +374,13 @@ impl Drive {
     }
 
     /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
-    pub fn grove_delete<'p, P>(
+    pub fn grove_delete<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<(), Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<(), Error> {
         let options = DeleteOptions {
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
@@ -411,25 +393,20 @@ impl Drive {
 
     /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub fn grove_get_raw<'p, P>(
+    pub fn grove_get_raw<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<Element>, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
-        let path_iter = path.into_iter();
+    ) -> Result<Option<Element>, Error> {
         match direct_query_type {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
                 query_target,
             } => {
-                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
                     QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
@@ -455,7 +432,7 @@ impl Drive {
                 Ok(None)
             }
             DirectQueryType::StatefulDirectQuery => {
-                let CostContext { value, cost } = self.grove.get_raw(path_iter, key, transaction);
+                let CostContext { value, cost } = self.grove.get_raw(path, key, transaction);
                 drive_operations.push(CalculatedCostOperation(cost));
                 Ok(Some(value.map_err(Error::GroveDB)?))
             }
@@ -464,25 +441,20 @@ impl Drive {
 
     /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub fn grove_get_raw_optional<'p, P>(
+    pub fn grove_get_raw_optional<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<Element>, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
-        let path_iter = path.into_iter();
+    ) -> Result<Option<Element>, Error> {
         match direct_query_type {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
                 query_target,
             } => {
-                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
                     QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
@@ -509,7 +481,7 @@ impl Drive {
             }
             DirectQueryType::StatefulDirectQuery => {
                 let CostContext { value, cost } =
-                    self.grove.get_raw_optional(path_iter, key, transaction);
+                    self.grove.get_raw_optional(path, key, transaction);
                 drive_operations.push(CalculatedCostOperation(cost));
                 Ok(value.map_err(Error::GroveDB)?)
             }
@@ -517,18 +489,14 @@ impl Drive {
     }
 
     /// grove_get_direct_u64 is a helper function to get a
-    pub fn grove_get_raw_value_u64_from_encoded_var_vec<'p, P>(
+    pub fn grove_get_raw_value_u64_from_encoded_var_vec<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<u64>, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<Option<u64>, Error> {
         let element = self.grove_get_raw_optional(
             path,
             key,
@@ -553,26 +521,21 @@ impl Drive {
 
     /// Gets the element at the given path from groveDB.
     /// Pushes the `OperationCost` of getting the element to `drive_operations`.
-    pub fn grove_get<'p, P>(
+    pub fn grove_get<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         query_type: QueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<Element>, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
-        let path_iter = path.into_iter();
+    ) -> Result<Option<Element>, Error> {
         match query_type {
             QueryType::StatelessQuery {
                 in_tree_using_sums,
                 query_target,
                 estimated_reference_sizes,
             } => {
-                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
                     QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
@@ -599,7 +562,7 @@ impl Drive {
                 Ok(None)
             }
             QueryType::StatefulQuery => {
-                let CostContext { value, cost } = self.grove.get(path_iter, key, transaction);
+                let CostContext { value, cost } = self.grove.get(path, key, transaction);
                 drive_operations.push(CalculatedCostOperation(cost));
                 Ok(Some(value.map_err(Error::GroveDB)?))
             }
@@ -703,25 +666,20 @@ impl Drive {
 
     /// Gets the element at the given path from groveDB.
     /// Pushes the `OperationCost` of getting the element to `drive_operations`.
-    pub fn grove_get_sum_tree_total_value<'p, P>(
+    pub fn grove_get_sum_tree_total_value<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<i64, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
-        let path_iter = path.into_iter();
+    ) -> Result<i64, Error> {
         match query_type {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
                 query_target,
             } => {
-                let key_info_path = KeyInfoPath::from_known_path(path_iter);
+                let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
                     QueryTarget::QueryTargetTree(flags_size, is_sum_tree) => {
@@ -742,7 +700,7 @@ impl Drive {
                 Ok(0)
             }
             DirectQueryType::StatefulDirectQuery => {
-                let CostContext { value, cost } = self.grove.get_raw(path_iter, key, transaction);
+                let CostContext { value, cost } = self.grove.get_raw(path, key, transaction);
                 drive_operations.push(CalculatedCostOperation(cost));
                 let element = value.map_err(Error::GroveDB)?;
                 match element {
@@ -757,24 +715,20 @@ impl Drive {
 
     /// Gets the return value and the cost of a groveDB `has_raw` operation.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_has_raw<'p, P>(
+    pub(crate) fn grove_has_raw<'b, B: AsRef<[u8]>>(
         &self,
-        path: P,
-        key: &'p [u8],
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<bool, Error>
-    where
-        P: IntoIterator<Item = &'p [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<bool, Error> {
         let CostContext { value, cost } = match query_type {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
                 query_target,
             } => {
-                let key_info_path = KeyInfoPath::from_known_path(path);
+                let key_info_path = KeyInfoPath::from_known_owned_path(path.to_vec());
                 let key_info = KeyInfo::KnownKey(key.to_vec());
                 let cost = match query_target {
                     QueryTarget::QueryTargetTree(flags_len, is_sum_tree) => {
@@ -875,7 +829,6 @@ impl Drive {
         //todo: clean up the duplication
         match path_key_info {
             PathKeyRef((path, key)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.to_vec(),
@@ -910,7 +863,7 @@ impl Drive {
                     }
                     if !found {
                         let has_raw = self.grove_has_raw(
-                            path_iter.clone(),
+                            path.as_slice().into(),
                             key,
                             apply_type.to_direct_query_type(),
                             transaction,
@@ -925,7 +878,7 @@ impl Drive {
                     }
                 } else {
                     let has_raw = self.grove_has_raw(
-                        path_iter.clone(),
+                        path.as_slice().into(),
                         key,
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -941,7 +894,6 @@ impl Drive {
                 DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
             )),
             PathKey((path, key)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.to_vec(),
@@ -961,7 +913,7 @@ impl Drive {
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == key
-                                && grove_op.path == path_iter
+                                && grove_op.path == path
                                 && matches!(grove_op.op, Op::DeleteTree)
                             {
                                 found = true;
@@ -976,7 +928,7 @@ impl Drive {
                     }
                     if !found {
                         let has_raw = self.grove_has_raw(
-                            path_iter.clone(),
+                            path.as_slice().into(),
                             key.as_slice(),
                             apply_type.to_direct_query_type(),
                             transaction,
@@ -991,7 +943,7 @@ impl Drive {
                     }
                 } else {
                     let has_raw = self.grove_has_raw(
-                        path_iter.clone(),
+                        path.as_slice().into(),
                         key.as_slice(),
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1039,7 +991,7 @@ impl Drive {
                     }
                     if !found {
                         let has_raw = self.grove_has_raw(
-                            path,
+                            path.as_ref().into(),
                             key.as_slice(),
                             apply_type.to_direct_query_type(),
                             transaction,
@@ -1054,7 +1006,7 @@ impl Drive {
                     }
                 } else {
                     let has_raw = self.grove_has_raw(
-                        path,
+                        path.as_ref().into(),
                         key.as_slice(),
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1102,7 +1054,7 @@ impl Drive {
                     }
                     if !found {
                         let has_raw = self.grove_has_raw(
-                            path,
+                            path.as_ref().into(),
                             key,
                             apply_type.to_direct_query_type(),
                             transaction,
@@ -1117,7 +1069,7 @@ impl Drive {
                     }
                 } else {
                     let has_raw = self.grove_has_raw(
-                        path,
+                        path.as_ref().into(),
                         key,
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1146,7 +1098,6 @@ impl Drive {
     ) -> Result<bool, Error> {
         match path_key_info {
             PathKeyRef((path, key)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let drive_operation = LowLevelDriveOperation::for_known_path_key_empty_tree(
                     path.clone(),
                     key.to_vec(),
@@ -1155,7 +1106,7 @@ impl Drive {
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(
-                        path_iter.clone(),
+                        path.as_slice().into(),
                         key,
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1180,9 +1131,8 @@ impl Drive {
                 );
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
-                    let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                     let has_raw = self.grove_has_raw(
-                        path_iter.clone(),
+                        path.as_slice().into(),
                         key.as_slice(),
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1206,7 +1156,7 @@ impl Drive {
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(
-                        path,
+                        path.as_ref().into(),
                         key.as_slice(),
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1230,7 +1180,7 @@ impl Drive {
                 // we only add the operation if it doesn't already exist in the current batch
                 if !drive_operations.contains(&drive_operation) {
                     let has_raw = self.grove_has_raw(
-                        path,
+                        path.as_ref().into(),
                         key,
                         apply_type.to_direct_query_type(),
                         transaction,
@@ -1304,9 +1254,8 @@ impl Drive {
     ) -> Result<bool, Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let has_raw = self.grove_has_raw(
-                    path_iter.clone(),
+                    path.as_slice().into(),
                     key,
                     apply_type.to_direct_query_type(),
                     transaction,
@@ -1324,9 +1273,8 @@ impl Drive {
                 Ok(!has_raw)
             }
             PathKeyElement((path, key, element)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let has_raw = self.grove_has_raw(
-                    path_iter.clone(),
+                    path.as_slice().into(),
                     key.as_slice(),
                     apply_type.to_direct_query_type(),
                     transaction,
@@ -1343,7 +1291,7 @@ impl Drive {
             }
             PathFixedSizeKeyRefElement((path, key, element)) => {
                 let has_raw = self.grove_has_raw(
-                    path,
+                    path.as_slice().into(),
                     key,
                     apply_type.to_direct_query_type(),
                     transaction,
@@ -1408,9 +1356,8 @@ impl Drive {
     ) -> Result<(bool, Option<Element>), Error> {
         match path_key_element_info {
             PathKeyRefElement((path, key, element)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let previous_element = self.grove_get_raw_optional(
-                    path_iter.clone(),
+                    path.as_slice().into(),
                     key,
                     apply_type.to_direct_query_type(),
                     transaction,
@@ -1432,9 +1379,8 @@ impl Drive {
                 Ok((needs_insert, previous_element))
             }
             PathKeyElement((path, key, element)) => {
-                let path_iter: Vec<&[u8]> = path.iter().map(|x| x.as_slice()).collect();
                 let previous_element = self.grove_get_raw_optional(
-                    path_iter.clone(),
+                    path.as_slice().into(),
                     key.as_slice(),
                     apply_type.to_direct_query_type(),
                     transaction,
@@ -1455,7 +1401,7 @@ impl Drive {
             }
             PathFixedSizeKeyRefElement((path, key, element)) => {
                 let previous_element = self.grove_get_raw_optional(
-                    path,
+                    (&path).into(),
                     key,
                     apply_type.to_direct_query_type(),
                     transaction,
@@ -1514,18 +1460,14 @@ impl Drive {
     }
 
     /// Pushes a "delete element" operation to `drive_operations`.
-    pub(crate) fn batch_delete<'a, 'c, P>(
-        &'a self,
-        path: P,
-        key: &'c [u8],
+    pub(crate) fn batch_delete<'b, B: AsRef<[u8]>>(
+        &self,
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         apply_type: BatchDeleteApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<(), Error>
-    where
-        P: IntoIterator<Item = &'c [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<(), Error> {
         let current_batch_operations =
             LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
@@ -1539,7 +1481,7 @@ impl Drive {
                 is_sum_tree,
                 estimated_value_size,
             } => GroveDb::worst_case_delete_operation_for_delete_internal::<RocksDbStorage>(
-                &KeyInfoPath::from_known_path(path),
+                &KeyInfoPath::from_known_owned_path(path.to_vec()),
                 &KeyInfo::KnownKey(key.to_vec()),
                 is_sum_tree,
                 false,
@@ -1573,18 +1515,14 @@ impl Drive {
     /// Pushes a "delete element" operation to `drive_operations` and returns the current element.
     /// If the element didn't exist does nothing.
     /// It is raw, because it does not use references.
-    pub(crate) fn batch_remove_raw<'a, 'c, P>(
-        &'a self,
-        path: P,
-        key: &'c [u8],
+    pub(crate) fn batch_remove_raw<'b, B: AsRef<[u8]>>(
+        &self,
+        path: SubtreePath<'b, B>,
+        key: &[u8],
         apply_type: BatchDeleteApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<Element>, Error>
-    where
-        P: IntoIterator<Item = &'c [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    ) -> Result<Option<Element>, Error> {
         let mut current_batch_operations =
             LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let options = DeleteOptions {
@@ -1594,10 +1532,8 @@ impl Drive {
             validate_tree_at_path_exists: false, //todo: not sure about this one
         };
 
-        let path_iter = path.into_iter();
-
         let needs_removal_from_state =
-            match current_batch_operations.remove_if_insert(path_iter.clone(), key) {
+            match current_batch_operations.remove_if_insert(path.to_vec(), key) {
                 Some(Op::Insert { element })
                 | Some(Op::Replace { element })
                 | Some(Op::Patch { element, .. }) => return Ok(Some(element)),
@@ -1613,7 +1549,7 @@ impl Drive {
             };
 
         let maybe_element = self.grove_get_raw_optional(
-            path_iter.clone(),
+            path.clone(),
             key,
             (&apply_type).into(),
             transaction,
@@ -1633,7 +1569,7 @@ impl Drive {
                     is_sum_tree,
                     estimated_value_size,
                 } => GroveDb::worst_case_delete_operation_for_delete_internal::<RocksDbStorage>(
-                    &KeyInfoPath::from_known_path(path_iter),
+                    &KeyInfoPath::from_known_owned_path(path.to_vec()),
                     &KeyInfo::KnownKey(key.to_vec()),
                     is_sum_tree,
                     false,
@@ -1645,7 +1581,7 @@ impl Drive {
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    path_iter,
+                    path,
                     key,
                     &options,
                     is_known_to_be_subtree_with_sum,
@@ -1709,7 +1645,7 @@ impl Drive {
                     stop_path_height,
                 };
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
-                    path.to_path_refs(),
+                    path.to_path_refs().as_slice().into(),
                     key,
                     &options,
                     is_known_to_be_subtree_with_sum,

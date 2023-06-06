@@ -31,6 +31,8 @@
 //! Functions include inserting verifying balances between various trees.
 //!
 
+use path::SubtreePath;
+
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::DirectQueryType;
 #[cfg(feature = "full")]
@@ -193,7 +195,7 @@ impl Drive {
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
-                path_holding_total_credits,
+                (&path_holding_total_credits).into(),
                 TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
@@ -256,7 +258,7 @@ impl Drive {
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
-                path_holding_total_credits,
+                (&path_holding_total_credits).into(),
                 TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
@@ -290,7 +292,7 @@ impl Drive {
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
             .grove_get_raw_value_u64_from_encoded_var_vec(
-                path_holding_total_credits,
+                (&path_holding_total_credits).into(),
                 TOTAL_SYSTEM_CREDITS_STORAGE_KEY,
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
@@ -301,7 +303,7 @@ impl Drive {
             )))?;
 
         let total_identity_balances = self.grove_get_sum_tree_total_value(
-            [],
+            SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::Balances),
             DirectQueryType::StatefulDirectQuery,
             transaction,
@@ -309,7 +311,7 @@ impl Drive {
         )?;
 
         let total_in_pools = self.grove_get_sum_tree_total_value(
-            [],
+            SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::Pools),
             DirectQueryType::StatefulDirectQuery,
             transaction,

@@ -1,31 +1,8 @@
 import { Identifier, ExtendedDocument, Metadata } from '@dashevo/wasm-dpp';
+import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
 import { Platform } from '../../Platform';
-
-/**
- * @param {WhereCondition[]} [where] - where
- * @param {OrderByCondition[]} [orderBy] - order by
- * @param {number} [limit] - limit
- * @param {string|Buffer|ExtendedDocument|Identifier} [startAt] - start value (included)
- * @param {string|Buffer|ExtendedDocument|Identifier} [startAfter] - start value (not included)
- */
-declare interface FetchOpts {
-  where?: WhereCondition[];
-  orderBy?: OrderByCondition[];
-  limit?: number;
-  startAt?: string | Buffer | ExtendedDocument | Identifier;
-  startAfter?: string | Buffer | ExtendedDocument | Identifier;
-}
-
-type OrderByCondition = [
-  string,
-  'asc' | 'desc',
-];
-
-type WhereCondition = [
-  string,
-  '<' | '<=' | '==' | '>' | '>=' | 'in' | 'startsWith' | 'elementMatch' | 'length' | 'contains',
-  WhereCondition | any,
-];
+import { QueryOptions, WhereCondition } from '../../types';
 
 /**
  * Prefetch contract
@@ -92,10 +69,10 @@ function convertIdentifierProperties(
  *
  * @param {Platform} this bound instance class
  * @param {string} typeLocator type locator
- * @param {FetchOpts} opts - MongoDB style query
+ * @param {QueryOptions} opts - MongoDB style query
  * @returns documents
  */
-export async function get(this: Platform, typeLocator: string, opts: FetchOpts): Promise<any> {
+export async function get(this: Platform, typeLocator: string, opts: QueryOptions): Promise<any> {
   this.logger.debug(`[Documents#get] Get document(s) for "${typeLocator}"`);
   if (!typeLocator.includes('.')) throw new Error('Accessing to field is done using format: appName.fieldName');
 
@@ -140,21 +117,29 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
     opts.startAfter = Identifier.from(opts.startAfter);
   }
 
-  // @ts-ignore
-  const documentsResponse = await this.client.getDAPIClient().platform.getDocuments(
-    appDefinition.contractId,
-    fieldType,
-    opts,
-  );
+  let documentsResponse: GetDocumentsResponse;
+
+  try {
+    documentsResponse = await this.client.getDAPIClient().platform.getDocuments(
+      appDefinition.contractId,
+      fieldType,
+      opts,
+    );
+  } catch (e) {
+    if (e instanceof NotFoundError) {
+      this.logger.debug(`[Documents#get] Obtained 0 documents for "${typeLocator}"`);
+      return [];
+    }
+
+    throw e;
+  }
 
   const rawDocuments = documentsResponse.getDocuments();
-
-  this.logger.silly(`[Documents#get] Obtained ${rawDocuments.length} raw document(s)"`);
 
   const result = await Promise.all(
     rawDocuments.map(async (rawDocument) => {
       const document = await this.dpp.document.createExtendedDocumentFromDocumentBuffer(
-        rawDocument, fieldType, appDefinition.contract,
+        rawDocument as Uint8Array, fieldType, appDefinition.contract,
       );
 
       let metadata;

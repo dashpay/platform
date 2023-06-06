@@ -81,7 +81,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                 let path: [&[u8]; 2] = get_withdrawal_transactions_expired_ids_path();
 
                 drive.batch_delete(
-                    path,
+                    (&path).into(),
                     &key,
                     BatchDeleteApplyType::StatefulBatchDelete {
                         is_known_to_be_subtree_with_sum: Some((false, false)),
@@ -134,7 +134,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                 let path = get_withdrawal_transactions_queue_path();
 
                 drive.batch_delete(
-                    path,
+                    (&path).into(),
                     &id,
                     // we know that we are not deleting a subtree
                     BatchDeleteApplyType::StatefulBatchDelete {

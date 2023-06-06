@@ -74,7 +74,9 @@ use crate::errors::consensus::signature::{
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
-use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
+use crate::errors::consensus::state::data_contract::{
+    DataContractAlreadyPresentErrorWasm, DataContractIsReadonlyErrorWasm,
+};
 use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
@@ -201,6 +203,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentTimestampsAreEqualError(e) => {
             DocumentTimestampsAreEqualErrorWasm::from(e).into()
+        }
+        StateError::DataContractIsReadonlyError(e) => {
+            DataContractIsReadonlyErrorWasm::from(e).into()
         }
     }
 }

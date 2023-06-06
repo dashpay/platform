@@ -64,7 +64,7 @@ impl Drive {
         let result = self
             .grove
             .get(
-                [Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions).as_slice()],
+                &[Into::<&[u8; 1]>::into(RootTree::WithdrawalTransactions).as_slice()],
                 &WITHDRAWAL_TRANSACTIONS_COUNTER_ID,
                 transaction,
             )
@@ -200,7 +200,7 @@ mod tests {
         drive
             .grove
             .insert(
-                path,
+                &path,
                 &bytes,
                 Element::Item(bytes.to_vec(), None),
                 None,

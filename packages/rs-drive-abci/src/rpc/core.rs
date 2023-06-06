@@ -2,7 +2,7 @@ use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
-    GetChainTipsResult, MasternodeListDiff, QuorumInfoResult, QuorumType,
+    GetChainTipsResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -78,6 +78,9 @@ pub trait CoreRPCLike {
     ) -> Result<bool, Error>;
     // /// Get the detailed information about a deterministic masternode
     // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+
+    /// Returns masternode sync status
+    fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -223,5 +226,10 @@ impl CoreRPCLike for DefaultCoreRPC {
             &instant_lock.signature.to_hex(),
             max_height,
         ))
+    }
+
+    /// Returns masternode sync status
+    fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
+        retry!(self.inner.mnsync_status())
     }
 }

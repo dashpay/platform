@@ -263,7 +263,7 @@ impl Drive {
             }
         };
         self.batch_delete(
-            contract_documents_primary_key_path,
+            (&contract_documents_primary_key_path).into(),
             document_id.as_slice(),
             apply_type,
             transaction,
@@ -744,7 +744,7 @@ impl Drive {
 
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_raw(
-            contract_documents_primary_key_path,
+            (&contract_documents_primary_key_path).into(),
             document_id.as_slice(),
             direct_query_type,
             transaction,
@@ -758,7 +758,7 @@ impl Drive {
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
                 let document = Document::from_bytes(data.as_slice(), document_type)?;
-                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
+                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
                 DocumentOwnedInfo((document, storage_flags))
             } else {
                 return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
