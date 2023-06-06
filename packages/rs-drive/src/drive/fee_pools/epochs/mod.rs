@@ -49,7 +49,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<bool, Error> {
         self.grove
-            .has_raw(pools_path(), &epoch_tree.key, transaction)
+            .has_raw(&pools_path(), &epoch_tree.key, transaction)
             .unwrap()
             .map_err(Error::GroveDB)
     }

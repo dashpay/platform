@@ -222,7 +222,7 @@ impl Drive {
                 // we can use a DirectQueryType::StatefulDirectQuery because if we were stateless we would always think
                 // this was the first insert
                 let maybe_element = self.grove_get_raw_optional(
-                    contract_keeping_history_storage_path,
+                    (&contract_keeping_history_storage_path).into(),
                     encoded_time.as_slice(),
                     DirectQueryType::StatefulDirectQuery,
                     transaction,
@@ -1101,7 +1101,7 @@ impl Drive {
         // We need to pass allow cache to false
         let (value, mut cost) = if known_keeps_history.unwrap_or_default() {
             let CostContext { value, cost } = self.grove.get_caching_optional(
-                paths::contract_keeping_history_storage_path(&contract_id),
+                (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
                 &[0],
                 false,
                 transaction,
@@ -1109,7 +1109,7 @@ impl Drive {
             (value, cost)
         } else {
             let CostContext { value, cost } = self.grove.get_raw_caching_optional(
-                paths::contract_root_path(&contract_id),
+                (&paths::contract_root_path(&contract_id)).into(),
                 &[0],
                 false,
                 transaction,
@@ -1153,7 +1153,7 @@ impl Drive {
                     value,
                     cost: secondary_cost,
                 } = self.grove.get_caching_optional(
-                    paths::contract_keeping_history_storage_path(&contract_id),
+                    (&paths::contract_keeping_history_storage_path(&contract_id)).into(),
                     &[0],
                     false,
                     transaction,
@@ -1438,7 +1438,7 @@ impl Drive {
 
         // We can do a get direct because there are no references involved
         match self.grove_get_raw(
-            contract_root_path(contract.id.as_bytes()),
+            (&contract_root_path(contract.id.as_bytes())).into(),
             &[0],
             direct_query_type,
             transaction,
@@ -1458,7 +1458,8 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                contract_keeping_history_storage_path(contract.id.as_bytes()),
+                                (&contract_keeping_history_storage_path(contract.id.as_bytes()))
+                                    .into(),
                                 &[0],
                                 QueryType::StatefulQuery,
                                 transaction,
