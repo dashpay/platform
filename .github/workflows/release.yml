@@ -385,6 +385,7 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
+    if: false
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
