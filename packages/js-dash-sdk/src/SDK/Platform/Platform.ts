@@ -1,4 +1,3 @@
-// @ts-ignore
 import * as _DashPlatformProtocol from '@dashevo/wasm-dpp';
 import { Platform as PlatformClient } from '../Client/Platform/Platform';
 

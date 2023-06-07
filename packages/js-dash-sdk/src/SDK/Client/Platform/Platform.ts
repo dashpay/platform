@@ -1,4 +1,3 @@
-// @ts-ignore
 import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
 import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';

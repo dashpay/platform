@@ -119,7 +119,6 @@ export class Client extends EventEmitter {
       ));
     }
 
-    // @ts-ignore
     this.defaultAccountIndex = this.options.wallet?.defaultAccountIndex || 0;
 
     this.apps = new ClientApps({
