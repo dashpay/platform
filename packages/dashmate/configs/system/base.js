@@ -30,6 +30,7 @@ const {
 } = require('../../src/constants');
 
 const { version } = require('../../package.json');
+const getShortHash = require('../../src/util/getShortHash');
 
 const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
 const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
@@ -256,5 +257,5 @@ module.exports = {
   externalIp: null,
   network: NETWORK_TESTNET,
   environment: 'production',
-  homeDirHash: null,
+  projectId: getShortHash(HOME_DIR_PATH),
 };

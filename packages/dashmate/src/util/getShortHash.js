@@ -5,8 +5,8 @@ const crypto = require('crypto');
  * @param {string} hashString
  * @returns {string}
  */
-function getHomeDirHash(hashString) {
+function getShortHash(hashString) {
   return crypto.createHash('sha256').update(hashString).digest('hex').substring(0, 8);
 }
 
-module.exports = getHomeDirHash;
+module.exports = getShortHash;

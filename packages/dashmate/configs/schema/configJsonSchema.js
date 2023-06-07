@@ -726,11 +726,11 @@ module.exports = {
       type: 'string',
       enum: ['development', 'production'],
     },
-    homeDirHash: {
-      type: ['string', 'null'],
+    projectId: {
+      type: ['string'],
       pattern: '^[a-f0-9]{8}$',
     },
   },
-  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment', 'homeDirHash'],
+  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment', 'projectId'],
   additionalProperties: false,
 };

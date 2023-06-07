@@ -6,6 +6,7 @@ const path = require('path');
 const systemConfigs = require('./system');
 
 const { NETWORK_TESTNET, HOME_DIR_PATH } = require('../src/constants');
+const getShortHash = require('../src/util/getShortHash');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -571,6 +572,13 @@ module.exports = {
 
         config.platform.dapi.envoy.docker.image = systemConfigs.base.platform
           .dapi.envoy.docker.image;
+      });
+    return configFile;
+  },
+  '0.24.6': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.projectId = getShortHash(HOME_DIR_PATH);
       });
     return configFile;
   },
