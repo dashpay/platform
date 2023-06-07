@@ -1,3 +1,4 @@
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
@@ -5,6 +6,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dpp::dashcore::InstantLock;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -68,6 +70,12 @@ pub trait CoreRPCLike {
         block: u32,
     ) -> Result<MasternodeListDiff, Error>;
 
+    /// Verify Instant Lock
+    fn verify_instant_lock(
+        &self,
+        instant_lock: &InstantLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error>;
     // /// Get the detailed information about a deterministic masternode
     // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 
@@ -222,6 +230,28 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_protx_listdiff(base_block.unwrap_or(1), block))
+    }
+
+    fn verify_instant_lock(
+        &self,
+        instant_lock: &InstantLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error> {
+        tracing::debug!(
+            method = "verify_instant_lock",
+            "instant_lock {:?} max_height {:?}",
+            instant_lock,
+            max_height
+        );
+
+        let request_id = instant_lock.request_id()?.to_hex();
+
+        retry!(self.inner.get_verifyislock(
+            request_id.as_str(),
+            &instant_lock.txid.to_hex(),
+            &instant_lock.signature.to_hex(),
+            max_height,
+        ))
     }
 
     /// Returns masternode sync status
