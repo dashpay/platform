@@ -1,7 +1,10 @@
 use crate::version::protocol_version::{
     DriveStructureVersion, FeatureVersionBounds, PlatformVersion, StateTransitionVersion,
 };
-use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use crate::version::{
+    AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion,
+};
+use std::collections::BTreeMap;
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 0,
@@ -102,10 +105,21 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     platform_architecture: PlatformArchitectureVersion {
-        data_contract_factory: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+        data_contract_factory: DataContractFactoryVersion {
+            bounds: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            // The factory can only support data contract version 0
+            allowed_contract_bounds_mapping: BTreeMap::from([(
+                0,
+                FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            )]),
         },
     },
 };

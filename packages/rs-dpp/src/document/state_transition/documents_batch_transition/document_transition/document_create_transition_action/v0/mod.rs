@@ -1,27 +1,61 @@
-mod v0;
-
-use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
-use crate::document::document_transition::DocumentCreateTransition;
+use crate::document::document_transition::document_create_transition::DocumentCreateTransitionV0;
+use crate::document::document_transition::{
+    DocumentBaseTransitionAction, DocumentCreateTransition,
+};
+use crate::document::Document;
 use crate::identity::TimestampMillis;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-use crate::document::Document;
 use crate::ProtocolError;
-
 use serde::{Deserialize, Serialize};
 
-pub use v0::*;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum DocumentCreateTransitionAction {
-    V0(DocumentCreateTransitionActionV0),
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct DocumentCreateTransitionActionV0 {
+    /// Document Base Transition
+    pub base: DocumentBaseTransitionAction,
+    /// The creation time of the document
+    pub created_at: Option<TimestampMillis>,
+    //todo: remove updated_at
+    /// The time the document was last updated
+    pub updated_at: Option<TimestampMillis>,
+    /// Document properties
+    pub data: BTreeMap<String, Value>,
 }
 
-impl Default for DocumentBaseTransitionAction {
-    fn default() -> Self {
-        DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0::default())
-        // since only v0
+impl From<DocumentCreateTransitionV0> for DocumentCreateTransitionActionV0 {
+    fn from(value: DocumentCreateTransitionV0) -> Self {
+        let DocumentCreateTransitionV0 {
+            base,
+            created_at,
+            updated_at,
+            data,
+            ..
+        } = value;
+        DocumentCreateTransitionActionV0 {
+            base: base.into(),
+            created_at,
+            updated_at,
+            data: data.unwrap_or_default(),
+        }
+    }
+}
+
+impl From<&DocumentCreateTransitionV0> for DocumentCreateTransitionActionV0 {
+    fn from(value: &DocumentCreateTransitionV0) -> Self {
+        let DocumentCreateTransitionV0 {
+            base,
+            created_at,
+            updated_at,
+            data,
+            ..
+        } = value;
+        DocumentCreateTransitionActionV0 {
+            base: base.into(),
+            created_at: *created_at,
+            updated_at: *updated_at,
+            data: data.clone().unwrap_or_default(),
+        }
     }
 }
 
@@ -30,24 +64,24 @@ impl Document {
     ///
     /// # Arguments
     ///
-    /// * `value` - A reference to the `DocumentCreateTransition` containing information about the document being created.
+    /// * `value` - A reference to the `DocumentCreateTransitionActionV0` containing information about the document being created.
     /// * `owner_id` - The `Identifier` of the document's owner.
     ///
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    pub fn try_from_create_transition(
-        value: &DocumentCreateTransitionAction,
+    pub(super) fn try_from_create_transition_v0(
+        value: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
     ) -> Result<Self, ProtocolError> {
-        let DocumentCreateTransitionAction {
+        let DocumentCreateTransitionActionV0 {
             base,
             created_at,
             updated_at,
             data,
         } = value;
 
-        let DocumentBaseTransitionAction {
+        let DocumentBaseTransitionActionV0 {
             id,
             document_type_name,
             data_contract,

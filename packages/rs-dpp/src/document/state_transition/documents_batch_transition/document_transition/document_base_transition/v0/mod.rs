@@ -46,6 +46,7 @@ pub struct DocumentBaseTransitionV0 {
 }
 
 impl DocumentBaseTransitionV0 {
+    #[cfg(feature = "platform-value")]
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,

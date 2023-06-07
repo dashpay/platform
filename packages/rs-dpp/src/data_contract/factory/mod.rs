@@ -66,6 +66,7 @@ impl DataContractFactory {
             if !platform_version
                 .platform_architecture
                 .data_contract_factory
+                .bounds
                 .check_version(preferred_default_data_contract_factory_version)
             {
                 // we are asking for a data contract factory version that isn't supported by the protocol version
@@ -75,10 +76,12 @@ impl DataContractFactory {
                         platform_version
                             .platform_architecture
                             .data_contract_factory
+                            .bounds
                             .min_version,
                         platform_version
                             .platform_architecture
                             .data_contract_factory
+                            .bounds
                             .max_version,
                     )
                     .into(),
@@ -120,6 +123,7 @@ impl DataContractFactory {
                 platform_version
                     .platform_architecture
                     .data_contract_factory
+                    .bounds
                     .default_current_version,
                 platform_version.contract.default_current_version,
                 entropy_generator,

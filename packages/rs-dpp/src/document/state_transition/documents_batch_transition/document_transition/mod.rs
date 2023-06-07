@@ -135,6 +135,7 @@ impl DocumentTransitionObjectLike for DocumentTransition {
         })
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_raw_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -148,22 +149,27 @@ impl DocumentTransitionObjectLike for DocumentTransition {
         Self::from_value_map(map, data_contract)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         call_method!(self, to_json)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         call_method!(self, to_value_map)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_object)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         call_method!(self, to_cleaned_object)
     }
 
+    #[cfg(feature = "platform-value")]
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,

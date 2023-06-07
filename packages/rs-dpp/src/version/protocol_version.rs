@@ -2,6 +2,7 @@ use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::v0::PLATFORM_V1;
 use crate::ProtocolError;
+use std::collections::BTreeMap;
 
 pub type FeatureVersion = u16;
 
@@ -19,6 +20,11 @@ impl FeatureVersionBounds {
     }
 }
 
+pub struct DocumentFeatureVersionBounds {
+    pub bounds: FeatureVersionBounds,
+    pub base_version_mapping: BTreeMap<FeatureVersion, FeatureVersion>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StateTransitionVersion {
     pub identity_create_state_transition: FeatureVersionBounds,
@@ -29,6 +35,9 @@ pub struct StateTransitionVersion {
     pub contract_update_state_transition: FeatureVersionBounds,
     pub documents_batch_state_transition: FeatureVersionBounds,
     pub document_base_state_transition: FeatureVersionBounds,
+    pub document_create_state_transition: DocumentFeatureVersionBounds,
+    pub document_replace_state_transition: DocumentFeatureVersionBounds,
+    pub document_delete_state_transition: DocumentFeatureVersionBounds,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -44,8 +53,17 @@ pub struct DriveStructureVersion {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct DataContractFactoryVersion {
+    /// The bounds that the protocol version supports
+    pub bounds: FeatureVersionBounds,
+    /// This is to example say that the factory version 0 supports data contracts version 0 to 3
+    /// Then version 1 supports data contracts 4 to 7
+    pub allowed_contract_bounds_mapping: BTreeMap<FeatureVersion, FeatureVersionBounds>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct PlatformArchitectureVersion {
-    pub data_contract_factory: FeatureVersionBounds,
+    pub data_contract_factory: DataContractFactoryVersion,
 }
 
 #[derive(Clone, Copy, Debug)]

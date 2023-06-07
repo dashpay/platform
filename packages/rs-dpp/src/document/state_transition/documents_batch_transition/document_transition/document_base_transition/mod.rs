@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::version::{LATEST_PLATFORM_VERSION, PLATFORM_VERSIONS};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 pub use v0::*;
