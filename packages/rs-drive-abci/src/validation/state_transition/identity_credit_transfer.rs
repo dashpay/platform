@@ -2,14 +2,9 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionAction,
 };
 
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
-use dpp::consensus::ConsensusError;
-use dpp::dashcore::OutPoint;
 use dpp::identity::PartialIdentity;
-use dpp::platform_value::Bytes36;
 use dpp::{
-    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
@@ -18,13 +13,11 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use super::StateTransitionValidation;
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::state_error::StateError;
 
 impl StateTransitionValidation for IdentityCreditTransferTransition {
     fn validate_structure(

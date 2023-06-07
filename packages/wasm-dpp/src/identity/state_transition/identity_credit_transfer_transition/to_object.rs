@@ -1,3 +1,5 @@
+use dpp::identity::KeyID;
+use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition,
@@ -20,6 +22,7 @@ pub struct ToObject {
     pub recipient_id: Identifier,
     pub amount: u64,
     pub signature: Option<Vec<u8>>,
+    pub signature_public_key_id: Option<KeyID>,
 }
 
 pub fn to_object_struct(
@@ -32,11 +35,17 @@ pub fn to_object_struct(
         identity_id: *transition.get_identity_id(),
         recipient_id: *transition.get_recipient_id(),
         amount: transition.get_amount(),
-        signature: None,
+        ..ToObject::default()
     };
 
     if !options.skip_signature.unwrap_or(false) {
-        to_object.signature = Some(transition.get_signature().to_vec());
+        let signature = Some(transition.get_signature().to_vec());
+        if let Some(signature) = &signature {
+            if !signature.is_empty() {
+                to_object.signature_public_key_id = transition.get_signature_public_key_id()
+            }
+        }
+        to_object.signature = signature;
     }
 
     to_object

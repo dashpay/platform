@@ -22,6 +22,7 @@ import getContract from './methods/contracts/get';
 import getIdentity from './methods/identities/get';
 import registerIdentity from './methods/identities/register';
 import topUpIdentity from './methods/identities/topUp';
+import creditTransferIdentity from './methods/identities/creditTransfer';
 import updateIdentity from './methods/identities/update';
 import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition';
 import createIdentityTopUpTransition from './methods/identities/internal/createIdnetityTopUpTransition';
@@ -77,6 +78,7 @@ interface Identities {
   get: Function,
   register: Function,
   topUp: Function,
+  creditTransfer: Function,
   update: Function,
   utils: {
     createAssetLockTransaction: Function
@@ -175,6 +177,7 @@ export class Platform {
       register: registerIdentity.bind(this),
       get: getIdentity.bind(this),
       topUp: topUpIdentity.bind(this),
+      creditTransfer: creditTransferIdentity.bind(this),
       update: updateIdentity.bind(this),
       utils: {
         createAssetLockProof: createAssetLockProof.bind(this),

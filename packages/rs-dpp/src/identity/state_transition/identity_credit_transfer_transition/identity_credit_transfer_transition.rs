@@ -1,4 +1,4 @@
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
+use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{KeyID, SecurityLevel};
 use crate::platform_serialization::PlatformSignable;
 use crate::prelude::Identifier;
@@ -16,7 +16,6 @@ use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
 mod property_names {
-    pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const TRANSITION_TYPE: &str = "type";
@@ -197,7 +196,7 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
     }
 
     fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
-        vec![CRITICAL, HIGH, MEDIUM]
+        vec![MASTER]
     }
 }
 

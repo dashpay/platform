@@ -7,15 +7,15 @@ use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::identifier::IdentifierWrapper;
-use crate::{buffer::Buffer, errors::RustConversionError, with_js_error};
+use crate::{buffer::Buffer, errors::RustConversionError, with_js_error, IdentityPublicKeyWasm};
 use dpp::identifier::Identifier;
 use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionLike;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]
@@ -117,6 +117,20 @@ impl IdentityCreditTransferTransitionWasm {
             };
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
+
+            if let Some(signature_public_key_id) = object.signature_public_key_id {
+                js_sys::Reflect::set(
+                    &js_object,
+                    &"signaturePublicKeyId".to_owned().into(),
+                    &JsValue::from(signature_public_key_id),
+                )?;
+            } else {
+                js_sys::Reflect::set(
+                    &js_object,
+                    &"signaturePublicKeyId".to_owned().into(),
+                    &JsValue::undefined(),
+                )?;
+            }
         }
 
         js_sys::Reflect::set(
@@ -129,6 +143,12 @@ impl IdentityCreditTransferTransitionWasm {
             &js_object,
             &"recipientId".to_owned().into(),
             &Buffer::from_bytes(object.recipient_id.to_buffer().as_slice()),
+        )?;
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"amount".to_owned().into(),
+            &JsValue::from_f64(object.amount as f64),
         )?;
 
         Ok(js_object.into())
@@ -168,6 +188,20 @@ impl IdentityCreditTransferTransitionWasm {
             };
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
+
+            if let Some(signature_public_key_id) = object.signature_public_key_id {
+                js_sys::Reflect::set(
+                    &js_object,
+                    &"signaturePublicKeyId".to_owned().into(),
+                    &signature_public_key_id.into(),
+                )?;
+            } else {
+                js_sys::Reflect::set(
+                    &js_object,
+                    &"signaturePublicKeyId".to_owned().into(),
+                    &JsValue::undefined(),
+                )?;
+            }
         }
 
         let identity_id = object.identity_id.to_string(Encoding::Base58);
@@ -189,7 +223,7 @@ impl IdentityCreditTransferTransitionWasm {
         js_sys::Reflect::set(
             &js_object,
             &"amount".to_owned().into(),
-            &object.amount.into(),
+            &JsValue::from_f64(object.amount as f64),
         )?;
 
         Ok(js_object.into())
@@ -256,5 +290,22 @@ impl IdentityCreditTransferTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
+    }
+
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+        self.0
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
+            .with_js_error()
     }
 }
