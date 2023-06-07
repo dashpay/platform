@@ -1521,7 +1521,7 @@ __metadata:
 
 "@dashevo/dashcore-lib@github:dashpay/dashcore-lib#fix/add-missing-type-definitions":
   version: 0.20.7
-  resolution: "@dashevo/dashcore-lib@https://github.com/dashpay/dashcore-lib.git#commit=07b2297627f9cdb2c9c92c6d1d5c132ecef7923c"
+  resolution: "@dashevo/dashcore-lib@https://github.com/dashpay/dashcore-lib.git#commit=b8ad3c31dbcac969c27159bcd91a09db0a7a8a98"
   dependencies:
     "@dashevo/bls": ~1.2.9
     "@dashevo/x11-hash-js": ^1.0.2
@@ -1535,7 +1535,7 @@ __metadata:
     ripemd160: ^2.0.2
     tsd: ^0.28.1
     unorm: ^1.6.0
-  checksum: 350fb31fca14fe9811fa5d38ede494854b53432334b434875d72d1c72e3c58d51fd3b09e9ec4c51d9f1787d0b150cb437948a58073531ecf5d4c6b417d2f7eaa
+  checksum: 76e626c0882a310df81bbec84653d685464c7711d75065ddf27acde73ac11822084378345346ed7c9942a9b5ae19dbcc477d9eb37fd2a036259d95797f7e8fba
   languageName: node
   linkType: hard
 
