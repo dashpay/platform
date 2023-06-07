@@ -7,7 +7,6 @@ const {
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
-  HOME_DIR_PATH,
 } = require('../../../constants');
 
 const systemConfigs = require('../../../../configs/system');

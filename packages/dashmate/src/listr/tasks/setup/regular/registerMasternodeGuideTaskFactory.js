@@ -9,7 +9,6 @@ const {
   MASTERNODE_COLLATERAL_AMOUNT,
   HPMN_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
-  HOME_DIR_PATH,
 } = require('../../../../constants');
 
 const systemConfigs = require('../../../../../configs/system');
