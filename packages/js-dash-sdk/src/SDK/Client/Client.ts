@@ -37,6 +37,8 @@ export interface ClientOpts {
   retries?: number,
   baseBanTime?: number,
   driveProtocolVersion?: number,
+  blockHeadersProviderOptions?: any,
+  blockHeadersProvider?: any
 }
 
 /**

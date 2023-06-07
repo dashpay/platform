@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "es5",
     "module": "commonjs",
-    "lib": ["es6"],
+    "lib": ["es6", "dom"],
     "outDir": "./build",
     "skipLibCheck": true,
     "strict": true,
@@ -13,8 +13,12 @@
     "allowJs": true,
     "sourceMap": true,
     "declaration": true,
-    "declarationDir": "./dist"
+    "declarationDir": "./build"
   },
-  "include": ["src"],
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "**/*.spec.ts",
+    "src/test/**"
+  ],
   "typeRoots": ["node_modules/@types"]
 }

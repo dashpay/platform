@@ -1,4 +1,4 @@
-import { PrivateKey, Transaction } from '@dashevo/dashcore-lib';
+import { PrivateKey, Transaction, Output } from '@dashevo/dashcore-lib';
 import { utils } from '@dashevo/wallet-lib';
 import { Platform } from './Platform';
 
@@ -30,10 +30,10 @@ export async function createAssetLockTransaction(
 
   const lockTransaction = new Transaction(undefined);
 
-  const output = {
+  const output = Output.fromObject({
     satoshis: fundingAmount,
     address: identityAddress,
-  };
+  });
 
   const utxos = account.getUTXOS();
   const balance = account.getTotalBalance();
