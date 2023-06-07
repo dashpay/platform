@@ -726,11 +726,7 @@ module.exports = {
       type: 'string',
       enum: ['development', 'production'],
     },
-    projectId: {
-      type: ['string'],
-      pattern: '^[a-f0-9]{8}$',
-    },
   },
-  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment', 'projectId'],
+  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment'],
   additionalProperties: false,
 };

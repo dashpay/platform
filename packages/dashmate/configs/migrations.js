@@ -576,10 +576,8 @@ module.exports = {
     return configFile;
   },
   '0.24.6': (configFile) => {
-    Object.entries(configFile.configs)
-      .forEach(([, config]) => {
-        config.projectId = getShortHash(HOME_DIR_PATH);
-      });
+    configFile.projectId = getShortHash(HOME_DIR_PATH);
+
     return configFile;
   },
 };

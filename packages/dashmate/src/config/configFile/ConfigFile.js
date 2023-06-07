@@ -3,6 +3,8 @@ const Config = require('../Config');
 const ConfigAlreadyPresentError = require('../errors/ConfigAlreadyPresentError');
 const ConfigIsNotPresentError = require('../errors/ConfigIsNotPresentError');
 const GroupIsNotPresentError = require('../errors/GroupIsNotPresentError');
+const getShortHash = require('../../util/getShortHash');
+const { HOME_DIR_PATH } = require('../../constants');
 
 class ConfigFile {
   /**
@@ -12,16 +14,11 @@ class ConfigFile {
    * @param {string|null} defaultGroupName
    */
   constructor(configs, configFormatVersion, defaultConfigName, defaultGroupName) {
-    this.configsMap = configs.reduce((configsMap, config) => {
-      // eslint-disable-next-line no-param-reassign
-      configsMap[config.getName()] = config;
-
-      return configsMap;
-    }, {});
-
+    this.setConfigs(configs);
     this.configFormatVersion = configFormatVersion;
     this.defaultConfigName = defaultConfigName;
     this.defaultGroupName = defaultGroupName;
+    this.projectId = getShortHash(HOME_DIR_PATH);
   }
 
   /**
@@ -180,7 +177,7 @@ class ConfigFile {
 
     const fromConfig = this.getConfig(fromConfigName);
 
-    this.configsMap[name] = new Config(name, fromConfig.getOptions());
+    this.configsMap[name] = new Config(name, this, fromConfig.getOptions());
 
     return this.configsMap[name];
   }
@@ -215,13 +212,48 @@ class ConfigFile {
   }
 
   /**
+   * Set configs
+   * @param {Config[]} configs
+   */
+  setConfigs(configs) {
+    this.configsMap = configs.reduce((configsMap, config) => {
+      // eslint-disable-next-line no-param-reassign
+      configsMap[config.getName()] = config;
+
+      return configsMap;
+    }, {});
+  }
+
+  /**
+   * Set project id
+   *
+   * @param {string} projectId
+   * @returns {ConfigFile}
+   */
+  setProjectId(projectId) {
+    this.projectId = projectId;
+
+    return this;
+  }
+
+  /**
+   * Get project id
+   *
+   * @returns {string}
+   */
+  getProjectId() {
+    return this.projectId;
+  }
+
+  /**
    * Get config file as plain object
    *
    * @return {{
    *     configs: Object<string, Object>,
    *     defaultGroupName: string,
    *     configFormatVersion: (string|null),
-   *     defaultConfigName: (string|null)
+   *     defaultConfigName: (string|null),
+   *     projectId: string
    * }}
    */
   toObject() {
@@ -229,6 +261,7 @@ class ConfigFile {
       configFormatVersion: this.getConfigFormatVersion(),
       defaultConfigName: this.getDefaultConfigName(),
       defaultGroupName: this.getDefaultGroupName(),
+      projectId: this.getProjectId(),
       configs: this.getAllConfigs().reduce((configsMap, config) => {
         // eslint-disable-next-line no-param-reassign
         configsMap[config.getName()] = config.getOptions();

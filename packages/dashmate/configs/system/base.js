@@ -257,5 +257,4 @@ module.exports = {
   externalIp: null,
   network: NETWORK_TESTNET,
   environment: 'production',
-  projectId: getShortHash(HOME_DIR_PATH),
 };

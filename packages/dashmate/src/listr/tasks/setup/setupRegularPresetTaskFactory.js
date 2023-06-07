@@ -81,7 +81,7 @@ function setupRegularPresetTaskFactory(
           ctx.nodeType = getNodeTypeByName(nodeTypeName);
           ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
 
-          ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
+          ctx.config = new Config(ctx.preset, configFile, systemConfigs[ctx.preset]);
 
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);

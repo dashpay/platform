@@ -56,20 +56,23 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, error);
     }
 
-    let configs;
-    try {
-      configs = Object.entries(migratedConfigFileData.configs)
-        .map(([name, options]) => new Config(name, options));
-    } catch (e) {
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
-    }
-
-    return new ConfigFile(
-      configs,
+    const configFile = new ConfigFile(
+      [],
       packageJson.version,
       migratedConfigFileData.defaultConfigName,
       migratedConfigFileData.defaultGroupName,
     );
+    let configs;
+    try {
+      configs = Object.entries(migratedConfigFileData.configs)
+        .map(([name, options]) => new Config(name, configFile, options));
+    } catch (e) {
+      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
+    }
+
+    configFile.setConfigs(configs);
+
+    return configFile;
   }
 
   /**
