@@ -58,6 +58,9 @@ module.exports = {
         // Ignore require('dev-dependency') errors for tests and mocks
         'import/no-extraneous-dependencies': 0,
       },
+      parserOptions: {
+        project: ['./tsconfig.mocha.json'],
+      },
     },
     // Typings tests
     {
