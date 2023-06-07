@@ -1,5 +1,9 @@
+import { WalletStore } from '../WalletStore/WalletStore'
+
 export declare class Storage {
     constructor(options?: Storage.Options);
+
+    getWalletStore(walletId: string): WalletStore
 }
 
 export declare namespace Storage {
