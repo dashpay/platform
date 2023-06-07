@@ -4,12 +4,13 @@ const MasternodeStateEnum = require('../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
 
 /**
+ * @param {DockerCompose}dockerCompose
+ * @param {createRpcClient} createRpcClient
+ * @param {getConnectionHost} getConnectionHost
+ * @param {ConfigFile} configFile
  * @returns {getMasternodeScopeFactory}
- * @param dockerCompose {DockerCompose}
- * @param createRpcClient {createRpcClient}
- * @param getConnectionHost {getConnectionHost}
  */
-function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
+function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost, configFile) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -86,9 +87,9 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
   async function getSentinelInfo(config) {
     // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
     const sentinelStateResponse = await dockerCompose
-      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py');
+      .execCommand(configFile.configEnvs(config), 'sentinel', 'python bin/sentinel.py');
     const sentinelVersionResponse = await dockerCompose
-      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v');
+      .execCommand(configFile.configEnvs(config), 'sentinel', 'python bin/sentinel.py -v');
 
     const [state] = sentinelStateResponse.out.split(/\r?\n/);
 

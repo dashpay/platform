@@ -7,9 +7,11 @@ describe('determineStatus', () => {
   describe('#docker', () => {
     let dockerComposeMock;
     let config;
+    let configFile;
 
     beforeEach(async function it() {
       config = { toEnvs: this.sinon.stub() };
+      configFile = { configEnvs: this.sinon.stub() };
       dockerComposeMock = { inspectService: this.sinon.stub() };
     });
 
@@ -18,7 +20,7 @@ describe('determineStatus', () => {
 
       dockerComposeMock.inspectService.resolves({ State: { Status: mockDockerStatus } });
 
-      const status = await determineStatus.docker(dockerComposeMock, config, 'sample_service');
+      const status = await determineStatus.docker(dockerComposeMock, configFile, config, 'sample_service');
 
       expect(status).to.equal(mockDockerStatus);
     });
@@ -63,7 +65,7 @@ describe('determineStatus', () => {
 
         dockerComposeMock.inspectService.resolves({ State: { Status: mockDockerStatus } });
 
-        const status = await determineStatus.docker(dockerComposeMock, config, 'sample_service');
+        const status = await determineStatus.docker(dockerComposeMock, configFile, config, 'sample_service');
 
         expect(status).to.equal(mockDockerStatus);
       });

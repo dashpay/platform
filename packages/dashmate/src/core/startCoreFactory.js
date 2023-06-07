@@ -19,13 +19,14 @@ function startCoreFactory(
 ) {
   /**
    * @typedef startCore
+   * @param {ConfigFile} configFile
    * @param {Config} config
    * @param {Object} [options]
    * @param {boolean} [options.wallet=false]
    * @param {boolean} [options.addressIndex=false]
    * @return {CoreService}
    */
-  async function startCore(config, options = {}) {
+  async function startCore(configFile, config, options = {}) {
     // eslint-disable-next-line no-param-reassign
     options = {
       wallet: false,
@@ -63,7 +64,7 @@ function startCoreFactory(
     ensureFileMountExists(logFilePath, 0o666);
 
     const coreContainer = await dockerCompose.runService(
-      config.toEnvs(),
+      configFile.configEnvs(config),
       'core',
       coreCommand,
       [

@@ -59,13 +59,14 @@ class ConfigFileJsonRepository {
     const configFile = new ConfigFile(
       [],
       packageJson.version,
+      migratedConfigFileData.projectId,
       migratedConfigFileData.defaultConfigName,
       migratedConfigFileData.defaultGroupName,
     );
     let configs;
     try {
       configs = Object.entries(migratedConfigFileData.configs)
-        .map(([name, options]) => new Config(name, configFile, options));
+        .map(([name, options]) => new Config(name, options));
     } catch (e) {
       throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
     }

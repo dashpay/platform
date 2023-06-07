@@ -12,6 +12,7 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -20,10 +21,11 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
       'output-file': outputFile,
     },
     config,
+    configFile,
   ) {
     let envOutput = '';
 
-    for (const [key, value] of Object.entries(config.toEnvs())) {
+    for (const [key, value] of Object.entries(configFile.configEnvs(config))) {
       envOutput += `${key}=${value}\n`;
     }
 

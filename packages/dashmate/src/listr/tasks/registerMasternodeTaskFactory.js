@@ -21,6 +21,7 @@ const {
  * @param {waitForConfirmations} waitForConfirmations
  * @param {registerMasternode} registerMasternode
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
+ * @param {ConfigFile} configFile
  * @return {registerMasternodeTask}
  */
 function registerMasternodeTaskFactory(
@@ -35,6 +36,7 @@ function registerMasternodeTaskFactory(
   waitForConfirmations,
   registerMasternode,
   waitForBalanceToConfirm,
+  configFile,
 ) {
   /**
    * @typedef {registerMasternodeTask}
@@ -56,7 +58,11 @@ function registerMasternodeTaskFactory(
         },
         task: async (ctx) => {
           ctx.coreServicePassed = false;
-          ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
+          ctx.coreService = await startCore(
+            configFile,
+            config,
+            { wallet: true, addressIndex: true },
+          );
         },
       },
       {

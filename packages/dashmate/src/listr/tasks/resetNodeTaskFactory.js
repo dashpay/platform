@@ -35,7 +35,7 @@ function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async () => {
-          if (await dockerCompose.isServiceRunning(config.toEnvs())) {
+          if (await dockerCompose.isServiceRunning(configFile.configEnvs(config))) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -43,14 +43,14 @@ function resetNodeTaskFactory(
       {
         title: 'Remove all services and associated data',
         enabled: (ctx) => !ctx.isPlatformOnlyReset,
-        task: async () => dockerCompose.down(config.toEnvs()),
+        task: async () => dockerCompose.down(configFile.configEnvs(config)),
       },
       {
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
           const nonPlatformServices = ['core', 'sentinel'];
-          const envs = config.toEnvs();
+          const envs = configFile.configEnvs(config);
 
           // Remove containers
           const serviceNames = (await dockerCompose
@@ -61,13 +61,13 @@ function resetNodeTaskFactory(
             ))
             .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 
-          await dockerCompose.rm(config.toEnvs(), serviceNames);
+          await dockerCompose.rm(configFile.configEnvs(config), serviceNames);
 
           // Remove volumes
           const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
-            config.toEnvs({ platformOnly: true }),
+            configFile.configEnvs(config, { platformOnly: true }),
           );
 
           await Promise.all(
@@ -88,7 +88,7 @@ function resetNodeTaskFactory(
                       await wait(1000);
 
                       // Remove containers
-                      await dockerCompose.rm(config.toEnvs(), serviceNames);
+                      await dockerCompose.rm(configFile.configEnvs(config), serviceNames);
 
                       isRetry = true;
 

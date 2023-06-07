@@ -7,12 +7,13 @@ const ServiceStatusEnum = require('../enums/serviceStatus');
 
 /**
  * @returns {getCoreScopeFactory}
- * @param dockerCompose {DockerCompose}
- * @param createRpcClient {createRpcClient}
- * @param getConnectionHost {getConnectionHost}
+ * @param {DockerCompose} dockerCompose
+ * @param {createRpcClient} createRpcClient
+ * @param {getConnectionHost} getConnectionHost
+ * @param {ConfigFile} configFile
  */
 function getCoreScopeFactory(dockerCompose,
-  createRpcClient, getConnectionHost) {
+  createRpcClient, getConnectionHost, configFile) {
   /*
    * Get core status scope
    *
@@ -47,13 +48,13 @@ function getCoreScopeFactory(dockerCompose,
 
     // this try catch handle getConnectionHost, isServiceRunning calls
     try {
-      if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
+      if (!(await dockerCompose.isServiceRunning(configFile.configEnvs(config), 'core'))) {
         core.serviceStatus = ServiceStatusEnum.stopped;
 
         return core;
       }
 
-      core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core');
+      core.dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'core');
 
       if (core.dockerStatus !== DockerStatusEnum.running) {
         core.serviceStatus = ServiceStatusEnum.error;

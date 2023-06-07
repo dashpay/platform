@@ -9,6 +9,7 @@ const { Observable } = require('rxjs');
  * @param {generateToAddress} generateToAddress
  * @param {generateBlocks} generateBlocks
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
+ * @param {ConfigFile} configFile
  * @return {generateToAddressTask}
  */
 function generateToAddressTaskFactory(
@@ -17,6 +18,7 @@ function generateToAddressTaskFactory(
   generateToAddress,
   generateBlocks,
   waitForBalanceToConfirm,
+  configFile,
 ) {
   /**
    * @typedef {generateToAddressTask}
@@ -35,7 +37,7 @@ function generateToAddressTaskFactory(
         },
         task: async (ctx) => {
           ctx.coreServicePassed = false;
-          ctx.coreService = await startCore(config, { wallet: true });
+          ctx.coreService = await startCore(configFile, config, { wallet: true });
         },
       },
       {

@@ -10,8 +10,9 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
- * @param getConnectionHost {getConnectionHost}
- * @param ensureFileMountExists {ensureFileMountExists}
+ * @param {getConnectionHost} getConnectionHost
+ * @param {ensureFileMountExists} ensureFileMountExists
+ * @param {ConfigFile} configFile
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -22,6 +23,7 @@ function startNodeTaskFactory(
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
+  configFile,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -62,7 +64,7 @@ function startNodeTaskFactory(
         title: 'Check node is not started',
         task: async (ctx) => {
           if (await dockerCompose.isServiceRunning(
-            config.toEnvs({ platformOnly: ctx.platformOnly }),
+            configFile.configEnvs(config, { platformOnly: ctx.platformOnly }),
           )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
@@ -72,7 +74,7 @@ function startNodeTaskFactory(
         title: 'Check core is started',
         enabled: (ctx) => ctx.platformOnly === true,
         task: async () => {
-          if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
+          if (!await dockerCompose.isServiceRunning(configFile.configEnvs(config), 'core')) {
             throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
@@ -92,7 +94,7 @@ function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = config.toEnvs({ platformOnly: ctx.platformOnly });
+          const envs = configFile.configEnvs(config, { platformOnly: ctx.platformOnly });
 
           await dockerCompose.up(envs);
         },

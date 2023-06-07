@@ -75,7 +75,7 @@ class SetupCommand extends BaseCommand {
           if (ctx.preset === PRESET_LOCAL) {
             isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
           } else {
-            const systemConfig = new Config(ctx.preset, configFile, systemConfigs[ctx.preset]);
+            const systemConfig = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
             isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(systemConfig);
           }

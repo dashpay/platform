@@ -12,7 +12,7 @@ const CoreService = require('../../core/CoreService');
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {configFileRepository} configFileRepository
- * @param {configFile} configFile
+ * @param {ConfigFile} configFile
  * @param {getConnectionHost} getConnectionHost
  * @return {reindexNodeTask}
  */
@@ -39,7 +39,7 @@ function reindexNodeTaskFactory(
         title: 'Check services are not running',
         enabled: () => config.get('core.reindex.enable'),
         task: async () => {
-          const isRunning = await dockerCompose.isServiceRunning(config.toEnvs());
+          const isRunning = await dockerCompose.isServiceRunning(configFile.configEnvs(config));
 
           if (isRunning) {
             throw new Error('Services is running, stop your nodes first');
@@ -78,7 +78,7 @@ function reindexNodeTaskFactory(
           }
 
           if (!containerId) {
-            ctx.coreService = await startCore(config);
+            ctx.coreService = await startCore(configFile, config);
             containerInfo = await ctx.coreService.dockerContainer.inspect();
 
             ctx.reindexContainerId = containerInfo.Id;

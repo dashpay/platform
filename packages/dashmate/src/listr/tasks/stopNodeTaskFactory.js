@@ -4,12 +4,14 @@ const { Listr } = require('listr2');
  * @param {DockerCompose} dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
+ * @param {ConfigFile} configFile
  * @return {stopNodeTask}
  */
 function stopNodeTaskFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
+  configFile,
 ) {
   /**
    * Stop node
@@ -25,7 +27,7 @@ function stopNodeTaskFactory(
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
           if (!await dockerCompose.isServiceRunning(
-            config.toEnvs({ platformOnly: ctx.platformOnly }),
+            configFile.configEnvs(config, { platformOnly: ctx.platformOnly }),
           )) {
             throw new Error('Node is not running');
           }
@@ -50,7 +52,9 @@ function stopNodeTaskFactory(
       },
       {
         title: `Stopping ${config.getName()} node`,
-        task: async (ctx) => dockerCompose.stop(config.toEnvs({ platformOnly: ctx.platformOnly })),
+        task: async (ctx) => dockerCompose.stop(
+          configFile.configEnvs(config, { platformOnly: ctx.platformOnly }),
+        ),
       },
     ]);
   }

@@ -3,10 +3,12 @@ const { Listr } = require('listr2');
 /**
  *
  * @param {DockerCompose} dockerCompose
+ * @param {ConfigFile} configFile
  * @return {buildServicesTask}
  */
 function buildServicesTaskFactory(
   dockerCompose,
+  configFile,
 ) {
   /**
    * @typedef {buildServicesTask}
@@ -17,7 +19,7 @@ function buildServicesTaskFactory(
     return new Listr({
       title: 'Build services',
       task: async (ctx, task) => {
-        const envs = config.toEnvs();
+        const envs = configFile.configEnvs(config);
 
         let buildArgs = [];
         if (process.env.SCCACHE_GHA_ENABLED === 'true') {

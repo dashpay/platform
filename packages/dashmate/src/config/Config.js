@@ -20,12 +20,10 @@ const OptionIsNotSetError = require('./errors/OptionIsNotSetError');
 class Config {
   /**
    * @param {string} name
-   * @param {ConfigFile} configFile
    * @param {Object} options
    */
-  constructor(name, configFile, options = {}) {
+  constructor(name, options = {}) {
     this.name = name;
-    this.configFile = configFile;
 
     this.setOptions(options);
   }
@@ -179,7 +177,6 @@ class Config {
 
     let envs = {
       CONFIG_NAME: this.getName(),
-      COMPOSE_PROJECT_NAME: `dashmate_${this.configFile.getProjectId()}_${this.getName()}`,
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,

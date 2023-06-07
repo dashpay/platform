@@ -3,22 +3,21 @@ const Config = require('../Config');
 const ConfigAlreadyPresentError = require('../errors/ConfigAlreadyPresentError');
 const ConfigIsNotPresentError = require('../errors/ConfigIsNotPresentError');
 const GroupIsNotPresentError = require('../errors/GroupIsNotPresentError');
-const getShortHash = require('../../util/getShortHash');
-const { HOME_DIR_PATH } = require('../../constants');
 
 class ConfigFile {
   /**
    * @param {Config[]} configs
    * @param {string} configFormatVersion
+   * @param {string} projectId
    * @param {string|null} defaultConfigName
    * @param {string|null} defaultGroupName
    */
-  constructor(configs, configFormatVersion, defaultConfigName, defaultGroupName) {
+  constructor(configs, configFormatVersion, projectId, defaultConfigName, defaultGroupName) {
     this.setConfigs(configs);
     this.configFormatVersion = configFormatVersion;
     this.defaultConfigName = defaultConfigName;
     this.defaultGroupName = defaultGroupName;
-    this.projectId = getShortHash(HOME_DIR_PATH);
+    this.projectId = projectId;
   }
 
   /**
@@ -177,7 +176,7 @@ class ConfigFile {
 
     const fromConfig = this.getConfig(fromConfigName);
 
-    this.configsMap[name] = new Config(name, this, fromConfig.getOptions());
+    this.configsMap[name] = new Config(name, fromConfig.getOptions());
 
     return this.configsMap[name];
   }
@@ -243,6 +242,15 @@ class ConfigFile {
    */
   getProjectId() {
     return this.projectId;
+  }
+
+  configEnvs(config, options = {}) {
+    const envs = config.toEnvs(options);
+
+    return {
+      ...envs,
+      COMPOSE_PROJECT_NAME: `dashmate_${this.getProjectId()}_${config.getName()}`,
+    };
   }
 
   /**
