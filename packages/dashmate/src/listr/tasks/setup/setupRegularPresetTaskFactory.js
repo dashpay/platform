@@ -14,6 +14,7 @@ const systemConfigs = require('../../../../configs/system');
 const {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
+  getNodeTypeNameByType,
   isNodeTypeNameHighPerformance,
 } = require('./nodeTypes');
 
@@ -55,8 +56,10 @@ function setupRegularPresetTaskFactory(
       {
         title: 'Node type',
         task: async (ctx, task) => {
+          let nodeTypeName;
+
           if (!ctx.nodeType) {
-            const nodeTypeName = await task.prompt([
+            nodeTypeName = await task.prompt([
               {
                 type: 'select',
                 // Keep this order, because each item references the text in the previous item
@@ -81,6 +84,8 @@ function setupRegularPresetTaskFactory(
 
             ctx.nodeType = getNodeTypeByName(nodeTypeName);
             ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
+          } else {
+            nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
 
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);

@@ -70,8 +70,6 @@ function resetNodeTaskFactory(
             config.toEnvs({ platformOnly: true }),
           );
 
-          console.dir(projectVolumeNames);
-
           await Promise.all(
             projectVolumeNames
               .map((volumeName) => `${composeProjectName}_${volumeName}`)

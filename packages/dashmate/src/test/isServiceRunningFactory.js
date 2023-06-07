@@ -1,9 +1,22 @@
-function isServiceRunningFactory(config, dockerCompose, services) {
+/**
+ * @param {Config} config
+ * @param {DockerCompose} dockerCompose
+ *
+ * @returns {isServicesRunning}
+ */
+function isServiceRunningFactory(config, dockerCompose) {
+  /**
+   * Check if service is running
+   *
+   * @param {string} serviceName
+   *
+   * @returns {Promise<boolean>}
+   */
   async function isServicesRunning(serviceName) {
-    return await dockerCompose.isServiceRunning(config.toEnvs(), serviceName)
+    return dockerCompose.isServiceRunning(config.toEnvs(), serviceName);
   }
 
-  return isServicesRunning
+  return isServicesRunning;
 }
 
 module.exports = isServiceRunningFactory;

@@ -36,7 +36,7 @@ function configureSSLCertificateTaskFactory(
           let form = ctx.fileCertificateProviderForm;
 
           if (!ctx.fileCertificateProviderForm) {
-            const form = await task.prompt({
+            form = await task.prompt({
               type: 'form',
               message: 'Specify paths to your certificate files',
               choices: [
@@ -51,7 +51,7 @@ function configureSSLCertificateTaskFactory(
                   validate: validateFileExists,
                 },
               ],
-              validate: ({chainFilePath, privateFilePath}) => {
+              validate: ({ chainFilePath, privateFilePath }) => {
                 if (!validateFileExists(chainFilePath)) {
                   return 'certificate chain file path is not valid';
                 }

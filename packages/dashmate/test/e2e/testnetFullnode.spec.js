@@ -8,14 +8,13 @@ process.env.DASHMATE_HOME_DIR = path.resolve(os.tmpdir(), '.dashmate');
 const { asValue } = require('awilix');
 
 const createDIContainer = require('../../src/createDIContainer');
-const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
 const { SERVICES } = require('../../src/test/constants/services');
 const { NODE_TYPE_NAMES, getNodeTypeByName } = require('../../src/listr/tasks/setup/nodeTypes');
 const { SSL_PROVIDERS } = require('../../src/constants');
-const generateTenderdashNodeKey = require("../../src/tenderdash/generateTenderdashNodeKey");
-const getSelfSignedCertificate = require("../../src/test/getSelfSignedCertificate");
-const isServiceRunningFactory = require("../../src/test/isServiceRunningFactory");
-const wait = require("../../src/util/wait");
+const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderdashNodeKey');
+const getSelfSignedCertificate = require('../../src/test/getSelfSignedCertificate');
+const isServiceRunningFactory = require('../../src/test/isServiceRunningFactory');
+const wait = require('../../src/util/wait');
 const createRpcClient = require('../../src/core/createRpcClient');
 
 describe('Testnet Fullnode', function main() {
@@ -26,9 +25,7 @@ describe('Testnet Fullnode', function main() {
   let resetNodeTask;
   let group;
   let configFile;
-  let startGroupNodesTask;
   let dockerCompose;
-  let areServicesRunning;
   let stopNodeTask;
   let restartNodeTask;
   let startNodeTask;
@@ -62,15 +59,12 @@ describe('Testnet Fullnode', function main() {
 
     setupRegularPresetTask = container.resolve('setupRegularPresetTask');
     resetNodeTask = container.resolve('resetNodeTask');
-    startGroupNodesTask = container.resolve('startGroupNodesTask');
     startNodeTask = container.resolve('startNodeTask');
     restartNodeTask = container.resolve('restartNodeTask');
     stopNodeTask = container.resolve('stopNodeTask');
     const configFileRepository = container.resolve('configFileRepository');
 
     dockerCompose = container.resolve('dockerCompose');
-
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
     const setupTask = setupRegularPresetTask();
 
@@ -180,7 +174,7 @@ describe('Testnet Fullnode', function main() {
 
     await wait(120000);
 
-    let blockchainInfo = await coreRpcClient.getBlockchainInfo();
+    const blockchainInfo = await coreRpcClient.getBlockchainInfo();
 
     if (blockchainInfo.result.headers <= lastBlockHeight) {
       expect.fail('Core is not syncing after restart');
