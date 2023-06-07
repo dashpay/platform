@@ -6,14 +6,18 @@ use crate::consensus::ConsensusError;
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::prelude::Identifier;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]
 pub struct IncompatibleDataContractSchemaError {
     data_contract_id: Identifier,
     operation: String,
     field_path: String,
+    #[bincode(with_serde)]
     old_schema: JsonValue,
+    #[bincode(with_serde)]
     new_schema: JsonValue,
 }
 

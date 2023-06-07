@@ -5,11 +5,12 @@ use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::Da
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::document::document_transition::DocumentTransitionAction;
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum DataTriggerError {
     /*
 
@@ -29,7 +30,7 @@ pub enum DataTriggerError {
 // TODO(v0.24-backport): move these errors to dedicated files?
 /// Data trigger errors represent issues that occur while processing data triggers.
 /// Data triggers are custom logic associated with the creation, modification, or deletion of documents.
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum DataTriggerActionError {
     /// An error occurred while evaluating the condition of the data trigger.
     #[error("{message}")]
@@ -41,6 +42,7 @@ pub enum DataTriggerActionError {
         /// A message describing the error.
         message: String,
         /// The document transition associated with the error, if available.
+        #[bincode(with_serde)]
         document_transition: Option<DocumentTransitionAction>,
         /// The owner identifier associated with the error, if available.
         owner_id: Option<Identifier>,
@@ -58,6 +60,7 @@ pub enum DataTriggerActionError {
         /// A message describing the execution error.
         execution_error: String,
         /// The document transition associated with the error, if available.
+        #[bincode(with_serde)]
         document_transition: Option<DocumentTransitionAction>,
         /// The owner identifier associated with the error, if available.
         owner_id: Option<Identifier>,
@@ -71,6 +74,7 @@ pub enum DataTriggerActionError {
         /// The identifier of the associated document transition.
         document_transition_id: Identifier,
         /// The document transition associated with the error, if available.
+        #[bincode(with_serde)]
         document_transition: Option<DocumentTransitionAction>,
         /// The owner identifier associated with the error, if available.
         owner_id: Option<Identifier>,

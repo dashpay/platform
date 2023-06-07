@@ -1,7 +1,9 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::consensus::state::data_trigger::data_trigger_error::{
     DataTriggerActionError, DataTriggerError,
 };
@@ -28,7 +30,7 @@ use crate::consensus::ConsensusError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
 pub enum StateError {
     /*
 
@@ -102,6 +104,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentTimestampsAreEqualError(DocumentTimestampsAreEqualError),
+
+    #[error(transparent)]
+    DataContractIsReadonlyError(DataContractIsReadonlyError),
 }
 
 impl From<StateError> for ConsensusError {

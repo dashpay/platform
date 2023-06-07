@@ -4,7 +4,9 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Duplicate index name '{duplicate_index_name}' defined in '{document_type}' document")]
 pub struct DuplicateIndexNameError {
     /*

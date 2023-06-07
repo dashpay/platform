@@ -1,10 +1,11 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use bincode::{Decode, Encode};
 use platform_value::Error as PlatformValueError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("{value_error}")]
 pub struct ValueError {
     /*

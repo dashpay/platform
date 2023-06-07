@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use crate::prelude::{Identifier, Revision};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 pub struct InvalidIdentityRevisionError {
     /*

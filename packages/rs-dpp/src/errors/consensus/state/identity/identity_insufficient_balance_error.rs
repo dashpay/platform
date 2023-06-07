@@ -5,7 +5,9 @@ use thiserror::Error;
 
 use crate::prelude::Identifier;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Insufficient identity ${identity_id} balance ${balance}")]
 pub struct IdentityInsufficientBalanceError {
     /*

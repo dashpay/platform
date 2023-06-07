@@ -41,7 +41,7 @@ use super::property_names;
 
 pub type JsonSchema = JsonValue;
 type DefinitionName = String;
-type DocumentName = String;
+pub type DocumentName = String;
 type PropertyPath = String;
 
 pub const SCHEMA_URI: &str = "https://schema.dash.org/dpp-0-4-0/meta/data-contract";

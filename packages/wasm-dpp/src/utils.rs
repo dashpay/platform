@@ -9,6 +9,7 @@ use dpp::{
 };
 
 use dpp::platform_value::Value;
+use dpp::serialization_traits::PlatformDeserializable;
 use js_sys::{Function, Uint8Array};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
@@ -193,7 +194,7 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
         .name();
 
     if ctor_name == class_name {
-        let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("ptr"))?;
+        let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr"))?;
         let ptr_u32: u32 = ptr
             .as_f64()
             .ok_or_else(|| JsValue::from(JsError::new("Invalid JS object pointer")))?

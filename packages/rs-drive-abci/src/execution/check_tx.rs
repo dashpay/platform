@@ -98,33 +98,27 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::error::Error;
+    use crate::config::PlatformConfig;
     use crate::execution::execution_event::ExecutionResult::SuccessfulPaidExecution;
-    use crate::platform::Platform;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
-    use dpp::dashcore::{signer, KeyPair, PrivateKey};
+    use dpp::dashcore::secp256k1::Secp256k1;
+    use dpp::dashcore::{signer, KeyPair};
     use dpp::data_contracts::dpns_contract;
-    use dpp::data_contracts::SystemDataContract::DPNS;
     use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
     use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
-    use dpp::state_transition::StateTransition::DataContractCreate;
+    use dpp::serialization_traits::{PlatformSerializable, Signable};
     use dpp::state_transition::{StateTransition, StateTransitionType};
     use dpp::version::LATEST_VERSION;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use tenderdash_abci::proto::abci::RequestInitChain;
-    use tenderdash_abci::proto::google::protobuf::Timestamp;
 
     #[test]
     fn data_contract_create_check_tx() {

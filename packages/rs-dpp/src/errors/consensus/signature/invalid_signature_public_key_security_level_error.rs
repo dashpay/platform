@@ -7,7 +7,9 @@ use crate::identity::SecurityLevel;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+use bincode::{Decode, Encode};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("Invalid public key security level {public_key_security_level}. The state transition requires one of {}", allowed_key_security_levels.iter().map(|s| s.to_string()).join(" | "))]
 pub struct InvalidSignaturePublicKeySecurityLevelError {
     /*
