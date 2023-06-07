@@ -70,7 +70,7 @@ impl Drive {
         let element = self
             .grove
             .get(
-                epoch_tree.get_path(),
+                &epoch_tree.get_path(),
                 KEY_START_BLOCK_HEIGHT.as_slice(),
                 transaction,
             )
@@ -104,7 +104,7 @@ impl Drive {
         let element = self
             .grove
             .get(
-                epoch_tree.get_path(),
+                &epoch_tree.get_path(),
                 KEY_START_BLOCK_CORE_HEIGHT.as_slice(),
                 transaction,
             )
@@ -272,7 +272,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_START_BLOCK_HEIGHT.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
@@ -299,7 +299,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_START_BLOCK_CORE_HEIGHT.as_slice(),
                     Element::Item(u64::MAX.to_be_bytes().to_vec(), None),
                     None,
@@ -326,7 +326,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_START_BLOCK_HEIGHT.as_slice(),
                     Element::empty_tree(),
                     None,
@@ -353,7 +353,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_START_BLOCK_CORE_HEIGHT.as_slice(),
                     Element::empty_tree(),
                     None,

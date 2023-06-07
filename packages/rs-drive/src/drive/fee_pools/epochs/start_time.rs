@@ -51,7 +51,7 @@ impl Drive {
         let element = self
             .grove
             .get(
-                epoch_tree.get_path(),
+                &epoch_tree.get_path(),
                 KEY_START_TIME.as_slice(),
                 transaction,
             )
@@ -118,7 +118,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_START_TIME.as_slice(),
                     Element::empty_tree(),
                     None,
@@ -145,7 +145,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch_tree.get_path(),
+                    &epoch_tree.get_path(),
                     KEY_START_TIME.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
