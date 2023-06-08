@@ -767,10 +767,7 @@ impl<'a> DriveQuery<'a> {
                     self.start_at_document_path_and_key(starts_at);
                 let start_at_document = drive
                     .grove_get(
-                        start_at_document_path
-                            .iter()
-                            .map(|a| a.as_slice())
-                            .collect::<Vec<_>>(),
+                        start_at_document_path.as_slice().into(),
                         &start_at_document_key,
                         StatefulQuery,
                         transaction,

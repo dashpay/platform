@@ -56,7 +56,7 @@ impl Drive {
     ) -> Result<Option<[u8; 32]>, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path();
         match self.grove_get_raw(
-            unique_key_hashes,
+            (&unique_key_hashes).into(),
             public_key_hash.as_slice(),
             StatefulDirectQuery,
             transaction,
@@ -196,7 +196,7 @@ impl Drive {
     ) -> Result<bool, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path();
         self.grove_has_raw(
-            unique_key_hashes,
+            (&unique_key_hashes).into(),
             public_key_hash.as_slice(),
             StatefulDirectQuery,
             transaction,
@@ -279,7 +279,7 @@ impl Drive {
         let non_unique_key_hashes = non_unique_key_hashes_tree_path();
         // this will actually get a tree
         self.grove_has_raw(
-            non_unique_key_hashes,
+            (&non_unique_key_hashes).into(),
             public_key_hash.as_slice(),
             StatefulDirectQuery,
             transaction,
@@ -300,7 +300,7 @@ impl Drive {
             non_unique_key_hashes_sub_tree_path(public_key_hash.as_slice());
         // this will actually get a tree
         self.grove_has_raw(
-            public_key_hash_sub_tree,
+            (&public_key_hash_sub_tree).into(),
             identity_id.as_slice(),
             StatefulDirectQuery,
             transaction,

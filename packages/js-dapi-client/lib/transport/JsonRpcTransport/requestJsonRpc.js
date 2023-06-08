@@ -65,11 +65,12 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
   if (typeof requestTimeoutId !== 'undefined') {
     clearTimeout(requestTimeoutId);
   }
-  const data = await response.json();
 
   if (!response.ok) {
     throw new WrongHttpCodeError(requestInfo, response.status, response.statusText);
   }
+
+  const data = await response.json();
 
   if (data.error) {
     throw new JsonRpcError(requestInfo, data.error);

@@ -28,7 +28,8 @@
 //
 
 //! Deterministic Root Hash Tests
-//!
+
+use path::SubtreePath;
 
 #[cfg(feature = "full")]
 use std::borrow::Cow;
@@ -191,7 +192,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [],
+            SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::Identities),
             Element::empty_tree(),
             None,
@@ -225,7 +226,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [],
+            SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::UniquePublicKeyHashesToIdentities),
             Element::empty_tree(),
             None,
@@ -259,7 +260,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [],
+            SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
             Element::empty_tree(),
             None,
@@ -293,7 +294,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [],
+            SubtreePath::empty(),
             Into::<&[u8; 1]>::into(RootTree::SpentAssetLockTransactions),
             Element::empty_tree(),
             None,
@@ -329,7 +330,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [Into::<&[u8; 1]>::into(RootTree::SpentAssetLockTransactions).as_slice()],
+            &[Into::<&[u8; 1]>::into(RootTree::SpentAssetLockTransactions).as_slice()],
             &[0],
             Element::empty_tree(),
             None,
@@ -363,7 +364,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     //     appHash: "76c595401762ddbaa0393dda2068327aab60585242483da3388f3af221bb65c4"
 
     drive.grove.insert(
-        [Into::<&[u8; 1]>::into(RootTree::Identities).as_slice()],
+        &[Into::<&[u8; 1]>::into(RootTree::Identities).as_slice()],
         hex::decode("f00100b0c1e3762b8bc1421e113c76b2a635c5930b9abf2b336583be5987a715").unwrap().as_slice(),
         Element::new_item(hex::decode("01a46269645820f00100b0c1e3762b8bc1421e113c76b2a635c5930b9abf2b336583be5987a7156762616c616e636500687265766973696f6e006a7075626c69634b65797381a662696400646461746158210328f474ce2d61d6fdb45c1fb437ddbf167924e6af3303c167f64d8c8857e39ca564747970650067707572706f73650068726561644f6e6c79f76d73656375726974794c6576656c00").unwrap()),
         None,
@@ -397,7 +398,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
     drive
         .grove
         .insert(
-            [Into::<&[u8; 1]>::into(RootTree::UniquePublicKeyHashesToIdentities).as_slice()],
+            &[Into::<&[u8; 1]>::into(RootTree::UniquePublicKeyHashesToIdentities).as_slice()],
             hex::decode("6198bae2a577044d7975f4d1a06a8d13a9eab9b0")
                 .unwrap()
                 .as_slice(),
