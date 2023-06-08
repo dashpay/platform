@@ -199,7 +199,7 @@ fn default_protocol_version() -> u32 {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
-pub struct DataContractInner {
+struct DataContractInner {
     /// The version of the protocol this contract adheres to, with a default value if not provided.
     #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
