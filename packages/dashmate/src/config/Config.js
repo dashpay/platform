@@ -1,7 +1,5 @@
 const Ajv = require('ajv');
 
-const nodePath = require('path');
-
 const lodashGet = require('lodash/get');
 const lodashSet = require('lodash/set');
 const lodashCloneDeep = require('lodash/cloneDeep');
@@ -9,8 +7,6 @@ const lodashIsEqual = require('lodash/isEqual');
 
 const addFormats = require('ajv-formats');
 const configJsonSchema = require('../../configs/schema/configJsonSchema');
-
-const convertObjectToEnvs = require('./convertObjectToEnvs');
 
 const InvalidOptionPathError = require('./errors/InvalidOptionPathError');
 const InvalidOptionError = require('./errors/InvalidOptionError');

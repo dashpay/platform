@@ -6,7 +6,6 @@ const path = require('path');
 const systemConfigs = require('./system');
 
 const { NETWORK_TESTNET, HOME_DIR_PATH } = require('../src/constants');
-const getShortHash = require('../src/util/getShortHash');
 
 module.exports = {
   '0.17.2': (configFile) => {
