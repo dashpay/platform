@@ -43,19 +43,23 @@ mockall = { version = "0.11", optional = true }
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "a98d3662d569c5460b5e608c5af4fd6b22e66ba2"
+rev = "33dc30ec384a90aa92bac621a6059fc7ef544b5c"
 optional = true
 default-features = false
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "a98d3662d569c5460b5e608c5af4fd6b22e66ba2"
+rev = "33dc30ec384a90aa92bac621a6059fc7ef544b5c"
 optional = true
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "a98d3662d569c5460b5e608c5af4fd6b22e66ba2"
+rev = "33dc30ec384a90aa92bac621a6059fc7ef544b5c"
 optional = true
+
+[dependencies.path]
+git = "https://github.com/dashpay/grovedb"
+rev = "33dc30ec384a90aa92bac621a6059fc7ef544b5c"
 
 [dev-dependencies]
 criterion = "0.3.5"

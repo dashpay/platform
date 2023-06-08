@@ -316,7 +316,7 @@ mod tests {
         let element = drive
             .grove
             .get(
-                contract_root_path(&contract.id.to_buffer()),
+                &contract_root_path(&contract.id.to_buffer()),
                 &[0],
                 Some(&db_transaction),
             )
@@ -561,7 +561,7 @@ mod tests {
         let element = drive
             .grove
             .get(
-                contract_root_path(&contract.id.to_buffer()),
+                &contract_root_path(&contract.id.to_buffer()),
                 &[0],
                 Some(&db_transaction),
             )
