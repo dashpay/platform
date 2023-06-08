@@ -81,7 +81,7 @@ impl StateTransitionValidation for IdentityCreditTransferTransition {
             .drive
             .fetch_identity_balance(self.recipient_id.to_buffer(), tx)?;
 
-        let Some(maybe_existing_recipient) = maybe_existing_recipient else {
+        let Some(_) = maybe_existing_recipient else {
             return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.recipient_id).into()));
         };
 

@@ -1,6 +1,6 @@
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
-use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
-use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
+use crate::drive::batch::DriveOperation::IdentityOperation;
+use crate::drive::batch::{DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
