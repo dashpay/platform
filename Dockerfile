@@ -140,17 +140,20 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
 #
 FROM sources AS build-js
 
+# TODO: what this dir for?
 RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
-    --mount=type=cache,sharing=locked,id=unplugged,target=/platform/.yarn/unplugged \
-    tree -L 4 /platform/.yarn/unplugged && \
+    --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
+    tree -L 4 /tmp/unplugged && \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
-    tree -L 4 /platform/.yarn/unplugged && \
+    cp -R /platform/.yarn/unplugged /tmp/ && \
+    tree -L 4 /tmp/unplugged && \
     yarn build
 
 #
@@ -208,8 +211,7 @@ FROM build-js AS build-dashmate-helper
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=locked,id=unplugged,target=/platform/.yarn/unplugged \
-    tree -L 4 /platform/.yarn/unplugged && \
+RUN tree -L 4 /platform/.yarn/unplugged && \
     yarn workspaces focus --production dashmate && \
     tree -L 4 /platform/.yarn/unplugged
 
@@ -320,8 +322,7 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=locked,id=unplugged,target=/platform/.yarn/unplugged \
-    tree -L 4 /platform/.yarn/unplugged && \
+RUN tree -L 4 /platform/.yarn/unplugged && \
     yarn workspaces focus --production @dashevo/dapi && \
     tree -L 4 /platform/.yarn/unplugged
 
