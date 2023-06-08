@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::quorum::Quorum;
+use crate::execution::quorum::ValidatorSet;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -162,7 +162,7 @@ where
         let new_quorums = quorum_infos
             .into_iter()
             .map(|(key, info_result)| {
-                let quorum = Quorum::try_from_info_result(info_result, block_platform_state)?;
+                let quorum = ValidatorSet::try_from_quorum_info_result(info_result, block_platform_state)?;
                 Ok((key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -251,9 +251,15 @@ where
 
         updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
-                if let Some(masternode_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash)
+                if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash)
                 {
-                    masternode_list_item.state.apply_diff(state_diff.clone());
+                    let was_banned = hpmn_list_item.state.pose_ban_height.is_some();
+                    let previous_ip = hpmn_list_item.state.service;
+                    hpmn_list_item.state.apply_diff(state_diff.clone());
+                    if state_diff.pose_ban_height
+                    let is_now_banned = hpmn_list_item.state.pose_ban_height.is_some();
+                    let current_ip = hpmn_list_item.state.service;
+                    // if a masternode changes ban state, we need to update the validator set that might contain it
                 }
                 masternode_list_item.state.apply_diff(state_diff);
             }

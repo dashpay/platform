@@ -1,4 +1,4 @@
-use crate::execution::quorum::{Quorum, Validator};
+use crate::execution::quorum::{ValidatorSet, Validator};
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
@@ -170,7 +170,7 @@ impl TestQuorumInfo {
     }
 }
 
-impl From<&TestQuorumInfo> for Quorum {
+impl From<&TestQuorumInfo> for ValidatorSet {
     fn from(value: &TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             core_height,
@@ -181,7 +181,7 @@ impl From<&TestQuorumInfo> for Quorum {
             ..
         } = value;
 
-        Quorum {
+        ValidatorSet {
             core_height: *core_height,
             quorum_hash: *quorum_hash,
             validator_set: validator_set
@@ -193,7 +193,7 @@ impl From<&TestQuorumInfo> for Quorum {
     }
 }
 
-impl From<TestQuorumInfo> for Quorum {
+impl From<TestQuorumInfo> for ValidatorSet {
     fn from(value: TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             core_height,
@@ -204,7 +204,7 @@ impl From<TestQuorumInfo> for Quorum {
             ..
         } = value;
 
-        Quorum {
+        ValidatorSet {
             quorum_hash,
             core_height,
             validator_set: validator_set

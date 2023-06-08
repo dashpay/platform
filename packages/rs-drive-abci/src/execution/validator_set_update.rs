@@ -71,7 +71,7 @@ where
                     index = (index + 1) % count;
                     // We can't just take the next item because it might no longer be in the state
                     while index != start_index {
-                        let (quorum_hash, new_quorum) = platform_state
+                        let (quorum_hash, new_validator_set) = platform_state
                             .validator_sets
                             .get_index(index)
                             .expect("expected next validator set");
@@ -85,12 +85,12 @@ where
                                 method = "validator_set_update",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
-                                new_quorum.validator_set.len()
+                                new_validator_set.validator_set.len()
                             );
                             block_execution_context
                                 .block_platform_state
                                 .next_validator_set_quorum_hash = Some(*quorum_hash);
-                            return Ok(Some(new_quorum.into()));
+                            return Ok(Some(new_validator_set.into()));
                         }
                         index = (index + 1) % count;
                     }
