@@ -32,6 +32,8 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
+use std::{thread, time};
+use std::time::Duration;
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
@@ -53,7 +55,7 @@ use tenderdash_abci::proto::abci::{
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
-use tenderdash_abci::proto::types::VoteExtensionType;
+use tenderdash_abci::proto::types::{CoreChainLock, VoteExtensionType};
 
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
@@ -64,6 +66,36 @@ use dpp::serialization_traits::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use drive::fee::result::FeeResult;
 use serde_json::Map;
+
+/// The timeout between the requests to the core to get the latest core chain lock
+const WAIT_FOR_CCL_TIMEOUT: Duration = Duration::from_millis(200);
+const ZERO_DURATION: Duration = Duration::from_millis(0);
+
+impl<'a, C> AbciApplication<'a, C>
+    where
+        C: CoreRPCLike,
+{
+    /// waits for the core chain height to reach the core chain locked height
+    fn wait_for_chain_locked_height(&self, core_chain_locked_height: u32) -> Option<CoreChainLock> {
+        loop {
+            let now = time::Instant::now();
+            return match self.platform.core_rpc.get_best_chain_lock() {
+                Ok(latest_chain_lock) => {
+                    if core_chain_locked_height <= latest_chain_lock.core_block_height {
+                        return Some(latest_chain_lock)
+                    }
+                    // sleep for a bit and try again
+                    let timeout = WAIT_FOR_CCL_TIMEOUT - now.elapsed();
+                    if timeout > ZERO_DURATION {
+                        thread::sleep(timeout);
+                    }
+                    continue
+                }
+                Err(_) => None,
+            };
+        }
+    }
+}
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -137,21 +169,8 @@ where
     ) -> Result<ResponsePrepareProposal, ResponseException> {
         let _timer = crate::metrics::abci_request_duration("prepare_proposal");
 
-        // We should get the latest CoreChainLock from core
-        // It is possible that we will not get a chain lock from core, in this case, just don't
-        // propose one
-        // This is done before all else
-
-        let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
-            Ok(latest_chain_lock) => {
-                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
-                    Some(latest_chain_lock)
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
-        };
+        // to be deterministic, we need to wait for core chain lock height to reach the locked height
+        let core_chain_lock_update = self.wait_for_chain_locked_height(request.core_chain_locked_height);
 
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
@@ -252,6 +271,9 @@ where
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
         let _timer = crate::metrics::abci_request_duration("process_proposal");
+
+        // to be deterministic, we need to wait for core chain lock height to reach the locked height
+        self.wait_for_chain_locked_height(request.core_chain_locked_height);
 
         let mut block_execution_context_guard =
             self.platform.block_execution_context.write().unwrap();
