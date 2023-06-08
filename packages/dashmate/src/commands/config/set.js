@@ -15,15 +15,21 @@ class ConfigSetCommand extends ConfigBaseCommand {
     flags,
     config,
   ) {
-    if (optionValue === 'null') {
-      // eslint-disable-next-line no-param-reassign
-      optionValue = null;
+    // check for existence
+    config.get(optionPath);
+
+    let value;
+
+    try {
+      value = JSON.parse(optionValue);
+    } catch (e) {
+      value = optionValue;
     }
 
-    config.set(optionPath, optionValue);
+    config.set(optionPath, value);
 
     // eslint-disable-next-line no-console
-    console.log(`${optionPath} set to ${config.get(optionPath)}`);
+    console.log(`${optionPath} set to ${optionValue}`);
   }
 }
 
