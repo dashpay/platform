@@ -170,13 +170,12 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
-        //no need to retry on this one
         let GetBestChainLockResult {
             blockhash,
             height,
             signature,
             known_block: _,
-        } = self.inner.get_best_chain_lock()?;
+        } = retry!(self.inner.get_best_chain_lock())?;
         Ok(CoreChainLock {
             core_block_height: height,
             core_block_hash: blockhash.to_vec(),
