@@ -510,6 +510,59 @@ pub mod get_data_contracts_response {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetDataContractHistoryRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, optional, tag = "2")]
+    pub limit: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "3")]
+    pub offset: ::core::option::Option<u32>,
+    #[prost(uint64, optional, tag = "4")]
+    pub start_at_seconds: ::core::option::Option<u64>,
+    #[prost(bool, tag = "5")]
+    pub prove: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetDataContractHistoryResponse {
+    #[prost(message, optional, tag = "3")]
+    pub metadata: ::core::option::Option<ResponseMetadata>,
+    #[prost(oneof = "get_data_contract_history_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<get_data_contract_history_response::Result>,
+}
+/// Nested message and enum types in `GetDataContractHistoryResponse`.
+pub mod get_data_contract_history_response {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DataContractValue {
+        #[prost(bytes = "vec", tag = "1")]
+        pub value: ::prost::alloc::vec::Vec<u8>,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DataContractHistoryEntry {
+        #[prost(uint64, tag = "1")]
+        pub date: u64,
+        #[prost(message, optional, tag = "2")]
+        pub value: ::core::option::Option<DataContractValue>,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct DataContractHistory {
+        #[prost(message, repeated, tag = "1")]
+        pub data_contract_entries: ::prost::alloc::vec::Vec<DataContractHistoryEntry>,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag = "1")]
+        DataContractHistory(DataContractHistory),
+        #[prost(message, tag = "2")]
+        Proof(super::Proof),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub data_contract_id: ::prost::alloc::vec::Vec<u8>,
