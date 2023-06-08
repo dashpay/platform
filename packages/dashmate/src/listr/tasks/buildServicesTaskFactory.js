@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  *
@@ -19,7 +20,7 @@ function buildServicesTaskFactory(
     return new Listr({
       title: 'Build services',
       task: async (ctx, task) => {
-        const envs = configFile.configEnvs(config);
+        const envs = generateEnvs(configFile, config);
 
         let buildArgs = [];
         if (process.env.SCCACHE_GHA_ENABLED === 'true') {

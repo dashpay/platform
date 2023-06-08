@@ -4,6 +4,7 @@ const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
 const providers = require('../providers');
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @returns {getPlatformScopeFactory}
@@ -47,7 +48,7 @@ function getPlatformScopeFactory(dockerCompose,
       network: null,
     };
     try {
-      if (!(await dockerCompose.isServiceRunning(configFile.configEnvs(config), 'drive_tenderdash'))) {
+      if (!(await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'drive_tenderdash'))) {
         info.dockerStatus = DockerStatusEnum.not_started;
         info.serviceStatus = ServiceStatusEnum.stopped;
 
@@ -139,7 +140,7 @@ function getPlatformScopeFactory(dockerCompose,
       info.dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_abci');
       info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
-      const driveEchoResult = await dockerCompose.execCommand(configFile.configEnvs(config),
+      const driveEchoResult = await dockerCompose.execCommand(generateEnvs(configFile, config),
         'drive_abci', 'yarn workspace @dashevo/drive echo');
 
       if (driveEchoResult.exitCode !== 0) {

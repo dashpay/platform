@@ -1,6 +1,7 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 const CoreService = require('../../core/CoreService');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -39,7 +40,7 @@ function reindexNodeTaskFactory(
         title: 'Check services are not running',
         enabled: () => config.get('core.reindex.enable'),
         task: async () => {
-          const isRunning = await dockerCompose.isServiceRunning(configFile.configEnvs(config));
+          const isRunning = await dockerCompose.isServiceRunning(generateEnvs(configFile, config));
 
           if (isRunning) {
             throw new Error('Services is running, stop your nodes first');

@@ -1,6 +1,7 @@
 const DockerStatusEnum = require('./enums/dockerStatus');
 const ServiceStatusEnum = require('./enums/serviceStatus');
 const MasternodeSyncAssetEnum = require('./enums/masternodeSyncAsset');
+const generateEnvs = require('../util/generateEnvs');
 
 module.exports = {
   /**
@@ -13,7 +14,7 @@ module.exports = {
    */
   docker: async (dockerCompose, configFile, config, serviceName) => {
     const containerInfo = await dockerCompose.inspectService(
-      configFile.configEnvs(config),
+      generateEnvs(configFile, config),
       serviceName,
     );
 

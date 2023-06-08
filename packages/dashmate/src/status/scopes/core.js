@@ -4,6 +4,7 @@ const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../core/extractCoreVersion');
 const ServiceStatusEnum = require('../enums/serviceStatus');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @returns {getCoreScopeFactory}
@@ -48,7 +49,7 @@ function getCoreScopeFactory(dockerCompose,
 
     // this try catch handle getConnectionHost, isServiceRunning calls
     try {
-      if (!(await dockerCompose.isServiceRunning(configFile.configEnvs(config), 'core'))) {
+      if (!(await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'core'))) {
         core.serviceStatus = ServiceStatusEnum.stopped;
 
         return core;

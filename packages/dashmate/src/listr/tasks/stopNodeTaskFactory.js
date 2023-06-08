@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -27,7 +28,7 @@ function stopNodeTaskFactory(
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
           if (!await dockerCompose.isServiceRunning(
-            configFile.configEnvs(config, { platformOnly: ctx.platformOnly }),
+            generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
           )) {
             throw new Error('Node is not running');
           }
@@ -53,7 +54,7 @@ function stopNodeTaskFactory(
       {
         title: `Stopping ${config.getName()} node`,
         task: async (ctx) => dockerCompose.stop(
-          configFile.configEnvs(config, { platformOnly: ctx.platformOnly }),
+          generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
         ),
       },
     ]);

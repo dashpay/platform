@@ -1,5 +1,6 @@
 const { Listr } = require('listr2');
 const wait = require('../../util/wait');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -35,7 +36,7 @@ function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async () => {
-          if (await dockerCompose.isServiceRunning(configFile.configEnvs(config))) {
+          if (await dockerCompose.isServiceRunning(generateEnvs(configFile, config))) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -43,14 +44,14 @@ function resetNodeTaskFactory(
       {
         title: 'Remove all services and associated data',
         enabled: (ctx) => !ctx.isPlatformOnlyReset,
-        task: async () => dockerCompose.down(configFile.configEnvs(config)),
+        task: async () => dockerCompose.down(generateEnvs(configFile, config)),
       },
       {
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
           const nonPlatformServices = ['core', 'sentinel'];
-          const envs = configFile.configEnvs(config);
+          const envs = generateEnvs(configFile, config);
 
           // Remove containers
           const serviceNames = (await dockerCompose
@@ -61,13 +62,13 @@ function resetNodeTaskFactory(
             ))
             .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 
-          await dockerCompose.rm(configFile.configEnvs(config), serviceNames);
+          await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
 
           // Remove volumes
           const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
-            configFile.configEnvs(config, { platformOnly: true }),
+            generateEnvs(configFile, config, { platformOnly: true }),
           );
 
           await Promise.all(
@@ -88,7 +89,7 @@ function resetNodeTaskFactory(
                       await wait(1000);
 
                       // Remove containers
-                      await dockerCompose.rm(configFile.configEnvs(config), serviceNames);
+                      await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
 
                       isRetry = true;
 

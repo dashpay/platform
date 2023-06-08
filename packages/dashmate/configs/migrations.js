@@ -575,9 +575,4 @@ module.exports = {
       });
     return configFile;
   },
-  '0.24.6': (configFile) => {
-    configFile.projectId = getShortHash(HOME_DIR_PATH);
-
-    return configFile;
-  },
 };

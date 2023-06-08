@@ -2,6 +2,7 @@ const { Listr } = require('listr2');
 
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 const { NETWORK_LOCAL } = require('../../constants');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  *
@@ -98,7 +99,7 @@ function startGroupNodesTaskFactory(
             task: async () => {
               /* eslint-disable no-useless-escape */
               await dockerCompose.execCommand(
-                configFile.configEnvs(config),
+                generateEnvs(configFile, config),
                 'core',
                 [
                   'bash',
@@ -138,7 +139,7 @@ function startGroupNodesTaskFactory(
           const minerInterval = minerConfig.get('core.miner.interval');
 
           await dockerCompose.execCommand(
-            configFile.configEnvs(minerConfig),
+            generateEnvs(configFile, minerConfig),
             'core',
             [
               'bash',

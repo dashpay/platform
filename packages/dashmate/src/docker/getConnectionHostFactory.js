@@ -1,3 +1,5 @@
+const generateEnvs = require('../util/generateEnvs');
+
 function getConnectionHostFactory(dockerCompose, isHelper, configFile) {
   /**
    * Get proper service endpoint url
@@ -7,7 +9,7 @@ function getConnectionHostFactory(dockerCompose, isHelper, configFile) {
    */
   async function getConnectionHost(config, serviceName) {
     if (isHelper) {
-      return dockerCompose.getContainerIp(configFile.configEnvs(config), serviceName);
+      return dockerCompose.getContainerIp(generateEnvs(configFile, config), serviceName);
     }
 
     return '127.0.0.1';

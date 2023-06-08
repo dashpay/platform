@@ -3,6 +3,7 @@ const { Listr } = require('listr2');
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+const generateEnvs = require('../util/generateEnvs');
 
 class UpdateCommand extends ConfigBaseCommand {
   /**
@@ -26,7 +27,7 @@ class UpdateCommand extends ConfigBaseCommand {
       [
         {
           title: 'Download updates',
-          task: () => dockerCompose.pull(configFile.configEnvs(config)),
+          task: () => dockerCompose.pull(generateEnvs(configFile, config)),
         },
       ],
       {

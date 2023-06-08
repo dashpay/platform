@@ -8,7 +8,7 @@ class ConfigFile {
   /**
    * @param {Config[]} configs
    * @param {string} configFormatVersion
-   * @param {string} projectId
+   * @param {string|null} projectId
    * @param {string|null} defaultConfigName
    * @param {string|null} defaultGroupName
    */
@@ -244,15 +244,6 @@ class ConfigFile {
     return this.projectId;
   }
 
-  configEnvs(config, options = {}) {
-    const envs = config.toEnvs(options);
-
-    return {
-      ...envs,
-      COMPOSE_PROJECT_NAME: `dashmate_${this.getProjectId()}_${config.getName()}`,
-    };
-  }
-
   /**
    * Get config file as plain object
    *
@@ -261,7 +252,7 @@ class ConfigFile {
    *     defaultGroupName: string,
    *     configFormatVersion: (string|null),
    *     defaultConfigName: (string|null),
-   *     projectId: string
+   *     projectId: (string|null),
    * }}
    */
   toObject() {

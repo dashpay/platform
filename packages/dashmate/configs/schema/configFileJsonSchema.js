@@ -15,10 +15,10 @@ module.exports = {
       type: 'object',
     },
     projectId: {
-      type: 'string',
+      type: ['string', 'null'],
       pattern: '^[a-f0-9]{8}$',
     },
   },
-  required: ['configFormatVersion', 'defaultConfigName', 'defaultGroupName', 'configs', 'projectId'],
+  required: ['configFormatVersion', 'defaultConfigName', 'defaultGroupName', 'configs'],
   additionalProperties: false,
 };
