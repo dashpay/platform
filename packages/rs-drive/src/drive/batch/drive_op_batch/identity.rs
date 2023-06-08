@@ -52,6 +52,7 @@ pub enum IdentityOperationType {
     },
 
     /// Re-Enable Identity Keys
+    /// This should only be used internally in Drive (for masternode identities)
     ReEnableIdentityKeys {
         /// The identity id of the identity
         identity_id: [u8; 32],
