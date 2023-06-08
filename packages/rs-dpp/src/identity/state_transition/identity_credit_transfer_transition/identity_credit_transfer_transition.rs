@@ -202,6 +202,7 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use crate::identity::KeyID;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::StateTransitionType;
@@ -211,18 +212,6 @@ mod test {
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
     use std::fmt::Debug;
-
-    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
-    pub struct IdentityCreditTransferTransition {
-        pub transition_type: StateTransitionType,
-        pub identity_id: Identifier,
-        pub recipient_id: Identifier,
-        pub amount: u64,
-        pub protocol_version: u32,
-        pub signature_public_key_id: KeyID,
-        pub signature: BinaryData,
-    }
 
     fn test_identity_credit_transfer_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
