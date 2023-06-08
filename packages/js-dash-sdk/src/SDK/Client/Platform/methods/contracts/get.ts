@@ -1,5 +1,6 @@
 // @ts-ignore
 import { Identifier, Metadata } from '@dashevo/wasm-dpp';
+import { GetDataContractResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
@@ -29,10 +30,9 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   }
 
   // Fetch contract otherwise
-  let dataContractResponse;
+  let dataContractResponse: GetDataContractResponse;
   try {
-    dataContractResponse = await this.client.getDAPIClient()
-      .platform.getDataContract(contractId);
+    dataContractResponse = await this.fetcher.fetchDataContract(contractId);
     this.logger.silly(`[Contracts#get] Fetched Data Contract "${identifier}"`);
   } catch (e) {
     if (e instanceof NotFoundError) {
@@ -43,7 +43,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   }
 
   const contract = await this.dpp.dataContract
-    .createFromBuffer(dataContractResponse.getDataContract());
+    .createFromBuffer(dataContractResponse.getDataContract() as Uint8Array);
 
   let metadata;
   const responseMetadata = dataContractResponse.getMetadata();

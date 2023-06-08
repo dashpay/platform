@@ -47,7 +47,7 @@ impl Drive {
     ) -> Result<Credits, Error> {
         match self
             .grove
-            .get(pools_path(), KEY_STORAGE_FEE_POOL.as_slice(), transaction)
+            .get(&pools_path(), KEY_STORAGE_FEE_POOL.as_slice(), transaction)
             .unwrap()
         {
             Ok(Element::SumItem(credits, _)) => Ok(credits.to_unsigned()),

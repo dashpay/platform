@@ -70,7 +70,7 @@ impl Drive {
         };
         let identity_path = identity_path(identity_id.as_slice());
         match self.grove_get_raw(
-            identity_path,
+            (&identity_path).into(),
             &[IdentityTreeRevision as u8],
             direct_query_type,
             transaction,
