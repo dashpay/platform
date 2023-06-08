@@ -141,7 +141,9 @@ describe('DriveClient', () => {
       request.setWhere(cbor.encode({ where: options.where }));
 
       const response = new GetDocumentsResponse();
-      response.setDocuments([]);
+      const documents = new GetDocumentsResponse.Documents();
+      documents.setDocumentsList([]);
+      response.setDocuments(documents);
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
@@ -205,7 +207,9 @@ describe('DriveClient', () => {
       request.setProve(false);
 
       const response = new GetIdentitiesByPublicKeyHashesResponse();
-      response.setIdentitiesList([identity.toBuffer()]);
+      const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
+      identitiesList.setIdentitiesList([identity.toBuffer()]);
+      response.setIdentities(identitiesList);
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
