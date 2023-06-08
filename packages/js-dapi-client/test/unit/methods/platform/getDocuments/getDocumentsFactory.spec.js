@@ -62,7 +62,9 @@ describe('getDocumentsFactory', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new GetDocumentsResponse();
-    response.setDocumentsList(serializedDocuments);
+    const documentsList = new GetDocumentsResponse.Documents();
+    documentsList.setDocumentsList(serializedDocuments);
+    response.setDocuments(documentsList);
     response.setMetadata(metadata);
 
     grpcTransportMock = {
@@ -104,7 +106,6 @@ describe('getDocumentsFactory', () => {
 
   it('should return proof', async () => {
     options.prove = true;
-    response.setDocumentsList([]);
     response.setProof(proofResponse);
 
     const result = await getDocuments(contractIdBuffer, type, options);
