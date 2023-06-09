@@ -52,7 +52,6 @@ RUN apk add --no-cache \
         openssl-dev \
         perl \
         python3 \
-        tree \
         unzip \
         wget \
         xz \
@@ -148,14 +147,12 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
-    tree -L 4 /tmp/unplugged && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     cp /platform/.yarn/unplugged/install-state.gz /platform/.yarn/ || true && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
     cp /platform/.yarn/install-state.gz /platform/.yarn/unplugged/ && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
-    tree -L 4 /tmp/unplugged && \
     yarn build
 
 #
@@ -213,9 +210,7 @@ FROM build-js AS build-dashmate-helper
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN tree -L 4 /platform/.yarn/unplugged && \
-    yarn workspaces focus --production dashmate && \
-    tree -L 4 /platform/.yarn/unplugged
+RUN yarn workspaces focus --production dashmate
 
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
@@ -263,10 +258,7 @@ FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=locked,id=unplugged,target=/tmp/unplugged \
-    tree -L 4 /platform/.yarn/unplugged && \
-    yarn workspaces focus --production @dashevo/platform-test-suite && \
-    tree -L 4 /platform/.yarn/unplugged
+RUN yarn workspaces focus --production @dashevo/platform-test-suite
 
 #
 #  STAGE: FINAL TEST SUITE IMAGE
@@ -324,9 +316,7 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN tree -L 4 /platform/.yarn/unplugged && \
-    yarn workspaces focus --production @dashevo/dapi && \
-    tree -L 4 /platform/.yarn/unplugged
+RUN yarn workspaces focus --production @dashevo/dapi
 
 #
 # STAGE: FINAL DAPI IMAGE
