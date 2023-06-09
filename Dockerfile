@@ -150,8 +150,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
     tree -L 4 /tmp/unplugged && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
+    cp /platform/.yarn/unplugged/install-state.gz /platform/.yarn/ || true && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
+    cp /platform/.yarn/install-state.gz /platform/.yarn/unplugged/ && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     tree -L 4 /tmp/unplugged && \
     yarn build
