@@ -42,6 +42,7 @@ describe('getDocumentsHandlerFactory', () => {
   let proofFixture;
   let response;
   let proofMock;
+  let proofResponse;
 
   beforeEach(async function beforeEach() {
     dataContractId = await generateRandomIdentifierAsync();
@@ -78,8 +79,12 @@ describe('getDocumentsHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetDocumentsResponse();
-    response.setProof(proofMock);
-    response.setDocumentsList(documentsSerialized);
+    const documentsList = new GetDocumentsResponse.Documents();
+    documentsList.setDocumentsList(documentsSerialized);
+    response.setDocuments(documentsList);
+
+    proofResponse = new GetDocumentsResponse();
+    proofResponse.setProof(proofMock);
 
     driveStateRepositoryMock = {
       fetchDocuments: this.sinon.stub().resolves(response.serializeBinary()),
@@ -93,13 +98,12 @@ describe('getDocumentsHandlerFactory', () => {
   it('should return valid result', async () => {
     response.setProof(null);
 
-    driveStateRepositoryMock.fetchDocuments.resolves(response.serializeBinary());
-
     const result = await getDocumentsHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
+    const documents = result.getDocuments();
 
-    const documentsBinary = result.getDocumentsList();
+    const documentsBinary = documents.getDocumentsList();
     expect(documentsBinary).to.be.an('array');
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
@@ -116,6 +120,7 @@ describe('getDocumentsHandlerFactory', () => {
 
   it('should return proof', async () => {
     request.getProve.returns(true);
+    driveStateRepositoryMock.fetchDocuments.resolves(proofResponse.serializeBinary());
 
     const result = await getDocumentsHandler(call);
 
