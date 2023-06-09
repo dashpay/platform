@@ -131,7 +131,7 @@ describe('validatePublicKeySignaturesFactory', () => {
   });
 
   it('should return InvalidIdentityKeySignatureError if signature is not valid', async () => {
-    const rawPublicKey2 = rawIdentityCreateTransition.publicKeys[1];
+    const rawPublicKey2 = rawIdentityCreateTransition.publicKeys[0];
 
     rawPublicKey2.signature = crypto.randomBytes(65);
 

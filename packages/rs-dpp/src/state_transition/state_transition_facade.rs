@@ -6,6 +6,7 @@ use crate::{BlsModule, ProtocolError};
 use crate::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator;
 use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator;
 use crate::document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator;
+use crate::identity::PartialIdentity;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProofValidator, AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator};
 use crate::identity::state_transition::identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator;
 use crate::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator;
@@ -278,7 +279,7 @@ where
         &self,
         mut state_transition: StateTransition,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, ProtocolError> {
         // TODO: can we avoid duplicated code here?
         match state_transition {
             StateTransition::DataContractCreate(ref mut st) => {

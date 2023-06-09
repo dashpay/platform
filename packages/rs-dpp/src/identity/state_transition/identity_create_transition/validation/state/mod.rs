@@ -83,7 +83,12 @@ pub fn validate_identity_create_transition_state(
             .asset_lock_proof
             .fetch_asset_lock_transaction_output(state_repository, execution_context)
             .map_err(Into::<NonConsensusError>::into)?;
-        Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into())
+
+        // TODO: Use convert_satoshi_to_credits
+        Ok(
+            IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value * 1000)
+                .into(),
+        )
     }
 }
 

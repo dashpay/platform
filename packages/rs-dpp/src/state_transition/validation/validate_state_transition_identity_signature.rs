@@ -9,7 +9,8 @@ use crate::consensus::signature::{
     IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, InvalidStateTransitionSignatureError,
     MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
 };
-use crate::validation::SimpleConsensusValidationResult;
+use crate::identity::PartialIdentity;
+use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
     consensus::ConsensusError,
     identity::KeyType,
@@ -37,8 +38,8 @@ pub fn validate_state_transition_identity_signature(
     state_transition: &mut impl StateTransitionIdentitySigned,
     bls: &impl BlsModule,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-    let mut validation_result = SimpleConsensusValidationResult::default();
+) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, ProtocolError> {
+    let mut validation_result = ConsensusValidationResult::default();
 
     // We use temporary execution context without dry run,
     // because despite the dryRun, we need to get the
@@ -54,6 +55,12 @@ pub fn validate_state_transition_identity_signature(
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;
+
+    validation_result.set_data(
+        maybe_identity
+            .clone()
+            .map(|i| i.into_partial_identity_info()),
+    );
 
     // Collect operations back from temporary context
     execution_context.add_operations(tmp_execution_context.get_operations());

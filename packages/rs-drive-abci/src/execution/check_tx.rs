@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn identity_update_doesnt_panic() {
-        let identity_top_up = hex::decode("0601054e683919ac96d2e9b099162d845f7540fb1e776eadaca5d84b28235e298d9224020101000002002103a106d1b2fbe4f47c0f9a6cf89b7ed625b5f5972798c9af73475fb179bcb047364120db77e92f250ff1c1114b26355d0a186ab439cbd26ac18ed89c7c63e32b3aea4b339b10feeb2dffd7efa1bdb3e48332a6cdea1951071fb41ef30011a267eb6bbb000000411f56f03e48506fef87be778167838128eb06edc541667c7f010344bb69e54ba1df2c2818db073cc1f7c3966d1d99f0aa1c5e4e1d21959da7f4b89e6c19c123a8b9").expect("expected to decode");
+        let identity_update = hex::decode("0601054e683919ac96d2e9b099162d845f7540fb1e776eadaca5d84b28235e298d9224020101000002002103a106d1b2fbe4f47c0f9a6cf89b7ed625b5f5972798c9af73475fb179bcb047364120db77e92f250ff1c1114b26355d0a186ab439cbd26ac18ed89c7c63e32b3aea4b339b10feeb2dffd7efa1bdb3e48332a6cdea1951071fb41ef30011a267eb6bbb000000411f56f03e48506fef87be778167838128eb06edc541667c7f010344bb69e54ba1df2c2818db073cc1f7c3966d1d99f0aa1c5e4e1d21959da7f4b89e6c19c123a8b9").expect("expected to decode");
 
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
@@ -528,7 +528,7 @@ mod tests {
         // Check txs
 
         let validation_result = platform
-            .check_tx(identity_top_up.as_slice(), &dpp)
+            .check_tx(identity_update.as_slice(), &dpp)
             .expect("expected to check tx");
 
         assert!(matches!(
@@ -625,7 +625,9 @@ mod tests {
 
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
-            ConsensusError::StateError(StateError::IdentityAlreadyExistsError(_))
+            ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
+            )
         ));
     }
 

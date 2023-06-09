@@ -3,6 +3,10 @@ use platform_value::Value;
 use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::identity::PartialIdentity;
+use crate::prelude::ConsensusValidationResult;
+use crate::serialization_traits::{PlatformMessageSignable, Signable};
+use crate::ProtocolError::StateTransitionError;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
@@ -91,6 +95,10 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
         .map(|k| {
             IdentityPublicKeyInCreation::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
+        })
+        .filter(|r| match r {
+            Ok(k) => k.key_type.is_unique_key_type(),
+            Err(_) => true,
         })
         .collect::<Result<_, _>>()?;
 

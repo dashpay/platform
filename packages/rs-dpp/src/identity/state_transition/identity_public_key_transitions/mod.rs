@@ -42,6 +42,7 @@ pub struct IdentityPublicKeyInCreation {
     pub data: BinaryData,
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
     #[platform_signable(exclude_from_sig_hash)]
+    #[serde(default)]
     pub signature: BinaryData,
 }
 

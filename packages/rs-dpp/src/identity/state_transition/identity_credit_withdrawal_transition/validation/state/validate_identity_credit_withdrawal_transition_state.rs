@@ -90,41 +90,14 @@ where
             return Ok(result);
         }
 
-        let document_id = generate_document_id::generate_document_id(
-            &withdrawals_contract::CONTRACT_ID,
-            &state_transition.identity_id,
-            withdrawals_contract::document_types::WITHDRAWAL,
-            state_transition.output_script.as_bytes(),
-        );
+        let last_block_time_ms: u64 = self.state_repository.fetch_latest_platform_block_time()?;
 
-        let latest_platform_block_header_bytes: u64 =
-            self.state_repository.fetch_latest_platform_block_time()?;
-
-        let document_data = platform_value!({
-            withdrawals_contract::property_names::AMOUNT: state_transition.amount,
-            withdrawals_contract::property_names::CORE_FEE_PER_BYTE: state_transition.core_fee_per_byte,
-            withdrawals_contract::property_names::POOLING: Pooling::Never,
-            withdrawals_contract::property_names::OUTPUT_SCRIPT: state_transition.output_script.as_bytes(),
-            withdrawals_contract::property_names::STATUS: withdrawals_contract::WithdrawalStatus::QUEUED,
-            withdrawals_contract::property_names::CREATED_AT: latest_platform_block_header_bytes,
-            withdrawals_contract::property_names::UPDATED_AT: latest_platform_block_header_bytes,
-        });
-
-        let withdrawal_document = Document {
-            id: document_id,
-            owner_id: state_transition.identity_id,
-            properties: document_data.into_btree_string_map().unwrap(),
-            revision: None,
-            created_at: None,
-            updated_at: None,
-        };
-
-        Ok(IdentityCreditWithdrawalTransitionAction {
-            version: IdentityCreditWithdrawalTransitionAction::current_version(),
-            identity_id: state_transition.identity_id,
-            revision: state_transition.revision,
-            prepared_withdrawal_document: withdrawal_document,
-        }
-        .into())
+        Ok(
+            IdentityCreditWithdrawalTransitionAction::from_identity_credit_withdrawal(
+                state_transition,
+                last_block_time_ms,
+            )
+            .into(),
+        )
     }
 }

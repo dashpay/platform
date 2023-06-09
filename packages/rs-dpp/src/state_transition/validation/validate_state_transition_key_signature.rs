@@ -7,6 +7,7 @@ use dashcore::signer::verify_hash_signature;
 use crate::consensus::signature::SignatureError;
 use crate::consensus::signature::{IdentityNotFoundError, InvalidStateTransitionSignatureError};
 use crate::consensus::ConsensusError;
+use crate::identity::PartialIdentity;
 use crate::prelude::ConsensusValidationResult;
 use crate::validation::{AsyncDataValidator, SyncDataValidator};
 use crate::{
@@ -35,7 +36,7 @@ where
     SR: StateRepositoryLike,
 {
     type Item = StateTransition;
-    type ResultItem = ();
+    type ResultItem = Option<PartialIdentity>;
 
     fn validate(
         &self,
@@ -71,8 +72,9 @@ pub fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-    let mut result = SimpleConsensusValidationResult::default();
+) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, ProtocolError> {
+    let mut result = ConsensusValidationResult::default();
+    result.set_data(None);
 
     // Validate target identity existence for top up
     if let StateTransition::IdentityTopUp(ref transition) = state_transition {
@@ -98,6 +100,19 @@ pub fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
             ));
             return Ok(result);
         }
+
+        let partial_identity = PartialIdentity {
+            id: *target_identity_id,
+            loaded_public_keys: Default::default(),
+            balance,
+            revision: None,
+            not_found_public_keys: Default::default(),
+        };
+
+        result.set_data(Some(partial_identity));
+    } else {
+        /// TODO: Set?
+        result.set_data(None);
     }
 
     let state_transition_hash = state_transition.hash(true)?;

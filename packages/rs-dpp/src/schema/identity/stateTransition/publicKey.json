@@ -74,7 +74,8 @@
 						"minItems": 65,
 						"maxItems": 65
 					}
-				}
+				},
+				"required": ["signature"]
 			}
 		},
 		{
@@ -102,7 +103,8 @@
 						"minItems": 96,
 						"maxItems": 96
 					}
-				}
+				},
+				"required": ["signature"]
 			}
 		},
 		{
@@ -139,8 +141,7 @@
 		"type",
 		"data",
 		"purpose",
-		"securityLevel",
-		"signature"
+		"securityLevel"
 	],
 	"additionalProperties": false
 }

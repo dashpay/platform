@@ -62,8 +62,11 @@ pub fn validate_identity_topup_transition_state(
         .asset_lock_proof
         .fetch_asset_lock_transaction_output(state_repository, execution_context)
         .map_err(Into::<NonConsensusError>::into)?;
-    Ok(
-        IdentityTopUpTransitionAction::from_borrowed(state_transition, top_up_balance_amount.value)
-            .into(),
+
+    // TODO: Use convert_satoshi_to_credits
+    Ok(IdentityTopUpTransitionAction::from_borrowed(
+        state_transition,
+        top_up_balance_amount.value * 1000,
     )
+    .into())
 }
