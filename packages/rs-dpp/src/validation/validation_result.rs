@@ -12,11 +12,11 @@ macro_rules! check_validation_result_with_data {
     };
 }
 
-pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
-
 pub type SimpleValidationResult<E> = ValidationResult<(), E>;
 
 pub type ConsensusValidationResult<TData> = ValidationResult<TData, ConsensusError>;
+
+pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
 
 #[derive(Debug)]
 pub struct ValidationResult<TData: Clone, E: Debug> {

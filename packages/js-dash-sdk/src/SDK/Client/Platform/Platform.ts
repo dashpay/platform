@@ -37,6 +37,7 @@ import SyncStateRepository from '../../../dpp/SyncStateRepository';
 import ValidationData from '../../../dpp/ValidationData';
 
 import logger, { ConfigurableLogger } from '../../../logger';
+import Fetcher from './Fetcher';
 
 /**
  * Interface for PlatformOpts
@@ -152,6 +153,8 @@ export class Platform {
     ['testnet', 1],
   ]);
 
+  protected fetcher: Fetcher;
+
   /**
      * Construct some instance of Platform
      *
@@ -204,6 +207,8 @@ export class Platform {
     this.protocolVersion = options.driveProtocolVersion !== undefined
       ? options.driveProtocolVersion
       : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
+
+    this.fetcher = new Fetcher(this.client.getDAPIClient());
   }
 
   async initialize() {

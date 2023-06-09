@@ -1,10 +1,13 @@
+use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
-    GetChainTipsResult, MasternodeListDiff, QuorumInfoResult, QuorumType,
+    GetChainTipsResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dpp::dashcore::InstantLock;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -70,6 +73,27 @@ pub trait CoreRPCLike {
 
     // /// Get the detailed information about a deterministic masternode
     // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+
+    /// Verify Instant Lock signature
+    /// If `max_height` is provided the chain lock will be verified
+    /// against quorums available at this height
+    fn verify_instant_lock(
+        &self,
+        instant_lock: &InstantLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error>;
+
+    /// Verify a chain lock signature
+    /// If `max_height` is provided the chain lock will be verified
+    /// against quorums available at this height
+    fn verify_chain_lock(
+        &self,
+        chain_lock: &ChainLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error>;
+
+    /// Returns masternode sync status
+    fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -79,8 +103,16 @@ pub struct DefaultCoreRPC {
 
 macro_rules! retry {
     ($action:expr) => {{
-        const MAX_RETRIES: u32 = 4; // Maximum number of retry attempts
-        const FIB_MULTIPLIER: u64 = 1; // Multiplier for Fibonacci sequence
+        /// Maximum number of retry attempts
+        const MAX_RETRIES: u32 = 4;
+        /// // Multiplier for Fibonacci sequence
+        const FIB_MULTIPLIER: u64 = 1;
+        /// Client still warming up
+        const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
+        /// Dash is not connected
+        const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
+        /// Still downloading initial blocks
+        const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
 
         fn fibonacci(n: u32) -> u64 {
             match n {
@@ -95,9 +127,27 @@ macro_rules! retry {
             match $action {
                 Ok(result) => return Ok(result),
                 Err(e) => {
-                    last_err = Some(e);
-                    let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
-                    std::thread::sleep(Duration::from_secs(delay));
+                    match e {
+                        dashcore_rpc::Error::JsonRpc(
+                            // Retry on transport connection error
+                            dashcore_rpc::jsonrpc::error::Error::Transport(_)
+                            | dashcore_rpc::jsonrpc::error::Error::Rpc(
+                                // Retry on Core RPC "not ready" errors
+                                dashcore_rpc::jsonrpc::error::RpcError {
+                                    code:
+                                        CORE_RPC_ERROR_IN_WARMUP
+                                        | CORE_RPC_CLIENT_NOT_CONNECTED
+                                        | CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD,
+                                    ..
+                                },
+                            ),
+                        ) => {
+                            last_err = Some(e);
+                            let delay = fibonacci(i + 2) * FIB_MULTIPLIER;
+                            std::thread::sleep(Duration::from_secs(delay));
+                        }
+                        _ => return Err(e),
+                    };
                 }
             }
         }
@@ -193,5 +243,57 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self
             .inner
             .get_protx_listdiff(base_block.unwrap_or(1), block))
+    }
+
+    /// Verify Instant Lock signature
+    /// If `max_height` is provided the chain lock will be verified
+    /// against quorums available at this height
+    fn verify_instant_lock(
+        &self,
+        instant_lock: &InstantLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error> {
+        tracing::debug!(
+            method = "verify_instant_lock",
+            "instant_lock {:?} max_height {:?}",
+            instant_lock,
+            max_height
+        );
+
+        let request_id = instant_lock.request_id()?.to_hex();
+
+        retry!(self.inner.get_verifyislock(
+            request_id.as_str(),
+            &instant_lock.txid.to_hex(),
+            &instant_lock.signature.to_hex(),
+            max_height,
+        ))
+    }
+
+    /// Verify a chain lock signature
+    /// If `max_height` is provided the chain lock will be verified
+    /// against quorums available at this height
+    fn verify_chain_lock(
+        &self,
+        chain_lock: &ChainLock,
+        max_height: Option<u32>,
+    ) -> Result<bool, Error> {
+        tracing::debug!(
+            method = "verify_chain_lock",
+            "chain lock {:?} max height {:?}",
+            chain_lock,
+            max_height,
+        );
+
+        retry!(self.inner.get_verifychainlock(
+            chain_lock.block_hash.to_hex().as_str(),
+            chain_lock.signature.to_hex().as_str(),
+            max_height
+        ))
+    }
+
+    /// Returns masternode sync status
+    fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
+        retry!(self.inner.mnsync_status())
     }
 }

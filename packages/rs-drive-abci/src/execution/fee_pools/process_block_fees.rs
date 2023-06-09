@@ -36,7 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use drive::drive::batch::GroveDbOpBatch;
+use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::grovedb::Transaction;
 
@@ -88,8 +88,10 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         epoch_info: &EpochInfo,
         block_fees: &BlockFees,
         transaction: &Transaction,
-        batch: &mut GroveDbOpBatch,
+        batch: &mut Vec<DriveOperation>,
     ) -> Result<Option<StorageFeeDistributionOutcome>, Error> {
+        let mut inner_batch = GroveDbOpBatch::new();
+
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
             .previous_epoch_index
@@ -97,7 +99,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         for epoch_index in last_initiated_epoch_index..=epoch_info.current_epoch_index {
             let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS)?;
-            next_thousandth_epoch.add_init_empty_without_storage_operations(batch);
+            next_thousandth_epoch.add_init_empty_without_storage_operations(&mut inner_batch);
         }
 
         // init current epoch pool for processing
@@ -106,12 +108,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         current_epoch.add_init_current_operations(
             DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
             block_info.height,
+            block_info.core_chain_locked_height,
             block_info.block_time_ms,
-            batch,
+            &mut inner_batch,
         );
 
         // Nothing to distribute on genesis epoch start
         if current_epoch.index == GENESIS_EPOCH_INDEX {
+            batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
             return Ok(None);
         }
 
@@ -120,15 +124,17 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .add_distribute_storage_fee_to_epochs_operations(
                 current_epoch.index,
                 Some(transaction),
-                batch,
+                &mut inner_batch,
             )?;
 
         self.drive
             .add_delete_pending_epoch_refunds_except_specified_operations(
-                batch,
+                &mut inner_batch,
                 &block_fees.refunds_per_epoch,
                 Some(transaction),
             )?;
+
+        batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 
         Ok(Some(storage_fee_distribution_outcome))
     }
@@ -146,7 +152,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     ) -> Result<ProcessedBlockFeesOutcome, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index)?;
 
-        let mut batch = GroveDbOpBatch::new();
+        let mut batch = vec![];
 
         let storage_fee_distribution_outcome = if epoch_info.is_epoch_change {
             self.add_process_epoch_change_operations(
@@ -168,27 +174,34 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             None
         };
 
-        batch.push(current_epoch.increment_proposer_block_count_operation(
-            &self.drive,
-            &block_info.proposer_pro_tx_hash,
-            cached_previous_block_count,
-            Some(transaction),
-        )?);
+        batch.push(DriveOperation::GroveDBOperation(
+            current_epoch.increment_proposer_block_count_operation(
+                &self.drive,
+                &block_info.proposer_pro_tx_hash,
+                cached_previous_block_count,
+                Some(transaction),
+            )?,
+        ));
 
         // Distribute fees from unpaid epoch pool to proposers
 
         // Since start_block_height for current epoch is batched and not committed yet
         // we pass it explicitly
-        let cached_current_epoch_start_block_height = if epoch_info.is_epoch_change {
-            Some(block_info.height)
-        } else {
-            None
-        };
+        let (cached_current_epoch_start_block_height, cached_current_epoch_start_block_core_height) =
+            if epoch_info.is_epoch_change {
+                (
+                    Some(block_info.height),
+                    Some(block_info.core_chain_locked_height),
+                )
+            } else {
+                (None, None)
+            };
 
         let payouts = self
             .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                 epoch_info.current_epoch_index,
                 cached_current_epoch_start_block_height,
+                cached_current_epoch_start_block_core_height,
                 transaction,
                 &mut batch,
             )?;
@@ -216,8 +229,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds)?;
 
-        self.drive
-            .grove_apply_batch(batch, false, Some(transaction))?;
+        self.drive.apply_drive_operations(
+            batch,
+            true,
+            &block_info.to_block_info(epoch_info.try_into()?),
+            Some(transaction),
+        )?;
 
         let outcome = ProcessedBlockFeesOutcome {
             fees_in_pools,
@@ -267,6 +284,7 @@ mod tests {
 
         mod helpers {
             use super::*;
+            use dpp::block::block_info::BlockInfo;
             use drive::fee::epoch::CreditsPerEpoch;
 
             /// Process and validate an epoch change
@@ -286,7 +304,7 @@ mod tests {
                 if should_distribute {
                     let block_fees = BlockFees::from_fees(1000000000, 1000);
 
-                    let mut batch = GroveDbOpBatch::new();
+                    let mut batch = vec![];
 
                     platform
                         .add_distribute_block_fees_into_pools_operations(
@@ -300,7 +318,12 @@ mod tests {
 
                     platform
                         .drive
-                        .grove_apply_batch(batch, false, Some(transaction))
+                        .apply_drive_operations(
+                            batch,
+                            true,
+                            &BlockInfo::default(),
+                            Some(&transaction),
+                        )
                         .expect("should apply batch");
                 }
 
@@ -332,7 +355,7 @@ mod tests {
                     refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 10000)]),
                 };
 
-                let mut batch = GroveDbOpBatch::new();
+                let mut batch = vec![];
 
                 let storage_fee_distribution_outcome = platform
                     .add_process_epoch_change_operations(
@@ -346,7 +369,7 @@ mod tests {
 
                 platform
                     .drive
-                    .grove_apply_batch(batch, false, Some(transaction))
+                    .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction))
                     .expect("should apply batch");
 
                 // Next thousandth epoch should be created

@@ -1201,7 +1201,7 @@ impl Drive {
                 .document_info
                 .is_document_size()
             && self.grove_has_raw(
-                primary_key_path,
+                primary_key_path.as_ref().into(),
                 document_and_contract_info
                     .owned_document_info
                     .document_info
