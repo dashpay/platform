@@ -15,8 +15,10 @@ use std::str::FromStr;
 pub struct GenerateTestMasternodeUpdates<'a> {
     pub start_core_height: u32,
     pub end_core_height: u32,
-    pub update_masternode_frequency: &'a Frequency,
-    pub update_hpmn_frequency: &'a Frequency,
+    pub update_masternode_keys_frequency: &'a Frequency,
+    pub update_hpmn_keys_frequency: &'a Frequency,
+    pub ban_masternode_frequency: &'a Frequency,
+    pub ban_hpmn_frequency: &'a Frequency,
 }
 
 /// Creates a list of test Masternode identities of size `count` with random data
@@ -33,7 +35,9 @@ pub fn generate_test_masternodes(
         Vec::with_capacity(masternode_count as usize);
     let mut hpmns: Vec<MasternodeListItemWithUpdates> = Vec::with_capacity(hpmn_count as usize);
 
-    let (block_height_to_list_masternode_updates, block_height_to_list_hpmns_updates): (
+    let (block_height_to_list_masternode_updates, block_height_to_list_masternode_bans, block_height_to_list_hpmns_updates, block_height_to_list_hpmns_bans): (
+        Option<BTreeMap<u32, Vec<u16>>>,
+        Option<BTreeMap<u32, Vec<u16>>>,
         Option<BTreeMap<u32, Vec<u16>>>,
         Option<BTreeMap<u32, Vec<u16>>>,
     ) = updates
@@ -41,8 +45,10 @@ pub fn generate_test_masternodes(
             |GenerateTestMasternodeUpdates {
                  start_core_height,
                  end_core_height,
-                 update_masternode_frequency,
-                 update_hpmn_frequency,
+                 update_masternode_keys_frequency,
+                 update_hpmn_keys_frequency,
+                 ban_masternode_frequency,
+                 ban_hpmn_frequency,
              }| {
                 (start_core_height..=end_core_height)
                     .map(|height| {
@@ -50,11 +56,19 @@ pub fn generate_test_masternodes(
                         (
                             (
                                 height,
-                                update_masternode_frequency.pick_in_range(rng, 0..masternode_count),
+                                update_masternode_keys_frequency.pick_in_range(rng, 0..masternode_count),
                             ),
                             (
                                 height,
-                                update_hpmn_frequency.pick_in_range(rng, 0..hpmn_count),
+                                ban_masternode_frequency.pick_in_range(rng, 0..masternode_count),
+                            ),
+                            (
+                                height,
+                                update_hpmn_keys_frequency.pick_in_range(rng, 0..hpmn_count),
+                            ),
+                            (
+                                height,
+                                ban_hpmn_frequency.pick_in_range(rng, 0..masternode_count),
                             ),
                         )
                     })
@@ -81,9 +95,21 @@ pub fn generate_test_masternodes(
         })
         .unwrap_or_default();
 
+    let masternode_number_to_heights_bans = block_height_to_list_masternode_bans
+        .map(|block_height_to_list_masternode_bans| {
+            invert_btreemap(block_height_to_list_masternode_bans)
+        })
+        .unwrap_or_default();
+
     let hpmn_number_to_heights_updates = block_height_to_list_hpmns_updates
         .map(|block_height_to_list_hpmns_updates| {
             invert_btreemap(block_height_to_list_hpmns_updates)
+        })
+        .unwrap_or_default();
+
+    let hpmn_number_to_heights_bans = block_height_to_list_hpmns_bans
+        .map(|block_height_to_list_hpmns_bans| {
+            invert_btreemap(block_height_to_list_hpmns_bans)
         })
         .unwrap_or_default();
 
@@ -291,11 +317,11 @@ mod tests {
         let updates = Some(GenerateTestMasternodeUpdates {
             start_core_height: 10,
             end_core_height: 20,
-            update_masternode_frequency: &Frequency {
+            update_masternode_keys_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
             },
-            update_hpmn_frequency: &Frequency {
+            update_hpmn_keys_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
             },
@@ -357,11 +383,11 @@ mod tests {
             let updates = Some(GenerateTestMasternodeUpdates {
                 start_core_height: 10,
                 end_core_height: 20,
-                update_masternode_frequency: &Frequency {
+                update_masternode_keys_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
                 },
-                update_hpmn_frequency: &Frequency {
+                update_hpmn_keys_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
                 },

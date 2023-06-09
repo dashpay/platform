@@ -1,19 +1,16 @@
 #[cfg(test)]
 mod tests {
-
-    use crate::execution::run_chain_for_strategy;
-    use crate::frequency::Frequency;
-
-    use crate::strategy::{FailureStrategy, Strategy};
-
-    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
-
-    use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use tenderdash_abci::proto::types::CoreChainLock;
 
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::frequency::Frequency;
+    use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, MasternodeListChangesStrategy, Strategy, StrategyRandomness, UpgradingInfo};
+    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+
     #[test]
-    fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
-        let mut strategy = Strategy {
+    fn run_chain_random_bans() {
+        let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
@@ -25,18 +22,25 @@ mod tests {
             quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+                times_per_block_range: 1..2,
+                chance_per_block: Some(0.2),
             },
-
-            proposer_strategy: Default::default(),
-            rotate_quorums: false,
-            failure_testing: Some(FailureStrategy {
-                deterministic_start_seed: Some(99),
-                dont_finalize_block: true,
-            }),
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Default::default(),
+                removed_hpmns: Default::default(),
+                updated_hpmns: Default::default(),
+                banned_hpmns: Frequency { times_per_block_range: 1..2, chance_per_block: Some(0.01)} ,
+                unbanned_hpmns: Default::default(),
+                new_masternodes: Default::default(),
+                removed_masternodes: Default::default(),
+                updated_mastenodes: Default::default(),
+                banned_masternodes: Default::default(),
+                unbanned_masternodes: Default::default(),
+            },
+            rotate_quorums: true,
+            failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -50,29 +54,16 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let mut core_block_heights = vec![10, 11];
-
         platform
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
-                let core_block_height = if core_block_heights.len() == 1 {
-                    *core_block_heights.get(0).unwrap()
-                } else {
-                    core_block_heights.remove(0)
-                };
                 Ok(CoreChainLock {
-                    core_block_height,
+                    core_block_height: 10,
                     core_block_hash: [1; 32].to_vec(),
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 15);
-
-        //platform block didn't complete, so it should get another init chain
-
-        strategy.failure_testing = None;
-
-        run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
     }
 }

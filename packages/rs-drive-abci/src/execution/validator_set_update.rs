@@ -85,7 +85,7 @@ where
                                 method = "validator_set_update",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
-                                new_validator_set.validator_set.len()
+                                new_validator_set.members.len()
                             );
                             block_execution_context
                                 .block_platform_state

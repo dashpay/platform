@@ -56,6 +56,7 @@ mod strategy;
 mod transitions;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
+mod core_update_tests;
 
 pub type BlockHeight = u64;
 

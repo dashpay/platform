@@ -60,8 +60,8 @@ pub(crate) fn run_chain_for_strategy(
             Some(GenerateTestMasternodeUpdates {
                 start_core_height: config.abci.genesis_core_height,
                 end_core_height,
-                update_masternode_frequency: &strategy.proposer_strategy.updated_mastenodes,
-                update_hpmn_frequency: &strategy.proposer_strategy.updated_hpmns,
+                update_masternode_keys_frequency: &strategy.proposer_strategy.updated_mastenodes,
+                update_hpmn_keys_frequency: &strategy.proposer_strategy.updated_hpmns,
             })
         } else {
             None
@@ -91,8 +91,8 @@ pub(crate) fn run_chain_for_strategy(
                     Some(GenerateTestMasternodeUpdates {
                         start_core_height: height + 1,
                         end_core_height,
-                        update_masternode_frequency: &strategy.proposer_strategy.updated_mastenodes,
-                        update_hpmn_frequency: &strategy.proposer_strategy.updated_hpmns,
+                        update_masternode_keys_frequency: &strategy.proposer_strategy.updated_mastenodes,
+                        update_hpmn_keys_frequency: &strategy.proposer_strategy.updated_hpmns,
                     })
                 } else {
                     None

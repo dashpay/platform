@@ -109,6 +109,15 @@ pub struct FailureStrategy {
     pub dont_finalize_block: bool,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct MasternodeChanges {
+    /// The masternode ban chance should be always quite low
+    pub masternode_ban_chance: Frequency,
+    pub masternode_unban_chance: Frequency,
+    pub masternode_change_ip_chance: Frequency,
+    pub masternode_change_port_chance: Frequency,
+}
+
 #[derive(Clone, Debug)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(

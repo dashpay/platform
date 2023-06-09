@@ -5,11 +5,12 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
 use dashcore_rpc::json::{MasternodeListItem, MasternodeType};
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
+use indexmap::IndexMap;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -162,7 +163,8 @@ where
         let new_quorums = quorum_infos
             .into_iter()
             .map(|(key, info_result)| {
-                let quorum = ValidatorSet::try_from_quorum_info_result(info_result, block_platform_state)?;
+                let quorum =
+                    ValidatorSet::try_from_quorum_info_result(info_result, block_platform_state)?;
                 Ok((key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -193,6 +195,47 @@ where
 
         block_platform_state.quorums_extended_info = quorum_list.quorums_by_type;
         Ok(())
+    }
+
+    /// Updates a masternode in the validator sets.
+    ///
+    /// This function updates the properties of the masternode that matches the given `pro_tx_hash`.
+    /// The properties are updated based on the provided `dmn_state_diff` information.
+    /// If a matching masternode is found, the function updates its ban status, service address,
+    /// platform P2P port, and platform HTTP port accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `pro_tx_hash` - The `ProTxHash` of the masternode to be updated
+    /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
+    /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
+    ///                      representing the validator sets with the quorum hash as the key
+    fn update_masternode_in_validator_sets(
+        pro_tx_hash: &ProTxHash,
+        dmn_state_diff: &DMNStateDiff,
+        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
+    ) {
+        validator_sets
+            .iter_mut()
+            .for_each(|(quorum_hash, validator_set)| {
+                if let Some(validator) = validator_set.members.get_mut(pro_tx_hash) {
+                    if let Some(maybe_ban_height) = dmn_state_diff.pose_ban_height {
+                        // the ban_height was changed
+                        validator.is_banned = maybe_ban_height.is_some();
+                    }
+                    if let Some(address) = dmn_state_diff.service {
+                        validator.node_ip = address.ip().to_string();
+                    }
+
+                    if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {
+                        validator.platform_p2p_port = p2p_port as u16;
+                    }
+
+                    if let Some(http_port) = dmn_state_diff.platform_http_port {
+                        validator.platform_http_port = http_port as u16;
+                    }
+                }
+            });
     }
 
     pub(crate) fn update_state_masternode_list(
@@ -251,15 +294,19 @@ where
 
         updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
-                if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash)
-                {
-                    let was_banned = hpmn_list_item.state.pose_ban_height.is_some();
-                    let previous_ip = hpmn_list_item.state.service;
+                if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash) {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
-                    if state_diff.pose_ban_height
-                    let is_now_banned = hpmn_list_item.state.pose_ban_height.is_some();
-                    let current_ip = hpmn_list_item.state.service;
-                    // if a masternode changes ban state, we need to update the validator set that might contain it
+                    if state_diff.pose_ban_height.is_some()
+                        || state_diff.service.is_some()
+                        || state_diff.platform_p2p_port.is_some()
+                    {
+                        // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
+                        Self::update_masternode_in_validator_sets(
+                            pro_tx_hash,
+                            &state_diff,
+                            &mut state.validator_sets,
+                        );
+                    }
                 }
                 masternode_list_item.state.apply_diff(state_diff);
             }

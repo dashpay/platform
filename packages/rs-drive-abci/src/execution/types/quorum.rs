@@ -21,7 +21,7 @@ pub struct ValidatorSet {
     /// Active height
     pub core_height: u32,
     /// The list of masternodes
-    pub validator_set: BTreeMap<ProTxHash, Validator>,
+    pub members: BTreeMap<ProTxHash, Validator>,
     /// The threshold quorum public key
     pub threshold_public_key: BlsPublicKey,
 }
@@ -29,23 +29,38 @@ pub struct ValidatorSet {
 impl ValidatorSet {
     /// For changes between two validator sets, we take the new (rhs) element if is different
     /// for every validator
-    pub(crate) fn update_difference(&self, rhs: &ValidatorSet) -> Result<ValidatorSetUpdate, Error> {
+    pub(crate) fn update_difference(
+        &self,
+        rhs: &ValidatorSet,
+    ) -> Result<ValidatorSetUpdate, Error> {
         if self.quorum_hash != rhs.quorum_hash {
-            return Err(Error::Execution(ExecutionError::CorruptedCachedState("updating validator set doesn't match quorum hash")));
+            return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                "updating validator set doesn't match quorum hash",
+            )));
         }
 
         if self.core_height != rhs.core_height {
-            return Err(Error::Execution(ExecutionError::CorruptedCachedState("updating validator set doesn't match core height")));
+            return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                "updating validator set doesn't match core height",
+            )));
         }
 
         if self.threshold_public_key != rhs.threshold_public_key {
-            return Err(Error::Execution(ExecutionError::CorruptedCachedState("updating validator set doesn't match threshold public key")));
+            return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                "updating validator set doesn't match threshold public key",
+            )));
         }
 
-        let validator_updates = self.validator_set.iter()
+        let validator_updates = self
+            .members
+            .iter()
             .filter_map(|(pro_tx_hash, old_validator_state)| {
-                rhs.validator_set.get(pro_tx_hash).map_or_else(
-                    || Some(Err(Error::Execution(ExecutionError::CorruptedCachedState("validator set does not contain all same members")))),
+                rhs.members.get(pro_tx_hash).map_or_else(
+                    || {
+                        Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                            "validator set does not contain all same members",
+                        ))))
+                    },
                     |new_validator_state| {
                         if new_validator_state != old_validator_state {
                             let Validator {
@@ -58,27 +73,61 @@ impl ValidatorSet {
                                 ..
                             } = new_validator_state;
 
-                            let node_address = format!(
-                                "tcp://{}@{}:{}",
-                                hex::encode(node_id.into_inner()),
-                                node_ip,
-                                platform_p2p_port
-                            );
+                            if *is_banned {
+                                None
+                            } else {
+                                let node_address = format!(
+                                    "tcp://{}@{}:{}",
+                                    hex::encode(node_id.into_inner()),
+                                    node_ip,
+                                    platform_p2p_port
+                                );
 
-                            Some(Ok(abci::ValidatorUpdate {
-                                pub_key: public_key.map(|public_key| crypto::PublicKey {
-                                    sum: Some(Bls12381(public_key.to_bytes().to_vec())),
-                                }),
-                                power: 100,
-                                pro_tx_hash: reverse(&pro_tx_hash),
-                                node_address,
-                            }))
+                                Some(Ok(abci::ValidatorUpdate {
+                                    pub_key: public_key.clone().map(|public_key| crypto::PublicKey {
+                                        sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                    }),
+                                    power: 100,
+                                    pro_tx_hash: reverse(&pro_tx_hash),
+                                    node_address,
+                                }))
+                            }
                         } else {
-                            None
+
+                            let Validator {
+                                pro_tx_hash,
+                                public_key,
+                                node_ip,
+                                node_id,
+                                platform_p2p_port,
+                                is_banned,
+                                ..
+                            } = old_validator_state;
+
+                            if *is_banned {
+                                None
+                            } else {
+                                let node_address = format!(
+                                    "tcp://{}@{}:{}",
+                                    hex::encode(node_id.into_inner()),
+                                    node_ip,
+                                    platform_p2p_port
+                                );
+
+                                Some(Ok(abci::ValidatorUpdate {
+                                    pub_key: public_key.clone().map(|public_key| crypto::PublicKey {
+                                        sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                    }),
+                                    power: 100,
+                                    pro_tx_hash: reverse(&pro_tx_hash),
+                                    node_address,
+                                }))
+                            }
                         }
-                    }
+                    },
                 )
-            }).collect::<Result<Vec<abci::ValidatorUpdate>, Error>>()?;
+            })
+            .collect::<Result<Vec<abci::ValidatorUpdate>, Error>>()?;
 
         Ok(ValidatorSetUpdate {
             validator_updates,
@@ -96,7 +145,7 @@ impl From<ValidatorSet> for ValidatorSetUpdate {
     fn from(value: ValidatorSet) -> Self {
         let ValidatorSet {
             quorum_hash,
-            validator_set,
+            members: validator_set,
             threshold_public_key,
             ..
         } = value;
@@ -155,7 +204,7 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
     fn from(value: &ValidatorSet) -> Self {
         let ValidatorSet {
             quorum_hash,
-            validator_set,
+            members: validator_set,
             threshold_public_key,
             ..
         } = value;
@@ -243,7 +292,7 @@ impl ValidatorSet {
         Ok(ValidatorSet {
             quorum_hash,
             core_height: height,
-            validator_set,
+            members: validator_set,
             threshold_public_key,
         })
     }
