@@ -32,10 +32,10 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
-use std::{thread, time};
-use std::time::Duration;
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use std::time::Duration;
+use std::{thread, time};
 
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
@@ -71,15 +71,20 @@ use serde_json::Map;
 const WAIT_FOR_CCL_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl<'a, C> AbciApplication<'a, C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// waits for the core chain height to reach the core chain locked height
-    fn wait_for_chain_locked_height(&self, core_chain_locked_height: u32) -> Result<CoreChainLock, Error> {
+    fn wait_for_chain_locked_height(
+        &self,
+        core_chain_locked_height: u32,
+    ) -> Result<CoreChainLock, Error> {
         loop {
-            let latest_chain_lock = self.platform.core_rpc.
-                get_best_chain_lock().
-                map_err(|e| { Error::CoreRpc(e) })?;
+            let latest_chain_lock = self
+                .platform
+                .core_rpc
+                .get_best_chain_lock()
+                .map_err(|e| Error::CoreRpc(e))?;
             if core_chain_locked_height <= latest_chain_lock.core_block_height {
                 return Ok(latest_chain_lock);
             }
@@ -160,7 +165,8 @@ where
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
         // to be deterministic, we need to wait for core chain lock height to reach the locked height
-        let best_core_chain_lock = self.wait_for_chain_locked_height(request.core_chain_locked_height)?;
+        let best_core_chain_lock =
+            self.wait_for_chain_locked_height(request.core_chain_locked_height)?;
 
         // this metric must measure only the time it takes to prepare the proposal without ensuring
         // the core chain lock height
@@ -169,18 +175,19 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         // we propose "core chain lock" only if it's greater than the current core chain lock height
-        let core_chain_lock_update = if best_core_chain_lock.core_block_height > request.core_chain_locked_height {
-            tracing::info!(
+        let core_chain_lock_update =
+            if best_core_chain_lock.core_block_height > request.core_chain_locked_height {
+                tracing::info!(
                     method = "prepare_proposal",
                     "chain lock update to height {} at block {}",
                     core_chain_lock_update.core_block_height,
                     request.height
                 );
-            block_proposal.core_chain_locked_height = best_core_chain_lock.core_block_height;
-            Some(best_core_chain_lock)
-        } else {
-            None
-        };
+                block_proposal.core_chain_locked_height = best_core_chain_lock.core_block_height;
+                Some(best_core_chain_lock)
+            } else {
+                None
+            };
 
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {
