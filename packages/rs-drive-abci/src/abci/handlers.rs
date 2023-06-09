@@ -180,7 +180,7 @@ where
                 tracing::info!(
                     method = "prepare_proposal",
                     "chain lock update to height {} at block {}",
-                    core_chain_lock_update.core_block_height,
+                    best_core_chain_lock.core_block_height,
                     request.height
                 );
                 block_proposal.core_chain_locked_height = best_core_chain_lock.core_block_height;
