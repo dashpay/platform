@@ -21,8 +21,6 @@ jobs:
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     env:
-      SCCACHE_GHA_ENABLED: "false"
-      RUSTC_WRAPPER: ""
       CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
@@ -38,19 +36,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -116,8 +101,6 @@ jobs:
     if: false
     timeout-minutes: 120
     env:
-      SCCACHE_GHA_ENABLED: "false"
-      RUSTC_WRAPPER: ""
       CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
@@ -134,14 +117,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -236,7 +211,6 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           build-args: |
-            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
@@ -249,8 +223,6 @@ jobs:
     name: Release DAPI to Docker Hub
     runs-on: self-hosted
     env:
-      SCCACHE_GHA_ENABLED: "false"
-      RUSTC_WRAPPER: ""
       CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
@@ -267,14 +239,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -370,7 +334,6 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           build-args: |
-            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
@@ -388,8 +351,6 @@ jobs:
     runs-on: self-hosted
     if: false
     env:
-      SCCACHE_GHA_ENABLED: "false"
-      RUSTC_WRAPPER: ""
       CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
@@ -406,14 +367,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -510,7 +463,6 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64
           build-args: |
-            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
@@ -592,8 +544,6 @@ jobs:
     name: Release Dashmate helper to Docker Hub
     runs-on: self-hosted
     env:
-      SCCACHE_GHA_ENABLED: "false"
-      RUSTC_WRAPPER: ""
       CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
@@ -604,14 +554,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -706,7 +648,6 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64
           build-args: |
-            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
 
       - name: extract go-build-cache from docker
@@ -730,8 +671,6 @@ jobs:
           - package_type: macos
             os: macos-12
     env:
-      SCCACHE_GHA_ENABLED: "false"
-      RUSTC_WRAPPER: ""
       CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
@@ -779,14 +718,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
 
       - name: Enable corepack
         run: corepack enable
