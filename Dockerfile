@@ -105,7 +105,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.86 && \
     cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
 
-
 #
 # LOAD SOURCES
 #
