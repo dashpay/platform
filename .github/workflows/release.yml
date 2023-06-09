@@ -98,8 +98,7 @@ jobs:
   release-drive-docker-image:
     name: Release Drive to Docker Hub
     runs-on: self-hosted
-    if: false
-    timeout-minutes: 120
+    timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "true"
     steps:
@@ -345,7 +344,6 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
-    if: false
     env:
       CARGO_INCREMENTAL: "true"
     steps:
