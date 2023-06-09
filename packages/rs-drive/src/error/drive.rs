@@ -1,3 +1,5 @@
+use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
+
 /// Drive errors
 #[derive(Debug, thiserror::Error)]
 pub enum DriveError {
@@ -48,6 +50,11 @@ pub enum DriveError {
     /// Error
     #[error("changing contract keeps history error: {0}")]
     ChangingContractKeepsHistory(&'static str),
+
+    /// Error
+    #[error("updating contract with history error: {0}")]
+    UpdatingContractWithHistoryError(&'static str),
+
     /// Error
     #[error("changing contract documents keeps history default error: {0}")]
     ChangingContractDocumentsKeepsHistoryDefault(&'static str),
@@ -131,4 +138,8 @@ pub enum DriveError {
     /// Error
     #[error("unexpected element type: {0}")]
     UnexpectedElementType(&'static str),
+
+    /// Error
+    #[error("invalid contract history fetch limit: {0}. The limit must be between 1 and {MAX_CONTRACT_HISTORY_FETCH_LIMIT}")]
+    InvalidContractHistoryFetchLimit(u16),
 }

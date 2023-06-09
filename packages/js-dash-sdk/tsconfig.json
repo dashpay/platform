@@ -19,7 +19,7 @@
     "declarationDir": "./dist"
   },
   "include": [
-    "src"
+    "src/**/*"
   ],
   "typeRoots": [
     "node_modules/@types"

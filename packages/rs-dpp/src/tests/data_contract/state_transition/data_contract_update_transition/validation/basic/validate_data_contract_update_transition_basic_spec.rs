@@ -24,12 +24,14 @@ use crate::{
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
+use crate::data_contract::DataContract;
 use platform_value::{platform_value, BinaryData, Value};
 
 struct TestData {
     version_validator: ProtocolVersionValidator,
     state_repository_mock: MockStateRepositoryLike,
     raw_state_transition: Value,
+    data_contract: DataContract,
 }
 
 fn setup_test() -> TestData {
@@ -48,6 +50,7 @@ fn setup_test() -> TestData {
     let raw_state_transition = state_transition.to_object(false).unwrap();
     let version_validator = get_protocol_version_validator_fixture();
 
+    let dc = data_contract.clone();
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract()
@@ -57,6 +60,7 @@ fn setup_test() -> TestData {
         version_validator,
         state_repository_mock,
         raw_state_transition,
+        data_contract: dc,
     }
 }
 
@@ -69,6 +73,7 @@ fn should_be_present(property: &str) {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -97,6 +102,7 @@ fn should_be_integer(property: &str) {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -123,6 +129,7 @@ fn protocol_version_should_be_valid() {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -151,6 +158,7 @@ fn type_should_be_equal_4() {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -180,6 +188,7 @@ fn property_should_be_byte_array(property_name: &str) {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -215,6 +224,7 @@ fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -243,6 +253,7 @@ fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -269,6 +280,7 @@ fn signature_public_key_id_should_be_valid() {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -296,6 +308,7 @@ fn should_allow_making_backward_compatible_changes() {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -324,6 +337,7 @@ fn should_have_existing_documents_schema_backward_compatible() {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -360,6 +374,7 @@ fn should_allow_defining_new_document() {
         version_validator,
         state_repository_mock,
         mut raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -385,6 +400,7 @@ fn should_return_valid_result() {
         version_validator,
         state_repository_mock,
         raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -406,6 +422,7 @@ fn should_not_check_data_contract_on_dry_run() {
         version_validator,
         state_repository_mock,
         raw_state_transition,
+        ..
     } = setup_test();
 
     let validator = DataContractUpdateTransitionBasicValidator::new(
@@ -427,4 +444,146 @@ fn should_not_check_data_contract_on_dry_run() {
         .expect("validation result should be returned");
 
     assert!(result.is_valid());
+}
+
+mod update {
+    use super::*;
+    use crate::assert_state_consensus_errors;
+    use crate::consensus::state::state_error::StateError::DataContractIsReadonlyError;
+    use crate::consensus::ConsensusError::StateError;
+    use crate::data_contract::JsonSchema;
+    use serde_json::json;
+
+    #[tokio::test]
+    pub async fn should_be_able_to_update_data_contract_if_schema_is_compatible() {
+        let TestData {
+            version_validator,
+            state_repository_mock,
+            raw_state_transition,
+            mut data_contract,
+        } = setup_test();
+
+        data_contract.increment_version();
+
+        let updated_document = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "newProp": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "required": [
+            "$createdAt"
+            ],
+            "additionalProperties": false
+        });
+
+        data_contract
+            .set_document_schema("niceDocument".into(), updated_document)
+            .expect("to be able to set document schema");
+
+        let state_transition = DataContractUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            data_contract,
+            signature: BinaryData::new(vec![0; 65]),
+            signature_public_key_id: 0,
+            transition_type: StateTransitionType::DataContractUpdate,
+        };
+
+        let raw_state_transition = state_transition.to_object(false).unwrap();
+
+        let validator = DataContractUpdateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            Arc::new(version_validator),
+        )
+        .expect("validator should be created");
+
+        let result = validator
+            .validate(&raw_state_transition, &Default::default())
+            .expect("validation result should be returned");
+
+        println!("{:?}", result);
+
+        assert!(result.is_valid());
+    }
+
+    pub fn should_not_be_able_to_update_data_contract_if_schema_is_not_compatible() {
+        assert!(false);
+    }
+
+    #[tokio::test]
+    pub async fn should_not_be_able_to_update_data_contract_if_schema_is_compatible_but_mutability_is_set_to_false(
+    ) {
+        let TestData {
+            version_validator,
+            mut state_repository_mock,
+            raw_state_transition,
+            mut data_contract,
+        } = setup_test();
+
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+
+        data_contract.config.readonly = true;
+        let first_revision_data_contract = data_contract.clone();
+
+        assert!(first_revision_data_contract.config.readonly);
+
+        state_repository_mock
+            .expect_fetch_data_contract()
+            .returning(move |_, _| Ok(Some(first_revision_data_contract.clone())));
+
+        data_contract.increment_version();
+
+        let updated_document = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "newProp": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "required": [
+                "$createdAt"
+            ],
+            "additionalProperties": false
+        });
+
+        data_contract
+            .set_document_schema("niceDocument".into(), updated_document)
+            .expect("to be able to set document schema");
+
+        assert!(data_contract.config.readonly);
+
+        let state_transition = DataContractUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            data_contract,
+            signature: BinaryData::new(vec![0; 65]),
+            signature_public_key_id: 0,
+            transition_type: StateTransitionType::DataContractUpdate,
+        };
+
+        let raw_state_transition = state_transition.to_object(false).unwrap();
+
+        let validator = DataContractUpdateTransitionBasicValidator::new(
+            Arc::new(state_repository_mock),
+            Arc::new(version_validator),
+        )
+        .expect("validator should be created");
+
+        let result = validator
+            .validate(&raw_state_transition, &Default::default())
+            .expect("validation result should be returned");
+
+        println!("{:?}", result);
+
+        assert!(!result.is_valid());
+        assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
+    }
 }

@@ -40,7 +40,7 @@ use std::borrow::Cow;
 
 /// A batch of GroveDB operations as a vector.
 // TODO move to GroveDB
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct GroveDbOpBatch {
     /// Operations
     pub(crate) operations: Vec<GroveDbOp>,
@@ -224,11 +224,7 @@ impl GroveDbOpBatch {
     ///
     /// * `Option<Op>` - Returns the found `Op` if it exists. If the `Op` is an `Op::Insert`, `Op::Replace`,
     ///                  or `Op::Patch`, it will be removed from the batch.
-    pub fn remove_if_insert<'c, P>(&mut self, path: P, key: &[u8]) -> Option<Op>
-    where
-        P: IntoIterator<Item = &'c [u8]>,
-        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
-    {
+    pub fn remove_if_insert(&mut self, path: Vec<Vec<u8>>, key: &[u8]) -> Option<Op> {
         let path = KeyInfoPath(
             path.into_iter()
                 .map(|item| KeyInfo::KnownKey(item.to_vec()))

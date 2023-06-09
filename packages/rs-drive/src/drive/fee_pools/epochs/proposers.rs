@@ -51,7 +51,7 @@ impl Drive {
     ) -> Result<u64, Error> {
         let element = self
             .grove
-            .get(epoch.get_proposers_path(), proposer_tx_hash, transaction)
+            .get(&epoch.get_proposers_path(), proposer_tx_hash, transaction)
             .unwrap()
             .map_err(Error::GroveDB)?;
 
@@ -81,7 +81,7 @@ impl Drive {
     ) -> Result<bool, Error> {
         match self
             .grove
-            .is_empty_tree(epoch_tree.get_proposers_path(), transaction)
+            .is_empty_tree(&epoch_tree.get_proposers_path(), transaction)
             .unwrap()
         {
             Ok(result) => Ok(result),
@@ -98,7 +98,7 @@ impl Drive {
     pub fn get_epoch_proposers(
         &self,
         epoch_tree: &Epoch,
-        limit: u16,
+        limit: Option<u16>,
         transaction: TransactionArg,
     ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
         let path_as_vec = epoch_tree.get_proposers_path_vec();
@@ -106,7 +106,7 @@ impl Drive {
         let mut query = Query::new();
         query.insert_all();
 
-        let path_query = PathQuery::new(path_as_vec, SizedQuery::new(query, Some(limit), None));
+        let path_query = PathQuery::new(path_as_vec, SizedQuery::new(query, limit, None));
 
         let key_elements = self
             .grove
@@ -251,7 +251,7 @@ mod tests {
                 .expect("should apply batch");
 
             let result = drive
-                .get_epoch_proposers(&epoch, 100, Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(100), Some(&transaction))
                 .expect("should get proposers");
 
             assert_eq!(result, vec!((pro_tx_hash.to_vec(), block_count)));

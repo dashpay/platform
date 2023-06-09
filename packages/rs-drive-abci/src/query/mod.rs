@@ -3,8 +3,11 @@ use crate::error::Error;
 use crate::platform::Platform;
 use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
-    get_data_contracts_response, get_identities_response,
-    get_identity_by_public_key_hashes_response, get_identity_keys_response, GetDataContractRequest,
+    get_data_contract_history_response, get_data_contract_response, get_data_contracts_response,
+    get_documents_response, get_identities_by_public_key_hashes_response, get_identities_response,
+    get_identity_balance_and_revision_response, get_identity_balance_response,
+    get_identity_by_public_key_hashes_response, get_identity_keys_response, get_identity_response,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetIdentitiesByPublicKeyHashesRequest,
     GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
@@ -25,11 +28,13 @@ use drive::drive::identity::IdentityProveRequestType;
 
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
+use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
 };
+use drive::error::contract::ContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
@@ -111,13 +116,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_full_identity(identity_id.into_buffer(), None));
                     GetIdentityResponse {
-                        identity: vec![],
-                        proof: Some(Proof {
+                        result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -133,8 +137,7 @@ impl<C> Platform<C> {
                             .transpose()))
                     .unwrap_or_default();
                     GetIdentityResponse {
-                        identity,
-                        proof: None,
+                        result: Some(get_identity_response::Result::Identity(identity)),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -208,13 +211,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_identity_balance(identity_id.into_buffer(), None));
                     GetIdentityBalanceResponse {
-                        balance: None,
-                        proof: Some(Proof {
+                        result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -223,8 +225,9 @@ impl<C> Platform<C> {
                         .drive
                         .fetch_identity_balance(identity_id.into_buffer(), None,));
                     GetIdentityBalanceResponse {
-                        balance,
-                        proof: None,
+                        result: Some(get_identity_balance_response::Result::Balance(
+                            balance.unwrap(),
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -240,13 +243,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_identity_balance_and_revision(identity_id.into_buffer(), None));
                     GetIdentityBalanceResponse {
-                        balance: None,
-                        proof: Some(Proof {
+                        result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -258,9 +260,11 @@ impl<C> Platform<C> {
                         .drive
                         .fetch_identity_revision(identity_id.into_buffer(), true, None,));
                     GetIdentityBalanceAndRevisionResponse {
-                        balance,
-                        revision,
-                        proof: None,
+                        result: Some(
+                            get_identity_balance_and_revision_response::Result::BalanceAndRevision(
+                                BalanceAndRevision { balance, revision },
+                            ),
+                        ),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -355,13 +359,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_contract(contract_id.into_buffer(), None));
                     GetDataContractResponse {
-                        data_contract: vec![],
-                        proof: Some(Proof {
+                        result: Some(get_data_contract_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -373,8 +376,9 @@ impl<C> Platform<C> {
                     .map(|contract| contract.contract.serialize())
                     .transpose()?;
                     GetDataContractResponse {
-                        data_contract: contract.unwrap_or_default(),
-                        proof: None,
+                        result: Some(get_data_contract_response::Result::DataContract(
+                            contract.unwrap_or_default(),
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -435,6 +439,98 @@ impl<C> Platform<C> {
                                 data_contract_entries: contracts,
                             },
                         )),
+                        metadata: Some(metadata),
+                    }
+                    .encode_to_vec()
+                };
+                Ok(QueryValidationResult::new_with_data(response_data))
+            }
+            "/dataContractHistory" => {
+                let GetDataContractHistoryRequest {
+                    id,
+                    limit,
+                    offset,
+                    start_at_seconds,
+                    prove,
+                } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(
+                    query_data
+                ));
+                let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
+
+                // TODO: make a cast safe
+                let limit = limit
+                    .map(|limit| {
+                        u16::try_from(limit).map_err(|_| {
+                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
+                                "can't fit u16 limit from the supplied value",
+                            )))
+                        })
+                    })
+                    .transpose()?;
+                let offset = offset
+                    .map(|offset| {
+                        u16::try_from(offset).map_err(|_| {
+                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
+                                "can't fit u16 offset from the supplied value",
+                            )))
+                        })
+                    })
+                    .transpose()?;
+
+                let response_data = if prove {
+                    let proof =
+                        check_validation_result_with_data!(self.drive.prove_contract_history(
+                            contract_id.to_buffer(),
+                            None,
+                            start_at_seconds.unwrap_or_default(),
+                            limit,
+                            offset
+                        ));
+                    GetDataContractHistoryResponse {
+                        metadata: Some(metadata),
+                        result: Some(get_data_contract_history_response::Result::Proof(Proof {
+                            grovedb_proof: proof,
+                            quorum_hash: state.last_quorum_hash().to_vec(),
+                            signature: state.last_block_signature().to_vec(),
+                            round: state.last_block_round(),
+                        })),
+                    }
+                    .encode_to_vec()
+                } else {
+                    let contracts =
+                        check_validation_result_with_data!(self.drive.fetch_contract_with_history(
+                            contract_id.to_buffer(),
+                            None,
+                            start_at_seconds.unwrap_or_default(),
+                            limit,
+                            offset
+                        ));
+
+                    let contract_historical_entries = check_validation_result_with_data!(contracts
+                        .into_iter()
+                        .map(|(date_in_seconds, data_contract)| Ok::<
+                            get_data_contract_history_response::DataContractHistoryEntry,
+                            ProtocolError,
+                        >(
+                            get_data_contract_history_response::DataContractHistoryEntry {
+                                date: date_in_seconds,
+                                // TODO: figure out why this is optional
+                                value: Some(
+                                    get_data_contract_history_response::DataContractValue {
+                                        value: data_contract.serialize()?
+                                    }
+                                )
+                            }
+                        ))
+                        .collect());
+                    GetDataContractHistoryResponse {
+                        result: Some(
+                            get_data_contract_history_response::Result::DataContractHistory(
+                                get_data_contract_history_response::DataContractHistory {
+                                    data_contract_entries: contract_historical_entries,
+                                },
+                            ),
+                        ),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -548,13 +644,12 @@ impl<C> Platform<C> {
                         drive_query.execute_with_proof(&self.drive, None, None)
                     );
                     GetDocumentsResponse {
-                        documents: vec![],
-                        proof: Some(Proof {
+                        result: Some(get_documents_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -564,8 +659,9 @@ impl<C> Platform<C> {
                     )
                     .0;
                     GetDocumentsResponse {
-                        documents: results,
-                        proof: None,
+                        result: Some(get_documents_response::Result::Documents(
+                            get_documents_response::Documents { documents: results },
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -639,13 +735,14 @@ impl<C> Platform<C> {
                             None
                         ));
                     GetIdentitiesByPublicKeyHashesResponse {
-                        identities: vec![],
-                        proof: Some(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        }),
+                        result: Some(get_identities_by_public_key_hashes_response::Result::Proof(
+                            Proof {
+                                grovedb_proof: proof,
+                                quorum_hash: state.last_quorum_hash().to_vec(),
+                                signature: state.last_block_signature().to_vec(),
+                                round: state.last_block_round(),
+                            },
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -662,8 +759,13 @@ impl<C> Platform<C> {
                         .filter_map(|maybe_identity| Some(maybe_identity?.serialize_consume()))
                         .collect::<Result<Vec<Vec<u8>>, ProtocolError>>());
                     GetIdentitiesByPublicKeyHashesResponse {
-                        identities,
-                        proof: None,
+                        result: Some(
+                            get_identities_by_public_key_hashes_response::Result::Identities(
+                                get_identities_by_public_key_hashes_response::Identities {
+                                    identities,
+                                },
+                            ),
+                        ),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -733,6 +835,349 @@ impl<C> Platform<C> {
             other => Ok(QueryValidationResult::new_with_error(QueryError::Query(
                 QuerySyntaxError::Unsupported(format!("query path '{}' is not supported", other)),
             ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    pub mod query_data_contract_history {
+        use crate::error::Error;
+        use crate::query::{QueryValidationResult, ValidationResult};
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+        use dapi_grpc::platform::v0::{
+            get_data_contract_history_response, GetDataContractHistoryRequest,
+            GetDataContractHistoryResponse,
+        };
+        use dpp::block::block_info::BlockInfo;
+        use dpp::check_validation_result_with_data;
+        use dpp::data_contract::DataContract;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use drive::drive::Drive;
+        use drive::error::contract::ContractError;
+        use prost::Message;
+        use serde_json::json;
+
+        fn default_request() -> GetDataContractHistoryRequest {
+            GetDataContractHistoryRequest {
+                id: vec![1; 32],
+                limit: Some(10),
+                offset: Some(0),
+                start_at_seconds: None,
+                prove: false,
+            }
+        }
+
+        /// Set up simple contract history with one update
+        fn set_up_history(platform: &TempPlatform<MockCoreRPCLike>) -> DataContract {
+            let mut data_contract = get_data_contract_fixture(None).data_contract;
+            data_contract.config.keeps_history = true;
+            data_contract.config.readonly = false;
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo {
+                        time_ms: 1000,
+                        height: 10,
+                        core_height: 20,
+                        epoch: Default::default(),
+                    },
+                    true,
+                    None,
+                    None,
+                )
+                .expect("To apply contract");
+
+            let mut updated_data_contract = data_contract.clone();
+
+            let updated_document_schema = json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "newProp": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                "$createdAt"
+                ],
+                "additionalProperties": false
+            });
+
+            updated_data_contract
+                .set_document_schema("niceDocument".into(), updated_document_schema)
+                .expect("to be able to set document schema");
+
+            platform
+                .drive
+                .apply_contract(
+                    &updated_data_contract,
+                    BlockInfo {
+                        time_ms: 2000,
+                        height: 11,
+                        core_height: 21,
+                        epoch: Default::default(),
+                    },
+                    true,
+                    None,
+                    None,
+                )
+                .expect("To apply contract");
+
+            data_contract
+        }
+
+        struct TestData {
+            platform: TempPlatform<MockCoreRPCLike>,
+            original_data_contract: DataContract,
+        }
+
+        fn set_up_test() -> TestData {
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let original_data_contract = set_up_history(&platform);
+
+            TestData {
+                platform,
+                original_data_contract,
+            }
+        }
+
+        #[test]
+        pub fn should_return_contract_history_with_no_errors_if_parameters_are_valid() {
+            let TestData {
+                platform,
+                original_data_contract,
+            } = set_up_test();
+
+            let request = GetDataContractHistoryRequest {
+                id: original_data_contract.id.to_vec(),
+                ..default_request()
+            };
+            let request_data = request.encode_to_vec();
+
+            let result = platform
+                .query("/dataContractHistory", &request_data)
+                .expect("To return result");
+
+            let ValidationResult { errors, data } = result;
+
+            assert!(
+                errors.is_empty(),
+                "expect no errors to be returned from the query"
+            );
+
+            let mut data = data.expect("expect data to be returned from the query");
+            let data_ref = data.as_slice();
+
+            let response = GetDataContractHistoryResponse::decode(data.as_slice())
+                .expect("To decode response");
+
+            let GetDataContractHistoryResponse { metadata, result } = response;
+            let res = result.expect("expect result to be returned from the query");
+
+            let contract_history = match res {
+                get_data_contract_history_response::Result::DataContractHistory(
+                    data_contract_history,
+                ) => data_contract_history,
+                get_data_contract_history_response::Result::Proof(_) => {
+                    panic!("expect result to be DataContractHistory");
+                }
+            };
+
+            let mut history_entries = contract_history.data_contract_entries;
+            assert_eq!(history_entries.len(), 2);
+
+            let second_entry = history_entries.pop().unwrap();
+            let first_entry = history_entries.pop().unwrap();
+
+            assert_eq!(first_entry.date, 1000);
+            let first_entry_data_contract = first_entry.value.expect("To have data contract");
+            let first_data_contract_update =
+                DataContract::deserialize_no_limit(&first_entry_data_contract.value)
+                    .expect("To decode data contract");
+            assert_eq!(first_data_contract_update, original_data_contract);
+
+            assert_eq!(second_entry.date, 2000);
+            let second_entry_data_contract = second_entry.value.expect("To have data contract");
+            let second_data_contract_update =
+                DataContract::deserialize_no_limit(&second_entry_data_contract.value)
+                    .expect("To decode data contract");
+
+            let updated_doc = second_data_contract_update
+                .documents
+                .get("niceDocument")
+                .expect("To have niceDocument document");
+            assert!(
+                updated_doc
+                    .as_object()
+                    .unwrap()
+                    .get("properties")
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .get("newProp")
+                    .is_some(),
+                "expect data contract to have newProp field",
+            );
+        }
+
+        #[test]
+        pub fn should_return_contract_history_proofs_with_no_errors_if_parameters_are_valid() {
+            let TestData {
+                platform,
+                original_data_contract,
+            } = set_up_test();
+
+            let request = GetDataContractHistoryRequest {
+                id: original_data_contract.id.to_vec(),
+                prove: true,
+                ..default_request()
+            };
+            let request_data = request.encode_to_vec();
+
+            let result = platform
+                .query("/dataContractHistory", &request_data)
+                .expect("To return result");
+
+            let ValidationResult { errors, data } = result;
+
+            assert!(
+                errors.is_empty(),
+                "expect no errors to be returned from the query"
+            );
+
+            let mut data = data.expect("expect data to be returned from the query");
+            let data_ref = data.as_slice();
+
+            let response = GetDataContractHistoryResponse::decode(data.as_slice())
+                .expect("To decode response");
+
+            let GetDataContractHistoryResponse { metadata, result } = response;
+            let res = result.expect("expect result to be returned from the query");
+
+            let contract_proof = match res {
+                get_data_contract_history_response::Result::DataContractHistory(_) => {
+                    panic!("expect result to be Proof");
+                }
+                get_data_contract_history_response::Result::Proof(proof) => proof,
+            };
+
+            // Check that the proof has correct values inside
+            let (root_hash, contract_history) = Drive::verify_contract_history(
+                &contract_proof.grovedb_proof,
+                original_data_contract.id.to_buffer(),
+                request.start_at_seconds(),
+                Some(10),
+                Some(0),
+            )
+            .expect("To verify contract history");
+
+            let mut history_entries = contract_history.expect("history to exist");
+
+            assert_eq!(history_entries.len(), 2);
+
+            // Taking entries by date
+            let first_data_contract_update =
+                history_entries.remove(&1000).expect("first entry to exist");
+            let second_data_contract_update = history_entries
+                .remove(&2000)
+                .expect("second entry to exist");
+
+            assert_eq!(first_data_contract_update, original_data_contract);
+
+            let updated_doc = second_data_contract_update
+                .documents
+                .get("niceDocument")
+                .expect("To have niceDocument document");
+            assert!(
+                updated_doc
+                    .as_object()
+                    .unwrap()
+                    .get("properties")
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .get("newProp")
+                    .is_some(),
+                "expect data contract to have newProp field",
+            );
+        }
+
+        #[test]
+        pub fn should_return_error_when_limit_is_larger_than_u16() {
+            let TestData {
+                platform,
+                original_data_contract,
+            } = set_up_test();
+
+            let request = GetDataContractHistoryRequest {
+                id: original_data_contract.id.to_vec(),
+                limit: Some(100000),
+                ..default_request()
+            };
+            let request_data = request.encode_to_vec();
+
+            let error = platform
+                .query("/dataContractHistory", &request_data)
+                .unwrap_err();
+
+            match error {
+                Error::Drive(drive_error) => match drive_error {
+                    drive::error::Error::Contract(contract_error) => match contract_error {
+                        ContractError::Overflow(error_message) => {
+                            assert_eq!(
+                                error_message,
+                                "can't fit u16 limit from the supplied value"
+                            );
+                        }
+                    },
+                    _ => panic!("expect contract error"),
+                },
+                _ => panic!("expect drive error"),
+            }
+        }
+
+        #[test]
+        pub fn should_return_error_when_offset_is_larger_than_u16() {
+            let TestData {
+                platform,
+                original_data_contract,
+            } = set_up_test();
+
+            let request = GetDataContractHistoryRequest {
+                id: original_data_contract.id.to_vec(),
+                offset: Some(100000),
+                ..default_request()
+            };
+            let request_data = request.encode_to_vec();
+
+            let error = platform
+                .query("/dataContractHistory", &request_data)
+                .unwrap_err();
+
+            match error {
+                Error::Drive(drive_error) => match drive_error {
+                    drive::error::Error::Contract(contract_error) => match contract_error {
+                        ContractError::Overflow(error_message) => {
+                            assert_eq!(
+                                error_message,
+                                "can't fit u16 offset from the supplied value"
+                            );
+                        }
+                    },
+                    _ => panic!("expect contract error"),
+                },
+                _ => panic!("expect drive error"),
+            }
         }
     }
 }

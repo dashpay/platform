@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
@@ -6,6 +7,8 @@ use crate::consensus::basic::data_contract::{
 };
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::consensus::basic::document::DataContractNotPresentError;
+use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use crate::data_contract::DocumentName;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
@@ -42,6 +45,22 @@ lazy_static! {
     pub static ref DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
         JsonSchemaValidator::new(DATA_CONTRACT_UPDATE_SCHEMA.clone())
             .expect("unable to compile jsonschema");
+}
+
+pub fn any_schema_changes(
+    old_schema: &BTreeMap<DocumentName, JsonValue>,
+    new_schema: &JsonValue,
+) -> bool {
+    let changes = old_schema
+        .iter()
+        .filter(|(document_type, original_schema)| {
+            let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
+            let diff = json_patch::diff(original_schema, new_document_schema);
+            !diff.0.is_empty()
+        })
+        .count();
+
+    changes > 0
 }
 
 pub struct DataContractUpdateTransitionBasicValidator<SR> {
@@ -210,6 +229,20 @@ where
             .try_into()
             .map_err(ProtocolError::ValueError)?;
 
+        if !existing_data_contract
+            .config
+            .documents_mutable_contract_default
+        {
+            // todo: figure out how to calculate diff for mutable contracts
+            // There's no point in validating schema compatibility; However, we need to check
+            // if there are any differences between schemas at all.
+            //  can we add new documents? Does adding a new document counts as mutation?
+            for (document_type, original_schema) in old_schema.iter() {
+                let new_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
+                let patch = json_patch::diff(original_schema, new_schema);
+            }
+        }
+
         for (document_type, document_schema) in old_schema.iter() {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
             let result = validate_schema_compatibility(document_schema, new_document_schema);
@@ -243,9 +276,17 @@ where
             .get_value("documents")
             .and_then(|a| a.clone().try_into())
             .map_err(ProtocolError::ValueError)?;
+
+        if existing_data_contract.config.readonly
+            && any_schema_changes(&existing_data_contract.documents, &new_documents)
+        {
+            validation_result.add_error(DataContractIsReadonlyError::new(data_contract_id));
+        }
+
         let new_documents = new_documents
             .as_object()
             .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
+
         let result = validate_indices_are_backward_compatible(
             existing_data_contract.documents.iter(),
             new_documents,
