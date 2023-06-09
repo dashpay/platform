@@ -339,10 +339,6 @@ jobs:
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
-      # - name: Setup tmate session
-      #   if: ${{ failure() }}
-      #   uses: mxschmitt/action-tmate@v3
-
       - name: extract go-build-cache from docker
         uses: dcginfra/buildkit-cache-dance/extract@main
 
