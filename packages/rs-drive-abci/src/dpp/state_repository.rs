@@ -98,7 +98,7 @@ where
         //todo: deal with execution context
         let Some(contract_fetch_info) = self.platform.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
-            true,
+            self.is_transactional,
             maybe_transaction,
         )? else {
             return Ok(None);
@@ -149,7 +149,11 @@ where
         let contract_fetch_info = self
             .platform
             .drive
-            .get_contract_with_fetch_info(contract_id.to_buffer(), true, maybe_transaction)?
+            .get_contract_with_fetch_info(
+                contract_id.to_buffer(),
+                self.is_transactional,
+                maybe_transaction,
+            )?
             .ok_or(anyhow!("the contract should exist when fetching documents"))?;
 
         let contract = &contract_fetch_info.contract;
@@ -209,7 +213,7 @@ where
             .drive
             .get_contract_with_fetch_info(
                 contract_id.to_buffer(),
-                true, // todo
+                self.is_transactional,
                 maybe_transaction,
             )?
             .ok_or(anyhow!("the contract should exist when fetching documents"))?;
