@@ -45,7 +45,7 @@ pub(crate) fn run_chain_for_strategy(
     let mut rng = StdRng::seed_from_u64(seed);
 
     let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
-    let updated_proposers_in_strategy = strategy.proposer_strategy.updated_any_masternode_types();
+    let updated_proposers_in_strategy = strategy.proposer_strategy.any_kind_of_update_is_set();
 
     let (
         initial_masternodes_with_updates,
@@ -60,8 +60,18 @@ pub(crate) fn run_chain_for_strategy(
             Some(GenerateTestMasternodeUpdates {
                 start_core_height: config.abci.genesis_core_height,
                 end_core_height,
-                update_masternode_keys_frequency: &strategy.proposer_strategy.updated_mastenodes,
+                update_masternode_keys_frequency: &strategy.proposer_strategy.updated_masternodes,
                 update_hpmn_keys_frequency: &strategy.proposer_strategy.updated_hpmns,
+                ban_masternode_frequency: &strategy.proposer_strategy.banned_masternodes,
+                ban_hpmn_frequency: &strategy.proposer_strategy.banned_hpmns,
+                unban_masternode_frequency: &strategy.proposer_strategy.unbanned_masternodes,
+                unban_hpmn_frequency: &strategy.proposer_strategy.unbanned_hpmns,
+                change_masternode_ip_frequency: &strategy.proposer_strategy.changed_ip_masternodes,
+                change_hpmn_ip_frequency: &strategy.proposer_strategy.changed_ip_hpmns,
+                change_hpmn_p2p_port_frequency: &strategy.proposer_strategy.changed_p2p_port_hpmns,
+                change_hpmn_http_port_frequency: &strategy
+                    .proposer_strategy
+                    .changed_http_port_hpmns,
             })
         } else {
             None
@@ -91,8 +101,26 @@ pub(crate) fn run_chain_for_strategy(
                     Some(GenerateTestMasternodeUpdates {
                         start_core_height: height + 1,
                         end_core_height,
-                        update_masternode_keys_frequency: &strategy.proposer_strategy.updated_mastenodes,
+                        update_masternode_keys_frequency: &strategy
+                            .proposer_strategy
+                            .updated_masternodes,
                         update_hpmn_keys_frequency: &strategy.proposer_strategy.updated_hpmns,
+                        ban_masternode_frequency: &strategy.proposer_strategy.banned_masternodes,
+                        ban_hpmn_frequency: &strategy.proposer_strategy.banned_hpmns,
+                        unban_masternode_frequency: &strategy
+                            .proposer_strategy
+                            .unbanned_masternodes,
+                        unban_hpmn_frequency: &strategy.proposer_strategy.unbanned_hpmns,
+                        change_masternode_ip_frequency: &strategy
+                            .proposer_strategy
+                            .changed_ip_masternodes,
+                        change_hpmn_ip_frequency: &strategy.proposer_strategy.changed_ip_hpmns,
+                        change_hpmn_p2p_port_frequency: &strategy
+                            .proposer_strategy
+                            .changed_p2p_port_hpmns,
+                        change_hpmn_http_port_frequency: &strategy
+                            .proposer_strategy
+                            .changed_http_port_hpmns,
                     })
                 } else {
                     None

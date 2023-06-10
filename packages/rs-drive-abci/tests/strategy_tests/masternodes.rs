@@ -19,6 +19,12 @@ pub struct GenerateTestMasternodeUpdates<'a> {
     pub update_hpmn_keys_frequency: &'a Frequency,
     pub ban_masternode_frequency: &'a Frequency,
     pub ban_hpmn_frequency: &'a Frequency,
+    pub unban_masternode_frequency: &'a Frequency,
+    pub unban_hpmn_frequency: &'a Frequency,
+    pub change_masternode_ip_frequency: &'a Frequency,
+    pub change_hpmn_ip_frequency: &'a Frequency,
+    pub change_hpmn_p2p_port_frequency: &'a Frequency,
+    pub change_hpmn_http_port_frequency: &'a Frequency,
 }
 
 /// Creates a list of test Masternode identities of size `count` with random data
@@ -35,47 +41,73 @@ pub fn generate_test_masternodes(
         Vec::with_capacity(masternode_count as usize);
     let mut hpmns: Vec<MasternodeListItemWithUpdates> = Vec::with_capacity(hpmn_count as usize);
 
-    let (block_height_to_list_masternode_updates, block_height_to_list_masternode_bans, block_height_to_list_hpmns_updates, block_height_to_list_hpmns_bans): (
-        Option<BTreeMap<u32, Vec<u16>>>,
-        Option<BTreeMap<u32, Vec<u16>>>,
-        Option<BTreeMap<u32, Vec<u16>>>,
-        Option<BTreeMap<u32, Vec<u16>>>,
-    ) = updates
-        .map(
-            |GenerateTestMasternodeUpdates {
-                 start_core_height,
-                 end_core_height,
-                 update_masternode_keys_frequency,
-                 update_hpmn_keys_frequency,
-                 ban_masternode_frequency,
-                 ban_hpmn_frequency,
-             }| {
-                (start_core_height..=end_core_height)
-                    .map(|height| {
-                        // we want to pick what nodes will have updated for that block
-                        (
-                            (
-                                height,
-                                update_masternode_keys_frequency.pick_in_range(rng, 0..masternode_count),
-                            ),
-                            (
-                                height,
-                                ban_masternode_frequency.pick_in_range(rng, 0..masternode_count),
-                            ),
-                            (
-                                height,
-                                update_hpmn_keys_frequency.pick_in_range(rng, 0..hpmn_count),
-                            ),
-                            (
-                                height,
-                                ban_hpmn_frequency.pick_in_range(rng, 0..masternode_count),
-                            ),
-                        )
-                    })
-                    .unzip()
-            },
-        )
-        .unzip();
+    let mut block_height_to_list_masternode_updates: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_masternode_bans: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_hpmns_updates: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_hpmns_bans: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_masternode_unbans: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_hpmn_unbans: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_masternode_ip_changes: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_hpmn_ip_changes: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_hpmn_p2p_port_changes: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+    let mut block_height_to_list_hpmn_http_port_changes: BTreeMap<u32, Vec<u16>> = BTreeMap::new();
+
+    if let Some(GenerateTestMasternodeUpdates {
+        start_core_height,
+        end_core_height,
+        update_masternode_keys_frequency,
+        update_hpmn_keys_frequency,
+        ban_masternode_frequency,
+        ban_hpmn_frequency,
+        unban_masternode_frequency,
+        unban_hpmn_frequency,
+        change_masternode_ip_frequency,
+        change_hpmn_ip_frequency,
+        change_hpmn_p2p_port_frequency,
+        change_hpmn_http_port_frequency,
+    }) = updates
+    {
+        for height in start_core_height..=end_core_height {
+            block_height_to_list_masternode_updates.insert(
+                height,
+                update_masternode_keys_frequency.pick_in_range(rng, 0..masternode_count),
+            );
+            block_height_to_list_masternode_bans.insert(
+                height,
+                ban_masternode_frequency.pick_in_range(rng, 0..masternode_count),
+            );
+            block_height_to_list_hpmns_updates.insert(
+                height,
+                update_hpmn_keys_frequency.pick_in_range(rng, 0..hpmn_count),
+            );
+            block_height_to_list_hpmns_bans
+                .insert(height, ban_hpmn_frequency.pick_in_range(rng, 0..hpmn_count));
+            block_height_to_list_masternode_unbans.insert(
+                height,
+                unban_masternode_frequency.pick_in_range(rng, 0..masternode_count),
+            );
+            block_height_to_list_hpmn_unbans.insert(
+                height,
+                unban_hpmn_frequency.pick_in_range(rng, 0..hpmn_count),
+            );
+            block_height_to_list_masternode_ip_changes.insert(
+                height,
+                change_masternode_ip_frequency.pick_in_range(rng, 0..masternode_count),
+            );
+            block_height_to_list_hpmn_ip_changes.insert(
+                height,
+                change_hpmn_ip_frequency.pick_in_range(rng, 0..hpmn_count),
+            );
+            block_height_to_list_hpmn_p2p_port_changes.insert(
+                height,
+                change_hpmn_p2p_port_frequency.pick_in_range(rng, 0..hpmn_count),
+            );
+            block_height_to_list_hpmn_http_port_changes.insert(
+                height,
+                change_hpmn_http_port_frequency.pick_in_range(rng, 0..hpmn_count),
+            );
+        }
+    }
 
     fn invert_btreemap(input: BTreeMap<u32, Vec<u16>>) -> BTreeMap<u16, Vec<u32>> {
         let mut output = BTreeMap::new();
@@ -89,29 +121,30 @@ pub fn generate_test_masternodes(
         output
     }
 
-    let masternode_number_to_heights_updates = block_height_to_list_masternode_updates
-        .map(|block_height_to_list_masternode_updates| {
-            invert_btreemap(block_height_to_list_masternode_updates)
-        })
-        .unwrap_or_default();
+    let masternode_number_to_heights_key_updates =
+        invert_btreemap(block_height_to_list_masternode_updates);
 
-    let masternode_number_to_heights_bans = block_height_to_list_masternode_bans
-        .map(|block_height_to_list_masternode_bans| {
-            invert_btreemap(block_height_to_list_masternode_bans)
-        })
-        .unwrap_or_default();
+    let masternode_number_to_heights_bans = invert_btreemap(block_height_to_list_masternode_bans);
 
-    let hpmn_number_to_heights_updates = block_height_to_list_hpmns_updates
-        .map(|block_height_to_list_hpmns_updates| {
-            invert_btreemap(block_height_to_list_hpmns_updates)
-        })
-        .unwrap_or_default();
+    let hpmn_number_to_heights_updates = invert_btreemap(block_height_to_list_hpmns_updates);
 
-    let hpmn_number_to_heights_bans = block_height_to_list_hpmns_bans
-        .map(|block_height_to_list_hpmns_bans| {
-            invert_btreemap(block_height_to_list_hpmns_bans)
-        })
-        .unwrap_or_default();
+    let hpmn_number_to_heights_bans = invert_btreemap(block_height_to_list_hpmns_bans);
+
+    let masternode_number_to_heights_unbans =
+        invert_btreemap(block_height_to_list_masternode_unbans);
+
+    let hpmn_number_to_heights_unbans = invert_btreemap(block_height_to_list_hpmn_unbans);
+
+    let masternode_number_to_heights_ip_changes =
+        invert_btreemap(block_height_to_list_masternode_ip_changes);
+
+    let hpmn_number_to_heights_ip_changes = invert_btreemap(block_height_to_list_hpmn_ip_changes);
+
+    let hpmn_number_to_heights_p2p_port_changes =
+        invert_btreemap(block_height_to_list_hpmn_p2p_port_changes);
+
+    let hpmn_number_to_heights_http_port_changes =
+        invert_btreemap(block_height_to_list_hpmn_http_port_changes);
 
     for i in 0..masternode_count {
         let private_key_operator =
@@ -149,20 +182,91 @@ pub fn generate_test_masternodes(
 
         let mut latest_masternode_list_item = masternode_list_item.clone();
 
-        let masternode_updates = masternode_number_to_heights_updates
-            .get(&i)
-            .map(|heights| {
-                heights
-                    .iter()
-                    .map(|height| {
-                        let mut masternode_list_item_b = latest_masternode_list_item.clone();
-                        masternode_list_item_b.random_keys_update(None, rng);
-                        latest_masternode_list_item = masternode_list_item_b.clone();
-                        (*height, masternode_list_item_b)
-                    })
-                    .collect::<BTreeMap<u32, MasternodeListItem>>()
+        struct MasternodeUpdate {
+            keys: bool,
+            ban: bool,
+            try_unban: bool,
+            ip: bool,
+        }
+
+        let masternode_heights_key_updates = masternode_number_to_heights_key_updates.get(&i);
+        let masternode_heights_bans = masternode_number_to_heights_bans.get(&i);
+        let masternode_heights_unbans = masternode_number_to_heights_unbans.get(&i);
+        let masternode_ip_changes = masternode_number_to_heights_ip_changes.get(&i);
+
+        let mut masternode_updates: BTreeMap<u32, MasternodeUpdate> = BTreeMap::new();
+
+        for &height in masternode_heights_key_updates.unwrap_or(&vec![]) {
+            masternode_updates
+                .entry(height)
+                .or_insert(MasternodeUpdate {
+                    keys: false,
+                    ban: false,
+                    try_unban: false,
+                    ip: false,
+                })
+                .keys = true;
+        }
+
+        for &height in masternode_heights_bans.unwrap_or(&vec![]) {
+            masternode_updates
+                .entry(height)
+                .or_insert(MasternodeUpdate {
+                    keys: false,
+                    ban: false,
+                    try_unban: false,
+                    ip: false,
+                })
+                .ban = true;
+        }
+
+        for &height in masternode_heights_unbans.unwrap_or(&vec![]) {
+            masternode_updates
+                .entry(height)
+                .or_insert(MasternodeUpdate {
+                    keys: false,
+                    ban: false,
+                    try_unban: false,
+                    ip: false,
+                })
+                .try_unban = true;
+        }
+
+        for &height in masternode_ip_changes.unwrap_or(&vec![]) {
+            masternode_updates
+                .entry(height)
+                .or_insert(MasternodeUpdate {
+                    keys: false,
+                    ban: false,
+                    try_unban: false,
+                    ip: false,
+                })
+                .ip = true;
+        }
+
+        let masternode_updates = masternode_updates
+            .into_iter()
+            .map(|(height, update)| {
+                let mut masternode_list_item_b = latest_masternode_list_item.clone();
+                if update.keys {
+                    masternode_list_item_b.random_keys_update(None, rng);
+                }
+                if update.ban {
+                    masternode_list_item_b.state.pose_ban_height = Some(1);
+                }
+                if update.try_unban {
+                    masternode_list_item_b.state.pose_ban_height = None;
+                }
+                if update.ip {
+                    masternode_list_item_b.state.service =
+                        SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
+                            .expect("expected a socket_address");
+                }
+
+                latest_masternode_list_item = masternode_list_item_b.clone();
+                (height, masternode_list_item_b)
             })
-            .unwrap_or_default();
+            .collect::<BTreeMap<u32, MasternodeListItem>>();
 
         let masternode_with_update = MasternodeListItemWithUpdates {
             masternode: masternode_list_item,
@@ -325,6 +429,38 @@ mod tests {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
             },
+            ban_masternode_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            ban_hpmn_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            unban_masternode_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            unban_hpmn_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            change_masternode_ip_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            change_hpmn_ip_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            change_hpmn_p2p_port_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            change_hpmn_http_port_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
         });
         let mut rng1 = StdRng::seed_from_u64(12345);
         let mut rng2 = StdRng::seed_from_u64(12345);
@@ -388,6 +524,38 @@ mod tests {
                     chance_per_block: Some(0.5),
                 },
                 update_hpmn_keys_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                ban_masternode_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                ban_hpmn_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                unban_masternode_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                unban_hpmn_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                change_masternode_ip_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                change_hpmn_ip_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                change_hpmn_p2p_port_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                change_hpmn_http_port_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
                 },

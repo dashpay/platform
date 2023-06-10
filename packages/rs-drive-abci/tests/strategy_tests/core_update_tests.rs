@@ -4,7 +4,10 @@ mod tests {
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::frequency::Frequency;
-    use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, MasternodeListChangesStrategy, Strategy, StrategyRandomness, UpgradingInfo};
+    use crate::strategy::{
+        ChainExecutionOutcome, ChainExecutionParameters, MasternodeListChangesStrategy, Strategy,
+        StrategyRandomness, UpgradingInfo,
+    };
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
@@ -29,13 +32,20 @@ mod tests {
                 new_hpmns: Default::default(),
                 removed_hpmns: Default::default(),
                 updated_hpmns: Default::default(),
-                banned_hpmns: Frequency { times_per_block_range: 1..2, chance_per_block: Some(0.01)} ,
+                banned_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: Some(0.01),
+                },
                 unbanned_hpmns: Default::default(),
+                changed_ip_hpmns: Default::default(),
+                changed_p2p_port_hpmns: Default::default(),
+                changed_http_port_hpmns: Default::default(),
                 new_masternodes: Default::default(),
                 removed_masternodes: Default::default(),
-                updated_mastenodes: Default::default(),
+                updated_masternodes: Default::default(),
                 banned_masternodes: Default::default(),
                 unbanned_masternodes: Default::default(),
+                changed_ip_masternodes: Default::default(),
             },
             rotate_quorums: true,
             failure_testing: None,

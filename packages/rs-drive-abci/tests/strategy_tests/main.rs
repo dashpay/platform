@@ -44,6 +44,7 @@ use std::collections::BTreeMap;
 
 use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
 
+mod core_update_tests;
 mod execution;
 mod failures;
 mod frequency;
@@ -56,7 +57,6 @@ mod strategy;
 mod transitions;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
-mod core_update_tests;
 
 pub type BlockHeight = u64;
 

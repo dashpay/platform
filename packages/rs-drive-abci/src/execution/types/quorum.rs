@@ -84,8 +84,10 @@ impl ValidatorSet {
                                 );
 
                                 Some(Ok(abci::ValidatorUpdate {
-                                    pub_key: public_key.clone().map(|public_key| crypto::PublicKey {
-                                        sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                    pub_key: public_key.clone().map(|public_key| {
+                                        crypto::PublicKey {
+                                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                        }
                                     }),
                                     power: 100,
                                     pro_tx_hash: reverse(&pro_tx_hash),
@@ -93,7 +95,6 @@ impl ValidatorSet {
                                 }))
                             }
                         } else {
-
                             let Validator {
                                 pro_tx_hash,
                                 public_key,
@@ -115,8 +116,10 @@ impl ValidatorSet {
                                 );
 
                                 Some(Ok(abci::ValidatorUpdate {
-                                    pub_key: public_key.clone().map(|public_key| crypto::PublicKey {
-                                        sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                    pub_key: public_key.clone().map(|public_key| {
+                                        crypto::PublicKey {
+                                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                        }
                                     }),
                                     power: 100,
                                     pro_tx_hash: reverse(&pro_tx_hash),
