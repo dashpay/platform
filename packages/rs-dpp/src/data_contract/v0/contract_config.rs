@@ -18,15 +18,21 @@ pub mod property {
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ContractConfigV0 {
-    /// Can the contract ever be deleted
+    /// Can the contract ever be deleted. If the contract is deleted, so should be all
+    /// documents associated with it. TODO: There should also be a way to "stop" the contract -
+    /// contract and documents are kept in the system, but no new documents can be added to it
     pub can_be_deleted: bool,
-    /// Is the contract mutable
+    /// Is the contract mutable. Means that the document definitions can be changed or new
+    /// document definitions can be added to the contract
     pub readonly: bool,
     /// Does the contract keep history when the contract itself changes
     pub keeps_history: bool,
-    /// Do documents in the contract keep history
+    /// Do documents in the contract keep history. This is a default for all documents in
+    /// the contract, but can be overridden by the document itself
     pub documents_keep_history_contract_default: bool,
-    /// Are documents in the contract mutable
+    /// Are documents in the contract mutable. This specifies whether the document can be
+    /// changed or deleted. This is a default for all documents in the contract, but can be
+    /// overridden by the document itself
     pub documents_mutable_contract_default: bool,
 }
 

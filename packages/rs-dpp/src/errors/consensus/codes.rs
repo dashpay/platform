@@ -140,6 +140,7 @@ impl ErrorWithCode for StateError {
         match self {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
+            Self::DataContractIsReadonlyError { .. } => 4026,
             Self::DataTriggerError(ref e) => e.code(),
             Self::DataTriggerActionError(ref e) => e.code(),
 

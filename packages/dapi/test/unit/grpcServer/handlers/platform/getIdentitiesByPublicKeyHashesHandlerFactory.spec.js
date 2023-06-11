@@ -30,6 +30,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let proofFixture;
   let proofMock;
   let response;
+  let proofResponse;
 
   beforeEach(async function beforeEach() {
     publicKeyHash = Buffer.from('556c2910d46fda2b327ef9d9bda850cc84d30db0', 'hex');
@@ -51,8 +52,13 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetIdentitiesByPublicKeyHashesResponse();
-    response.setProof(proofMock);
-    response.setIdentitiesList([identity.toBuffer()]);
+    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
+    identitiesList.setIdentitiesList([identity.toBuffer()]);
+
+    response.setIdentities(identitiesList);
+
+    proofResponse = new GetIdentitiesByPublicKeyHashesResponse();
+    proofResponse.setProof(proofMock);
 
     driveClientMock = {
       fetchIdentitiesByPublicKeyHashes: this.sinon.stub().resolves(response.serializeBinary()),
@@ -63,15 +69,12 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     );
   });
 
-  it('should return valid result', async () => {
-    response.setProof(null);
-    driveClientMock.fetchIdentitiesByPublicKeyHashes.resolves(response.serializeBinary());
-
+  it('should return identities', async () => {
     const result = await getIdentitiesByPublicKeyHashesHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);
 
-    expect(result.getIdentitiesList()).to.deep.equal(
+    expect(result.getIdentities().getIdentitiesList()).to.deep.equal(
       [identity.toBuffer()],
     );
 
@@ -85,6 +88,8 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
 
   it('should return proof', async () => {
     call.request.getProve.returns(true);
+    driveClientMock.fetchIdentitiesByPublicKeyHashes.resolves(proofResponse.serializeBinary());
+
     const result = await getIdentitiesByPublicKeyHashesHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);

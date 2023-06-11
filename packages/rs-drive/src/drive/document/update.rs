@@ -379,7 +379,7 @@ impl Drive {
             // When keeping document history the 0 is a reference that points to the current value
             // O is just on one byte, so we have at most one hop of size 1 (1 byte)
             self.grove_get(
-                contract_documents_keeping_history_primary_key_path_for_document_id,
+                (&contract_documents_keeping_history_primary_key_path_for_document_id).into(),
                 &[0],
                 QueryType::StatefulQuery,
                 transaction,
@@ -387,7 +387,7 @@ impl Drive {
             )?
         } else {
             self.grove_get_raw(
-                contract_documents_primary_key_path,
+                (&contract_documents_primary_key_path).into(),
                 document.id.as_slice(),
                 DirectQueryType::StatefulDirectQuery,
                 transaction,

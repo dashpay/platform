@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
 /// The Schema compatibility validator is a port of a JavaScript version
 /// https://bitbucket.org/atlassian/json-schema-diff-validator/src/master/
 ///
 /// The functionality has been ported 'as is' without any logic improvements and optimizations
 use std::convert::TryFrom;
 
+use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::EMPTY_JSON;
+use crate::data_contract::DocumentName;
 use anyhow::Context;
 use itertools::Itertools;
 use json_patch::PatchOperation;
@@ -41,6 +44,22 @@ pub enum DiffVAlidatorError {
     /// The error is returned when validation proceeded but the schemas are not compatible
     #[error("The schemas are not compatible: {diffs:#?}")]
     SchemaCompatibilityError { diffs: Vec<PatchOperation> },
+}
+
+pub fn any_schema_changes(
+    old_schema: &BTreeMap<DocumentName, JsonValue>,
+    new_schema: &JsonValue,
+) -> bool {
+    let changes = old_schema
+        .iter()
+        .filter(|(document_type, original_schema)| {
+            let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
+            let diff = json_patch::diff(original_schema, new_document_schema);
+            !diff.0.is_empty()
+        })
+        .count();
+
+    changes > 0
 }
 
 pub fn validate_schema_compatibility(

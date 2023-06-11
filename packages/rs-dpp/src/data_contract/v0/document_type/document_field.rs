@@ -362,7 +362,8 @@ impl DocumentFieldType {
                                 "error reading 32 byte non main identifier".to_string(),
                             )
                         })?;
-                        //dbg!(hex::encode(&bytes));
+                        // To save space we use predefined types for most popular blob sizes
+                        // so we don't need to store the size of the blob
                         match bytes.len() {
                             32 => Ok(Some(Value::Bytes32(bytes.try_into().unwrap()))),
                             20 => Ok(Some(Value::Bytes20(bytes.try_into().unwrap()))),

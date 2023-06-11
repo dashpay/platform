@@ -38,7 +38,7 @@ use super::super::property_names;
 
 pub type JsonSchema = JsonValue;
 type DefinitionName = String;
-type DocumentName = String;
+pub type DocumentName = String;
 type PropertyPath = String;
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =

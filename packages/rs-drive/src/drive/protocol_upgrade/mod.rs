@@ -131,7 +131,7 @@ impl Drive {
         )?;
         for (key, _) in results.to_key_elements() {
             self.batch_delete(
-                versions_counter_path(),
+                (&versions_counter_path()).into(),
                 key.as_slice(),
                 StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: (Some((false, false))),
@@ -153,7 +153,7 @@ impl Drive {
         )?;
         for (key, _) in results.to_key_elements() {
             self.batch_delete(
-                desired_version_for_validators_path(),
+                (&desired_version_for_validators_path()).into(),
                 key.as_slice(),
                 StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: (Some((false, false))),
@@ -389,7 +389,7 @@ impl Drive {
         let path = desired_version_for_validators_path();
 
         let removed_element = self.batch_remove_raw(
-            path,
+            (&path).into(),
             validator_pro_tx_hash.as_slice(),
             StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum: Some((false, false)),
@@ -485,7 +485,7 @@ impl Drive {
 
         for validator_pro_tx_hash in validator_pro_tx_hashes {
             let removed_element = self.batch_remove_raw(
-                path,
+                (&path).into(),
                 validator_pro_tx_hash.as_slice(),
                 StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: Some((false, false)),
