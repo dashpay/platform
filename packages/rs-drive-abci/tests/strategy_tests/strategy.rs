@@ -613,9 +613,9 @@ impl Strategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner = platform
+                        let fetched_owner_balance = platform
                             .drive
-                            .fetch_identity_with_balance(owner.id.to_buffer(), None)
+                            .fetch_identity_balance(owner.id.to_buffer(), None)
                             .expect("expected to be able to get identity")
                             .expect("expected to get an identity");
 
@@ -624,7 +624,7 @@ impl Strategy {
                                 owner,
                                 recipient,
                                 signer,
-                                fetched_owner.balance.unwrap() - 100,
+                                fetched_owner_balance - 100,
                             );
                         operations.push(state_transition);
                     }

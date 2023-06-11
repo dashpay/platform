@@ -86,7 +86,7 @@ where
                 ))
             })?;
 
-        let Some(existing_recipient) = maybe_existing_recipient else {
+        if maybe_existing_recipient.is_none() {
             let err = IdentityNotFoundError::new(state_transition.recipient_id);
 
             result.add_error(err);

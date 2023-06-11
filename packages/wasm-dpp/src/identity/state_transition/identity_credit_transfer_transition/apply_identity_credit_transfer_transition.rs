@@ -2,7 +2,7 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::apply_
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
-use crate::identity::state_transition::identity_credit_transfer_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionWasm;
+use crate::identity::state_transition::identity_credit_transfer_transition::transition::IdentityCreditTransferTransitionWasm;
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     StateTransitionExecutionContextWasm,

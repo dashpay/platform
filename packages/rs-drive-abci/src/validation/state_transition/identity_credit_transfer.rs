@@ -50,7 +50,7 @@ impl StateTransitionValidation for IdentityCreditTransferTransition {
                 ));
                 return Ok(validation_result);
             }
-            Some(pk) => pk,
+            Some(partial_identity) => partial_identity,
         };
 
         validation_result.set_data(Some(partial_identity));
@@ -81,16 +81,18 @@ impl StateTransitionValidation for IdentityCreditTransferTransition {
             .drive
             .fetch_identity_balance(self.recipient_id.to_buffer(), tx)?;
 
-        let Some(_) = maybe_existing_recipient else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.recipient_id).into()));
-        };
+        if maybe_existing_recipient.is_none() {
+            return Ok(ConsensusValidationResult::new_with_error(
+                IdentityNotFoundError::new(self.recipient_id).into(),
+            ));
+        }
 
         self.transform_into_action(platform, tx)
     }
 
     fn transform_into_action<C: CoreRPCLike>(
         &self,
-        platform: &PlatformRef<C>,
+        _platform: &PlatformRef<C>,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         Ok(ConsensusValidationResult::new_with_data(
