@@ -45,12 +45,21 @@ impl Frequency {
 
     pub fn average_event_count(&self) -> f64 {
         if let Some(chance_per_block) = self.chance_per_block {
-            let avg_times_per_block_range =
-                (self.times_per_block_range.start + self.times_per_block_range.end - 1) as f64
-                    / 2.0;
+            let avg_times_per_block_range = if self.times_per_block_range.start
+                == self.times_per_block_range.end
+            {
+                0.0
+            } else {
+                (self.times_per_block_range.start as f64 + self.times_per_block_range.end as f64
+                    - 1.0)
+                    / 2.0
+            };
             avg_times_per_block_range * chance_per_block
+        } else if self.times_per_block_range.start == self.times_per_block_range.end {
+            0.0
         } else {
-            (self.times_per_block_range.start + self.times_per_block_range.end - 1) as f64 / 2.0
+            (self.times_per_block_range.start as f64 + self.times_per_block_range.end as f64 - 1.0)
+                / 2.0
         }
     }
 
@@ -120,6 +129,10 @@ impl Frequency {
             .filter(|x| !exclude_set.contains(x))
             .collect();
 
+        if available_choices.is_empty() {
+            return vec![];
+        }
+
         let mut picked_numbers = Vec::new();
         let chance_per_block_hit = self
             .chance_per_block
@@ -154,6 +167,10 @@ impl Frequency {
             .into_iter()
             .filter(|x| !exclude_set.contains(x))
             .collect();
+
+        if available_choices.is_empty() {
+            return vec![];
+        }
 
         let mut picked_numbers = Vec::new();
         let chance_per_block_hit = self

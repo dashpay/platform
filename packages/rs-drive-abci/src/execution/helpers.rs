@@ -197,6 +197,28 @@ where
         Ok(())
     }
 
+    /// Remove a masternode from all validator sets based on its ProTxHash.
+    ///
+    /// This function iterates through all the validator sets and removes the given masternode
+    /// using its ProTxHash. It modifies the validator_sets parameter in place.
+    ///
+    /// # Arguments
+    ///
+    /// * `pro_tx_hash` - A reference to the ProTxHash of the masternode to be removed.
+    /// * `validator_sets` - A mutable reference to an IndexMap containing QuorumHash as key
+    ///                      and ValidatorSet as value.
+    ///
+    fn remove_masternode_in_validator_sets(
+        pro_tx_hash: &ProTxHash,
+        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
+    ) {
+        validator_sets
+            .iter_mut()
+            .for_each(|(quorum_hash, validator_set)| {
+                validator_set.members.remove(pro_tx_hash);
+            });
+    }
+
     /// Updates a masternode in the validator sets.
     ///
     /// This function updates the properties of the masternode that matches the given `pro_tx_hash`.
@@ -288,11 +310,7 @@ where
 
         state.full_masternode_list.extend(added_masternodes);
 
-        let updated_masternodes = updated_mns
-            .iter()
-            .map(|(pro_tx_hash, masternode)| (pro_tx_hash, masternode.clone()));
-
-        updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
+        updated_mns.iter().for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
                 if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash) {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
@@ -303,13 +321,17 @@ where
                         // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
                         Self::update_masternode_in_validator_sets(
                             pro_tx_hash,
-                            &state_diff,
+                            state_diff,
                             &mut state.validator_sets,
                         );
                     }
                 }
-                masternode_list_item.state.apply_diff(state_diff);
+                masternode_list_item.state.apply_diff(state_diff.clone());
             }
+        });
+
+        removed_mns.iter().for_each(|pro_tx_hash| {
+            Self::remove_masternode_in_validator_sets(pro_tx_hash, &mut state.validator_sets);
         });
 
         let deleted_masternodes = removed_mns.iter().copied().collect::<BTreeSet<ProTxHash>>();
