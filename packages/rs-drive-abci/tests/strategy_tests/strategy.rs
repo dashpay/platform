@@ -213,21 +213,18 @@ impl Strategy {
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
         for op in &self.operations {
-            match &op.op_type {
-                OperationType::Document(doc_op) => {
-                    let serialize = doc_op.contract.serialize().expect("expected to serialize");
-                    drive
-                        .apply_contract_with_serialization(
-                            &doc_op.contract,
-                            serialize,
-                            BlockInfo::default(),
-                            true,
-                            Some(Cow::Owned(SingleEpoch(0))),
-                            None,
-                        )
-                        .expect("expected to be able to add contract");
-                }
-                _ => {}
+            if let OperationType::Document(doc_op) = &op.op_type {
+                let serialize = doc_op.contract.serialize().expect("expected to serialize");
+                drive
+                    .apply_contract_with_serialization(
+                        &doc_op.contract,
+                        serialize,
+                        BlockInfo::default(),
+                        true,
+                        Some(Cow::Owned(SingleEpoch(0))),
+                        None,
+                    )
+                    .expect("expected to be able to add contract");
             }
         }
     }

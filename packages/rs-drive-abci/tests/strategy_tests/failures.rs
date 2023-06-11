@@ -57,7 +57,7 @@ mod tests {
             .expect_get_best_chain_lock()
             .returning(move || {
                 let core_block_height = if core_block_heights.len() == 1 {
-                    *core_block_heights.get(0).unwrap()
+                    *core_block_heights.first().unwrap()
                 } else {
                     core_block_heights.remove(0)
                 };

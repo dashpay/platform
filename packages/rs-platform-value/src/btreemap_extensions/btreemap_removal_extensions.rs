@@ -247,7 +247,7 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
                 } else if let Value::Array(array) = v {
                     Some(
                         array
-                            .into_iter()
+                            .iter()
                             .map(|item| item.clone().into_hash256())
                             .collect(),
                     )

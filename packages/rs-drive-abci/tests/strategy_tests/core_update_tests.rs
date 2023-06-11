@@ -274,14 +274,12 @@ mod tests {
         let mut found_smaller_then_bigger = false;
         for i in 0..(validator_set_sizes.len() - 1) {
             let (_height_i, size_i) = validator_set_sizes[i];
-            for j in (i + 1)..validator_set_sizes.len() {
-                let (_height_j, size_j) = validator_set_sizes[j];
-                if size_j > size_i {
-                    found_smaller_then_bigger = true;
-                    break;
-                }
-            }
-            if found_smaller_then_bigger {
+            if validator_set_sizes
+                .iter()
+                .skip(i + 1)
+                .any(|&(_height_j, size_j)| size_j > size_i)
+            {
+                found_smaller_then_bigger = true;
                 break;
             }
         }

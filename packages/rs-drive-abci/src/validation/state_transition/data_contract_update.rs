@@ -282,7 +282,7 @@ mod tests {
 
         let raw_state_transition = state_transition.to_object(false).unwrap();
 
-        let dc = data_contract.clone();
+        let dc = data_contract;
 
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -293,7 +293,7 @@ mod tests {
             ..Default::default()
         };
         let platform = TestPlatformBuilder::new()
-            .with_config(config.clone())
+            .with_config(config)
             .build_with_mock_rpc();
 
         TestData {

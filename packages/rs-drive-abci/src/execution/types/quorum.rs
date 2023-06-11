@@ -91,7 +91,7 @@ impl ValidatorSet {
                                         }
                                     }),
                                     power: 100,
-                                    pro_tx_hash: reverse(&pro_tx_hash),
+                                    pro_tx_hash: reverse(pro_tx_hash),
                                     node_address,
                                 }))
                             }
@@ -123,7 +123,7 @@ impl ValidatorSet {
                                         }
                                     }),
                                     power: 100,
-                                    pro_tx_hash: reverse(&pro_tx_hash),
+                                    pro_tx_hash: reverse(pro_tx_hash),
                                     node_address,
                                 }))
                             }

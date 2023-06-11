@@ -2326,7 +2326,7 @@ fn test_family_person_update() {
         .update_document_for_contract(
             &document,
             &contract,
-            &document_type,
+            document_type,
             None,
             BlockInfo::genesis(),
             true,

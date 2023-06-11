@@ -212,7 +212,7 @@ where
                     )
                 } else {
                     (
-                        Some(result.clone()),
+                        Some(result),
                         TxRecord {
                             action: TxAction::Unmodified as i32,
                             tx,

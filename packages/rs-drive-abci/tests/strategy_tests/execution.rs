@@ -470,9 +470,8 @@ pub(crate) fn create_chain_for_strategy(
     let seed = strategy
         .failure_testing
         .as_ref()
-        .map(|strategy| strategy.deterministic_start_seed)
-        .flatten()
-        .map(|seed| StrategyRandomness::SeedEntropy(seed))
+        .and_then(|strategy| strategy.deterministic_start_seed)
+        .map(StrategyRandomness::SeedEntropy)
         .unwrap_or(StrategyRandomness::RNGEntropy(rng));
     start_chain_for_strategy(
         abci_application,

@@ -34,13 +34,12 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .transform_into_action(&platform, None)
                 .expect("expected state transitions to validate")
                 .into_data()
-                .expect(
-                    format!(
+                .unwrap_or_else(|_| {
+                    panic!(
                         "expected state transitions to be valid {}",
                         state_transition.get_type()
                     )
-                    .as_str(),
-                )
+                })
         })
         .collect::<Vec<_>>();
 
