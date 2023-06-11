@@ -621,6 +621,8 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut next_quorum_hash = current_quorum_hash;
 
+    let mut validator_set_updates = BTreeMap::new();
+
     for block_height in block_start..(block_start + block_count) {
         let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
         if needs_rotation_on_next_block {
@@ -686,6 +688,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         let MimicExecuteBlockOutcome {
             withdrawal_transactions: mut withdrawals_this_block,
+            validator_set_update,
             next_validator_set_hash,
             root_app_hash,
         } = abci_app
@@ -701,6 +704,10 @@ pub(crate) fn continue_chain_for_strategy(
                 },
             )
             .expect("expected to execute a block");
+
+        if let Some(validator_set_update) = validator_set_update {
+            validator_set_updates.insert(block_height, validator_set_update);
+        }
 
         if strategy.dont_finalize_block() {
             continue;
@@ -795,5 +802,6 @@ pub(crate) fn continue_chain_for_strategy(
         end_time_ms: current_time_ms,
         strategy,
         withdrawals: total_withdrawals,
+        validator_set_updates,
     }
 }

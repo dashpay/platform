@@ -71,15 +71,15 @@ where
                     index = (index + 1) % count;
                     // We can't just take the next item because it might no longer be in the state
                     while index != start_index {
-                        let (quorum_hash, new_validator_set) = platform_state
+                        let (quorum_hash, _) = platform_state
                             .validator_sets
                             .get_index(index)
                             .expect("expected next validator set");
                         // We still have it in the state
-                        if block_execution_context
+                        if let Some(new_validator_set) = block_execution_context
                             .block_platform_state
                             .validator_sets
-                            .contains_key(quorum_hash)
+                            .get(quorum_hash)
                         {
                             tracing::debug!(
                                 method = "validator_set_update",
@@ -115,8 +115,21 @@ where
                 }
             }
         } else {
-            tracing::debug!(method = "validator_set_update", "no validator set update");
-            Ok(None)
+            let current_validator_set = block_execution_context
+                .block_platform_state
+                .current_validator_set()?;
+            if current_validator_set != platform_state.current_validator_set()? {
+                // Something changed, for example the IP of a validator changed, or someone's ban status
+
+                tracing::debug!(
+                    method = "validator_set_update",
+                    "validator set update without rotation"
+                );
+                Ok(Some(current_validator_set.into()))
+            } else {
+                tracing::debug!(method = "validator_set_update", "no validator set update");
+                Ok(None)
+            }
         }
     }
 }

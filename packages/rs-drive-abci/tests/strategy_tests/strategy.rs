@@ -37,6 +37,7 @@ use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use tenderdash_abci::proto::abci::{ValidatorSetUpdate, ValidatorUpdate};
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -712,6 +713,8 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_time_ms: u64,
     pub strategy: Strategy,
     pub withdrawals: Vec<dashcore::Transaction>,
+    /// height to the validator set update at that height
+    pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {

@@ -14,7 +14,7 @@ use tenderdash_abci::proto::{abci, crypto};
 
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ValidatorSet {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
@@ -29,6 +29,7 @@ pub struct ValidatorSet {
 impl ValidatorSet {
     /// For changes between two validator sets, we take the new (rhs) element if is different
     /// for every validator
+    #[allow(dead_code)]
     pub(crate) fn update_difference(
         &self,
         rhs: &ValidatorSet,
@@ -214,29 +215,34 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
         ValidatorSetUpdate {
             validator_updates: validator_set
                 .iter()
-                .map(|(_, validator)| {
+                .filter_map(|(_, validator)| {
                     let Validator {
                         pro_tx_hash,
                         public_key,
                         node_ip,
                         node_id,
                         platform_p2p_port,
+                        is_banned,
                         ..
                     } = validator;
+
+                    if *is_banned {
+                        return None;
+                    }
                     let node_address = format!(
                         "tcp://{}@{}:{}",
                         hex::encode(node_id.into_inner()),
                         node_ip,
                         platform_p2p_port
                     );
-                    abci::ValidatorUpdate {
+                    Some(abci::ValidatorUpdate {
                         pub_key: public_key.as_ref().map(|public_key| crypto::PublicKey {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: reverse(pro_tx_hash),
                         node_address,
-                    }
+                    })
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
