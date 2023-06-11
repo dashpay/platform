@@ -1,5 +1,5 @@
 use rand::distributions::{Distribution, Uniform};
-use rand::prelude::{SliceRandom, StdRng};
+use rand::prelude::StdRng;
 use rand::Rng;
 use std::collections::BTreeSet;
 use std::ops::Range;

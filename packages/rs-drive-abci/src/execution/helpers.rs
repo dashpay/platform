@@ -214,7 +214,7 @@ where
     ) {
         validator_sets
             .iter_mut()
-            .for_each(|(quorum_hash, validator_set)| {
+            .for_each(|(_quorum_hash, validator_set)| {
                 validator_set.members.remove(pro_tx_hash);
             });
     }
@@ -239,7 +239,7 @@ where
     ) {
         validator_sets
             .iter_mut()
-            .for_each(|(quorum_hash, validator_set)| {
+            .for_each(|(_quorum_hash, validator_set)| {
                 if let Some(validator) = validator_set.members.get_mut(pro_tx_hash) {
                     if let Some(maybe_ban_height) = dmn_state_diff.pose_ban_height {
                         // the ban_height was changed

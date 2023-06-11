@@ -238,7 +238,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::platform::{Platform, PlatformRef};
+    use crate::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -246,9 +246,8 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
     use dpp::state_transition::{StateTransitionConvert, StateTransitionType};
-    use dpp::tests::fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture};
-    use dpp::version::{ProtocolVersionValidator, LATEST_VERSION};
-    use serde_json::json;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::LATEST_VERSION;
 
     struct TestData<T> {
         raw_state_transition: Value,
@@ -293,7 +292,7 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 
@@ -307,22 +306,19 @@ mod tests {
     mod validate_state {
         use super::super::StateTransitionValidation;
         use super::*;
-        use dashcore_rpc::dashcore_rpc_json::Bip125Replaceable::No;
+
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
-        use drive::error::drive::DriveError;
-        use drive::error::Error;
+
         use serde_json::json;
-        use std::sync::Arc;
-        use tracing_subscriber::util::SubscriberInitExt;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
             let TestData {
-                raw_state_transition,
+                raw_state_transition: _,
                 mut data_contract,
-                mut platform,
+                platform,
             } = setup_test();
 
             data_contract.config.readonly = true;
@@ -376,9 +372,9 @@ mod tests {
         #[test]
         pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
             let TestData {
-                raw_state_transition,
+                raw_state_transition: _,
                 mut data_contract,
-                mut platform,
+                platform,
             } = setup_test();
 
             data_contract.config.keeps_history = true;

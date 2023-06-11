@@ -37,7 +37,7 @@ use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use tenderdash_abci::proto::abci::{ValidatorSetUpdate, ValidatorUpdate};
+use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {

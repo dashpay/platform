@@ -463,8 +463,7 @@ mod update {
     use super::*;
     use crate::assert_state_consensus_errors;
     use crate::consensus::state::state_error::StateError::DataContractIsReadonlyError;
-    use crate::consensus::ConsensusError::StateError;
-    use crate::data_contract::JsonSchema;
+
     use serde_json::json;
 
     #[tokio::test]
@@ -472,7 +471,7 @@ mod update {
         let TestData {
             version_validator,
             state_repository_mock,
-            raw_state_transition,
+            raw_state_transition: _,
             mut data_contract,
         } = setup_test();
 
@@ -534,8 +533,8 @@ mod update {
     ) {
         let TestData {
             version_validator,
-            mut state_repository_mock,
-            raw_state_transition,
+            state_repository_mock: _,
+            raw_state_transition: _,
             mut data_contract,
         } = setup_test();
 

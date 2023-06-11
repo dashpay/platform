@@ -2,12 +2,9 @@
 mod tests {
     use tenderdash_abci::proto::types::CoreChainLock;
 
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::execution::run_chain_for_strategy;
     use crate::frequency::Frequency;
-    use crate::strategy::{
-        ChainExecutionOutcome, ChainExecutionParameters, MasternodeListChangesStrategy, Strategy,
-        StrategyRandomness, UpgradingInfo,
-    };
+    use crate::strategy::{MasternodeListChangesStrategy, Strategy};
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
@@ -179,7 +176,7 @@ mod tests {
 
         // we expect to see quorums with banned members
 
-        let state = outcome.abci_app.platform.state.read().unwrap();
+        let _state = outcome.abci_app.platform.state.read().unwrap();
 
         // We should also see validator sets with less than the quorum size
 
@@ -276,9 +273,9 @@ mod tests {
 
         let mut found_smaller_then_bigger = false;
         for i in 0..(validator_set_sizes.len() - 1) {
-            let (height_i, size_i) = validator_set_sizes[i];
+            let (_height_i, size_i) = validator_set_sizes[i];
             for j in (i + 1)..validator_set_sizes.len() {
-                let (height_j, size_j) = validator_set_sizes[j];
+                let (_height_j, size_j) = validator_set_sizes[j];
                 if size_j > size_i {
                     found_smaller_then_bigger = true;
                     break;

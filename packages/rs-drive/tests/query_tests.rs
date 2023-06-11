@@ -2365,12 +2365,12 @@ fn test_family_person_update() {
         .commit_transaction(db_transaction)
         .expect("expected to commit transaction");
 
-    let (proof, fee) = query
+    let (proof, _fee) = query
         .clone()
         .execute_with_proof(&drive, None, None)
         .expect("expected proof to be generated");
 
-    let (root_hash, documents) = query
+    let (_root_hash, documents) = query
         .verify_proof(&proof)
         .expect("expected to verify proof");
 
