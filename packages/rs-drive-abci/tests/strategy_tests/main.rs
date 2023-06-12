@@ -2443,7 +2443,7 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_top_up_and_transfer_between_identities() {
+    fn run_chain_transfer_between_identities() {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![Operation {
@@ -2469,7 +2469,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: false, // ???
+            verify_state_transition_results: true,
         };
 
         let config = PlatformConfig {

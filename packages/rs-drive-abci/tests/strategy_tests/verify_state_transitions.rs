@@ -301,6 +301,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                     &response_proof.grovedb_proof,
                     identity_top_up_transition.identity_id.into_buffer(),
+                    false,
                 )
                 .expect("expected to verify balance identity");
                 let balance = balance.expect("expected a balance");
@@ -352,6 +353,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     identity_credit_withdrawal_transition
                         .identity_id
                         .into_buffer(),
+                    false,
                 )
                 .expect("expected to verify balance identity");
                 let _balance = balance.expect("expected a balance");
@@ -443,6 +445,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
                         identity_credit_transfer_action.identity_id.into_buffer(),
+                        true,
                     )
                     .expect("expected to verify balance identity");
 
@@ -456,6 +459,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
                         identity_credit_transfer_action.recipient_id.into_buffer(),
+                        true,
                     )
                     .expect("expected to verify balance recipient");
 
