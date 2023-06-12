@@ -26,8 +26,11 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
   static createFromProto(proto) {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
+    const identitiesList = proto.getIdentities();
+
     return new GetIdentitiesByPublicKeyHashesResponse(
-      proto.getIdentitiesList_asU8().map((identity) => Buffer.from(identity)),
+      identitiesList !== undefined
+        ? identitiesList.getIdentitiesList_asU8().map((identity) => Buffer.from(identity)) : [],
       metadata,
       proof,
     );
