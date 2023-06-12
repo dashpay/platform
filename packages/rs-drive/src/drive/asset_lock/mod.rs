@@ -6,7 +6,7 @@ use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefEleme
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::dashcore::{OutPoint, TxOut};
+
 use dpp::platform_value::Bytes36;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;

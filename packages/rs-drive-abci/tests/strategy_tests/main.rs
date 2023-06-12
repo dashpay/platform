@@ -44,6 +44,7 @@ use std::collections::BTreeMap;
 
 use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
 
+mod core_update_tests;
 mod execution;
 mod failures;
 mod frequency;
@@ -888,7 +889,7 @@ mod tests {
         assert!(all_have_balances, "all masternodes should have a balance");
         assert_eq!(
             hex::encode(
-                &outcome
+                outcome
                     .abci_app
                     .platform
                     .drive
@@ -1412,7 +1413,7 @@ mod tests {
         assert!(all_have_balances, "all masternodes should have a balance");
         assert_eq!(
             hex::encode(
-                &outcome
+                outcome
                     .abci_app
                     .platform
                     .drive
@@ -2022,7 +2023,7 @@ mod tests {
             outcomes[0]
                 .masternode_identity_balances
                 .keys()
-                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .map(hex::encode)
                 .join("|"),
         );
 
@@ -2031,7 +2032,7 @@ mod tests {
                 outcome
                     .masternode_identity_balances
                     .keys()
-                    .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                    .map(hex::encode)
                     .join("|"),
             );
 
@@ -2154,7 +2155,7 @@ mod tests {
             outcome_a
                 .masternode_identity_balances
                 .keys()
-                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .map(hex::encode)
                 .join("|"),
         );
         assert_eq!(
@@ -2165,7 +2166,7 @@ mod tests {
             outcome_b
                 .masternode_identity_balances
                 .keys()
-                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .map(hex::encode)
                 .join("|"),
         );
         assert_eq!(
@@ -2273,7 +2274,7 @@ mod tests {
             outcome_a
                 .masternode_identity_balances
                 .keys()
-                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .map(hex::encode)
                 .join("|"),
         );
         assert_eq!(
@@ -2284,7 +2285,7 @@ mod tests {
             outcome_b
                 .masternode_identity_balances
                 .keys()
-                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .map(hex::encode)
                 .join("|"),
         );
         assert_eq!(
