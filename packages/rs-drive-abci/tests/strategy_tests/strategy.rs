@@ -37,29 +37,38 @@ use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
-    /// How many new masternodes on average per core chain lock increase
+    /// How many new hpmns on average per core chain lock increase
     pub new_hpmns: Frequency,
-    /// How many masternodes leave the system
+    /// How many hpmns leave the system
     pub removed_hpmns: Frequency,
-    /// How many masternodes update a key
+    /// How many hpmns update a key
     pub updated_hpmns: Frequency,
-    /// How many masternodes are banned
+    /// How many hpmns are banned
     pub banned_hpmns: Frequency,
-    /// How many masternodes are unbanned
+    /// How many hpmns are unbanned
     pub unbanned_hpmns: Frequency,
+    /// How many hpmns changed ips
+    pub changed_ip_hpmns: Frequency,
+    /// How many hpmns changed their p2p port
+    pub changed_p2p_port_hpmns: Frequency,
+    /// How many hpmns changed their http port
+    pub changed_http_port_hpmns: Frequency,
     /// How many new masternodes on average per core chain lock increase
     pub new_masternodes: Frequency,
     /// How many masternodes leave the system
     pub removed_masternodes: Frequency,
     /// How many masternodes update a key
-    pub updated_mastenodes: Frequency,
+    pub updated_masternodes: Frequency,
     /// How many masternodes are banned
     pub banned_masternodes: Frequency,
     /// How many masternodes are unbanned
     pub unbanned_masternodes: Frequency,
+    /// How many masternodes are banned
+    pub changed_ip_masternodes: Frequency,
 }
 
 impl MasternodeListChangesStrategy {
@@ -71,9 +80,13 @@ impl MasternodeListChangesStrategy {
             || self.unbanned_hpmns.is_set()
             || self.new_masternodes.is_set()
             || self.removed_masternodes.is_set()
-            || self.updated_mastenodes.is_set()
+            || self.updated_masternodes.is_set()
             || self.banned_masternodes.is_set()
             || self.unbanned_masternodes.is_set()
+            || self.changed_ip_hpmns.is_set()
+            || self.changed_http_port_hpmns.is_set()
+            || self.changed_p2p_port_hpmns.is_set()
+            || self.changed_ip_masternodes.is_set()
     }
 
     pub fn removed_any_masternode_types(&self) -> bool {
@@ -81,19 +94,24 @@ impl MasternodeListChangesStrategy {
     }
 
     pub fn updated_any_masternode_types(&self) -> bool {
-        self.updated_mastenodes.is_set() || self.updated_hpmns.is_set()
+        self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
     }
 
     pub fn added_any_masternode_types(&self) -> bool {
         self.new_masternodes.is_set() || self.new_hpmns.is_set()
     }
 
-    pub fn any_update_is_set(&self) -> bool {
+    pub fn any_kind_of_update_is_set(&self) -> bool {
         self.updated_hpmns.is_set()
             || self.banned_hpmns.is_set()
-            || self.unbanned_hpmns.is_set() | self.updated_mastenodes.is_set()
+            || self.unbanned_hpmns.is_set()
+            || self.changed_ip_hpmns.is_set()
+            || self.changed_http_port_hpmns.is_set()
+            || self.changed_p2p_port_hpmns.is_set()
+            || self.updated_masternodes.is_set()
             || self.banned_masternodes.is_set()
             || self.unbanned_masternodes.is_set()
+            || self.changed_ip_masternodes.is_set()
     }
 }
 
@@ -107,6 +125,15 @@ pub enum StrategyMode {
 pub struct FailureStrategy {
     pub deterministic_start_seed: Option<u64>,
     pub dont_finalize_block: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct MasternodeChanges {
+    /// The masternode ban chance should be always quite low
+    pub masternode_ban_chance: Frequency,
+    pub masternode_unban_chance: Frequency,
+    pub masternode_change_ip_chance: Frequency,
+    pub masternode_change_port_chance: Frequency,
 }
 
 #[derive(Clone, Debug)]
@@ -186,21 +213,18 @@ impl Strategy {
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
         for op in &self.operations {
-            match &op.op_type {
-                OperationType::Document(doc_op) => {
-                    let serialize = doc_op.contract.serialize().expect("expected to serialize");
-                    drive
-                        .apply_contract_with_serialization(
-                            &doc_op.contract,
-                            serialize,
-                            BlockInfo::default(),
-                            true,
-                            Some(Cow::Owned(SingleEpoch(0))),
-                            None,
-                        )
-                        .expect("expected to be able to add contract");
-                }
-                _ => {}
+            if let OperationType::Document(doc_op) = &op.op_type {
+                let serialize = doc_op.contract.serialize().expect("expected to serialize");
+                drive
+                    .apply_contract_with_serialization(
+                        &doc_op.contract,
+                        serialize,
+                        BlockInfo::default(),
+                        true,
+                        Some(Cow::Owned(SingleEpoch(0))),
+                        None,
+                    )
+                    .expect("expected to be able to add contract");
             }
         }
     }
@@ -710,6 +734,8 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_time_ms: u64,
     pub strategy: Strategy,
     pub withdrawals: Vec<dashcore::Transaction>,
+    /// height to the validator set update at that height
+    pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {

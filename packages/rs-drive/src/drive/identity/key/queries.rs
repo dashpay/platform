@@ -34,8 +34,7 @@ impl Drive {
         let path_queries = identity_ids
             .iter()
             .map(|identity_id| {
-                let key_request =
-                    IdentityKeysRequest::new_all_keys_query(identity_id, limit.clone());
+                let key_request = IdentityKeysRequest::new_all_keys_query(identity_id, limit);
                 key_request.into_path_query()
             })
             .collect::<Vec<_>>();

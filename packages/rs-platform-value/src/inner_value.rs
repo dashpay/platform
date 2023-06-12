@@ -487,44 +487,42 @@ impl Value {
         recursive_key: &'a str,
         key: &'a str,
     ) -> BTreeSet<String> {
-        let mut result = if let Some(key_value) = Self::get_optional_from_map(document_type, key) {
-            if let Value::Array(key_value) = key_value {
-                key_value
-                    .iter()
-                    .filter_map(|v| {
-                        if let Value::Text(text) = v {
-                            Some(format!("{prefix}{text}"))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            } else {
-                BTreeSet::new()
-            }
+        let mut result = if let Some(Value::Array(key_value)) =
+            Self::get_optional_from_map(document_type, key)
+        {
+            key_value
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Text(text) = v {
+                        Some(format!("{prefix}{text}"))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
         } else {
             BTreeSet::new()
         };
-        if let Some(lower_levels) = Self::get_optional_from_map(document_type, recursive_key) {
-            if let Value::Map(lower_level) = lower_levels {
-                for (inner_key, value) in lower_level {
-                    let level_prefix = if let Value::Text(text) = inner_key {
-                        text.as_str()
-                    } else {
-                        continue;
-                    };
-                    let Value::Map(level_map) = value else {
-                        continue;
-                    };
+        if let Some(Value::Map(lower_level)) =
+            Self::get_optional_from_map(document_type, recursive_key)
+        {
+            for (inner_key, value) in lower_level {
+                let level_prefix = if let Value::Text(text) = inner_key {
+                    text.as_str()
+                } else {
+                    continue;
+                };
+                let Value::Map(level_map) = value else {
+                    continue;
+                };
 
-                    let prefix = format!("{prefix}{level_prefix}.");
-                    result.extend(Self::inner_recursive_optional_array_of_strings(
-                        level_map,
-                        prefix,
-                        recursive_key,
-                        key,
-                    ))
-                }
+                let prefix = format!("{prefix}{level_prefix}.");
+                result.extend(Self::inner_recursive_optional_array_of_strings(
+                    level_map,
+                    prefix,
+                    recursive_key,
+                    key,
+                ))
             }
         }
         result
