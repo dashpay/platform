@@ -7,9 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
-use crate::{
-    state_repository::ExternalStateRepositoryLikeWrapper, validation::ValidationResultWasm,
-};
+use crate::validation::ValidationResultWasm;
 
 #[wasm_bindgen(js_name=IdentityCreditTransferTransitionBasicValidator)]
 pub struct IdentityCreditTransferTransitionBasicValidatorWasm(
