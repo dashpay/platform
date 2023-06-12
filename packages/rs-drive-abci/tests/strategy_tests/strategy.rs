@@ -629,6 +629,29 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
+                    OperationType::IdentityTransfer if current_identities.len() > 1 => {
+                        // chose 2 last identities
+                        let indices: Vec<usize> =
+                            vec![current_identities.len() - 2, current_identities.len() - 1];
+
+                        let owner = current_identities.get(indices[0]).unwrap();
+                        let recipient = current_identities.get(indices[1]).unwrap();
+
+                        let fetched_owner_balance = platform
+                            .drive
+                            .fetch_identity_balance(owner.id.to_buffer(), None)
+                            .expect("expected to be able to get identity")
+                            .expect("expected to get an identity");
+
+                        let state_transition =
+                            crate::transitions::create_identity_credit_transfer_transition(
+                                owner,
+                                recipient,
+                                signer,
+                                fetched_owner_balance - 100,
+                            );
+                        operations.push(state_transition);
+                    }
                     // OperationType::ContractCreate(new_fields_optional_count_range, new_fields_required_count_range, new_index_count_range, document_type_count)
                     // if !current_identities.is_empty() => {
                     //     DataContract::;
@@ -698,6 +721,7 @@ pub struct ValidatorVersionMigration {
     pub change_block_height: BlockHeight,
 }
 
+#[derive(Debug)]
 pub struct ChainExecutionOutcome<'a> {
     pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,

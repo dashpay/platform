@@ -2,7 +2,8 @@ use crate::errors::consensus::consensus_error::from_consensus_error;
 use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
+    DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm,
+    IdentityCreditTransferTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm, PreCalculatedOperationWasm, ReadOperationWasm,
     SignatureVerificationOperationWasm,
 };
@@ -126,6 +127,15 @@ pub fn create_state_transition_from_wasm_instance(
             )?;
 
             Ok(StateTransition::IdentityUpdate(st.clone().into()))
+        }
+        StateTransitionType::IdentityCreditTransfer => {
+            let st: Ref<IdentityCreditTransferTransitionWasm> =
+                generic_of_js_val::<IdentityCreditTransferTransitionWasm>(
+                    js_value,
+                    "IdentityCreditTransferTransition",
+                )?;
+
+            Ok(StateTransition::IdentityCreditTransfer(st.clone().into()))
         }
         _ => Err(JsError::new("Unsupported state transition type").into()),
     }

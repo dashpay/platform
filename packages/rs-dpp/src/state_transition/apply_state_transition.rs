@@ -7,6 +7,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOut
 use crate::identity::state_transition::identity_create_transition::ApplyIdentityCreateTransition;
 use crate::identity::state_transition::identity_topup_transition::ApplyIdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::apply_identity_update_transition::ApplyIdentityUpdateTransition;
+use crate::identity::state_transition::identity_credit_transfer_transition::apply_identity_credit_transfer::ApplyIdentityCreditTransferTransition;
 use crate::ProtocolError;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -20,6 +21,7 @@ pub struct ApplyStateTransition<SR: StateRepositoryLike> {
     apply_identity_create_transition: ApplyIdentityCreateTransition<SR>,
     apply_identity_top_up_transition: ApplyIdentityTopUpTransition<SR>,
     apply_identity_update_transition: ApplyIdentityUpdateTransition<SR>,
+    apply_identity_credit_transfer_transition: ApplyIdentityCreditTransferTransition<SR>,
 }
 
 impl<SR> ApplyStateTransition<SR>
@@ -46,6 +48,9 @@ where
             apply_identity_top_up_transition: ApplyIdentityTopUpTransition::new(
                 state_repository.clone(),
                 asset_lock_transaction_output_fetcher,
+            ),
+            apply_identity_credit_transfer_transition: ApplyIdentityCreditTransferTransition::new(
+                state_repository.clone(),
             ),
             apply_identity_update_transition: ApplyIdentityUpdateTransition::new(state_repository),
         }
@@ -89,6 +94,11 @@ where
                     .apply(st, &execution_context)
                     .await
             }
+            StateTransition::IdentityCreditTransfer(st) => self
+                .apply_identity_credit_transfer_transition
+                .apply(st, &execution_context)
+                .await
+                .map_err(ProtocolError::from),
         }
     }
 }

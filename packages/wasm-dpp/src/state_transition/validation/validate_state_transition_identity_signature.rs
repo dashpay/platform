@@ -100,5 +100,10 @@ pub async fn validate_state_transition_identity_signature_wasm(
                 .validate(&mut state_transition, &execution_context)
                 .await
         }
+        StateTransition::IdentityCreditTransfer(mut state_transition) => {
+            validator
+                .validate(&mut state_transition, &execution_context)
+                .await
+        }
     }
 }
