@@ -26,8 +26,11 @@ class GetDocumentsResponse extends AbstractResponse {
   static createFromProto(proto) {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
+    const documents = proto.getDocuments();
+
     return new GetDocumentsResponse(
-      proto.getDocumentsList().map((document) => Buffer.from(document)),
+      documents !== undefined
+        ? documents.getDocumentsList().map((document) => Buffer.from(document)) : [],
       metadata,
       proof,
     );

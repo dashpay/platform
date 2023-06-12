@@ -33,6 +33,7 @@ describe('getDataContractHandlerFactory', () => {
   let proofFixture;
   let proofMock;
   let response;
+  let proofResponse;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
@@ -52,8 +53,10 @@ describe('getDataContractHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetDataContractResponse();
-    response.setProof(proofMock);
     response.setDataContract(dataContractFixture.toBuffer());
+
+    proofResponse = new GetDataContractResponse();
+    proofResponse.setProof(proofMock);
 
     driveClientMock = {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
@@ -64,7 +67,7 @@ describe('getDataContractHandlerFactory', () => {
     );
   });
 
-  it('should return valid data', async () => {
+  it('should return data contract', async () => {
     const result = await getDataContractHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
@@ -73,6 +76,27 @@ describe('getDataContractHandlerFactory', () => {
     expect(contractBinary).to.be.an.instanceOf(Uint8Array);
 
     expect(contractBinary).to.deep.equal(dataContractFixture.toBuffer());
+
+    const proof = result.getProof();
+
+    expect(proof).to.be.undefined();
+  });
+
+  it('should return proof', async function it() {
+    driveClientMock = {
+      fetchDataContract: this.sinon.stub().resolves(proofResponse.serializeBinary()),
+    };
+
+    getDataContractHandler = getDataContractHandlerFactory(
+      driveClientMock,
+    );
+
+    const result = await getDataContractHandler(call);
+
+    expect(result).to.be.an.instanceOf(GetDataContractResponse);
+
+    const contractBinary = result.getDataContract();
+    expect(contractBinary).to.be.equal('');
 
     const proof = result.getProof();
 

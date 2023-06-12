@@ -1,7 +1,8 @@
 use crate::frequency::Frequency;
 use crate::strategy::StrategyRandomness;
 use dapi_grpc::platform::v0::{
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse, Proof,
+    get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
+    GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::{Identity, PartialIdentity};
@@ -241,10 +242,14 @@ impl QueryStrategy {
                 .expect("expected data on query_validation_result");
             let response = GetIdentitiesByPublicKeyHashesResponse::decode(query_data.as_slice())
                 .expect("expected to deserialize");
-            if prove {
-                let proof = response.proof.expect("expect to receive proof back");
-                let (proof_root_hash, identities): (RootHash, HashMap<[u8; 20], Option<Identity>>) =
-                    Drive::verify_full_identities_by_public_key_hashes(
+
+            let result = response.result.expect("expect to receive proof back");
+            match result {
+                get_identities_by_public_key_hashes_response::Result::Proof(proof) => {
+                    let (proof_root_hash, identities): (
+                        RootHash,
+                        HashMap<[u8; 20], Option<Identity>>,
+                    ) = Drive::verify_full_identities_by_public_key_hashes(
                         &proof.grovedb_proof,
                         public_key_hashes
                             .keys()
@@ -253,38 +258,40 @@ impl QueryStrategy {
                             .as_slice(),
                     )
                     .expect("expected to verify proof");
-                let identities: HashMap<[u8; 20], PartialIdentity> = identities
-                    .into_iter()
-                    .map(|(k, v)| {
-                        (
-                            k,
-                            v.expect("expect an identity")
-                                .into_partial_identity_info_no_balance(),
-                        )
-                    })
-                    .collect();
-                assert_eq!(proof_verification.app_hash, &proof_root_hash);
-                assert!(proof_verification
+                    let identities: HashMap<[u8; 20], PartialIdentity> = identities
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k,
+                                v.expect("expect an identity")
+                                    .into_partial_identity_info_no_balance(),
+                            )
+                        })
+                        .collect();
+                    assert_eq!(proof_verification.app_hash, &proof_root_hash);
+                    assert!(proof_verification
                     .verify_proof(&proof_root_hash, proof)
                     .is_valid());
                 assert_eq!(identities, public_key_hashes);
-            } else {
-                let identities_returned = response
-                    .identities
-                    .into_iter()
-                    .map(|serialized| {
-                        Identity::deserialize(&serialized)
-                            .expect("expected to deserialize identity")
-                            .id
-                    })
-                    .collect::<HashSet<_>>();
-                assert_eq!(
-                    identities_returned,
-                    public_key_hashes
-                        .values()
-                        .map(|partial_identity| partial_identity.id)
-                        .collect()
-                );
+                }
+                get_identities_by_public_key_hashes_response::Result::Identities(data) => {
+                    let identities_returned = data
+                        .identities
+                        .into_iter()
+                        .map(|serialized| {
+                            Identity::deserialize(&serialized)
+                                .expect("expected to deserialize identity")
+                                .id
+                        })
+                        .collect::<HashSet<_>>();
+                    assert_eq!(
+                        identities_returned,
+                        public_key_hashes
+                            .values()
+                            .map(|partial_identity| partial_identity.id)
+                            .collect()
+                    );
+                }
             }
         }
     }
