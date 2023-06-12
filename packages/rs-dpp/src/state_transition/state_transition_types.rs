@@ -25,6 +25,7 @@ pub enum StateTransitionType {
     DataContractUpdate = 4,
     IdentityUpdate = 5,
     IdentityCreditWithdrawal = 6,
+    IdentityCreditTransfer = 7,
 }
 
 impl std::fmt::Display for StateTransitionType {

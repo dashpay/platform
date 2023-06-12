@@ -8,10 +8,11 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::va
 use crate::identity::state_transition::identity_topup_transition::validation::state::IdentityTopUpTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
 use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
+use crate::identity::state_transition::identity_credit_transfer_transition::validation::state::identity_credit_transfer_state::IdentityCreditTransferTransitionStateValidator;
 use crate::ProtocolError;
 use crate::state_transition::{StateTransition, StateTransitionAction};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction};
+use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction, IdentityCreditTransferAction};
 use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 
 pub struct StateTransitionStateValidator<SR>
@@ -27,6 +28,7 @@ where
     identity_top_up_validator: IdentityTopUpTransitionStateValidator<SR>,
     identity_credit_withdrawal_validator: IdentityCreditWithdrawalTransitionValidator<SR>,
     document_batch_validator: DocumentsBatchTransitionStateValidator<SR>,
+    identity_credit_transfer_validator: IdentityCreditTransferTransitionStateValidator<SR>,
 }
 
 impl<SR> StateTransitionStateValidator<SR>
@@ -52,6 +54,8 @@ where
             IdentityCreditWithdrawalTransitionValidator::new(wrapped_state_repository);
         let document_batch_validator =
             DocumentsBatchTransitionStateValidator::new(state_repository.clone());
+        let identity_credit_transfer_validator =
+            IdentityCreditTransferTransitionStateValidator::new(state_repository.clone());
 
         StateTransitionStateValidator {
             state_repository,
@@ -62,6 +66,7 @@ where
             identity_top_up_validator,
             identity_credit_withdrawal_validator,
             document_batch_validator,
+            identity_credit_transfer_validator,
         }
     }
 
@@ -107,6 +112,11 @@ where
                 .validate(st, execution_context)
                 .await?
                 .map(DocumentsBatchAction)),
+            StateTransition::IdentityCreditTransfer(st) => Ok(self
+                .identity_credit_transfer_validator
+                .validate(st, execution_context)
+                .await?
+                .map(IdentityCreditTransferAction)),
         }
     }
 }

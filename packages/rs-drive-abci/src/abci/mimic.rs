@@ -19,7 +19,7 @@ use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal};
+use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
@@ -38,6 +38,8 @@ pub const CHAIN_ID: &str = "strategy_tests";
 pub struct MimicExecuteBlockOutcome {
     /// withdrawal transactions
     pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
+    /// The next validators
+    pub validator_set_update: Option<ValidatorSetUpdate>,
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
     /// Root App hash
@@ -358,7 +360,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         }
 
         let next_validator_set_hash = validator_set_update
-            .map(|update| update.quorum_hash)
+            .as_ref()
+            .map(|update| update.quorum_hash.clone())
             .unwrap_or(current_quorum.quorum_hash.to_vec());
 
         let block = Block {
@@ -436,6 +439,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             app_version: APP_VERSION,
             withdrawal_transactions: withdrawals,
+            validator_set_update,
             next_validator_set_hash,
             root_app_hash: app_hash
                 .try_into()

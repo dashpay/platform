@@ -41,13 +41,13 @@ export async function topUp(
 
   const identityTopUpTransition = await this.identities.utils
     .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
-  this.logger.silly(`[Identity#register] Created IdentityTopUpTransition with asset lock tx "${assetLockTransaction.hash}"`);
+  this.logger.silly(`[Identity#topUp] Created IdentityTopUpTransition with asset lock tx "${assetLockTransaction.hash}"`);
 
   // Skipping validation because it's already done in createIdentityTopUpTransition
   await broadcastStateTransition(this, identityTopUpTransition, {
     skipValidation: true,
   });
-  this.logger.silly('[Identity#register] Broadcasted IdentityTopUpTransition');
+  this.logger.silly('[Identity#topUp] Broadcasted IdentityTopUpTransition');
 
   return true;
 }

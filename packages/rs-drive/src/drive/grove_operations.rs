@@ -42,10 +42,8 @@ use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{
     key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op, OpsByLevelPath,
 };
-use grovedb::{
-    Element,  EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg,
-};
-use std::collections::HashMap;
+use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::drive::object_size_info::PathKeyElementInfo::{
@@ -68,10 +66,7 @@ use grovedb::query_result_type::{
 };
 use grovedb::Error as GroveError;
 use integer_encoding::VarInt;
-
-use intmap::IntMap;
-use storage::rocksdb_storage::RocksDbStorage;
-
+use std::collections::HashMap;
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
 /// and returns the operation's return value.
 fn push_drive_operation_result<T>(
@@ -309,9 +304,9 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
-    pub fn grove_insert<'b, B: AsRef<[u8]>>(
+    pub fn grove_insert<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         element: Element,
         transaction: TransactionArg,
@@ -323,9 +318,9 @@ impl Drive {
     }
 
     /// Pushes the `OperationCost` of inserting an empty tree in groveDB to `drive_operations`.
-    pub fn grove_insert_empty_tree<'b, B: AsRef<[u8]>>(
+    pub fn grove_insert_empty_tree<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         transaction: TransactionArg,
         options: Option<InsertOptions>,
@@ -338,9 +333,9 @@ impl Drive {
     }
 
     /// Pushes the `OperationCost` of inserting an empty sum tree in groveDB to `drive_operations`.
-    pub fn grove_insert_empty_sum_tree<'b, B: AsRef<[u8]>>(
+    pub fn grove_insert_empty_sum_tree<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         transaction: TransactionArg,
         options: Option<InsertOptions>,
@@ -354,9 +349,9 @@ impl Drive {
 
     /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
     /// to `drive_operations`.
-    pub fn grove_insert_if_not_exists<'b, B: AsRef<[u8]>>(
+    pub fn grove_insert_if_not_exists<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         element: Element,
         transaction: TransactionArg,
@@ -369,9 +364,9 @@ impl Drive {
     }
 
     /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
-    pub fn grove_delete<'b, B: AsRef<[u8]>>(
+    pub fn grove_delete<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -388,9 +383,9 @@ impl Drive {
 
     /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub fn grove_get_raw<'b, B: AsRef<[u8]>>(
+    pub fn grove_get_raw<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
@@ -436,9 +431,9 @@ impl Drive {
 
     /// grove_get_raw basically means that there are no reference hops, this only matters
     /// when calculating worst case costs
-    pub fn grove_get_raw_optional<'b, B: AsRef<[u8]>>(
+    pub fn grove_get_raw_optional<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
@@ -484,9 +479,9 @@ impl Drive {
     }
 
     /// grove_get_direct_u64 is a helper function to get a
-    pub fn grove_get_raw_value_u64_from_encoded_var_vec<'b, B: AsRef<[u8]>>(
+    pub fn grove_get_raw_value_u64_from_encoded_var_vec<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         direct_query_type: DirectQueryType,
         transaction: TransactionArg,
@@ -516,9 +511,9 @@ impl Drive {
 
     /// Gets the element at the given path from groveDB.
     /// Pushes the `OperationCost` of getting the element to `drive_operations`.
-    pub fn grove_get<'b, B: AsRef<[u8]>>(
+    pub fn grove_get<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         query_type: QueryType,
         transaction: TransactionArg,
@@ -661,9 +656,9 @@ impl Drive {
 
     /// Gets the element at the given path from groveDB.
     /// Pushes the `OperationCost` of getting the element to `drive_operations`.
-    pub fn grove_get_sum_tree_total_value<'b, B: AsRef<[u8]>>(
+    pub fn grove_get_sum_tree_total_value<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         query_type: DirectQueryType,
         transaction: TransactionArg,
@@ -710,9 +705,9 @@ impl Drive {
 
     /// Gets the return value and the cost of a groveDB `has_raw` operation.
     /// Pushes the cost to `drive_operations` and returns the return value.
-    pub(crate) fn grove_has_raw<'b, B: AsRef<[u8]>>(
+    pub(crate) fn grove_has_raw<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         query_type: DirectQueryType,
         transaction: TransactionArg,
@@ -1455,9 +1450,9 @@ impl Drive {
     }
 
     /// Pushes a "delete element" operation to `drive_operations`.
-    pub(crate) fn batch_delete<'b, B: AsRef<[u8]>>(
+    pub(crate) fn batch_delete<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         apply_type: BatchDeleteApplyType,
         transaction: TransactionArg,
@@ -1510,9 +1505,9 @@ impl Drive {
     /// Pushes a "delete element" operation to `drive_operations` and returns the current element.
     /// If the element didn't exist does nothing.
     /// It is raw, because it does not use references.
-    pub(crate) fn batch_remove_raw<'b, B: AsRef<[u8]>>(
+    pub(crate) fn batch_remove_raw<B: AsRef<[u8]>>(
         &self,
-        path: SubtreePath<'b, B>,
+        path: SubtreePath<'_, B>,
         key: &[u8],
         apply_type: BatchDeleteApplyType,
         transaction: TransactionArg,
