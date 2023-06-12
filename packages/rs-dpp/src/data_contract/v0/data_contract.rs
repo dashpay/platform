@@ -116,6 +116,7 @@ impl Convertible for DataContractV0 {
 #[serde(rename_all = "camelCase")]
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
+    /// This field must always present in all versions.
     #[serde(rename = "$id")]
     pub id: Identifier,
 

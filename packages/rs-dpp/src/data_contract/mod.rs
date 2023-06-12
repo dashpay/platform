@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use bincode::{config, BorrowDecode, Decode, Encode};
 pub use data_contract::*;
@@ -31,6 +32,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
 use platform_versioning::PlatformVersioned;
+use crate::data_contract::document_type::DocumentType;
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -41,6 +43,13 @@ pub mod property_names {
     pub const DOCUMENTS: &str = "documents";
     pub const DEFINITIONS: &str = "$defs";
     pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
+}
+
+pub trait DataContractLike {
+    fn id() -> Identifier;
+    fn owner_id() -> Identifier;
+    fn contract_version() -> u32;
+    fn document_types() -> BTreeMap<DocumentName, DocumentType>;
 }
 
 #[derive(
