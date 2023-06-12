@@ -3,14 +3,12 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::valida
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::ProtocolError;
 
-use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 use crate::{
-    state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    validation::ValidationResultWasm,
+    state_repository::ExternalStateRepositoryLikeWrapper, validation::ValidationResultWasm,
 };
 
 #[wasm_bindgen(js_name=IdentityCreditTransferTransitionBasicValidator)]
@@ -29,12 +27,7 @@ impl From<IdentityCreditTransferTransitionBasicValidator>
 #[wasm_bindgen(js_class=IdentityCreditTransferTransitionBasicValidator)]
 impl IdentityCreditTransferTransitionBasicValidatorWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        state_repository: ExternalStateRepositoryLike,
-    ) -> Result<IdentityCreditTransferTransitionBasicValidatorWasm, JsValue> {
-        let state_repository_wrapper =
-            Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
-
+    pub fn new() -> Result<IdentityCreditTransferTransitionBasicValidatorWasm, JsValue> {
         let protocol_version_validator = ProtocolVersionValidator::new(
             LATEST_VERSION,
             LATEST_VERSION,
@@ -52,10 +45,7 @@ impl IdentityCreditTransferTransitionBasicValidatorWasm {
     pub async fn validate(
         mut self,
         raw_state_transition: JsValue,
-        // execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
-        // let execution_context: &StateTransitionExecutionContext = execution_context.into();
-
         let current_protocol_version =
             js_sys::Reflect::get(&raw_state_transition, &"protocolVersion".into())
                 .map(|v| v.as_f64().unwrap_or(LATEST_VERSION as f64) as u32)
