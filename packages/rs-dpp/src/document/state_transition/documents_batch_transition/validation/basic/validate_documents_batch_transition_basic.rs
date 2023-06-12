@@ -21,7 +21,7 @@ use crate::{
         enrich_with_base_schema::{PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3},
         DataContract,
     },
-    document::{document_transition::Action, generate_document_id::generate_document_id},
+    document::generate_document_id::generate_document_id,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,

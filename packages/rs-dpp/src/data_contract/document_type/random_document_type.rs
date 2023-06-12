@@ -98,7 +98,7 @@ impl RandomDocumentTypeParameters {
 }
 
 use crate::data_contract::document_type::{
-    DocumentField, DocumentFieldType, DocumentType, Index, IndexLevel,
+    DocumentFieldTypeV0, DocumentFieldV0, DocumentType, Index, IndexLevel,
 };
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -125,7 +125,7 @@ impl DocumentType {
             + field_weights.boolean_weight
             + field_weights.byte_array_weight;
 
-        let random_field = |required: bool, rng: &mut StdRng| -> DocumentField {
+        let random_field = |required: bool, rng: &mut StdRng| -> DocumentFieldV0 {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
@@ -140,22 +140,22 @@ impl DocumentType {
                 } else {
                     None
                 };
-                DocumentFieldType::String(min_len, max_len)
+                DocumentFieldTypeV0::String(min_len, max_len)
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentFieldType::Integer
+                DocumentFieldTypeV0::Integer
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentFieldType::Number
+                DocumentFieldTypeV0::Number
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
                     + field_weights.date_weight
             {
-                DocumentFieldType::Date
+                DocumentFieldTypeV0::Date
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
@@ -163,7 +163,7 @@ impl DocumentType {
                     + field_weights.date_weight
                     + field_weights.boolean_weight
             {
-                DocumentFieldType::Boolean
+                DocumentFieldTypeV0::Boolean
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
@@ -180,10 +180,10 @@ impl DocumentType {
                     None
                 };
 
-                DocumentFieldType::ByteArray(min_len, max_len)
+                DocumentFieldTypeV0::ByteArray(min_len, max_len)
             };
 
-            DocumentField {
+            DocumentFieldV0 {
                 document_type,
                 required,
             }

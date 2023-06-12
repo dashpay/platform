@@ -2,7 +2,6 @@ use platform_value::Value;
 use std::sync::Arc;
 
 use crate::document::document_factory::{DocumentFactory, FactoryOptions};
-use crate::document::document_transition::Action;
 use crate::document::document_validator::DocumentValidator;
 use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
 use crate::document::{DocumentsBatchTransition, ExtendedDocument};

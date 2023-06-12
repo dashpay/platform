@@ -16,7 +16,7 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::document::document_transition::INITIAL_REVISION;
-use crate::document::{Document, DocumentV0};
+use crate::document::{document_transition, Document, DocumentV0};
 use crate::identity::TimestampMillis;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
@@ -29,12 +29,9 @@ use crate::{
 };
 
 use super::{
-    document_transition::{self, Action},
-    document_validator::DocumentValidator,
-    errors::DocumentError,
+    document_validator::DocumentValidator, errors::DocumentError,
     fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    generate_document_id::generate_document_id,
-    DocumentsBatchTransition,
+    generate_document_id::generate_document_id, DocumentsBatchTransition,
 };
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
@@ -372,7 +369,7 @@ where
                         document: Box::new(document),
                     }.into());
                 };
-                if revision != &document_transition::INITIAL_REVISION {
+                if revision != &INITIAL_REVISION {
                     return Err(DocumentError::InvalidInitialRevisionError {
                         document: Box::new(document),
                     }

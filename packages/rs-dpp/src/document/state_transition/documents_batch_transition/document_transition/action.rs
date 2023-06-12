@@ -1,7 +1,7 @@
 use crate::document::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use crate::document::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use crate::document::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
-use crate::document::document_transition::{Action, DocumentBaseTransitionAction};
+use crate::document::document_transition::DocumentBaseTransitionAction;
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 

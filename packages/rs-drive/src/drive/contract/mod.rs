@@ -167,7 +167,7 @@ impl Drive {
         is_first_insert: bool,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id().as_bytes());
         if contract.config.keeps_history {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
@@ -216,7 +216,7 @@ impl Drive {
 
             let encoded_time = encode_u64(block_info.time_ms);
             let contract_keeping_history_storage_path =
-                paths::contract_keeping_history_storage_path(contract.id.as_bytes());
+                paths::contract_keeping_history_storage_path(contract.id().as_bytes());
 
             if !is_first_insert {
                 // we can use a DirectQueryType::StatefulDirectQuery because if we were stateless we would always think
@@ -384,7 +384,7 @@ impl Drive {
 
         self.batch_insert_empty_tree(
             [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
-            KeyRef(contract.id.as_bytes()),
+            KeyRef(contract.id().as_bytes()),
             storage_flags.as_ref(),
             &mut batch_operations,
         )?;
@@ -400,7 +400,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id().as_bytes());
         let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -412,7 +412,7 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract.id.as_bytes());
+        let contract_documents_path = contract_documents_path(contract.id().as_bytes());
 
         for (type_key, document_type) in contract.document_types.iter() {
             self.batch_insert_empty_tree(
@@ -515,7 +515,7 @@ impl Drive {
 
         let original_contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                contract.id.to_buffer(),
+                contract.id().to_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
@@ -543,7 +543,7 @@ impl Drive {
         // Update Data Contracts cache with the new contract
         let updated_contract_fetch_info = self
             .fetch_contract_and_add_operations(
-                contract.id.to_buffer(),
+                contract.id().to_buffer(),
                 Some(&block_info.epoch),
                 transaction,
                 &mut drive_operations,
@@ -682,7 +682,7 @@ impl Drive {
 
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
-        let contract_documents_path = contract_documents_path(contract.id.as_bytes());
+        let contract_documents_path = contract_documents_path(contract.id().as_bytes());
         for (type_key, document_type) in contract.document_types.iter() {
             let original_document_type = &original_contract.document_types.get(type_key);
             if let Some(original_document_type) = original_document_type {
@@ -1438,7 +1438,7 @@ impl Drive {
 
         // We can do a get direct because there are no references involved
         match self.grove_get_raw(
-            (&contract_root_path(contract.id.as_bytes())).into(),
+            (&contract_root_path(contract.id().as_bytes())).into(),
             &[0],
             direct_query_type,
             transaction,
@@ -1458,7 +1458,7 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                (&contract_keeping_history_storage_path(contract.id.as_bytes()))
+                                (&contract_keeping_history_storage_path(contract.id().as_bytes()))
                                     .into(),
                                 &[0],
                                 QueryType::StatefulQuery,
@@ -1475,14 +1475,14 @@ impl Drive {
                                 }
                             }
                             _ => {
-                                return Err(Error::Drive(DriveError::CorruptedDriveState(format!("expecting an item for the last reference of a contract that keeps history {}", contract.id.to_string(Encoding::Base58)))));
+                                return Err(Error::Drive(DriveError::CorruptedDriveState(format!("expecting an item for the last reference of a contract that keeps history {}", contract.id().to_string(Encoding::Base58)))));
                             }
                         }
                     }
                     _ => {
                         return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
                             "expecting an item or a tree at contract root {}",
-                            contract.id.to_string(Encoding::Base58)
+                            contract.id().to_string(Encoding::Base58)
                         ))));
                     }
                 }
@@ -1835,7 +1835,7 @@ mod tests {
                 .expect("should update contract");
 
             let fetch_info_from_database = drive
-                .get_contract_with_fetch_info_and_fee(contract.id.to_buffer(), None, true, None)
+                .get_contract_with_fetch_info_and_fee(contract.id().to_buffer(), None, true, None)
                 .expect("should get contract")
                 .1
                 .expect("should be present");
@@ -1844,7 +1844,7 @@ mod tests {
 
             let fetch_info_from_cache = drive
                 .get_contract_with_fetch_info_and_fee(
-                    contract.id.to_buffer(),
+                    contract.id().to_buffer(),
                     None,
                     true,
                     Some(&transaction),
@@ -1909,7 +1909,7 @@ mod tests {
 
             // Create more contracts to trigger re-balancing
             for i in 0..150u8 {
-                ref_contract.id = Identifier::from([i; 32]);
+                ref_contract.id() = Identifier::from([i; 32]);
 
                 drive
                     .apply_contract(
@@ -1949,7 +1949,7 @@ mod tests {
 
             let mut deep_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info_and_fee(
-                    deep_contract.id.to_buffer(),
+                    deep_contract.id().to_buffer(),
                     Some(&Epoch::new(0).unwrap()),
                     true,
                     Some(&transaction),
@@ -1975,7 +1975,7 @@ mod tests {
 
             let deep_contract_fetch_info = drive
                 .get_contract_with_fetch_info_and_fee(
-                    deep_contract.id.to_buffer(),
+                    deep_contract.id().to_buffer(),
                     None,
                     true,
                     None,
@@ -2015,7 +2015,7 @@ mod tests {
 
             let deep_contract_fetch_info_without_cache = drive
                 .get_contract_with_fetch_info_and_fee(
-                    deep_contract.id.to_buffer(),
+                    deep_contract.id().to_buffer(),
                     None,
                     true,
                     None,
@@ -2063,7 +2063,7 @@ mod tests {
 
             // Create more contracts to trigger re-balancing
             for i in 150..200u8 {
-                ref_contract.id = Identifier::from([i; 32]);
+                ref_contract.id() = Identifier::from([i; 32]);
 
                 drive
                     .apply_contract(
@@ -2083,7 +2083,7 @@ mod tests {
 
             let mut deep_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info_and_fee(
-                    deep_contract.id.to_buffer(),
+                    deep_contract.id().to_buffer(),
                     Some(&Epoch::new(0).unwrap()),
                     true,
                     Some(&transaction),
@@ -2628,7 +2628,7 @@ mod tests {
             let contract_id = if test_case.query_non_existent_contract_id {
                 [0u8; 32]
             } else {
-                *data_contract.id.as_bytes()
+                *data_contract.id().as_bytes()
             };
             let original_data_contract = setup_history_test_with_n_updates(
                 data_contract,

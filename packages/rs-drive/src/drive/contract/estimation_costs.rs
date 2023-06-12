@@ -37,7 +37,7 @@ impl Drive {
         for document_type_name in contract.document_types.keys() {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
-                    contract.id.as_bytes(),
+                    contract.id().as_bytes(),
                     document_type_name.as_str(),
                 )),
                 EstimatedLayerInformation {
@@ -61,7 +61,7 @@ impl Drive {
 
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_keeping_history_storage_path(
-                    contract.id.as_bytes(),
+                    contract.id().as_bytes(),
                 )),
                 EstimatedLayerInformation {
                     is_sum_tree: false,

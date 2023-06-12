@@ -41,6 +41,8 @@ use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::data_contract::data_contract::DataContractV0;
+use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_transition::{
     DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
@@ -53,9 +55,9 @@ use dpp::validation::SimpleConsensusValidationResult;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
-struct UniquenessOfDataRequest<'a> {
-    contract: &'a Contract,
-    document_type: &'a DocumentType,
+struct UniquenessOfDataRequestV0<'a> {
+    contract: &'a ContractV0,
+    document_type: &'a DocumentTypeV0,
     owner_id: &'a Identifier,
     document_id: &'a Identifier,
     allow_original: bool,
@@ -68,14 +70,14 @@ impl Drive {
     /// Validate that a document would be unique in the state
     pub fn validate_document_uniqueness(
         &self,
-        contract: &Contract,
-        document_type: &DocumentType,
+        contract: &ContractV0,
+        document_type: &DocumentTypeV0,
         document: &Document,
         owner_id: &Identifier,
         allow_original: bool,
         transaction: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let request = UniquenessOfDataRequest {
+        let request = UniquenessOfDataRequestV0 {
             contract,
             document_type,
             owner_id,
@@ -91,13 +93,13 @@ impl Drive {
     /// Validate that a document create transition action would be unique in the state
     pub fn validate_document_create_transition_action_uniqueness(
         &self,
-        contract: &Contract,
-        document_type: &DocumentType,
+        contract: &DataContractV0,
+        document_type: &DocumentTypeV0,
         document_create_transition: &DocumentCreateTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let request = UniquenessOfDataRequest {
+        let request = UniquenessOfDataRequestV0 {
             contract,
             document_type,
             owner_id,
@@ -113,8 +115,8 @@ impl Drive {
     /// Validate that a document replace transition action would be unique in the state
     pub fn validate_document_replace_transition_action_uniqueness(
         &self,
-        contract: &Contract,
-        document_type: &DocumentType,
+        contract: &DataContractV0,
+        document_type: &DocumentTypeV0,
         document_replace_transition: &DocumentReplaceTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,
@@ -135,10 +137,10 @@ impl Drive {
     /// Internal method validating uniqueness
     fn validate_uniqueness_of_data(
         &self,
-        request: UniquenessOfDataRequest,
+        request: UniquenessOfDataRequestV0,
         transaction: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let UniquenessOfDataRequest {
+        let UniquenessOfDataRequestV0 {
             contract,
             document_type,
             owner_id,

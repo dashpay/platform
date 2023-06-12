@@ -2,6 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
+use crate::prelude::DataContract;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use derive_more::From;
@@ -14,6 +15,12 @@ pub enum CreatedDataContract {
 }
 
 impl CreatedDataContract {
+    pub fn into_data_contract(self) -> DataContract {
+        match self {
+            CreatedDataContract::V0(created_data_contract) => created_data_contract.into(),
+        }
+    }
+
     #[cfg(feature = "platform-value")]
     pub fn from_raw_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
         let data_contract_system_version =

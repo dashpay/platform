@@ -18,13 +18,13 @@ use serde::{Deserialize, Serialize};
 use super::array_field::ArrayFieldType;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct DocumentField {
-    pub document_type: DocumentFieldType,
+pub struct DocumentFieldV0 {
+    pub document_type: DocumentFieldTypeV0,
     pub required: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub enum DocumentFieldType {
+pub enum DocumentFieldTypeV0 {
     ///Todo decompose integer
     Integer,
     Number,
@@ -33,112 +33,114 @@ pub enum DocumentFieldType {
     Identifier,
     Boolean,
     Date,
-    Object(BTreeMap<String, DocumentField>),
+    Object(BTreeMap<String, DocumentFieldV0>),
     Array(ArrayFieldType),
     VariableTypeArray(Vec<ArrayFieldType>),
 }
 
-impl DocumentFieldType {
+impl DocumentFieldTypeV0 {
     pub fn min_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(min_length, _) => match min_length {
+            DocumentFieldTypeV0::Integer => Some(8),
+            DocumentFieldTypeV0::Number => Some(8),
+            DocumentFieldTypeV0::String(min_length, _) => match min_length {
                 None => Some(0),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::ByteArray(min_size, _) => match min_size {
+            DocumentFieldTypeV0::ByteArray(min_size, _) => match min_size {
                 None => Some(0),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentFieldTypeV0::Boolean => Some(1),
+            DocumentFieldTypeV0::Date => Some(8),
+            DocumentFieldTypeV0::Object(sub_fields) => sub_fields
                 .iter()
                 .map(|(_, sub_field)| sub_field.document_type.min_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentFieldTypeV0::Array(_) => None,
+            DocumentFieldTypeV0::VariableTypeArray(_) => None,
+            DocumentFieldTypeV0::Identifier => Some(32),
         }
     }
 
     pub fn min_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(min_length, _) => match min_length {
+            DocumentFieldTypeV0::Integer => Some(8),
+            DocumentFieldTypeV0::Number => Some(8),
+            DocumentFieldTypeV0::String(min_length, _) => match min_length {
                 None => Some(0),
                 Some(size) => Some(*size * 4),
             },
-            DocumentFieldType::ByteArray(min_size, _) => match min_size {
+            DocumentFieldTypeV0::ByteArray(min_size, _) => match min_size {
                 None => Some(0),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentFieldTypeV0::Boolean => Some(1),
+            DocumentFieldTypeV0::Date => Some(8),
+            DocumentFieldTypeV0::Object(sub_fields) => sub_fields
                 .iter()
                 .map(|(_, sub_field)| sub_field.document_type.min_byte_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentFieldTypeV0::Array(_) => None,
+            DocumentFieldTypeV0::VariableTypeArray(_) => None,
+            DocumentFieldTypeV0::Identifier => Some(32),
         }
     }
 
     pub fn max_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(_, max_length) => match max_length {
+            DocumentFieldTypeV0::Integer => Some(8),
+            DocumentFieldTypeV0::Number => Some(8),
+            DocumentFieldTypeV0::String(_, max_length) => match max_length {
                 None => Some(u16::MAX),
                 Some(size) => Some(*size * 4),
             },
-            DocumentFieldType::ByteArray(_, max_size) => match max_size {
+            DocumentFieldTypeV0::ByteArray(_, max_size) => match max_size {
                 None => Some(u16::MAX),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentFieldTypeV0::Boolean => Some(1),
+            DocumentFieldTypeV0::Date => Some(8),
+            DocumentFieldTypeV0::Object(sub_fields) => sub_fields
                 .iter()
                 .map(|(_, sub_field)| sub_field.document_type.max_byte_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentFieldTypeV0::Array(_) => None,
+            DocumentFieldTypeV0::VariableTypeArray(_) => None,
+            DocumentFieldTypeV0::Identifier => Some(32),
         }
     }
 
     pub fn max_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(_, max_length) => match max_length {
+            DocumentFieldTypeV0::Integer => Some(8),
+            DocumentFieldTypeV0::Number => Some(8),
+            DocumentFieldTypeV0::String(_, max_length) => match max_length {
                 None => Some(16383),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::ByteArray(_, max_size) => match max_size {
+            DocumentFieldTypeV0::ByteArray(_, max_size) => match max_size {
                 None => Some(u16::MAX),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentFieldTypeV0::Boolean => Some(1),
+            DocumentFieldTypeV0::Date => Some(8),
+            DocumentFieldTypeV0::Object(sub_fields) => sub_fields
                 .iter()
                 .map(|(_, sub_field)| sub_field.document_type.max_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentFieldTypeV0::Array(_) => None,
+            DocumentFieldTypeV0::VariableTypeArray(_) => None,
+            DocumentFieldTypeV0::Identifier => Some(32),
         }
     }
 
     /// The middle size rounded down halfway between min and max size
     pub fn middle_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentFieldTypeV0::Array(_) | DocumentFieldTypeV0::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_size().unwrap();
@@ -149,7 +151,9 @@ impl DocumentFieldType {
     /// The middle size rounded up halfway between min and max size
     pub fn middle_size_ceil(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentFieldTypeV0::Array(_) | DocumentFieldTypeV0::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_size().unwrap();
@@ -160,7 +164,9 @@ impl DocumentFieldType {
     /// The middle size rounded down halfway between min and max byte size
     pub fn middle_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentFieldTypeV0::Array(_) | DocumentFieldTypeV0::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_byte_size().unwrap();
@@ -171,7 +177,9 @@ impl DocumentFieldType {
     /// The middle size rounded up halfway between min and max byte size
     pub fn middle_byte_size_ceil(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentFieldTypeV0::Array(_) | DocumentFieldTypeV0::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_byte_size().unwrap() as u32;
@@ -187,9 +195,9 @@ impl DocumentFieldType {
 
     pub fn random_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
-            DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentFieldType::String(_, _) => {
+            DocumentFieldTypeV0::Integer => Value::I64(rng.gen::<i64>()),
+            DocumentFieldTypeV0::Number => Value::Float(rng.gen::<f64>()),
+            DocumentFieldTypeV0::String(_, _) => {
                 let size = self.random_size(rng);
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -198,7 +206,7 @@ impl DocumentFieldType {
                         .collect(),
                 )
             }
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentFieldTypeV0::ByteArray(_, _) => {
                 let size = self.random_size(rng);
                 if self.min_size() == self.max_size() {
                     match size {
@@ -217,12 +225,12 @@ impl DocumentFieldType {
                     Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
                 }
             }
-            DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
-            DocumentFieldType::Date => {
+            DocumentFieldTypeV0::Boolean => Value::Bool(rng.gen::<bool>()),
+            DocumentFieldTypeV0::Date => {
                 let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
                 Value::Float(f.round() / 1000.0)
             }
-            DocumentFieldType::Object(sub_fields) => {
+            DocumentFieldTypeV0::Object(sub_fields) => {
                 let value_vec = sub_fields
                     .iter()
                     .map(|(string, field_type)| {
@@ -234,17 +242,17 @@ impl DocumentFieldType {
                     .collect();
                 Value::Map(value_vec)
             }
-            DocumentFieldType::Array(_) => Value::Null,
-            DocumentFieldType::VariableTypeArray(_) => Value::Null,
-            DocumentFieldType::Identifier => Value::Identifier(rng.gen()),
+            DocumentFieldTypeV0::Array(_) => Value::Null,
+            DocumentFieldTypeV0::VariableTypeArray(_) => Value::Null,
+            DocumentFieldTypeV0::Identifier => Value::Identifier(rng.gen()),
         }
     }
 
     pub fn random_filled_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
-            DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentFieldType::String(_, _) => {
+            DocumentFieldTypeV0::Integer => Value::I64(rng.gen::<i64>()),
+            DocumentFieldTypeV0::Number => Value::Float(rng.gen::<f64>()),
+            DocumentFieldTypeV0::String(_, _) => {
                 let size = self.max_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -253,16 +261,16 @@ impl DocumentFieldType {
                         .collect(),
                 )
             }
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentFieldTypeV0::ByteArray(_, _) => {
                 let size = self.max_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
-            DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
-            DocumentFieldType::Date => {
+            DocumentFieldTypeV0::Boolean => Value::Bool(rng.gen::<bool>()),
+            DocumentFieldTypeV0::Date => {
                 let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
                 Value::Float(f.round() / 1000.0)
             }
-            DocumentFieldType::Object(sub_fields) => {
+            DocumentFieldTypeV0::Object(sub_fields) => {
                 let value_vec = sub_fields
                     .iter()
                     .map(|(string, field_type)| {
@@ -274,9 +282,9 @@ impl DocumentFieldType {
                     .collect();
                 Value::Map(value_vec)
             }
-            DocumentFieldType::Array(_) => Value::Null,
-            DocumentFieldType::VariableTypeArray(_) => Value::Null,
-            DocumentFieldType::Identifier => Value::Identifier(rng.gen()),
+            DocumentFieldTypeV0::Array(_) => Value::Null,
+            DocumentFieldTypeV0::VariableTypeArray(_) => Value::Null,
+            DocumentFieldTypeV0::Identifier => Value::Identifier(rng.gen()),
         }
     }
 
@@ -315,7 +323,7 @@ impl DocumentFieldType {
             }
         }
         match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentFieldTypeV0::String(_, _) => {
                 let bytes = Self::read_varint_value(buf)?;
                 let string = String::from_utf8(bytes).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
@@ -324,7 +332,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(Some(Value::Text(string)))
             }
-            DocumentFieldType::Date | DocumentFieldType::Number => {
+            DocumentFieldTypeV0::Date | DocumentFieldTypeV0::Number => {
                 let date = buf.read_f64::<BigEndian>().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                         "error reading date/number from serialized document",
@@ -332,7 +340,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(Some(Value::Float(date)))
             }
-            DocumentFieldType::Integer => {
+            DocumentFieldTypeV0::Integer => {
                 let integer = buf.read_i64::<BigEndian>().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                         "error reading integer from serialized document",
@@ -340,7 +348,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(Some(Value::I64(integer)))
             }
-            DocumentFieldType::Boolean => {
+            DocumentFieldTypeV0::Boolean => {
                 let value = buf.read_u8().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                         "error reading bool from serialized document",
@@ -351,7 +359,7 @@ impl DocumentFieldType {
                     _ => Ok(Some(Value::Bool(true))),
                 }
             }
-            DocumentFieldType::ByteArray(min, max) => {
+            DocumentFieldTypeV0::ByteArray(min, max) => {
                 match (min, max) {
                     (Some(min), Some(max)) if min == max => {
                         // if min == max, then we don't need a varint for the length
@@ -378,7 +386,7 @@ impl DocumentFieldType {
                     }
                 }
             }
-            DocumentFieldType::Identifier => {
+            DocumentFieldTypeV0::Identifier => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
                     ProtocolError::DecodingError(
@@ -389,7 +397,7 @@ impl DocumentFieldType {
                 Ok(Some(Value::Identifier(id)))
             }
 
-            DocumentFieldType::Object(inner_fields) => {
+            DocumentFieldTypeV0::Object(inner_fields) => {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
@@ -407,10 +415,10 @@ impl DocumentFieldType {
                     Ok(Some(Value::Map(values)))
                 }
             }
-            DocumentFieldType::Array(_array_field_type) => Err(ProtocolError::DataContractError(
+            DocumentFieldTypeV0::Array(_array_field_type) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported("serialization of arrays not yet supported"),
             )),
-            DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+            DocumentFieldTypeV0::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported("serialization of arrays not yet supported"),
             )),
         }
@@ -425,7 +433,7 @@ impl DocumentFieldType {
             return Ok(vec![]);
         }
         match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentFieldTypeV0::String(_, _) => {
                 if let Value::Text(value) = value {
                     let vec = value.into_bytes();
                     let mut r_vec = vec.len().encode_var_vec();
@@ -435,7 +443,7 @@ impl DocumentFieldType {
                     Err(get_field_type_matching_error())
                 }
             }
-            DocumentFieldType::Date => {
+            DocumentFieldTypeV0::Date => {
                 let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
@@ -447,7 +455,7 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::Integer => {
+            DocumentFieldTypeV0::Integer => {
                 let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
@@ -459,7 +467,7 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::Number => {
+            DocumentFieldTypeV0::Number => {
                 let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
@@ -471,21 +479,21 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentFieldTypeV0::ByteArray(_, _) => {
                 let mut bytes = value.into_binary_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentFieldType::Identifier => {
+            DocumentFieldTypeV0::Identifier => {
                 let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentFieldType::Boolean => {
+            DocumentFieldTypeV0::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 // 0 means does not exist
                 if value_as_boolean {
@@ -494,7 +502,7 @@ impl DocumentFieldType {
                     Ok(vec![2]) // 2 is false
                 }
             }
-            DocumentFieldType::Object(inner_fields) => {
+            DocumentFieldTypeV0::Object(inner_fields) => {
                 if let Value::Map(map) = value {
                     let mut value_map =
                         Value::map_into_btree_string_map(map).map_err(ProtocolError::ValueError)?;
@@ -523,7 +531,7 @@ impl DocumentFieldType {
                     Err(get_field_type_matching_error())
                 }
             }
-            DocumentFieldType::Array(array_field_type) => {
+            DocumentFieldTypeV0::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -538,7 +546,7 @@ impl DocumentFieldType {
                     Err(get_field_type_matching_error())
                 }
             }
-            DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+            DocumentFieldTypeV0::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported(
                     "serialization of variable type arrays not yet supported",
                 ),
@@ -555,14 +563,14 @@ impl DocumentFieldType {
             return Ok(vec![]);
         }
         return match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentFieldTypeV0::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
                 let mut r_vec = vec.len().encode_var_vec();
                 r_vec.extend(vec);
                 Ok(r_vec)
             }
-            DocumentFieldType::Date => {
+            DocumentFieldTypeV0::Date => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
@@ -574,15 +582,15 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::Integer => {
+            DocumentFieldTypeV0::Integer => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_i64.to_be_bytes().to_vec())
             }
-            DocumentFieldType::Number => {
+            DocumentFieldTypeV0::Number => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_f64.to_be_bytes().to_vec())
             }
-            DocumentFieldType::ByteArray(min, max) => match (min, max) {
+            DocumentFieldTypeV0::ByteArray(min, max) => match (min, max) {
                 (Some(min), Some(max)) if min == max => Ok(value.to_binary_bytes()?),
                 _ => {
                     let mut bytes = value.to_binary_bytes()?;
@@ -592,8 +600,8 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             },
-            DocumentFieldType::Identifier => Ok(value.to_identifier_bytes()?),
-            DocumentFieldType::Boolean => {
+            DocumentFieldTypeV0::Identifier => Ok(value.to_identifier_bytes()?),
+            DocumentFieldTypeV0::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 // 0 means does not exist
                 if value_as_boolean {
@@ -602,7 +610,7 @@ impl DocumentFieldType {
                     Ok(vec![0]) // 0 is false
                 }
             }
-            DocumentFieldType::Object(inner_fields) => {
+            DocumentFieldTypeV0::Object(inner_fields) => {
                 let Some(value_map) = value.as_map() else {
                     return Err(get_field_type_matching_error())
                 };
@@ -632,7 +640,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(r_vec)
             }
-            DocumentFieldType::Array(array_field_type) => {
+            DocumentFieldTypeV0::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -648,7 +656,7 @@ impl DocumentFieldType {
                 }
             }
 
-            DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+            DocumentFieldTypeV0::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported("serialization of arrays not yet supported"),
             )),
         };
@@ -660,7 +668,7 @@ impl DocumentFieldType {
             return Ok(vec![]);
         }
         match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentFieldTypeV0::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
                 if vec.is_empty() {
@@ -670,24 +678,24 @@ impl DocumentFieldType {
                     Ok(vec)
                 }
             }
-            DocumentFieldType::Date => {
-                encode_date_timestamp(value.to_integer().map_err(ProtocolError::ValueError)?)
-            }
-            DocumentFieldType::Integer => {
+            DocumentFieldTypeV0::Date => DocumentFieldTypeV0::encode_date_timestamp(
+                value.to_integer().map_err(ProtocolError::ValueError)?,
+            ),
+            DocumentFieldTypeV0::Integer => {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
 
-                encode_signed_integer(value_as_i64)
+                DocumentFieldTypeV0::encode_signed_integer(value_as_i64)
             }
-            DocumentFieldType::Number => Ok(encode_float(
+            DocumentFieldTypeV0::Number => Ok(Self::encode_float(
                 value.to_float().map_err(ProtocolError::ValueError)?,
             )),
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentFieldTypeV0::ByteArray(_, _) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
-            DocumentFieldType::Identifier => value
+            DocumentFieldTypeV0::Identifier => value
                 .to_identifier_bytes()
                 .map_err(ProtocolError::ValueError),
-            DocumentFieldType::Boolean => {
+            DocumentFieldTypeV0::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 if value_as_boolean {
                     Ok(vec![1])
@@ -695,12 +703,12 @@ impl DocumentFieldType {
                     Ok(vec![0])
                 }
             }
-            DocumentFieldType::Object(_) => Err(ProtocolError::DataContractError(
+            DocumentFieldTypeV0::Object(_) => Err(ProtocolError::DataContractError(
                 DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an object",
                 ),
             )),
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
+            DocumentFieldTypeV0::Array(_) | DocumentFieldTypeV0::VariableTypeArray(_) => {
                 Err(ProtocolError::DataContractError(
                     DataContractError::EncodingDataStructureNotSupported(
                         "we should never try encoding an array",
@@ -713,7 +721,7 @@ impl DocumentFieldType {
     // Given a field type and a value this function chooses and executes the right encoding method
     pub fn value_from_string(&self, str: &str) -> Result<Value, ProtocolError> {
         match self {
-            DocumentFieldType::String(min, max) => {
+            DocumentFieldTypeV0::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min as usize {
                         return Err(ProtocolError::DataContractError(
@@ -730,19 +738,19 @@ impl DocumentFieldType {
                 }
                 Ok(Value::Text(str.to_string()))
             }
-            DocumentFieldType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
+            DocumentFieldTypeV0::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::ValueWrongType(
                     "value is not an integer from string",
                 ))
             }),
-            DocumentFieldType::Number | DocumentFieldType::Date => {
+            DocumentFieldTypeV0::Number | DocumentFieldTypeV0::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
                         "value is not a float from string",
                     ))
                 })
             }
-            DocumentFieldType::ByteArray(min, max) => {
+            DocumentFieldTypeV0::ByteArray(min, max) => {
                 if let Some(min) = min {
                     if str.len() / 2 < *min as usize {
                         return Err(ProtocolError::DataContractError(
@@ -763,10 +771,10 @@ impl DocumentFieldType {
                     ))
                 })?))
             }
-            DocumentFieldType::Identifier => Ok(Value::Identifier(
+            DocumentFieldTypeV0::Identifier => Ok(Value::Identifier(
                 Value::Text(str.to_owned()).to_identifier()?.into_buffer(),
             )),
-            DocumentFieldType::Boolean => {
+            DocumentFieldTypeV0::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
                     Ok(Value::Bool(true))
                 } else if str.to_lowercase().as_str() == "false" {
@@ -779,12 +787,12 @@ impl DocumentFieldType {
                     ))
                 }
             }
-            DocumentFieldType::Object(_) => Err(ProtocolError::DataContractError(
+            DocumentFieldTypeV0::Object(_) => Err(ProtocolError::DataContractError(
                 DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an object",
                 ),
             )),
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
+            DocumentFieldTypeV0::Array(_) | DocumentFieldTypeV0::VariableTypeArray(_) => {
                 Err(ProtocolError::DataContractError(
                     DataContractError::EncodingDataStructureNotSupported(
                         "we should never try encoding an array",
@@ -793,103 +801,103 @@ impl DocumentFieldType {
             }
         }
     }
+
+    pub fn encode_date_timestamp(val: TimestampMillis) -> Result<Vec<u8>, ProtocolError> {
+        Self::encode_unsigned_integer(val)
+    }
+
+    pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, ProtocolError> {
+        // Positive integers are represented in binary with the signed bit set to 0
+        // Negative integers are represented in 2's complement form
+
+        // Encode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut wtr = vec![];
+        wtr.write_u64::<BigEndian>(val).unwrap();
+
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        wtr[0] ^= 0b1000_0000;
+
+        Ok(wtr)
+    }
+
+    pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, ProtocolError> {
+        // Positive integers are represented in binary with the signed bit set to 0
+        // Negative integers are represented in 2's complement form
+
+        // Encode the integer in big endian form
+        // This ensures that most significant bits are compared first
+        // a bigger positive number would be greater than a smaller one
+        // and a bigger negative number would be greater than a smaller one
+        // maintains sort order for each domain
+        let mut wtr = vec![];
+        wtr.write_i64::<BigEndian>(val).unwrap();
+
+        // Flip the sign bit
+        // to deal with interaction between the domains
+        // 2's complement values have the sign bit set to 1
+        // this makes them greater than the positive domain in terms of sort order
+        // to fix this, we just flip the sign bit
+        // so positive integers have the high bit and negative integers have the low bit
+        // the relative order of elements in each domain is still maintained, as the
+        // change was uniform across all elements
+        wtr[0] ^= 0b1000_0000;
+
+        Ok(wtr)
+    }
+
+    pub fn encode_float(val: f64) -> Vec<u8> {
+        // Floats are represented based on the  IEEE 754-2008 standard
+        // [sign bit] [biased exponent] [mantissa]
+
+        // when comparing floats, the sign bit has the greatest impact
+        // any positive number is greater than all negative numbers
+        // if the numbers come from the same domain then the exponent is the next factor to consider
+        // the exponent gives a sense of how many digits are in the non fractional part of the number
+        // for example in base 10, 10 has an exponent of 1 (1.0 * 10^1)
+        // while 5000 (5.0 * 10^3) has an exponent of 3
+        // for the positive domain, the bigger the exponent the larger the number i.e 5000 > 10
+        // for the negative domain, the bigger the exponent the smaller the number i.e -10 > -5000
+        // if the exponents are the same, then the mantissa is used to determine the greater number
+        // the inverse relationship still holds
+        // i.e bigger mantissa (bigger number in positive domain but smaller number in negative domain)
+
+        // There are two things to fix to achieve total sort order
+        // 1. Place positive domain above negative domain (i.e flip the sign bit)
+        // 2. Exponent and mantissa for a smaller number like -5000 is greater than that of -10
+        //    so bit level comparison would say -5000 is greater than -10
+        //    we fix this by flipping the exponent and mantissa values, which has the effect of reversing
+        //    the order (0000 [smallest] -> 1111 [largest])
+
+        // Encode in big endian form, so most significant bits are compared first
+        let mut wtr = vec![];
+        wtr.write_f64::<BigEndian>(val).unwrap();
+
+        // Check if the value is negative, if it is
+        // flip all the bits i.e sign, exponent and mantissa
+        if val < 0.0 {
+            wtr = wtr.iter().map(|byte| !byte).collect();
+        } else {
+            // for positive values, just flip the sign bit
+            wtr[0] ^= 0b1000_0000;
+        }
+
+        wtr
+    }
 }
 
 fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
         "document field type doesn't match document value",
     ))
-}
-
-pub fn encode_date_timestamp(val: TimestampMillis) -> Result<Vec<u8>, ProtocolError> {
-    encode_unsigned_integer(val)
-}
-
-pub fn encode_unsigned_integer(val: u64) -> Result<Vec<u8>, ProtocolError> {
-    // Positive integers are represented in binary with the signed bit set to 0
-    // Negative integers are represented in 2's complement form
-
-    // Encode the integer in big endian form
-    // This ensures that most significant bits are compared first
-    // a bigger positive number would be greater than a smaller one
-    // and a bigger negative number would be greater than a smaller one
-    // maintains sort order for each domain
-    let mut wtr = vec![];
-    wtr.write_u64::<BigEndian>(val).unwrap();
-
-    // Flip the sign bit
-    // to deal with interaction between the domains
-    // 2's complement values have the sign bit set to 1
-    // this makes them greater than the positive domain in terms of sort order
-    // to fix this, we just flip the sign bit
-    // so positive integers have the high bit and negative integers have the low bit
-    // the relative order of elements in each domain is still maintained, as the
-    // change was uniform across all elements
-    wtr[0] ^= 0b1000_0000;
-
-    Ok(wtr)
-}
-
-pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, ProtocolError> {
-    // Positive integers are represented in binary with the signed bit set to 0
-    // Negative integers are represented in 2's complement form
-
-    // Encode the integer in big endian form
-    // This ensures that most significant bits are compared first
-    // a bigger positive number would be greater than a smaller one
-    // and a bigger negative number would be greater than a smaller one
-    // maintains sort order for each domain
-    let mut wtr = vec![];
-    wtr.write_i64::<BigEndian>(val).unwrap();
-
-    // Flip the sign bit
-    // to deal with interaction between the domains
-    // 2's complement values have the sign bit set to 1
-    // this makes them greater than the positive domain in terms of sort order
-    // to fix this, we just flip the sign bit
-    // so positive integers have the high bit and negative integers have the low bit
-    // the relative order of elements in each domain is still maintained, as the
-    // change was uniform across all elements
-    wtr[0] ^= 0b1000_0000;
-
-    Ok(wtr)
-}
-
-pub fn encode_float(val: f64) -> Vec<u8> {
-    // Floats are represented based on the  IEEE 754-2008 standard
-    // [sign bit] [biased exponent] [mantissa]
-
-    // when comparing floats, the sign bit has the greatest impact
-    // any positive number is greater than all negative numbers
-    // if the numbers come from the same domain then the exponent is the next factor to consider
-    // the exponent gives a sense of how many digits are in the non fractional part of the number
-    // for example in base 10, 10 has an exponent of 1 (1.0 * 10^1)
-    // while 5000 (5.0 * 10^3) has an exponent of 3
-    // for the positive domain, the bigger the exponent the larger the number i.e 5000 > 10
-    // for the negative domain, the bigger the exponent the smaller the number i.e -10 > -5000
-    // if the exponents are the same, then the mantissa is used to determine the greater number
-    // the inverse relationship still holds
-    // i.e bigger mantissa (bigger number in positive domain but smaller number in negative domain)
-
-    // There are two things to fix to achieve total sort order
-    // 1. Place positive domain above negative domain (i.e flip the sign bit)
-    // 2. Exponent and mantissa for a smaller number like -5000 is greater than that of -10
-    //    so bit level comparison would say -5000 is greater than -10
-    //    we fix this by flipping the exponent and mantissa values, which has the effect of reversing
-    //    the order (0000 [smallest] -> 1111 [largest])
-
-    // Encode in big endian form, so most significant bits are compared first
-    let mut wtr = vec![];
-    wtr.write_f64::<BigEndian>(val).unwrap();
-
-    // Check if the value is negative, if it is
-    // flip all the bits i.e sign, exponent and mantissa
-    if val < 0.0 {
-        wtr = wtr.iter().map(|byte| !byte).collect();
-    } else {
-        // for positive values, just flip the sign bit
-        wtr[0] ^= 0b1000_0000;
-    }
-
-    wtr
 }

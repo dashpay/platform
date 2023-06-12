@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    document_transition::{Action, DocumentReplaceTransition, DocumentTransition},
+    document_transition::{DocumentReplaceTransition, DocumentTransition},
     validation::state::fetch_documents::fetch_extended_documents,
     DocumentsBatchTransition,
 };

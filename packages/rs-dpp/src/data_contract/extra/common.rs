@@ -1,9 +1,11 @@
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::CreatedDataContract;
 use crate::document::Document;
 use crate::prelude::DataContract;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
+use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::convert::TryInto;
@@ -54,7 +56,10 @@ pub fn json_document_to_cbor(
 }
 
 /// Reads a JSON file and converts it a contract.
-pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract, ProtocolError> {
+pub fn json_document_to_contract(
+    path: impl AsRef<Path>,
+    version: FeatureVersion,
+) -> Result<DataContract, ProtocolError> {
     let file = File::open(path.as_ref()).map_err(|_| {
         ProtocolError::FileNotFound(format!(
             "file not found at path {}",
@@ -63,9 +68,20 @@ pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract,
     })?;
 
     let reader = BufReader::new(file);
-    serde_json::from_reader(reader).map_err(|e| {
-        ProtocolError::DecodingError(format!("error decoding contract from document {e}"))
-    })
+    match version {
+        0 => {
+            let data_contract_v0: DataContractV0 =
+                serde_json::from_reader(reader).map_err(|e| {
+                    ProtocolError::DecodingError(format!(
+                        "error decoding contract from document {e}"
+                    ))
+                })?;
+            data_contract_v0.into()
+        }
+        version => Err(ProtocolError::UnknownVersionError(format!(
+            "version {version} not known for json document to contract"
+        ))),
+    }
 }
 
 /// Reads a JSON file and converts it a contract.

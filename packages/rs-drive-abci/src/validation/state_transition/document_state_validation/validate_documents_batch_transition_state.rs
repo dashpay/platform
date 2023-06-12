@@ -258,6 +258,7 @@ fn validate_document_transitions_within_document_type(
     ))
 }
 
+/// The data contract can be of multiple difference versions
 fn validate_transition(
     bypass_validation: bool,
     platform: &PlatformStateRef,

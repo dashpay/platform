@@ -11,7 +11,7 @@ use crate::consensus::state::state_error::StateError;
 use crate::document::Document;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{
-    document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
+    document::document_transition::{DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,

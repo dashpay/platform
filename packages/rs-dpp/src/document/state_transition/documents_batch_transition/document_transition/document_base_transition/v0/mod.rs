@@ -11,8 +11,6 @@ use serde::{Deserialize, Serialize};
 pub use serde_json::Value as JsonValue;
 use serde_repr::*;
 
-use crate::document::document_transition::Action::{Create, Delete, Replace};
-
 use crate::document::errors::DocumentError;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
 

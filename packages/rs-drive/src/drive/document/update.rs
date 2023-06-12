@@ -355,10 +355,10 @@ impl Drive {
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
         let contract_document_type_path =
-            contract_document_type_path(contract.id.as_bytes(), document_type.name.as_str());
+            contract_document_type_path(contract.id().as_bytes(), document_type.name.as_str());
 
         let contract_documents_primary_key_path = contract_documents_primary_key_path(
-            contract.id.as_bytes(),
+            contract.id().as_bytes(),
             document_type.name.as_str(),
         );
 
@@ -372,7 +372,7 @@ impl Drive {
         let old_document_element = if document_type.documents_keep_history {
             let contract_documents_keeping_history_primary_key_path_for_document_id =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
-                    contract.id.as_bytes(),
+                    contract.id().as_bytes(),
                     document_type.name.as_str(),
                     document.id.as_slice(),
                 );

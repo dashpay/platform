@@ -1,6 +1,6 @@
 /// Import from dpp
 pub use dpp::data_contract::{
-    document_type::{DocumentField, DocumentFieldType, DocumentType, IndexLevel},
+    document_type::{DocumentFieldTypeV0, DocumentFieldV0, DocumentType, IndexLevel},
     document_type::{Index, IndexProperty},
     DataContract, DataContract as Contract,
 };

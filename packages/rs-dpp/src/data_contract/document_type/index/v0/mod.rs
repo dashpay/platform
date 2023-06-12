@@ -1,4 +1,5 @@
 use crate::data_contract::errors::{DataContractError, StructureError};
+
 use crate::ProtocolError;
 use anyhow::bail;
 
@@ -7,15 +8,17 @@ use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, convert::TryFrom};
 
+pub mod random_index;
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct Index {
+pub struct IndexV0 {
     pub name: String,
-    pub properties: Vec<IndexProperty>,
+    pub properties: Vec<IndexPropertyV0>,
     pub unique: bool,
 }
 
-impl Index {
+impl IndexV0 {
     /// Check to see if two objects are conflicting
     pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
         if !self.unique {
@@ -43,7 +46,7 @@ impl Index {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
-pub struct IndexProperty {
+pub struct IndexPropertyV0 {
     pub name: String,
     pub ascending: bool,
 }
@@ -51,14 +54,14 @@ pub struct IndexProperty {
 //todo: remove this intermediate structure that serves no purpose
 // The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct IndexWithRawProperties {
+pub struct IndexWithRawPropertiesV0 {
     pub name: String,
     pub properties: Vec<BTreeMap<String, String>>,
     #[serde(default)]
     pub unique: bool,
 }
 
-impl TryFrom<BTreeMap<String, String>> for IndexProperty {
+impl TryFrom<BTreeMap<String, String>> for IndexPropertyV0 {
     type Error = anyhow::Error;
 
     fn try_from(value: BTreeMap<String, String>) -> Result<Self, Self::Error> {
@@ -87,15 +90,15 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
     }
 }
 
-impl TryFrom<IndexWithRawProperties> for Index {
+impl TryFrom<IndexWithRawPropertiesV0> for IndexV0 {
     type Error = anyhow::Error;
 
-    fn try_from(index: IndexWithRawProperties) -> Result<Self, Self::Error> {
+    fn try_from(index: IndexWithRawPropertiesV0) -> Result<Self, Self::Error> {
         let properties = index
             .properties
             .into_iter()
-            .map(IndexProperty::try_from)
-            .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
+            .map(IndexPropertyV0::try_from)
+            .collect::<Result<Vec<IndexPropertyV0>, anyhow::Error>>()?;
 
         Ok(Self {
             name: index.name,
@@ -105,15 +108,7 @@ impl TryFrom<IndexWithRawProperties> for Index {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
-pub enum OrderBy {
-    #[serde(rename = "asc")]
-    Asc,
-    #[serde(rename = "desc")]
-    Desc,
-}
-
-impl Index {
+impl IndexV0 {
     // The matches function will take a slice of an array of strings and an optional sort on value.
     // An index matches if all the index_names in the slice are consecutively the index's properties
     // with leftovers permitted.
@@ -191,7 +186,7 @@ impl Index {
     }
 }
 
-impl TryFrom<&[(Value, Value)]> for Index {
+impl TryFrom<&[(Value, Value)]> for IndexV0 {
     type Error = ProtocolError;
 
     fn try_from(index_type_value_map: &[(Value, Value)]) -> Result<Self, Self::Error> {
@@ -203,7 +198,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
 
         let mut unique = false;
         let mut name = None;
-        let mut index_properties: Vec<IndexProperty> = Vec::new();
+        let mut index_properties: Vec<IndexPropertyV0> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str().map_err(ProtocolError::ValueError)?;
@@ -242,7 +237,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             )),
                         )?;
 
-                        let index_property = IndexProperty::from_platform_value(property_map)?;
+                        let index_property = IndexPropertyV0::from_platform_value(property_map)?;
                         index_properties.push(index_property);
                     }
                 }
@@ -254,7 +249,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         //todo: we should remove the name altogether
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
-        Ok(Index {
+        Ok(IndexV0 {
             name,
             properties: index_properties,
             unique,
@@ -262,7 +257,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
     }
 }
 
-impl IndexProperty {
+impl IndexPropertyV0 {
     pub fn from_platform_value(
         index_property_map: &[(Value, Value)],
     ) -> Result<Self, ProtocolError> {
@@ -283,7 +278,7 @@ impl IndexProperty {
 
         let ascending = value == "asc";
 
-        Ok(IndexProperty {
+        Ok(IndexPropertyV0 {
             name: key.to_string(),
             ascending,
         })

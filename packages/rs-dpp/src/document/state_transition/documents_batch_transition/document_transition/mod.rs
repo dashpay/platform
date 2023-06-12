@@ -24,7 +24,7 @@ mod document_replace_transition_action;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-pub use document_base_transition::{Action, DocumentTransitionObjectLike};
+pub use document_base_transition::DocumentTransitionObjectLike;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;

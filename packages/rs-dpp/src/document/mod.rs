@@ -6,6 +6,7 @@ pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 mod document;
 
 mod accessors;
+pub mod action_type;
 pub mod document_facade;
 pub mod document_factory;
 mod document_patch;

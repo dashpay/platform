@@ -245,15 +245,12 @@ mod tests {
 
     fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None);
-        let raw_data_contract = created_data_contract.data_contract.to_object().unwrap();
-        let protocol_version_validator = ProtocolVersionValidator::new(
-            LATEST_VERSION,
-            LATEST_VERSION,
-            COMPATIBILITY_MAP.clone(),
-        );
-        let data_contract_validator = Arc::new(DataContractValidator::new(Arc::new(
-            protocol_version_validator,
-        )));
+        let raw_data_contract = created_data_contract
+            .into_data_contract()
+            .as_v0()
+            .unwrap()
+            .to_object()
+            .unwrap();
 
         let factory = DataContractFactoryV0::new(1, data_contract_validator);
         TestData {

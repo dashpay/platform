@@ -5,7 +5,7 @@ use derive_more::From;
 pub use factory::*;
 pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 
 mod data_contract_facade;
 
@@ -16,6 +16,7 @@ mod generate_data_contract;
 pub mod state_transition;
 
 pub mod created_data_contract;
+pub mod document_type;
 mod factory;
 mod v0;
 
@@ -68,6 +69,32 @@ impl Default for DataContract {
 }
 
 impl DataContract {
+    pub fn id(&self) -> Identifier {
+        match self {
+            DataContract::V0(v0) => v0.id,
+        }
+    }
+
+    pub fn as_v0(&self) -> Option<&DataContractV0> {
+        match self {
+            DataContract::V0(v0) => Some(v0),
+            _ => None,
+        }
+    }
+
+    pub fn as_v0_mut(&mut self) -> Option<&mut DataContractV0> {
+        match self {
+            DataContract::V0(v0) => Some(v0),
+            _ => None,
+        }
+    }
+
+    pub fn into_v0(self) -> Option<DataContractV0> {
+        match self {
+            DataContract::V0(v0) => Some(v0),
+        }
+    }
+
     pub fn check_version_is_active(
         protocol_version: u32,
         data_contract_system_version: FeatureVersion,

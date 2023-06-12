@@ -1,18 +1,16 @@
 pub mod array_field;
 pub mod document_factory;
 pub mod document_field;
-pub mod document_type;
 pub mod index;
 pub mod random_document;
 pub mod random_document_type;
-pub mod random_index;
+pub mod v0;
 
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+use std::borrow::Cow;
 pub use {
     array_field::ArrayFieldType,
-    document_field::{
-        encode_date_timestamp, encode_float, encode_signed_integer, encode_unsigned_integer,
-        DocumentField, DocumentFieldType,
-    },
+    document_field::{DocumentFieldTypeV0, DocumentFieldV0},
     document_type::{DocumentType, IndexLevel},
     index::{Index, IndexProperty},
 };
@@ -33,4 +31,8 @@ pub(self) mod property_names {
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
+}
+
+pub enum DocumentType<'a> {
+    V0(Cow<'a, DocumentTypeV0>),
 }

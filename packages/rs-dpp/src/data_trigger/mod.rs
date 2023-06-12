@@ -5,7 +5,8 @@ pub use reject_data_trigger::*;
 use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
-use crate::document::document_transition::{Action, DocumentTransition};
+use crate::document::action_type::DocumentActionType;
+use crate::document::document_transition::DocumentTransition;
 use crate::{get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike};
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
@@ -55,7 +56,7 @@ pub struct DataTrigger {
     pub data_contract_id: Identifier,
     pub document_type: String,
     pub data_trigger_kind: DataTriggerKind,
-    pub transition_action: Action,
+    pub transition_action: DocumentActionType,
     pub top_level_identity: Option<Identifier>,
 }
 

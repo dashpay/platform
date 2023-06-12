@@ -64,6 +64,7 @@ pub use conditions::WhereOperator;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 
+use dpp::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -279,7 +280,7 @@ pub struct DriveQuery<'a> {
     /// Contract
     pub contract: &'a Contract,
     /// Document type
-    pub document_type: &'a DocumentType,
+    pub document_type: DocumentType<'a>,
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset

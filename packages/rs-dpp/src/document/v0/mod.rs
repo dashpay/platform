@@ -50,7 +50,8 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::{encode_date_timestamp, DocumentType};
+use crate::data_contract::document_type::document_field::v0::DocumentFieldTypeV0;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
@@ -101,12 +102,12 @@ impl DocumentV0 {
                 "$createdAt" => {
                     return Ok(self
                         .created_at
-                        .map(|time| encode_date_timestamp(time).unwrap()))
+                        .map(|time| DocumentFieldTypeV0::encode_date_timestamp(time).unwrap()))
                 }
                 "$updatedAt" => {
                     return Ok(self
                         .updated_at
-                        .map(|time| encode_date_timestamp(time).unwrap()))
+                        .map(|time| DocumentFieldTypeV0::encode_date_timestamp(time).unwrap()))
                 }
                 _ => {}
             }

@@ -24,6 +24,7 @@ use crate::data_contract::contract_config::{
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
 use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
@@ -130,7 +131,7 @@ pub struct DataContractV0 {
 
     /// A mapping of document names to their corresponding document types.
     #[serde(skip)]
-    pub document_types: BTreeMap<DocumentName, DocumentType>,
+    pub document_types: BTreeMap<DocumentName, DocumentTypeV0>,
 
     /// Optional metadata associated with the contract.
     #[serde(skip)]

@@ -20,7 +20,6 @@ use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
 use super::super::INITIAL_REVISION;
-use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 
 pub(self) mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -216,6 +215,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
 #[cfg(test)]
 mod test {
 
+    use crate::document::document_transition::DocumentCreateTransition;
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 

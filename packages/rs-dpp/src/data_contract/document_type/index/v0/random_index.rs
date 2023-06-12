@@ -4,7 +4,7 @@ use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-impl Index {
+impl IndexV0 {
     pub fn random(
         field_names: &[String],
         existing_indices: &[Index],

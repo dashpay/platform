@@ -32,7 +32,7 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
-use dpp::data_contract::document_type::{encode_unsigned_integer, IndexLevel};
+use dpp::data_contract::document_type::IndexLevel;
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -83,6 +83,9 @@ use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::document_field::v0::{
+    encode_unsigned_integer, DocumentFieldTypeV0,
+};
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 
@@ -104,7 +107,7 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let primary_key_path = contract_documents_primary_key_path(
-            contract.id.as_bytes(),
+            contract.id().as_bytes(),
             document_type.name.as_str(),
         );
         // if we are trying to get estimated costs we should add this level
@@ -177,7 +180,7 @@ impl Drive {
                 &mut None, //not going to have multiple same documents in same batch
                 drive_operations,
             )?;
-            let encoded_time = encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = DocumentFieldTypeV0::encode_unsigned_integer(block_info.time_ms)?;
             let path_key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
                     DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
@@ -187,7 +190,7 @@ impl Drive {
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id.as_bytes(),
+                                contract.id().as_bytes(),
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
@@ -204,7 +207,7 @@ impl Drive {
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id.as_bytes(),
+                                contract.id().as_bytes(),
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
@@ -223,7 +226,7 @@ impl Drive {
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id.as_bytes(),
+                                contract.id().as_bytes(),
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
@@ -242,7 +245,7 @@ impl Drive {
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id.as_bytes(),
+                                contract.id().as_bytes(),
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
@@ -255,7 +258,7 @@ impl Drive {
                     DocumentEstimatedAverageSize(max_size) => {
                         let document_id_in_primary_path =
                         contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
-                            contract.id.as_bytes(),
+                            contract.id().as_bytes(),
                             document_type,
                         );
                         PathKeyUnknownElementSize((
@@ -273,7 +276,7 @@ impl Drive {
             {
                 let document_id_in_primary_path =
                     contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
-                        contract.id.as_bytes(),
+                        contract.id().as_bytes(),
                         document_type,
                     );
                 let reference_max_size =
@@ -290,7 +293,7 @@ impl Drive {
                 // todo: we could construct this only once
                 let document_id_in_primary_path =
                     contract_documents_keeping_history_primary_key_path_for_document_id(
-                        contract.id.as_bytes(),
+                        contract.id().as_bytes(),
                         document_type.name.as_str(),
                         document_and_contract_info
                             .owned_document_info
@@ -1037,7 +1040,7 @@ impl Drive {
         //  * Contract ID recovered from document
         //  * 0 to signify Documents and not Contract
         let contract_document_type_path = contract_document_type_path_vec(
-            document_and_contract_info.contract.id.as_bytes(),
+            document_and_contract_info.contract.id().as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
         );
 
@@ -1179,7 +1182,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let primary_key_path = contract_documents_primary_key_path(
-            document_and_contract_info.contract.id.as_bytes(),
+            document_and_contract_info.contract.id().as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
         );
 
