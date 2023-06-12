@@ -1,6 +1,8 @@
 const MasternodeSyncAssetEnum = require('../../../../src/status/enums/masternodeSyncAsset');
 const getMasternodeScopeFactory = require('../../../../src/status/scopes/masternode');
 const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
+const getConfigMock = require('../../../../src/test/mock/getConfigMock');
+const generateEnvs = require('../../../../src/util/generateEnvs');
 
 describe('getMasternodeScopeFactory', () => {
   describe('#getMasternodeScope', () => {
@@ -10,6 +12,7 @@ describe('getMasternodeScopeFactory', () => {
     let mockGetConnectionHost;
 
     let config;
+    let configFile;
     let getMasternodeScope;
 
     beforeEach(async function it() {
@@ -22,9 +25,15 @@ describe('getMasternodeScopeFactory', () => {
       mockDockerCompose = { execCommand: this.sinon.stub() };
       mockGetConnectionHost = this.sinon.stub();
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
-      getMasternodeScope = getMasternodeScopeFactory(mockDockerCompose,
-        mockCreateRpcClient, mockGetConnectionHost);
+      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
+
+      config = getConfigMock(this.sinon);
+      getMasternodeScope = getMasternodeScopeFactory(
+        mockDockerCompose,
+        mockCreateRpcClient,
+        mockGetConnectionHost,
+        configFile,
+      );
     });
 
     it('should just work', async () => {
@@ -36,10 +45,10 @@ describe('getMasternodeScopeFactory', () => {
         },
       });
       mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
+        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py')
         .returns({ out: '' });
       mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
+        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v')
         .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
@@ -92,10 +101,10 @@ describe('getMasternodeScopeFactory', () => {
 
       // and lets say sentinel is working
       mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
+        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py')
         .returns({ out: 'Waiting for dash core sync' });
       mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
+        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v')
         .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const scope = await getMasternodeScope(config);
@@ -136,11 +145,11 @@ describe('getMasternodeScopeFactory', () => {
       });
 
       mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
+        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py')
         .returns({ out: 'Waiting for dash core sync' });
 
       mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
+        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v')
         .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const scope = await getMasternodeScope(config);

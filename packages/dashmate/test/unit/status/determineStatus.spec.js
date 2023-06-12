@@ -2,6 +2,7 @@ const MasternodeSyncAssetEnum = require('../../../src/status/enums/masternodeSyn
 const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
 const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
 const determineStatus = require('../../../src/status/determineStatus');
+const getConfigMock = require('../../../src/test/mock/getConfigMock');
 
 describe('determineStatus', () => {
   describe('#docker', () => {
@@ -10,8 +11,8 @@ describe('determineStatus', () => {
     let configFile;
 
     beforeEach(async function it() {
-      config = { toEnvs: this.sinon.stub() };
-      configFile = { configEnvs: this.sinon.stub() };
+      config = getConfigMock(this.sinon);
+      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
       dockerComposeMock = { inspectService: this.sinon.stub() };
     });
 

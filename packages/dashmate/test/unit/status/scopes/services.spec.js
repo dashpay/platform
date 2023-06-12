@@ -1,21 +1,22 @@
 const getServicesScopeFactory = require('../../../../src/status/scopes/services');
+const getConfigMock = require('../../../../src/test/mock/getConfigMock');
 
 describe('getServicesScopeFactory', () => {
   describe('#getServicesScope', () => {
     let mockDockerCompose;
 
     let config;
+    let configFile;
     let getServicesScope;
 
     beforeEach(async function it() {
       mockDockerCompose = { inspectService: this.sinon.stub() };
 
-      config = {
-        get: this.sinon.stub(),
-        toEnvs: this.sinon.stub(),
-      };
+      config = getConfigMock(this.sinon);
 
-      getServicesScope = getServicesScopeFactory(mockDockerCompose);
+      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
+
+      getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile);
     });
 
     it('should just work', async () => {
