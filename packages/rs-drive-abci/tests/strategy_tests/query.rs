@@ -270,9 +270,9 @@ impl QueryStrategy {
                         .collect();
                     assert_eq!(proof_verification.app_hash, &proof_root_hash);
                     assert!(proof_verification
-                    .verify_proof(&proof_root_hash, proof)
-                    .is_valid());
-                assert_eq!(identities, public_key_hashes);
+                        .verify_proof(&proof_root_hash, proof)
+                        .is_valid());
+                    assert_eq!(identities, public_key_hashes);
                 }
                 get_identities_by_public_key_hashes_response::Result::Identities(data) => {
                     let identities_returned = data
