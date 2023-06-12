@@ -314,6 +314,8 @@ where
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
                 if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash) {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
+                    // these 3 fields are the only fields that are useful for validators. If they change we need to update
+                    // validator sets
                     if state_diff.pose_ban_height.is_some()
                         || state_diff.service.is_some()
                         || state_diff.platform_p2p_port.is_some()
