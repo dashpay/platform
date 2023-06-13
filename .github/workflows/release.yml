@@ -251,6 +251,11 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: eu-west-1
+
       - uses: everpcpc/actions-cache@v1
         with:
           bucket: platform-runner-cache
