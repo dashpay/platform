@@ -134,6 +134,11 @@ describe('Platform', () => {
 
       const newDocumentType = 'myAwesomeDocument';
 
+      // binary contract representation doesn't have a contract config in it,
+      // and we set default value on deserialization, so we need to set it
+      // here to avoid the error, as original contract has a non-default
+      // value here
+      fetchedDataContract.setConfig(dataContractFixture.getConfig());
       fetchedDataContract.setDocumentSchema(newDocumentType, {
         type: 'object',
         indices: [

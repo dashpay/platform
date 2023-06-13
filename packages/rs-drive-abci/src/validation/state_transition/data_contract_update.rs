@@ -34,7 +34,12 @@ use dpp::{
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use serde_json::Value as JsonValue;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::data_contract::data_contract_keep_history_update_error::DataContractConfigUpdateError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::data_contract::contract_config::ContractConfig;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::schema_compatibility_validator::any_schema_changes;
+use dpp::prelude::Identifier;
 
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -42,6 +47,55 @@ use crate::validation::state_transition::key_validation::validate_state_transiti
 use crate::{error::Error, validation::state_transition::common::validate_schema};
 
 use super::StateTransitionValidation;
+
+fn validate_config_update(
+    old_config: &ContractConfig,
+    new_config: &ContractConfig,
+    contract_id: Identifier,
+) -> Result<(), ConsensusError> {
+    if old_config.readonly {
+        return Err(DataContractIsReadonlyError::new(contract_id).into());
+    }
+
+    if new_config.readonly {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not be changed to readonly",
+        )
+        .into());
+    }
+
+    // TODO: that's the place that fails
+    if new_config.keeps_history != old_config.keeps_history {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not change whether it keeps history",
+        )
+        .into());
+    }
+
+    if new_config.documents_keep_history_contract_default
+        != old_config.documents_keep_history_contract_default
+    {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not change the default of whether documents keeps history",
+        )
+        .into());
+    }
+
+    if new_config.documents_mutable_contract_default
+        != old_config.documents_mutable_contract_default
+    {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not change the default of whether documents are mutable",
+        )
+        .into());
+    }
+
+    Ok(())
+}
 
 impl StateTransitionValidation for DataContractUpdateTransition {
     fn validate_structure(
@@ -111,6 +165,15 @@ impl StateTransitionValidation for DataContractUpdateTransition {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))
+        }
+
+        if let Err(e) = validate_config_update(
+            &existing_data_contract.config,
+            &self.data_contract.config,
+            self.data_contract.id.0 .0.into(),
+        ) {
+            validation_result.add_error(e);
+            return Ok(validation_result);
         }
 
         let mut existing_data_contract_object = existing_data_contract.to_object()?;
@@ -309,6 +372,7 @@ mod tests {
         use super::*;
         use dashcore_rpc::dashcore_rpc_json::Bip125Replaceable::No;
         use dpp::assert_state_consensus_errors;
+        use dpp::consensus::state::state_error::StateError;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
         use drive::error::drive::DriveError;
@@ -487,6 +551,87 @@ mod tests {
             // Check that when we limit ny 1 we get only the most recent contract
             assert_eq!(contract_history.len(), 1);
             assert_eq!(keys[0], 2000);
+        }
+
+        #[test]
+        fn should_fail_if_trying_to_update_config() {
+            let TestData {
+                raw_state_transition,
+                mut data_contract,
+                mut platform,
+            } = setup_test();
+
+            data_contract.config.keeps_history = true;
+            data_contract.config.readonly = false;
+
+            // TODO: check that keep_history actually works
+            apply_contract(
+                &platform,
+                &data_contract,
+                BlockInfo {
+                    time_ms: 1000,
+                    height: 100,
+                    core_height: 10,
+                    epoch: Default::default(),
+                },
+            );
+
+            let updated_document = json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "newProp": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                "$createdAt"
+                ],
+                "additionalProperties": false
+            });
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema("niceDocument".into(), updated_document)
+                .expect("to be able to set document schema");
+
+            // It should be not possible to modify this
+            data_contract.config.keeps_history = false;
+
+            // TODO: add a data contract stop transition
+            let state_transition = DataContractUpdateTransition {
+                protocol_version: LATEST_VERSION,
+                data_contract: data_contract.clone(),
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+                transition_type: StateTransitionType::DataContractUpdate,
+            };
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform.state.read().unwrap(),
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition
+                .validate_state(&platform_ref, None)
+                .expect("state transition to be validated");
+
+            assert!(!result.is_valid());
+            let errors = assert_state_consensus_errors!(
+                result,
+                StateError::DataContractConfigUpdateError,
+                1
+            );
+            let error = errors.get(0).expect("to have an error");
+            assert_eq!(
+                error.additional_message(),
+                "contract can not change whether it keeps history"
+            );
         }
     }
 }
