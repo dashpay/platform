@@ -237,8 +237,6 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets }}
-          aws-secret-access-key: ${{  secrets }}
           aws-region: eu-west-1
 
       - name: Setup Rust
