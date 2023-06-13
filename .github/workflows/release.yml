@@ -253,8 +253,8 @@ jobs:
 
       - name: Pull S3 cache
         run: |
-          aws s3 sync s3://platform-runner-cache/cache-mounts/registry $CARGO_HOME/registry || true
-          aws s3 sync s3://platform-runner-cache/cache-mounts/git $CARGO_HOME/git || true
+          aws s3 sync s3://platform-runner-cache/cache-mounts/registry /home/ubuntu/.cargo/registry || true
+          aws s3 sync s3://platform-runner-cache/cache-mounts/git /home/ubuntu/.cargo/git || true
           aws s3 sync s3://platform-runner-cache/cache-mounts/target target || true
           aws s3 sync s3://platform-runner-cache/cache-mounts/unplugged .yarn/unplugged || true
           cp .yarn/unplugged/install-state.gz .yarn/install-state.gz || true
@@ -266,8 +266,8 @@ jobs:
         run: |
           cp .yarn/install-state.gz .yarn/unplugged/install-state.gz
           aws s3 sync .yarn/unplugged s3://platform-runner-cache/cache-mounts/unplugged
-          aws s3 sync $CARGO_HOME/registry s3://platform-runner-cache/cache-mounts/registry
-          aws s3 sync $CARGO_HOME/git s3://platform-runner-cache/cache-mounts/git
+          aws s3 sync /home/ubuntu/.cargo/registry s3://platform-runner-cache/cache-mounts/registry
+          aws s3 sync /home/ubuntu/.cargo/git s3://platform-runner-cache/cache-mounts/git
           aws s3 sync target s3://platform-runner-cache/cache-mounts/target
 
       - name: Build packages
