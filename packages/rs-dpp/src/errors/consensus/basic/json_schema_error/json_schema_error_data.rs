@@ -4,6 +4,7 @@ use jsonschema::ValidationError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ops::Deref;
+use std::fmt::Write;
 
 #[derive(Debug, Serialize, Default, Deserialize)]
 pub struct JsonSchemaErrorData {
@@ -15,10 +16,15 @@ pub struct JsonSchemaErrorData {
     pub keyword: String,
     pub params: serde_json::Map<String, Value>,
     pub property_name: String,
+    pub error_message: String
 }
 
 impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
     fn from(validation_error: &ValidationError<'a>) -> Self {
+        let mut error_message = String::new();
+        let _ = write!(&mut error_message, "{}", validation_error);
+        let builder = DataBuilder::new().set_error_message(error_message);
+
         match &validation_error.kind {
             ValidationErrorKind::Required { property } => DataBuilder::new()
                 .set_keyword("required")
@@ -147,6 +153,7 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                     keyword,
                     params,
                     property_name,
+                    error_message,
                 } = JsonSchemaErrorData::from(error.deref());
 
                 DataBuilder::new()
@@ -212,6 +219,11 @@ impl DataBuilder {
 
     fn add_param(mut self, key: impl Into<String>, value: Value) -> Self {
         self.data.params.insert(key.into(), value);
+        self
+    }
+
+    fn set_error_message(mut self, message: String) -> Self {
+        self.data.error_message = message;
         self
     }
 

@@ -30,6 +30,7 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             keyword,
             params,
             property_name,
+            error_message,
         } = JsonSchemaErrorData::from(&validation_error);
 
         Self {
