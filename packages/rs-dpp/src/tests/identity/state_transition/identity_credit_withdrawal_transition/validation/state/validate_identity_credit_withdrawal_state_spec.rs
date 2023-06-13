@@ -31,7 +31,8 @@ pub fn setup_test<SR: StateRepositoryLike>(
 #[cfg(test)]
 mod validate_identity_credit_withdrawal_transition_state_factory {
     use anyhow::Error;
-    use dashcore::{consensus, BlockHeader};
+    use dashcore::{consensus, Header};
+    use dashcore::block::Version;
 
     use crate::assert_state_consensus_errors;
     use crate::consensus::codes::ErrorWithCode;
@@ -163,9 +164,9 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .expect_fetch_latest_platform_block_header()
             .times(1)
             .returning(move || {
-                let header = BlockHeader {
+                let header = Header {
                     time: block_time_seconds,
-                    version: 1,
+                    version: Version::ONE,
                     prev_blockhash: Default::default(),
                     merkle_root: Default::default(),
                     bits: Default::default(),

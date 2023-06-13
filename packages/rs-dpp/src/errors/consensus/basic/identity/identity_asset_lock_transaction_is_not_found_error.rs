@@ -2,7 +2,6 @@ use bincode::{Decode, Encode};
 use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
-use dashcore::hashes::hex::ToHex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

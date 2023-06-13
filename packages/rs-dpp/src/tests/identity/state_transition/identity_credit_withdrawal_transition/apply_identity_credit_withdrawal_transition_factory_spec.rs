@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
-    use dashcore::{consensus, BlockHeader};
+    use dashcore::{consensus, Header};
 
     use std::collections::BTreeMap;
 
@@ -21,6 +21,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
     use mockall::predicate::{always, eq};
     use platform_value::Value;
     use std::default::Default;
+    use dashcore::block::Version;
 
     #[tokio::test]
     async fn should_fail_if_data_contract_was_not_found() {
@@ -75,9 +76,9 @@ mod apply_identity_credit_withdrawal_transition_factory {
             .expect_fetch_latest_platform_block_header()
             .times(1)
             .returning(move || {
-                let header = BlockHeader {
+                let header = Header {
                     time: block_time_seconds,
-                    version: 1,
+                    version: Version::ONE,
                     prev_blockhash: Default::default(),
                     merkle_root: Default::default(),
                     bits: Default::default(),

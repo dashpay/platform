@@ -2,8 +2,6 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use dashcore::consensus::Decodable;
-use dashcore::hashes::hex::ToHex;
-use dashcore::hashes::Hash;
 use dashcore::OutPoint;
 use lazy_static::lazy_static;
 use platform_value::Value;
@@ -108,7 +106,7 @@ where
             return Ok(result);
         }
 
-        let out_point = OutPoint::consensus_decode(proof.out_point.as_slice())
+        let out_point = OutPoint::consensus_decode(&mut proof.out_point.to_vec())
             .map_err(|e| NonConsensusError::SerdeParsingError(e.to_string().into()))?;
 
         let output_index = out_point.vout;

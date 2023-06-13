@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use dashcore::{consensus, BlockHeader};
+use dashcore::{consensus, Header};
 use lazy_static::__Deref;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -60,7 +60,7 @@ where
             .fetch_latest_platform_block_header()
             .await?;
 
-        let latest_platform_block_header: BlockHeader =
+        let latest_platform_block_header: Header =
             consensus::deserialize(&latest_platform_block_header_bytes)?;
 
         let document_type = String::from(withdrawals_contract::document_types::WITHDRAWAL);
