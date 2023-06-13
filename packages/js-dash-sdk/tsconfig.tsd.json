@@ -3,8 +3,5 @@
   "compilerOptions": {
     "target": "es6",
   },
-  "include": [
-    "src/**/*",
-  ],
-  "exclude": []
+  "include": ["test-d/**/*.ts"]
 }

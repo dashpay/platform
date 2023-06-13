@@ -5,6 +5,7 @@ export async function createTransactionInAccount(account) {
   const walletTransaction = new Transaction(undefined)
     .from([{
       amount: 1500000,
+      // @ts-ignore
       script: '76a914f9996443a7d5e2694560f8715e5e8fe602133c6088ac',
       outputIndex: 0,
       txid: new Transaction(undefined).hash,

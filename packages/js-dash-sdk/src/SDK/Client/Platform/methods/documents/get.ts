@@ -140,7 +140,6 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
     opts.startAfter = Identifier.from(opts.startAfter);
   }
 
-  // @ts-ignore
   const documentsResponse = await this.client.getDAPIClient().platform.getDocuments(
     appDefinition.contractId,
     fieldType,

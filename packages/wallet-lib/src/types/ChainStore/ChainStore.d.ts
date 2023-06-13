@@ -20,18 +20,18 @@ export declare interface ChainStoreState {
   addresses: Map<string, any>
 }
 
-type networkIdentifier = string;
-type exportedState = any;
+type NetworkIdentifier = string;
+type ExportedState = any;
 
 export declare class ChainStore {
-  constructor(networkIdentifier: networkIdentifier);
-  network: networkIdentifier;
+  constructor(networkIdentifier: NetworkIdentifier);
+  network: NetworkIdentifier;
 
   state: ChainStoreState;
 
   considerTransaction(transactionHash: string): any;
-  exportState(): exportedState;
-  importState(exportedState): void;
+  exportState(): ExportedState;
+  importState(state: ExportedState): void;
 
   getAddress(address: string): any;
   getAddresses(address: string): Map<string, any>
