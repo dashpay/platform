@@ -35,7 +35,7 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
 
         Self {
             keyword,
-            error_summary: "".to_string(),
+            error_summary: error_message,
             instance_path: validation_error.instance_path.to_string(),
             schema_path: validation_error.schema_path.to_string(),
             params: JsonValue::Object(params).into(),
