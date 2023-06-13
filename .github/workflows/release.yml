@@ -266,10 +266,17 @@ jobs:
       #       ${{ runner.os }}-yarn-unplugged-
 
       - name: Pull S3 cache
-        run: aws s3 sync s3://platform-runner-cache/cache-mounts/unplugged .yarn/unplugged
+        run: |
+          aws s3 sync s3://platform-runner-cache/cache-mounts/unplugged .yarn/unplugged || true
+          cp .yarn/unplugged/install-state.gz .yarn/install-state.gz || true
 
       - name: Install dependencies
         run: yarn install
+
+      - name: Push S3 cache
+        run: |
+          cp .yarn/install-state.gz .yarn/unplugged/install-state.gz
+          aws s3 sync .yarn/unplugged s3://platform-runner-cache/cache-mounts/unplugged
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/dapi"
