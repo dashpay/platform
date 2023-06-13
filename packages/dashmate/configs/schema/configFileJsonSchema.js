@@ -14,6 +14,10 @@ module.exports = {
     configs: {
       type: 'object',
     },
+    projectId: {
+      type: 'string',
+      pattern: '^[a-f0-9]{8}$',
+    },
   },
   required: ['configFormatVersion', 'defaultConfigName', 'defaultGroupName', 'configs'],
   additionalProperties: false,
