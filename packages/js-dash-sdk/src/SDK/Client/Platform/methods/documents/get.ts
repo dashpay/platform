@@ -126,6 +126,8 @@ export async function get(this: Platform, typeLocator: string, opts: QueryOption
       opts,
     );
   } catch (e) {
+    // TODO: NotFoundError is returing only in case if contract or document type is not found?
+    //  If contract or document type is invalid we should throw an error
     if (e instanceof NotFoundError) {
       this.logger.debug(`[Documents#get] Obtained 0 documents for "${typeLocator}"`);
       return [];
