@@ -56,13 +56,6 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, error);
     }
 
-    const configFile = new ConfigFile(
-      [],
-      packageJson.version,
-      migratedConfigFileData.projectId,
-      migratedConfigFileData.defaultConfigName,
-      migratedConfigFileData.defaultGroupName,
-    );
     let configs;
     try {
       configs = Object.entries(migratedConfigFileData.configs)
@@ -71,9 +64,13 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
     }
 
-    configFile.setConfigs(configs);
-
-    return configFile;
+    return new ConfigFile(
+      configs,
+      packageJson.version,
+      migratedConfigFileData.projectId,
+      migratedConfigFileData.defaultConfigName,
+      migratedConfigFileData.defaultGroupName,
+    );
   }
 
   /**
