@@ -79,7 +79,7 @@ function reindexNodeTaskFactory(
           }
 
           if (!containerId) {
-            ctx.coreService = await startCore(configFile, config);
+            ctx.coreService = await startCore(config);
             containerInfo = await ctx.coreService.dockerContainer.inspect();
 
             ctx.reindexContainerId = containerInfo.Id;

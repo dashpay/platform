@@ -92,7 +92,6 @@ function configureCoreTaskFactory(
                 const config = configGroup.find((c) => c.getName() === 'local_seed');
 
                 ctx.coreService = await startCore(
-                  configFile,
                   config,
                   { wallet: true, addressIndex: true },
                 );
@@ -206,7 +205,7 @@ function configureCoreTaskFactory(
               title: 'Starting nodes',
               task: async () => {
                 ctx.coreServices = await Promise.all(
-                  configGroup.map((config) => startCore(configFile, config)),
+                  configGroup.map((config) => startCore(config)),
                 );
 
                 ctx.rpcClients = ctx.coreServices.map((coreService) => coreService.getRpcClient());

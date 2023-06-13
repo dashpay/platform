@@ -8,6 +8,7 @@ const generateEnvs = require('../util/generateEnvs');
  * @param {DockerCompose} dockerCompose
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
+ * @param {ConfigFile} configFile
  * @return {startCore}
  */
 function startCoreFactory(
@@ -17,17 +18,17 @@ function startCoreFactory(
   dockerCompose,
   getConnectionHost,
   ensureFileMountExists,
+  configFile,
 ) {
   /**
    * @typedef startCore
-   * @param {ConfigFile} configFile
    * @param {Config} config
    * @param {Object} [options]
    * @param {boolean} [options.wallet=false]
    * @param {boolean} [options.addressIndex=false]
    * @return {CoreService}
    */
-  async function startCore(configFile, config, options = {}) {
+  async function startCore(config, options = {}) {
     // eslint-disable-next-line no-param-reassign
     options = {
       wallet: false,

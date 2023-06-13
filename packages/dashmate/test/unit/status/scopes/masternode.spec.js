@@ -25,7 +25,7 @@ describe('getMasternodeScopeFactory', () => {
       mockDockerCompose = { execCommand: this.sinon.stub() };
       mockGetConnectionHost = this.sinon.stub();
 
-      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
+      configFile = { getProjectId: this.sinon.stub() };
 
       config = getConfigMock(this.sinon);
       getMasternodeScope = getMasternodeScopeFactory(

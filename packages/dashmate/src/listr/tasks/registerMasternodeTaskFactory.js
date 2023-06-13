@@ -59,7 +59,6 @@ function registerMasternodeTaskFactory(
         task: async (ctx) => {
           ctx.coreServicePassed = false;
           ctx.coreService = await startCore(
-            configFile,
             config,
             { wallet: true, addressIndex: true },
           );

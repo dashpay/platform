@@ -18,21 +18,17 @@ function createSystemConfigsFactory(systemConfigs) {
   function createSystemConfigs() {
     const projectId = getShortHash(HOME_DIR_PATH);
 
-    const configFile = new ConfigFile(
-      [],
+    const configs = Object.entries(systemConfigs).map(([name, options]) => (
+      new Config(name, options)
+    ));
+
+    return new ConfigFile(
+      configs,
       packageJson.version,
       projectId,
       null,
       null,
     );
-
-    const configs = Object.entries(systemConfigs).map(([name, options]) => (
-      new Config(name, options)
-    ));
-
-    configFile.setConfigs(configs);
-
-    return configFile;
   }
 
   return createSystemConfigs;

@@ -12,7 +12,7 @@ describe('determineStatus', () => {
 
     beforeEach(async function it() {
       config = getConfigMock(this.sinon);
-      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
+      configFile = { getProjectId: this.sinon.stub() };
       dockerComposeMock = { inspectService: this.sinon.stub() };
     });
 

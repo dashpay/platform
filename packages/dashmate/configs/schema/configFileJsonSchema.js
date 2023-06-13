@@ -15,7 +15,7 @@ module.exports = {
       type: 'object',
     },
     projectId: {
-      type: ['string', 'null'],
+      type: 'string',
       pattern: '^[a-f0-9]{8}$',
     },
   },

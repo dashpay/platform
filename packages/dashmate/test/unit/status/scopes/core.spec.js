@@ -40,7 +40,7 @@ describe('getCoreScopeFactory', () => {
       mockInsightProvider = this.sinon.stub(providers, 'insight');
       mockGetConnectionHost = this.sinon.stub();
 
-      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
+      configFile = { getProjectId: this.sinon.stub() };
 
       config = getConfigMock(this.sinon);
 

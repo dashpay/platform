@@ -14,7 +14,7 @@ describe('getServicesScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
 
-      configFile = { configEnvs: this.sinon.stub(), getProjectId: this.sinon.stub() };
+      configFile = { getProjectId: this.sinon.stub() };
 
       getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile);
     });
