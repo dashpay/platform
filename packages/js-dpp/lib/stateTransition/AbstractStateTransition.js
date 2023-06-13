@@ -389,6 +389,8 @@ AbstractStateTransition.identityTransitionTypes = [
   stateTransitionTypes.IDENTITY_CREATE,
   stateTransitionTypes.IDENTITY_TOP_UP,
   stateTransitionTypes.IDENTITY_UPDATE,
+  stateTransitionTypes.IDENTITY_CREDIT_WITHDRAWAL,
+  stateTransitionTypes.IDENTITY_CREDIT_TRANSFER,
 ];
 AbstractStateTransition.dataContractTransitionTypes = [
   stateTransitionTypes.DATA_CONTRACT_CREATE,

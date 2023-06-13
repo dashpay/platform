@@ -92,10 +92,7 @@ impl QueryStrategy {
             let prove: bool = rng.gen();
 
             let request = GetIdentitiesByPublicKeyHashesRequest {
-                public_key_hashes: public_key_hashes
-                    .iter()
-                    .map(|(hash, _)| hash.to_vec())
-                    .collect(),
+                public_key_hashes: public_key_hashes.keys().map(|hash| hash.to_vec()).collect(),
                 prove,
             };
             let encoded_request = request.encode_to_vec();

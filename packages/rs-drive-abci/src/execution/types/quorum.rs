@@ -12,39 +12,163 @@ use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
 
-/// Quorum information
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Quorum {
+/// The validator set is only slightly different from a quorum as it does not contain non valid
+/// members
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub struct ValidatorSet {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
     /// Active height
     pub core_height: u32,
     /// The list of masternodes
-    pub validator_set: BTreeMap<ProTxHash, Validator>,
+    pub members: BTreeMap<ProTxHash, Validator>,
     /// The threshold quorum public key
     pub threshold_public_key: BlsPublicKey,
 }
 
-impl From<Quorum> for ValidatorSetUpdate {
-    fn from(value: Quorum) -> Self {
-        let Quorum {
+impl ValidatorSet {
+    /// For changes between two validator sets, we take the new (rhs) element if is different
+    /// for every validator
+    #[allow(dead_code)]
+    pub(crate) fn update_difference(
+        &self,
+        rhs: &ValidatorSet,
+    ) -> Result<ValidatorSetUpdate, Error> {
+        if self.quorum_hash != rhs.quorum_hash {
+            return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                "updating validator set doesn't match quorum hash",
+            )));
+        }
+
+        if self.core_height != rhs.core_height {
+            return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                "updating validator set doesn't match core height",
+            )));
+        }
+
+        if self.threshold_public_key != rhs.threshold_public_key {
+            return Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                "updating validator set doesn't match threshold public key",
+            )));
+        }
+
+        let validator_updates = self
+            .members
+            .iter()
+            .filter_map(|(pro_tx_hash, old_validator_state)| {
+                rhs.members.get(pro_tx_hash).map_or_else(
+                    || {
+                        Some(Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                            "validator set does not contain all same members",
+                        ))))
+                    },
+                    |new_validator_state| {
+                        if new_validator_state != old_validator_state {
+                            let Validator {
+                                pro_tx_hash,
+                                public_key,
+                                node_ip,
+                                node_id,
+                                platform_p2p_port,
+                                is_banned,
+                                ..
+                            } = new_validator_state;
+
+                            if *is_banned {
+                                None
+                            } else {
+                                let node_address = format!(
+                                    "tcp://{}@{}:{}",
+                                    hex::encode(node_id.into_inner()),
+                                    node_ip,
+                                    platform_p2p_port
+                                );
+
+                                Some(Ok(abci::ValidatorUpdate {
+                                    pub_key: public_key.clone().map(|public_key| {
+                                        crypto::PublicKey {
+                                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                        }
+                                    }),
+                                    power: 100,
+                                    pro_tx_hash: reverse(pro_tx_hash),
+                                    node_address,
+                                }))
+                            }
+                        } else {
+                            let Validator {
+                                pro_tx_hash,
+                                public_key,
+                                node_ip,
+                                node_id,
+                                platform_p2p_port,
+                                is_banned,
+                                ..
+                            } = old_validator_state;
+
+                            if *is_banned {
+                                None
+                            } else {
+                                let node_address = format!(
+                                    "tcp://{}@{}:{}",
+                                    hex::encode(node_id.into_inner()),
+                                    node_ip,
+                                    platform_p2p_port
+                                );
+
+                                Some(Ok(abci::ValidatorUpdate {
+                                    pub_key: public_key.clone().map(|public_key| {
+                                        crypto::PublicKey {
+                                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                                        }
+                                    }),
+                                    power: 100,
+                                    pro_tx_hash: reverse(pro_tx_hash),
+                                    node_address,
+                                }))
+                            }
+                        }
+                    },
+                )
+            })
+            .collect::<Result<Vec<abci::ValidatorUpdate>, Error>>()?;
+
+        Ok(ValidatorSetUpdate {
+            validator_updates,
+            threshold_public_key: Some(crypto::PublicKey {
+                sum: Some(Bls12381(self.threshold_public_key.to_bytes().to_vec())),
+            }),
+            quorum_hash: reverse(&self.quorum_hash),
+        })
+    }
+}
+
+/// In this case we are changing to this validator set from another validator set and there are no
+/// changes
+impl From<ValidatorSet> for ValidatorSetUpdate {
+    fn from(value: ValidatorSet) -> Self {
+        let ValidatorSet {
             quorum_hash,
-            validator_set,
+            members: validator_set,
             threshold_public_key,
             ..
         } = value;
         ValidatorSetUpdate {
             validator_updates: validator_set
                 .into_values()
-                .map(|validator| {
+                .filter_map(|validator| {
                     let Validator {
                         pro_tx_hash,
                         public_key,
                         node_ip,
                         node_id,
                         platform_p2p_port,
+                        is_banned,
                         ..
                     } = validator;
+                    if is_banned {
+                        return None;
+                    }
                     let node_address = format!(
                         "tcp://{}@{}:{}",
                         hex::encode(node_id.into_inner()),
@@ -52,14 +176,14 @@ impl From<Quorum> for ValidatorSetUpdate {
                         platform_p2p_port
                     );
 
-                    abci::ValidatorUpdate {
+                    Some(abci::ValidatorUpdate {
                         pub_key: public_key.map(|public_key| crypto::PublicKey {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: reverse(&pro_tx_hash),
                         node_address,
-                    }
+                    })
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
@@ -80,40 +204,45 @@ fn reverse(data: &[u8]) -> Vec<u8> {
     data.to_vec()
 }
 
-impl From<&Quorum> for ValidatorSetUpdate {
-    fn from(value: &Quorum) -> Self {
-        let Quorum {
+impl From<&ValidatorSet> for ValidatorSetUpdate {
+    fn from(value: &ValidatorSet) -> Self {
+        let ValidatorSet {
             quorum_hash,
-            validator_set,
+            members: validator_set,
             threshold_public_key,
             ..
         } = value;
         ValidatorSetUpdate {
             validator_updates: validator_set
                 .iter()
-                .map(|(_, validator)| {
+                .filter_map(|(_, validator)| {
                     let Validator {
                         pro_tx_hash,
                         public_key,
                         node_ip,
                         node_id,
                         platform_p2p_port,
+                        is_banned,
                         ..
                     } = validator;
+
+                    if *is_banned {
+                        return None;
+                    }
                     let node_address = format!(
                         "tcp://{}@{}:{}",
                         hex::encode(node_id.into_inner()),
                         node_ip,
                         platform_p2p_port
                     );
-                    abci::ValidatorUpdate {
+                    Some(abci::ValidatorUpdate {
                         pub_key: public_key.as_ref().map(|public_key| crypto::PublicKey {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
                         pro_tx_hash: reverse(pro_tx_hash),
                         node_address,
-                    }
+                    })
                 })
                 .collect(),
             threshold_public_key: Some(crypto::PublicKey {
@@ -124,10 +253,10 @@ impl From<&Quorum> for ValidatorSetUpdate {
     }
 }
 
-impl Quorum {
+impl ValidatorSet {
     /// Try to create a quorum from info from the Masternode list (given with state),
     /// and for information return for quorum members
-    pub fn try_from_info_result(
+    pub fn try_from_quorum_info_result(
         value: QuorumInfoResult,
         state: &PlatformState,
     ) -> Result<Self, Error> {
@@ -169,17 +298,17 @@ impl Quorum {
         let threshold_public_key = BlsPublicKey::from_bytes(quorum_public_key.as_slice())
             .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
 
-        Ok(Quorum {
+        Ok(ValidatorSet {
             quorum_hash,
             core_height: height,
-            validator_set,
+            members: validator_set,
             threshold_public_key,
         })
     }
 }
 
 /// A validator in the context of a quorum
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Validator {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
@@ -195,6 +324,8 @@ pub struct Validator {
     pub platform_http_port: u16,
     /// Tenderdash port
     pub platform_p2p_port: u16,
+    /// Is the validator banned
+    pub is_banned: bool,
 }
 
 impl Validator {
@@ -214,10 +345,6 @@ impl Validator {
             platform_http_port,
             ..
         } = state;
-        if pose_ban_height.is_some() {
-            // if we are banned then we remove the validator from the list
-            return None;
-        };
         let Some(platform_http_port) = platform_http_port else {
             return None;
         };
@@ -233,6 +360,7 @@ impl Validator {
             core_port: service.port(),
             platform_http_port: *platform_http_port as u16,
             platform_p2p_port: *platform_p2p_port as u16,
+            is_banned: pose_ban_height.is_some(),
         })
     }
 }

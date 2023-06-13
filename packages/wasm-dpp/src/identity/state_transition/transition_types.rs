@@ -11,6 +11,7 @@ pub enum StateTransitionTypeWasm {
     DataContractUpdate = 4,
     IdentityUpdate = 5,
     IdentityCreditWithdrawal = 6,
+    IdentityCreditTransfer = 7,
 }
 
 impl From<StateTransitionType> for StateTransitionTypeWasm {
@@ -24,6 +25,9 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::IdentityUpdate => StateTransitionTypeWasm::IdentityUpdate,
             StateTransitionType::IdentityCreditWithdrawal => {
                 StateTransitionTypeWasm::IdentityCreditWithdrawal
+            }
+            StateTransitionType::IdentityCreditTransfer => {
+                StateTransitionTypeWasm::IdentityCreditTransfer
             }
         }
     }

@@ -69,7 +69,7 @@ impl StateTransitionFacadeWasm {
             .map_err(PlatformValueErrorWasm::from)?
             .try_into()
             .map_err(|e: TryFromPrimitiveError<StateTransitionType>| {
-                InvalidStateTransitionTypeErrorWasm::new(e.number as u8)
+                InvalidStateTransitionTypeErrorWasm::new(e.number)
             })?;
 
         if state_transition_type == StateTransitionType::DataContractUpdate {

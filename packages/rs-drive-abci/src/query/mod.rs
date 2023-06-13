@@ -843,7 +843,7 @@ impl<C> Platform<C> {
 mod test {
     pub mod query_data_contract_history {
         use crate::error::Error;
-        use crate::query::{QueryValidationResult, ValidationResult};
+        use crate::query::ValidationResult;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
         use dapi_grpc::platform::v0::{
@@ -851,7 +851,7 @@ mod test {
             GetDataContractHistoryResponse,
         };
         use dpp::block::block_info::BlockInfo;
-        use dpp::check_validation_result_with_data;
+
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use drive::drive::Drive;
@@ -975,13 +975,16 @@ mod test {
                 "expect no errors to be returned from the query"
             );
 
-            let mut data = data.expect("expect data to be returned from the query");
-            let data_ref = data.as_slice();
+            let data = data.expect("expect data to be returned from the query");
+            let _data_ref = data.as_slice();
 
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse { metadata, result } = response;
+            let GetDataContractHistoryResponse {
+                metadata: _,
+                result,
+            } = response;
             let res = result.expect("expect result to be returned from the query");
 
             let contract_history = match res {
@@ -1055,13 +1058,16 @@ mod test {
                 "expect no errors to be returned from the query"
             );
 
-            let mut data = data.expect("expect data to be returned from the query");
-            let data_ref = data.as_slice();
+            let data = data.expect("expect data to be returned from the query");
+            let _data_ref = data.as_slice();
 
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse { metadata, result } = response;
+            let GetDataContractHistoryResponse {
+                metadata: _,
+                result,
+            } = response;
             let res = result.expect("expect result to be returned from the query");
 
             let contract_proof = match res {
@@ -1072,7 +1078,7 @@ mod test {
             };
 
             // Check that the proof has correct values inside
-            let (root_hash, contract_history) = Drive::verify_contract_history(
+            let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id.to_buffer(),
                 request.start_at_seconds(),

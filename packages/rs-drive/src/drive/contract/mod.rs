@@ -2175,7 +2175,7 @@ mod tests {
                     .as_object_mut()
                     .expect("properties to be an object")
                     .insert(
-                        format!("newProp{}", i).into(),
+                        format!("newProp{}", i),
                         json!({"type": "integer", "minimum": 0}),
                     );
 
@@ -2225,7 +2225,7 @@ mod tests {
 
         pub fn assert_property_exists(data_contract: &DataContract, property: &str) {
             let updated_document = data_contract
-                .get_document_schema("niceDocument".into())
+                .get_document_schema("niceDocument")
                 .expect("to get document schema");
             let updated_document = updated_document.as_object().expect("to be an object");
             let properties = updated_document
