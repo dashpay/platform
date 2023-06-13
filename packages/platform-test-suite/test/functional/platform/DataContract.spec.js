@@ -138,7 +138,13 @@ describe('Platform', () => {
       // and we set default value on deserialization, so we need to set it
       // here to avoid the error, as original contract has a non-default
       // value here
-      fetchedDataContract.setConfig(dataContractFixture.getConfig());
+      fetchedDataContract.setConfig({
+        canBeDeleted: false,
+        readonly: false,
+        keepsHistory: true,
+        documentsKeepHistoryContractDefault: false,
+        documentsMutableContractDefault: true,
+      });
       fetchedDataContract.setDocumentSchema(newDocumentType, {
         type: 'object',
         indices: [
