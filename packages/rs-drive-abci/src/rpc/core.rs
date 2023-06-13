@@ -170,17 +170,13 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
-        // this is a hack to workaround the fact that retry macro expects the return type
-        // to be the same with the return type of the rpc call
-        let rpc_call = || -> Result<GetBestChainLockResult, Error> {
-            retry!(self.inner.get_best_chain_lock())
-        };
+        //no need to retry on this one
         let GetBestChainLockResult {
             blockhash,
             height,
             signature,
             known_block: _,
-        } = rpc_call()?;
+        } = self.inner.get_best_chain_lock()?;
         Ok(CoreChainLock {
             core_block_height: height,
             core_block_hash: blockhash.to_vec(),
