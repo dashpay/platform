@@ -155,10 +155,7 @@ pub fn validate_identity_public_keys_structure(
 
     if identity_public_keys_with_witness.len() > max_items {
         return Ok(SimpleConsensusValidationResult::new_with_error(
-            StateError::MaxIdentityPublicKeyLimitReachedError(
-                MaxIdentityPublicKeyLimitReachedError::new(max_items),
-            )
-            .into(),
+            MaxIdentityPublicKeyLimitReachedError::new(max_items),
         ));
     }
 
@@ -166,10 +163,7 @@ pub fn validate_identity_public_keys_structure(
     let duplicated_ids = duplicated_key_ids_witness(identity_public_keys_with_witness);
     if !duplicated_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
-            BasicError::DuplicatedIdentityPublicKeyIdBasicError(
-                DuplicatedIdentityPublicKeyIdBasicError::new(duplicated_ids),
-            )
-            .into(),
+            DuplicatedIdentityPublicKeyIdBasicError::new(duplicated_ids),
         ));
     }
 
@@ -177,10 +171,7 @@ pub fn validate_identity_public_keys_structure(
     let duplicated_key_ids = duplicated_keys_witness(identity_public_keys_with_witness);
     if !duplicated_key_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
-            StateError::DuplicatedIdentityPublicKeyStateError(
-                DuplicatedIdentityPublicKeyStateError::new(duplicated_key_ids),
-            )
-            .into(),
+            DuplicatedIdentityPublicKeyStateError::new(duplicated_key_ids),
         ));
     }
 
@@ -244,10 +235,7 @@ pub fn validate_identity_public_key_ids_dont_exist_in_state(
     if !keys.is_empty() {
         // keys should all be empty
         Ok(SimpleConsensusValidationResult::new_with_error(
-            BasicError::DuplicatedIdentityPublicKeyIdBasicError(
-                DuplicatedIdentityPublicKeyIdBasicError::new(keys),
-            )
-            .into(),
+            DuplicatedIdentityPublicKeyIdBasicError::new(keys),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())
@@ -274,7 +262,7 @@ pub fn validate_identity_public_key_ids_exist_in_state(
         key_ids.retain(|found_key| !to_remove.contains(found_key));
         // keys should all exist
         Ok(SimpleConsensusValidationResult::new_with_error(
-            MissingIdentityPublicKeyIdsError::new(key_ids).into(),
+            MissingIdentityPublicKeyIdsError::new(key_ids),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())
@@ -310,10 +298,7 @@ pub fn validate_unique_identity_public_key_hashes_state(
         .collect::<Result<Vec<KeyID>, Error>>()?;
     if !duplicate_ids.is_empty() {
         Ok(SimpleConsensusValidationResult::new_with_error(
-            BasicError::DuplicatedIdentityPublicKeyIdBasicError(
-                DuplicatedIdentityPublicKeyIdBasicError::new(duplicate_ids),
-            )
-            .into(),
+            DuplicatedIdentityPublicKeyIdBasicError::new(duplicate_ids),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())

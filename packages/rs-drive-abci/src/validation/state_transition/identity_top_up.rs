@@ -1,4 +1,3 @@
-use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError,
@@ -22,6 +21,10 @@ use drive::grovedb::TransactionArg;
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::asset_lock::{
+    fetch_asset_lock_transaction_output_sync, validate_asset_lock_proof_state,
+    validate_asset_lock_proof_structure,
+};
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 
 use super::StateTransitionValidation;
@@ -37,7 +40,12 @@ impl StateTransitionValidation for IdentityTopUpTransition {
             return Ok(result);
         }
 
-        Ok(validate_protocol_version(self.protocol_version))
+        let result = validate_protocol_version(self.protocol_version);
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        validate_asset_lock_proof_structure(&self.asset_lock_proof)
     }
 
     fn validate_identity_and_signatures(
@@ -70,38 +78,15 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let outpoint = match self.asset_lock_proof.out_point() {
-            None => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
-                            ),
-                        ),
-                    ),
-                ));
-            }
-            Some(outpoint) => outpoint,
-        };
+        let mut validation_result = ConsensusValidationResult::default();
 
-        // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found = platform
-            .drive
-            .has_asset_lock_outpoint(&Bytes36(outpoint), tx)?;
+        let asset_lock_validation_result =
+            validate_asset_lock_proof_state(&self.asset_lock_proof, platform, tx)?;
 
-        if asset_lock_already_found {
-            let outpoint = OutPoint::from(outpoint);
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
-                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
-                            outpoint.txid,
-                            outpoint.vout as usize,
-                        ),
-                    ),
-                ),
-            ));
+        if !asset_lock_validation_result.is_valid() {
+            validation_result.merge(asset_lock_validation_result);
+
+            return Ok(validation_result);
         }
 
         self.transform_into_action(platform, tx)
@@ -114,9 +99,9 @@ impl StateTransitionValidation for IdentityTopUpTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        let tx_out_validation = self
-            .asset_lock_proof
-            .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
+        let tx_out_validation =
+            fetch_asset_lock_transaction_output_sync(platform.core_rpc, &self.asset_lock_proof)?;
+
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,

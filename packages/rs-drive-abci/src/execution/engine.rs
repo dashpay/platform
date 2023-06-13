@@ -107,7 +107,7 @@ where
             return Ok(ValidationResult::new_with_error(AbciError::WrongBlockReceived(format!(
                 "received a block proposal for height: {} core height: {}, current height: {} core height: {}",
                 block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
-            )).into()));
+            ))));
         }
 
         // destructure the block proposal

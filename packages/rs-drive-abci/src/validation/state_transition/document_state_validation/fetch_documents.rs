@@ -76,14 +76,15 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     )?;
 
     let Some(contract_fetch_info) = contract_fetch_info else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id)).into()));
+        return Ok(ConsensusValidationResult::new_with_error(DataContractNotPresentError::new(*contract_id)));
     };
 
     let contract_fetch_info = contract_fetch_info;
 
     let Some(document_type) = contract_fetch_info.contract.optional_document_type_for_name(document_type_name) else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
+        return Ok(ConsensusValidationResult::new_with_error(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)));
     };
+
     fetch_documents_for_transitions_knowing_contract_and_document_type(
         drive,
         &contract_fetch_info.contract,

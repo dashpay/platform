@@ -28,6 +28,9 @@ lazy_static! {
         "../../../../schema/identity/stateTransition/assetLockProof/chainAssetLockProof.json"
     ))
     .unwrap();
+    pub static ref CHAIN_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(CHAIN_ASSET_LOCK_PROOF_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 #[derive(Serialize, Deserialize)]

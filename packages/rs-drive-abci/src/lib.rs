@@ -49,9 +49,6 @@ pub mod constants;
 /// Anything related to 3rd party RPC
 pub mod rpc;
 
-// TODO We should compile it only for tests
-/// Asset Lock
-pub mod asset_lock;
 /// Core utilities
 pub mod core;
 /// Metrics subsystem

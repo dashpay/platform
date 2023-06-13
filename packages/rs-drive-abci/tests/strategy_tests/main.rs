@@ -351,9 +351,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -411,6 +418,11 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         platform
             .core_rpc
@@ -814,9 +826,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -827,6 +846,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
+
         let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
@@ -868,6 +888,12 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -940,6 +966,12 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1032,9 +1064,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1123,9 +1162,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1194,9 +1240,16 @@ mod tests {
             ..Default::default()
         };
         let block_count = 120;
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1291,9 +1344,16 @@ mod tests {
             ..Default::default()
         };
         let block_count = 120;
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1389,9 +1449,16 @@ mod tests {
         };
 
         let block_count = 120;
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1504,6 +1571,12 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1620,6 +1693,12 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1678,9 +1757,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1752,9 +1838,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1828,9 +1921,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1915,9 +2015,16 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform
             .core_rpc
             .expect_get_best_chain_lock()
@@ -1928,6 +2035,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
+
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 10);
@@ -1989,6 +2097,11 @@ mod tests {
                         signature: [2; 96].to_vec(),
                     })
                 });
+
+            platform
+                .core_rpc
+                .expect_verify_instant_lock()
+                .returning(|_, _| Ok(true));
 
             let outcome = run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7);
             outcomes.push(outcome);
@@ -2132,6 +2245,17 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
+
+        platform_a
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        platform_b
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform_b
             .core_rpc
             .expect_get_best_chain_lock()
@@ -2241,6 +2365,12 @@ mod tests {
         let mut platform_b = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+
+        platform_a
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         platform_a
             .core_rpc
             .expect_get_best_chain_lock()
@@ -2251,6 +2381,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
+
         platform_b
             .core_rpc
             .expect_get_best_chain_lock()
@@ -2261,6 +2392,11 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
+
+        platform_b
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let outcome_a =
             run_chain_for_strategy(&mut platform_a, 100, strategy.clone(), config.clone(), 7);

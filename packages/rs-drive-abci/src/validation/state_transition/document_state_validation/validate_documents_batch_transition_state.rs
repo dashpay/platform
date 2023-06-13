@@ -129,7 +129,7 @@ fn validate_document_transitions_within_contract(
             .get_contract_with_fetch_info_and_fee(data_contract_id.0 .0, None, false, transaction)?
             .1
         else {
-            return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*data_contract_id)).into()));
+            return Ok(ConsensusValidationResult::new_with_error(DataContractNotPresentError::new(*data_contract_id)));
         };
 
     let data_contract = &contract_fetch_info.contract;

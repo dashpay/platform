@@ -49,6 +49,7 @@ use dashcore_rpc::dashcore::BlockHash;
 
 use dpp::serialization_traits::PlatformDeserializable;
 
+use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
@@ -78,6 +79,8 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
+    /// Block info
+    pub block_info: &'a BlockInfo,
 }
 
 /// Platform State Ref

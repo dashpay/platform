@@ -6,9 +6,8 @@ use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::{OutPoint, Txid};
-use dpp::identifier::Identifier;
+use dpp::dashcore::{OutPoint, Transaction};
+use dpp::identity::state_transition::asset_lock_proof::fetch_asset_lock_transaction_output;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
@@ -18,7 +17,6 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
-    NonConsensusError,
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -28,9 +26,12 @@ use crate::validation::state_transition::key_validation::{
     validate_identity_public_keys_structure, validate_unique_identity_public_key_hashes_state,
 };
 
-use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
-
+use crate::error::execution::ExecutionError;
 use crate::platform::PlatformRef;
+use crate::validation::state_transition::asset_lock::{
+    fetch_asset_lock_transaction_output_sync, validate_asset_lock_proof_state,
+    validate_asset_lock_proof_structure,
+};
 use crate::{
     error::Error,
     validation::state_transition::common::{validate_protocol_version, validate_schema},
@@ -54,7 +55,12 @@ impl StateTransitionValidation for IdentityCreateTransition {
             return Ok(result);
         }
 
-        validate_identity_public_keys_structure(self.public_keys.as_slice())
+        let result = validate_identity_public_keys_structure(self.public_keys.as_slice())?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        validate_asset_lock_proof_structure(&self.asset_lock_proof)
     }
 
     fn validate_identity_and_signatures(
@@ -123,59 +129,40 @@ impl StateTransitionValidation for IdentityCreateTransition {
         // Balance is here to check if the identity does already exist
         if balance.is_some() {
             return Ok(ConsensusValidationResult::new_with_error(
-                IdentityAlreadyExistsError::new(identity_id.to_owned()).into(),
-            ));
-        }
-        let outpoint = match self.asset_lock_proof.out_point() {
-            None => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
-                            ),
-                        ),
-                    ),
-                ));
-            }
-            Some(outpoint) => outpoint,
-        };
-
-        // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found = drive.has_asset_lock_outpoint(&Bytes36(outpoint), tx)?;
-
-        if asset_lock_already_found {
-            let outpoint = OutPoint::from(outpoint);
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
-                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
-                            outpoint.txid,
-                            outpoint.vout as usize,
-                        ),
-                    ),
-                ),
+                IdentityAlreadyExistsError::new(identity_id.to_owned()),
             ));
         }
 
-        validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_state(
-                self.public_keys.as_slice(),
-                drive,
-                tx,
-            )?
-            .errors,
-        );
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        validation_result.merge(validate_asset_lock_proof_state(
+            &self.asset_lock_proof,
+            platform,
+            tx,
+        )?);
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        validation_result.merge(validate_unique_identity_public_key_hashes_state(
+            self.public_keys.as_slice(),
+            drive,
+            tx,
+        )?);
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
-        validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_state(
-                self.public_keys.as_slice(),
-                drive,
-                tx,
-            )?
-            .errors,
-        );
+        validation_result.merge(validate_unique_identity_public_key_hashes_state(
+            self.public_keys.as_slice(),
+            drive,
+            tx,
+        )?);
 
         if !validation_result.is_valid() {
             return Ok(validation_result);
@@ -191,9 +178,9 @@ impl StateTransitionValidation for IdentityCreateTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        let tx_out_validation = self
-            .asset_lock_proof
-            .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
+        let tx_out_validation =
+            fetch_asset_lock_transaction_output_sync(platform.core_rpc, &self.asset_lock_proof)?;
+
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,

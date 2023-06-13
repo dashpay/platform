@@ -238,8 +238,7 @@ impl Drive {
                                                 *document_id,
                                                 index.fields(),
                                             ),
-                                        )
-                                        .into(),
+                                        ),
                                     )))
                                 }
                             }

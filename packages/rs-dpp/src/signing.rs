@@ -28,7 +28,7 @@ impl PlatformMessageSignable for &[u8] {
                     //     hex::encode(public_key_data)
                     // ));
                     Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
+                        SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())),
                     ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
@@ -40,7 +40,7 @@ impl PlatformMessageSignable for &[u8] {
                     Err(e) => {
                         // dbg!(format!("bls public_key could not be recovered"));
                         return Ok(SimpleConsensusValidationResult::new_with_error(
-                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
+                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())),
                         ));
                     }
                 };
@@ -49,7 +49,7 @@ impl PlatformMessageSignable for &[u8] {
                     Err(e) => {
                         // dbg!(format!("bls signature could not be recovered"));
                         return Ok(SimpleConsensusValidationResult::new_with_error(
-                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
+                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())),
                         ));
                     }
                 };
@@ -57,8 +57,7 @@ impl PlatformMessageSignable for &[u8] {
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicBLSError(BasicBLSError::new(
                             "bls signature was incorrect".to_string(),
-                        ))
-                        .into(),
+                        )),
                     ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
@@ -69,7 +68,7 @@ impl PlatformMessageSignable for &[u8] {
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         SignatureError::SignatureShouldNotBePresentError(
                             SignatureShouldNotBePresentError::new("ecdsa_hash160 keys should not have a signature as that would reveal the public key".to_string()),
-                        ).into()
+                        )
                     ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
@@ -80,7 +79,7 @@ impl PlatformMessageSignable for &[u8] {
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         SignatureError::SignatureShouldNotBePresentError(
                             SignatureShouldNotBePresentError::new("script hash keys should not have a signature as that would reveal the script".to_string())
-                        ).into()))
+                        )))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
                 }
@@ -88,9 +87,7 @@ impl PlatformMessageSignable for &[u8] {
             KeyType::EDDSA_25519_HASH160 => {
                 if !signature.is_empty() {
                     Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::SignatureShouldNotBePresentError(
                             SignatureShouldNotBePresentError::new("eddsa hash 160 keys should not have a signature as that would reveal the script".to_string())
-                        ).into()
                     ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())

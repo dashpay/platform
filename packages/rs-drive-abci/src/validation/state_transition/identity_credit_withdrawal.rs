@@ -92,18 +92,17 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
             .fetch_identity_balance(self.identity_id.to_buffer(), tx)?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id).into()));
+            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id)));
         };
 
         if existing_identity_balance < self.amount {
             return Ok(ConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(self.identity_id, existing_identity_balance)
-                    .into(),
+                IdentityInsufficientBalanceError::new(self.identity_id, existing_identity_balance),
             ));
         }
 
         let Some(revision) = platform.drive.fetch_identity_revision(self.identity_id.to_buffer(), true, tx)? else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id).into()));
+            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id)));
         };
 
         // Check revision
@@ -112,8 +111,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
                 StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
                     self.identity_id,
                     revision,
-                ))
-                .into(),
+                )),
             ));
         }
 

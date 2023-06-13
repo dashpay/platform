@@ -665,7 +665,7 @@ pub(crate) fn continue_chain_for_strategy(
                 proposer.pro_tx_hash.into_inner(),
                 current_quorum_with_test_info,
                 proposed_version,
-                block_info,
+                &block_info,
                 false,
                 state_transitions.clone(),
                 MimicExecuteBlockOptions {
@@ -699,7 +699,12 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions);
+            verify_state_transitions_were_executed(
+                &abci_app,
+                &root_app_hash,
+                &state_transitions,
+                &block_info,
+            );
         }
 
         if let Some(query_strategy) = &strategy.query_testing {

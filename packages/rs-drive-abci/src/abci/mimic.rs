@@ -54,7 +54,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         proposer_pro_tx_hash: [u8; 32],
         current_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
-        block_info: BlockInfo,
+        block_info: &BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
@@ -71,8 +71,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time_ms,
             height,
             mut core_height,
-            epoch: _,
-        } = block_info;
+            ..
+        } = *block_info;
 
         // PREPARE (also processes internally)
 

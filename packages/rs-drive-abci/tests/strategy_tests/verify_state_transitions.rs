@@ -11,19 +11,23 @@ use drive_abci::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::validation::state_transition::StateTransitionValidation;
 
+use dpp::block::block_info::BlockInfo;
 use prost::Message;
 
 pub(crate) fn verify_state_transitions_were_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &Vec<StateTransition>,
+    block_info: &BlockInfo,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
+
     let platform = PlatformRef {
         drive: &abci_app.platform.drive,
         state: &state,
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
+        block_info,
     };
 
     //actions are easier to transform to queries

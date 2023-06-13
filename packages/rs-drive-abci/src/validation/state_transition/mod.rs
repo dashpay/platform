@@ -1,3 +1,4 @@
+mod asset_lock;
 mod common;
 mod data_contract_create;
 mod data_contract_update;

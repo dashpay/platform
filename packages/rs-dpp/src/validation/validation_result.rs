@@ -94,9 +94,12 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         }
     }
 
-    pub fn new_with_error(error: E) -> Self {
+    pub fn new_with_error<T>(error: T) -> Self
+    where
+        T: Into<E>,
+    {
         Self {
-            errors: vec![error],
+            errors: vec![error.into()],
             data: None,
         }
     }
