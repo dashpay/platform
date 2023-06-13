@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(Error, Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-#[error("JsonSchemaError: keyword: {keyword}, instance_path: {instance_path}, schema_path:{schema_path}")]
+#[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 pub struct JsonSchemaError {
     /*
 
