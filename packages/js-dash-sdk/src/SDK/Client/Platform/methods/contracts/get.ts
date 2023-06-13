@@ -1,4 +1,3 @@
-// @ts-ignore
 import { Identifier, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
