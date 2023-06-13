@@ -332,6 +332,12 @@ impl DataContractWasm {
         Ok(serde_wasm_bindgen::to_value(&self.inner.config)?)
     }
 
+    #[wasm_bindgen(js_name=setConfig)]
+    pub fn set_config(&mut self, config: JsValue) -> Result<(), JsValue> {
+        self.inner.config = serde_wasm_bindgen::from_value(config).with_js_error()?;
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let json = self.inner.to_json().with_js_error()?;
