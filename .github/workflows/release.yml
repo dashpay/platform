@@ -262,6 +262,11 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
+      - name: Build packages
+        run: yarn build --filter "+@dashevo/dapi"
+        env:
+          CARGO_BUILD_PROFILE: release
+
       - name: Push S3 cache
         run: |
           cp .yarn/install-state.gz .yarn/unplugged/install-state.gz
@@ -269,11 +274,6 @@ jobs:
           aws s3 sync /home/ubuntu/.cargo/registry s3://platform-runner-cache/cache-mounts/registry
           aws s3 sync /home/ubuntu/.cargo/git s3://platform-runner-cache/cache-mounts/git
           aws s3 sync target s3://platform-runner-cache/cache-mounts/target
-
-      - name: Build packages
-        run: yarn build --filter "+@dashevo/dapi"
-        env:
-          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
