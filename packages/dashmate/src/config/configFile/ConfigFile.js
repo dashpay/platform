@@ -17,7 +17,7 @@ class ConfigFile {
     this.configFormatVersion = configFormatVersion;
     this.defaultConfigName = defaultConfigName;
     this.defaultGroupName = defaultGroupName;
-    this.projectId = projectId;
+    this.projectId = projectId || null;
   }
 
   /**
@@ -248,19 +248,18 @@ class ConfigFile {
    * Get config file as plain object
    *
    * @return {{
-   *     configs: Object<string, Object>,
-   *     defaultGroupName: string,
-   *     configFormatVersion: (string|null),
-   *     defaultConfigName: (string|null),
-   *     projectId: (string|null),
+   *  configs: Config,
+   *  defaultGroupName: string,
+   *  configFormatVersion: (string|null),
+   *  defaultConfigName: (string|null),
+   *  [projectId]: (string|null),
    * }}
    */
   toObject() {
-    return {
+    const result = {
       configFormatVersion: this.getConfigFormatVersion(),
       defaultConfigName: this.getDefaultConfigName(),
       defaultGroupName: this.getDefaultGroupName(),
-      projectId: this.getProjectId(),
       configs: this.getAllConfigs().reduce((configsMap, config) => {
         // eslint-disable-next-line no-param-reassign
         configsMap[config.getName()] = config.getOptions();
@@ -268,6 +267,13 @@ class ConfigFile {
         return configsMap;
       }, {}),
     };
+
+    const projectId = this.getProjectId();
+    if (projectId !== null) {
+      result.projectId = projectId;
+    }
+
+    return result;
   }
 }
 
