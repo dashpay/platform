@@ -308,9 +308,7 @@ function setupLocalPresetTaskFactory(
           return new Listr(subTasks);
         },
       },
-    ], {
-      renderer: 'verbose',
-    });
+    ]);
   }
 
   return setupLocalPresetTask;

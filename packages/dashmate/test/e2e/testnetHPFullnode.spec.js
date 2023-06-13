@@ -17,7 +17,7 @@ const isServiceRunningFactory = require('../../src/test/isServiceRunningFactory'
 const wait = require('../../src/util/wait');
 const createRpcClient = require('../../src/core/createRpcClient');
 
-describe('Testnet Fullnode', function main() {
+describe('Testnet HP Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
@@ -76,7 +76,7 @@ describe('Testnet Fullnode', function main() {
     await setupTask.run({
       preset,
       nodeType: getNodeTypeByName(NODE_TYPE_NAMES.FULLNODE),
-      isHP: false,
+      isHP: true,
       certificateProvider: SSL_PROVIDERS.FILE,
       tenderdashNodeKey: generateTenderdashNodeKey(),
       initialIpForm: {
@@ -94,6 +94,8 @@ describe('Testnet Fullnode', function main() {
     configFile = container.resolve('configFile');
 
     const config = configFile.getConfig(preset);
+
+    config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
 
     const serviceConfigFiles = renderServiceTemplates(config);
     writeServiceConfigs(config.getName(), serviceConfigFiles);

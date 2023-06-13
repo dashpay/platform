@@ -10,8 +10,9 @@ const createDIContainer = require('../../src/createDIContainer');
 const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
 const { SERVICES } = require('../../src/test/constants/services');
 
-describe('Testnet Masternode', function main() {
+describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
+  this.bail(true); // bail on first failure
 
   let container;
   let setupLocalPresetTask;
@@ -88,13 +89,13 @@ describe('Testnet Masternode', function main() {
     }
   });
 
-  it('#setup', async () => {
+  it('setup', async () => {
     const configExists = configFile.isGroupExists(groupName);
 
     expect(configExists).to.be.true();
   });
 
-  it('#start', async () => {
+  it('start', async () => {
     group = configFile.getGroupConfigs(groupName);
 
     areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
@@ -112,7 +113,7 @@ describe('Testnet Masternode', function main() {
     expect(result).to.be.true();
   });
 
-  it('#restart', async () => {
+  it('restart', async () => {
     group = configFile.getGroupConfigs(groupName);
 
     areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
@@ -127,7 +128,7 @@ describe('Testnet Masternode', function main() {
     expect(result).to.be.true();
   });
 
-  it('#stop', async () => {
+  it('stop', async () => {
     group = configFile.getGroupConfigs(groupName);
 
     areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);

@@ -3,12 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const generateKeyPair = require('../ssl/generateKeyPair');
 const generateCsr = require('../ssl/zerossl/generateCsr');
-const createSelfSignedCertificate = require('../ssl/selfSigned/createCertificate');
+const createCertificate = require('../ssl/selfSigned/createCertificate');
 
-async function getSelfSignedCertificate(ip) {
+async function createSelfSignedCertificate(ip) {
   const keyPair = await generateKeyPair();
   const csr = await generateCsr(keyPair, ip);
-  const certificate = await createSelfSignedCertificate(keyPair, csr);
+  const certificate = await createCertificate(keyPair, csr);
 
   const tempDir = os.tmpdir();
   const certificatePath = path.join(tempDir, 'bundle.crt');
@@ -18,4 +18,4 @@ async function getSelfSignedCertificate(ip) {
   return { certificatePath, privKeyPath };
 }
 
-module.exports = getSelfSignedCertificate;
+module.exports = createSelfSignedCertificate;
