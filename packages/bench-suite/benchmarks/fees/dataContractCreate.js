@@ -1,4 +1,4 @@
-const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+const { signStateTransition } = require('dash/build/SDK/Client/Platform/signStateTransition');
 
 const TYPES = require('../../lib/benchmarks/types');
 const createIndices = require('../../lib/util/createIndices');
