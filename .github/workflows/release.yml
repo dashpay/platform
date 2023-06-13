@@ -234,10 +234,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-region: eu-west-1
+      # - name: Configure AWS Credentials
+      #   uses: aws-actions/configure-aws-credentials@v2
+      #   with:
+      #     aws-region: eu-west-1
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -256,14 +256,17 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Enable Yarn unplugged modules cache
-        uses: tespkg/actions-cache@v1
-        with:
-          path: ".yarn/unplugged"
-          bucket: platform-runner-cache
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
+      # - name: Enable Yarn unplugged modules cache
+      #   uses: tespkg/actions-cache@v1
+      #   with:
+      #     path: ".yarn/unplugged"
+      #     bucket: platform-runner-cache
+      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-yarn-unplugged-
+
+      - name: Pull S3 cache
+        run: aws s3 sync s3://platform-runner-cache/cache-mounts/unplugged .yarn/unplugged
 
       - name: Install dependencies
         run: yarn install
