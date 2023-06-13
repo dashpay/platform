@@ -1,7 +1,6 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use dashcore::hashes::hex::ToHex;
 use dashcore::psbt::serialize::Deserialize;
 use dashcore::{OutPoint, Transaction, TxOut};
 

@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use anyhow::Result;
-use dashcore::{consensus, BlockHeader};
+use dashcore::{consensus, Header};
 use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
@@ -103,7 +103,7 @@ where
             .fetch_latest_platform_block_header()
             .await?;
 
-        let latest_platform_block_header: BlockHeader =
+        let latest_platform_block_header: Header =
             consensus::deserialize(&latest_platform_block_header_bytes)
                 .map_err(ProtocolError::DashCoreError)?;
 

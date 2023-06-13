@@ -1,7 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::Decodable;
-use dashcore::hashes::hex::ToHex;
 use dashcore::{OutPoint, Transaction, TxOut};
 
 use serde::{Deserialize, Serialize};
@@ -70,8 +69,8 @@ impl AssetLockProof {
                     .try_into()
                     .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
 
-                if let Some(raw_transaction) = transaction_data.data {
-                    let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
+                if let Some(mut raw_transaction) = transaction_data.data {
+                    let transaction = Transaction::consensus_decode(&mut raw_transaction)
                         .map_err(|e| {
                             DPPError::CoreMessageCorruption(format!(
                                 "could not decode transaction {:?}",
