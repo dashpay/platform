@@ -63,15 +63,6 @@ describe('Local Network', function main() {
     dockerCompose = await container.resolve('dockerCompose');
 
     areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
-
-    const setupTask = setupLocalPresetTask();
-
-    await setupTask.run({
-      nodeCount: 3,
-      debugLogs: true,
-      minerInterval: '2.5m',
-      isVerbose: true,
-    });
   });
 
   after(async () => {
@@ -89,57 +80,74 @@ describe('Local Network', function main() {
     }
   });
 
-  it('setup', async () => {
-    const configExists = configFile.isGroupExists(groupName);
+  describe('setup', () => {
+    it('should setup local network', async () => {
+      const setupTask = setupLocalPresetTask();
 
-    expect(configExists).to.be.true();
+      await setupTask.run({
+        nodeCount: 3,
+        debugLogs: true,
+        minerInterval: '2.5m',
+        isVerbose: true,
+      });
+
+      const configExists = configFile.isGroupExists(groupName);
+
+      expect(configExists).to.be.true();
+    });
   });
 
-  it('start', async () => {
-    group = configFile.getGroupConfigs(groupName);
+  describe('start', () => {
+    it('should start local network', async () => {
+      group = configFile.getGroupConfigs(groupName);
 
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
+      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
-    for (const config of group) {
-      config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
-    }
+      for (const config of group) {
+        config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
+      }
 
-    const task = startGroupNodesTask(group);
+      const task = startGroupNodesTask(group);
 
-    await task.run();
-
-    const result = await areServicesRunning();
-
-    expect(result).to.be.true();
-  });
-
-  it('restart', async () => {
-    group = configFile.getGroupConfigs(groupName);
-
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
-
-    for (const config of group) {
-      const task = restartNodeTask(config);
       await task.run();
-    }
 
-    const result = await areServicesRunning();
+      const result = await areServicesRunning();
 
-    expect(result).to.be.true();
+      expect(result).to.be.true();
+    });
   });
 
-  it('stop', async () => {
-    group = configFile.getGroupConfigs(groupName);
+  describe('restart', () => {
+    it('should restart local network', async () => {
+      group = configFile.getGroupConfigs(groupName);
 
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
+      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
-    for (const config of group.reverse()) {
-      const task = stopNodeTask(config);
-      await task.run();
-    }
+      for (const config of group) {
+        const task = restartNodeTask(config);
+        await task.run();
+      }
 
-    const result = await areServicesRunning();
+      const result = await areServicesRunning();
 
-    expect(result).to.be.false();
+      expect(result).to.be.true();
+    });
+  });
+
+  describe('stop', () => {
+    it('should stop local network', async () => {
+      group = configFile.getGroupConfigs(groupName);
+
+      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
+
+      for (const config of group.reverse()) {
+        const task = stopNodeTask(config);
+        await task.run();
+      }
+
+      const result = await areServicesRunning();
+
+      expect(result).to.be.false();
+    });
   });
 });

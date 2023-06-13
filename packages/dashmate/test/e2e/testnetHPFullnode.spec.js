@@ -67,30 +67,6 @@ describe('Testnet HP Fullnode', function main() {
 
     dockerCompose = container.resolve('dockerCompose');
 
-    const setupTask = setupRegularPresetTask();
-
-    const initialIp = await publicIp.v4();
-
-    const { certificatePath, privKeyPath } = await createSelfSignedCertificate(initialIp);
-
-    await setupTask.run({
-      preset,
-      nodeType: getNodeTypeByName(NODE_TYPE_NAMES.FULLNODE),
-      isHP: true,
-      certificateProvider: SSL_PROVIDERS.FILE,
-      tenderdashNodeKey: generateTenderdashNodeKey(),
-      initialIpForm: {
-        ip: initialIp,
-        coreP2PPort: 19999,
-        platformHTTPPort: 36656,
-        platformP2PPort: 1443,
-      },
-      fileCertificateProviderForm: {
-        chainFilePath: certificatePath,
-        privateFilePath: privKeyPath,
-      },
-    });
-
     configFile = container.resolve('configFile');
 
     const config = configFile.getConfig(preset);
@@ -130,66 +106,100 @@ describe('Testnet HP Fullnode', function main() {
     }
   });
 
-  it('setup', async () => {
-    const configExists = configFile.getConfig(preset);
+  describe('setup', () => {
+    it('should setup HP fullnode', async () => {
+      const setupTask = setupRegularPresetTask();
 
-    expect(configExists).to.not.be.undefined();
+      const initialIp = await publicIp.v4();
+
+      const { certificatePath, privKeyPath } = await createSelfSignedCertificate(initialIp);
+
+      await setupTask.run({
+        preset,
+        nodeType: getNodeTypeByName(NODE_TYPE_NAMES.FULLNODE),
+        isHP: true,
+        certificateProvider: SSL_PROVIDERS.FILE,
+        tenderdashNodeKey: generateTenderdashNodeKey(),
+        initialIpForm: {
+          ip: initialIp,
+          coreP2PPort: 19999,
+          platformHTTPPort: 36656,
+          platformP2PPort: 1443,
+        },
+        fileCertificateProviderForm: {
+          chainFilePath: certificatePath,
+          privateFilePath: privKeyPath,
+        },
+      });
+
+      const configExists = configFile.getConfig(preset);
+
+      expect(configExists).to.not.be.undefined();
+    });
   });
 
-  it('start', async () => {
-    const startTask = startNodeTask(configFile.getConfig(preset));
-    await startTask.run();
+  describe('start', () => {
+    it('should start HP fullnode', async () => {
+      const startTask = startNodeTask(configFile.getConfig(preset));
+      await startTask.run();
 
-    const isRunning = await isServiceRunning('core');
+      const isRunning = await isServiceRunning('core');
 
-    expect(isRunning).to.be.true();
+      expect(isRunning).to.be.true();
+    });
   });
 
-  it('sync', async () => {
-    await wait(360000);
+  describe('sync', () => {
+    it('should sync Dash Core', async () => {
+      await wait(360000);
 
-    let blockchainInfo = await coreRpcClient.getBlockchainInfo();
+      let blockchainInfo = await coreRpcClient.getBlockchainInfo();
 
-    if (blockchainInfo.result.headers.length === 0) {
-      expect.fail('Core is not syncing');
-    }
+      if (blockchainInfo.result.headers.length === 0) {
+        expect.fail('Core is not syncing');
+      }
 
-    lastBlockHeight = blockchainInfo.result.headers;
+      lastBlockHeight = blockchainInfo.result.headers;
 
-    await wait(120000);
+      await wait(120000);
 
-    blockchainInfo = await coreRpcClient.getBlockchainInfo();
+      blockchainInfo = await coreRpcClient.getBlockchainInfo();
 
-    if (blockchainInfo.result.headers <= lastBlockHeight) {
-      expect.fail('Core is not syncing');
-    }
+      if (blockchainInfo.result.headers <= lastBlockHeight) {
+        expect.fail('Core is not syncing');
+      }
 
-    lastBlockHeight = blockchainInfo.result.headers;
+      lastBlockHeight = blockchainInfo.result.headers;
+    });
   });
 
-  it('restart', async () => {
-    const task = restartNodeTask(configFile.getConfig(preset));
-    await task.run();
+  describe('restart', () => {
+    it('should restart HP fullnode and continue syncing Dash Core', async () => {
+      const task = restartNodeTask(configFile.getConfig(preset));
+      await task.run();
 
-    const isRunning = await isServiceRunning('core');
+      const isRunning = await isServiceRunning('core');
 
-    expect(isRunning).to.be.true();
+      expect(isRunning).to.be.true();
 
-    await wait(120000);
+      await wait(120000);
 
-    const blockchainInfo = await coreRpcClient.getBlockchainInfo();
+      const blockchainInfo = await coreRpcClient.getBlockchainInfo();
 
-    if (blockchainInfo.result.headers <= lastBlockHeight) {
-      expect.fail('Core is not syncing after restart');
-    }
+      if (blockchainInfo.result.headers <= lastBlockHeight) {
+        expect.fail('Core is not syncing after restart');
+      }
+    });
   });
 
-  it('stop', async () => {
-    const task = stopNodeTask(configFile.getConfig(preset));
-    await task.run();
+  describe('stop', () => {
+    it('should stop HP fullnode', async () => {
+      const task = stopNodeTask(configFile.getConfig(preset));
+      await task.run();
 
-    const isRunning = await isServiceRunning('core');
+      const isRunning = await isServiceRunning('core');
 
-    expect(isRunning).to.be.false();
+      expect(isRunning).to.be.false();
+    });
   });
 });
