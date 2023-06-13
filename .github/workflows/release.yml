@@ -251,12 +251,21 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Pull S3 cache
+      - uses: everpcpc/actions-cache@v1
+        with:
+          bucket: platform-runner-cache
+          root: cache-mounts
+          path: |
+            /home/ubuntu/.cargo/registry/index
+            /home/ubuntu/.cargo/registry/cache
+            /home/ubuntu/.cargo/git
+            target
+            .yarn/unplugged
+          key: opendal
+          restore-keys: opendal
+
+      - name: Handle yarn install state cache
         run: |
-          aws s3 sync s3://platform-runner-cache/cache-mounts/registry /home/ubuntu/.cargo/registry || true
-          aws s3 sync s3://platform-runner-cache/cache-mounts/git /home/ubuntu/.cargo/git || true
-          aws s3 sync s3://platform-runner-cache/cache-mounts/target target || true
-          aws s3 sync s3://platform-runner-cache/cache-mounts/unplugged .yarn/unplugged || true
           cp .yarn/unplugged/install-state.gz .yarn/install-state.gz || true
 
       - name: Install dependencies
@@ -267,88 +276,80 @@ jobs:
         env:
           CARGO_BUILD_PROFILE: release
 
-      - name: Push S3 cache
-        run: |
-          cp .yarn/install-state.gz .yarn/unplugged/install-state.gz
-          aws s3 sync .yarn/unplugged s3://platform-runner-cache/cache-mounts/unplugged
-          aws s3 sync /home/ubuntu/.cargo/registry s3://platform-runner-cache/cache-mounts/registry
-          aws s3 sync /home/ubuntu/.cargo/git s3://platform-runner-cache/cache-mounts/git
-          aws s3 sync target s3://platform-runner-cache/cache-mounts/target
+      # - name: Set up QEMU to run multi-arch builds
+      #   uses: docker/setup-qemu-action@v2
 
-      - name: Set up QEMU to run multi-arch builds
-        uses: docker/setup-qemu-action@v2
+      # - name: Set up Docker BuildX
+      #   id: buildx
+      #   uses: docker/setup-buildx-action@v2
+      #   with:
+      #     install: true
+      #     config-inline: |
+      #       [worker.oci]
+      #         gc = true
+      #         gckeepstorage = 40000 # 40 GB
+      #         [[worker.oci.gcpolicy]]
+      #           all = true
+      #           keepBytes = 30000000000 # 30 GB
+      #           keepDuration = 864000 # 10 days
 
-      - name: Set up Docker BuildX
-        id: buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          install: true
-          config-inline: |
-            [worker.oci]
-              gc = true
-              gckeepstorage = 40000 # 40 GB
-              [[worker.oci.gcpolicy]]
-                all = true
-                keepBytes = 30000000000 # 30 GB
-                keepDuration = 864000 # 10 days
+      # - name: Get tag
+      #   uses: actions/github-script@v6
+      #   id: tag
+      #   with:
+      #     result-encoding: string
+      #     script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
 
-      - name: Get tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
+      # - name: Set suffix
+      #   uses: actions/github-script@v6
+      #   id: suffix
+      #   with:
+      #     result-encoding: string
+      #     script: |
+      #       const fullTag = '${{steps.tag.outputs.result}}';
+      #       if (fullTag.includes('-')) {
+      #         const [, fullSuffix] = fullTag.split('-');
+      #         const [suffix] = fullSuffix.split('.');
+      #         return `-${suffix}`;
+      #       } else {
+      #         return '';
+      #       }
 
-      - name: Set suffix
-        uses: actions/github-script@v6
-        id: suffix
-        with:
-          result-encoding: string
-          script: |
-            const fullTag = '${{steps.tag.outputs.result}}';
-            if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return `-${suffix}`;
-            } else {
-              return '';
-            }
+      # - name: Set Docker tags and labels
+      #   id: docker_meta
+      #   uses: docker/metadata-action@v4
+      #   with:
+      #     images: dashpay/dapi
+      #     tags: |
+      #       type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+      #       type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+      #       type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+      #       type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
+      #     flavor: |
+      #       suffix=${{ steps.suffix.outputs.result }},onlatest=true
+      #       latest=${{ github.event_name == 'release' }}
 
-      - name: Set Docker tags and labels
-        id: docker_meta
-        uses: docker/metadata-action@v4
-        with:
-          images: dashpay/dapi
-          tags: |
-            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
-            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
-            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
-          flavor: |
-            suffix=${{ steps.suffix.outputs.result }},onlatest=true
-            latest=${{ github.event_name == 'release' }}
+      # - name: inject go-build-cache into docker
+      #   uses: dcginfra/buildkit-cache-dance/inject@main
 
-      - name: inject go-build-cache into docker
-        uses: dcginfra/buildkit-cache-dance/inject@main
+      # - name: Build and push Docker image for DAPI
+      #   uses: docker/build-push-action@v3
+      #   with:
+      #     context: .
+      #     builder: ${{ steps.buildx.outputs.name }}
+      #     file: ./Dockerfile
+      #     target: dapi
+      #     push: true
+      #     tags: ${{ steps.docker_meta.outputs.tags }}
+      #     labels: ${{ steps.docker_meta.outputs.labels }}
+      #     build-args: |
+      #       CARGO_BUILD_PROFILE=release
+      #     platforms: linux/amd64
+      #     cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+      #     cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
-      - name: Build and push Docker image for DAPI
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          builder: ${{ steps.buildx.outputs.name }}
-          file: ./Dockerfile
-          target: dapi
-          push: true
-          tags: ${{ steps.docker_meta.outputs.tags }}
-          labels: ${{ steps.docker_meta.outputs.labels }}
-          build-args: |
-            CARGO_BUILD_PROFILE=release
-          platforms: linux/amd64
-          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
-          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
-
-      - name: extract go-build-cache from docker
-        uses: dcginfra/buildkit-cache-dance/extract@main
+      # - name: extract go-build-cache from docker
+      #   uses: dcginfra/buildkit-cache-dance/extract@main
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
