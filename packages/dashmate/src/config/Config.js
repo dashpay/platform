@@ -1,7 +1,5 @@
 const Ajv = require('ajv');
 
-const nodePath = require('path');
-
 const lodashGet = require('lodash/get');
 const lodashSet = require('lodash/set');
 const lodashCloneDeep = require('lodash/cloneDeep');
@@ -9,8 +7,6 @@ const lodashIsEqual = require('lodash/isEqual');
 
 const addFormats = require('ajv-formats');
 const configJsonSchema = require('../../configs/schema/configJsonSchema');
-
-const convertObjectToEnvs = require('./convertObjectToEnvs');
 
 const InvalidOptionPathError = require('./errors/InvalidOptionPathError');
 const InvalidOptionError = require('./errors/InvalidOptionError');
@@ -148,69 +144,6 @@ class Config {
    */
   isEqual(config) {
     return lodashIsEqual(this.getOptions(), config.getOptions());
-  }
-
-  /**
-   * @param {Object} [options={}]
-   * @param {boolean} [options.platformOnly=false]
-   * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
-   */
-  toEnvs(options = {}) {
-    const dockerComposeFiles = [];
-
-    if (!options.platformOnly) {
-      // TODO: it should contain only the dashmate helper that must be ran always
-      dockerComposeFiles.push('docker-compose.yml');
-
-      if (this.get('core.masternode.enable') === true) {
-        dockerComposeFiles.push('docker-compose.sentinel.yml');
-      }
-    }
-
-    if (this.get('platform.enable')) {
-      dockerComposeFiles.push('docker-compose.platform.yml');
-
-      if (this.get('platform.sourcePath') !== null) {
-        dockerComposeFiles.push('docker-compose.platform.build.yml');
-      }
-    }
-
-    let envs = {
-      CONFIG_NAME: this.getName(),
-      COMPOSE_PROJECT_NAME: `dashmate_${this.getName()}`,
-      COMPOSE_FILE: dockerComposeFiles.join(':'),
-      COMPOSE_PATH_SEPARATOR: ':',
-      DOCKER_BUILDKIT: 1,
-      COMPOSE_DOCKER_CLI_BUILD: 1,
-      CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
-        this.get('core.log.file.path'),
-      ),
-      ...convertObjectToEnvs(this.getOptions()),
-    };
-
-    if (this.get('platform.enable')) {
-      envs = {
-        ...envs,
-
-        PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
-          this.get('platform.drive.abci.log.prettyFile.path'),
-        ),
-
-        PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
-          this.get('platform.drive.abci.log.jsonFile.path'),
-        ),
-
-        PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
-          this.get('platform.drive.abci.log.prettyFile.path'),
-        ),
-
-        PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
-          this.get('platform.drive.abci.log.jsonFile.path'),
-        ),
-      };
-    }
-
-    return envs;
   }
 }
 
