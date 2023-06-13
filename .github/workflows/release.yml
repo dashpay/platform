@@ -251,9 +251,6 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-
       - name: Pull S3 cache
         run: |
           aws s3 sync s3://platform-runner-cache/cache-mounts/registry $CARGO_HOME/registry || true
