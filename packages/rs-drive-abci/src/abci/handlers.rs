@@ -261,7 +261,9 @@ where
             if block_execution_context.block_state_info.round != (request.round as u32) {
                 // We were not the proposer, and we should process something new
                 drop_block_execution_context = true;
-            } else if let Some(current_block_hash) = block_execution_context.block_state_info.block_hash {
+            } else if let Some(current_block_hash) =
+                block_execution_context.block_state_info.block_hash
+            {
                 // There is also the possibility that this block already came in, but tenderdash crashed
                 // Now tenderdash is sending it again
                 if let Some(proposal_info) = block_execution_context.proposer_results.as_ref() {
