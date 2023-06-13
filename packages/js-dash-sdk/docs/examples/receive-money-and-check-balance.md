@@ -5,6 +5,12 @@ Initialize the SDK Client with your [generated mnemonic](../examples/generate-a-
 ```js
 const Dash = require("dash");
 const mnemonic = ''// your mnemonic here.
+
+// Synchronization will take a lot of time with this configuration. 
+// We can use `unsafeOptions.skipSynchronizationBeforeHeigth` option
+// in combination with progress events as described here
+// https://github.com/dashpay/platform/tree/v0.25-dev/packages/wallet-lib#usage
+
 const client = new Dash.Client({
   wallet: {
     mnemonic,
