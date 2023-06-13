@@ -9,7 +9,6 @@ const { Observable } = require('rxjs');
  * @param {generateToAddress} generateToAddress
  * @param {generateBlocks} generateBlocks
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
- * @param {ConfigFile} configFile
  * @return {generateToAddressTask}
  */
 function generateToAddressTaskFactory(
@@ -18,7 +17,6 @@ function generateToAddressTaskFactory(
   generateToAddress,
   generateBlocks,
   waitForBalanceToConfirm,
-  configFile,
 ) {
   /**
    * @typedef {generateToAddressTask}

@@ -22,7 +22,6 @@ const { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } = require('../../../../constants
  * @param {generateBlsKeys} generateBlsKeys
  * @param {enableCoreQuorumsTask} enableCoreQuorumsTask
  * @param {waitForMasternodesSync} waitForMasternodesSync
- * @param {ConfigFile} configFile
  * @return {configureCoreTask}
  */
 function configureCoreTaskFactory(
@@ -37,7 +36,6 @@ function configureCoreTaskFactory(
   generateBlsKeys,
   enableCoreQuorumsTask,
   waitForMasternodesSync,
-  configFile,
 ) {
   const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
 

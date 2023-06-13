@@ -21,7 +21,6 @@ const {
  * @param {waitForConfirmations} waitForConfirmations
  * @param {registerMasternode} registerMasternode
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
- * @param {ConfigFile} configFile
  * @return {registerMasternodeTask}
  */
 function registerMasternodeTaskFactory(
@@ -36,7 +35,6 @@ function registerMasternodeTaskFactory(
   waitForConfirmations,
   registerMasternode,
   waitForBalanceToConfirm,
-  configFile,
 ) {
   /**
    * @typedef {registerMasternodeTask}
