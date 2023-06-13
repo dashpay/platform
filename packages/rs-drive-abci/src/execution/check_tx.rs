@@ -150,7 +150,7 @@ mod tests {
             .add_new_identity(identity, &BlockInfo::default(), true, None)
             .expect("expected to insert identity");
 
-        let validation_result = platform
+        let _validation_result = platform
             .check_tx(serialized.as_slice())
             .expect("expected to check tx");
 
@@ -427,7 +427,7 @@ mod tests {
 
         let master_key_pair = KeyPair::new(&secp, &mut rng);
 
-        let master_secret_key = master_key_pair.secret_key();
+        let _master_secret_key = master_key_pair.secret_key();
 
         let master_public_key = master_key_pair.public_key();
 

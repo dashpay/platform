@@ -11,6 +11,7 @@ use crate::identity::state_transition::identity_create_transition::validation::b
 use crate::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator;
 use crate::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic;
+use crate::identity::state_transition::identity_credit_transfer_transition::validation::basic::identity_credit_transfer_basic::IdentityCreditTransferTransitionBasicValidator;
 use crate::identity::state_transition::validate_public_key_signatures::PublicKeysSignaturesValidator;
 use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysValidator};
 
@@ -154,6 +155,14 @@ where
                         wrapped_state_repository.clone(),
                         protocol_version_validator.clone(),
                     ),
+                    IdentityCreditTransferTransitionBasicValidator::new(
+                        ProtocolVersionValidator::default(),
+                    )
+                    .map_err(|_| {
+                        ProtocolError::Generic(String::from(
+                            "Unable to initialize IdentityCreditTransferTransitionBasicValidator",
+                        ))
+                    })?,
                 ),
             );
 

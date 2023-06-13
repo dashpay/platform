@@ -903,7 +903,7 @@ impl Drive {
             .map(|identity_id| {
                 Ok((
                     *identity_id,
-                    Self::fetch_all_identity_keys(&self, *identity_id, transaction)?,
+                    Self::fetch_all_identity_keys(self, *identity_id, transaction)?,
                 ))
             })
             .collect()

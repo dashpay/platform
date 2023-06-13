@@ -1,4 +1,4 @@
-use crate::execution::quorum::{Quorum, Validator};
+use crate::execution::quorum::{Validator, ValidatorSet};
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
@@ -29,6 +29,8 @@ pub struct ValidatorInQuorum {
     pub platform_http_port: u16,
     /// Tenderdash port
     pub platform_p2p_port: u16,
+    /// Is the validator banned?
+    pub is_banned: bool,
 }
 
 impl From<&ValidatorInQuorum> for Validator {
@@ -41,6 +43,7 @@ impl From<&ValidatorInQuorum> for Validator {
             core_port,
             platform_http_port,
             platform_p2p_port,
+            is_banned,
             ..
         } = value;
         Validator {
@@ -51,6 +54,7 @@ impl From<&ValidatorInQuorum> for Validator {
             core_port: *core_port,
             platform_http_port: *platform_http_port,
             platform_p2p_port: *platform_p2p_port,
+            is_banned: *is_banned,
         }
     }
 }
@@ -65,6 +69,7 @@ impl From<ValidatorInQuorum> for Validator {
             core_port,
             platform_http_port,
             platform_p2p_port,
+            is_banned,
             ..
         } = value;
         Validator {
@@ -75,6 +80,7 @@ impl From<ValidatorInQuorum> for Validator {
             core_port,
             platform_http_port,
             platform_p2p_port,
+            is_banned,
         }
     }
 }
@@ -149,6 +155,7 @@ impl TestQuorumInfo {
                     core_port: 1,
                     platform_http_port: 2,
                     platform_p2p_port: 3,
+                    is_banned: false,
                 }
             })
             .collect();
@@ -170,7 +177,7 @@ impl TestQuorumInfo {
     }
 }
 
-impl From<&TestQuorumInfo> for Quorum {
+impl From<&TestQuorumInfo> for ValidatorSet {
     fn from(value: &TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             core_height,
@@ -181,10 +188,10 @@ impl From<&TestQuorumInfo> for Quorum {
             ..
         } = value;
 
-        Quorum {
+        ValidatorSet {
             core_height: *core_height,
             quorum_hash: *quorum_hash,
-            validator_set: validator_set
+            members: validator_set
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))
                 .collect(),
@@ -193,7 +200,7 @@ impl From<&TestQuorumInfo> for Quorum {
     }
 }
 
-impl From<TestQuorumInfo> for Quorum {
+impl From<TestQuorumInfo> for ValidatorSet {
     fn from(value: TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             core_height,
@@ -204,10 +211,10 @@ impl From<TestQuorumInfo> for Quorum {
             ..
         } = value;
 
-        Quorum {
+        ValidatorSet {
             quorum_hash,
             core_height,
-            validator_set: validator_set
+            members: validator_set
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))
                 .collect(),

@@ -40,6 +40,7 @@ pub mod apply_state_transition;
 mod serialization;
 mod state_transition_action;
 
+use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::util::hash;
 pub use state_transition_action::StateTransitionAction;
@@ -53,6 +54,7 @@ macro_rules! call_method {
             StateTransition::IdentityTopUp(st) => st.$method($args),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityCreditTransfer(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -64,6 +66,7 @@ macro_rules! call_method {
             StateTransition::IdentityTopUp(st) => st.$method(),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityCreditTransfer(st) => st.$method(),
         }
     };
 }
@@ -80,6 +83,9 @@ macro_rules! call_static_method {
                 IdentityCreditWithdrawalTransition::$method()
             }
             StateTransition::IdentityUpdate(_) => IdentityUpdateTransition::$method(),
+            StateTransition::IdentityCreditTransfer(_) => {
+                IdentityCreditTransferTransition::$method()
+            }
         }
     };
 }
@@ -107,6 +113,7 @@ pub enum StateTransition {
     IdentityTopUp(IdentityTopUpTransition),
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),
+    IdentityCreditTransfer(IdentityCreditTransferTransition),
 }
 
 impl StateTransition {
