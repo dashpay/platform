@@ -35,7 +35,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use serde_json::Value as JsonValue;
 use dpp::consensus::ConsensusError;
-use dpp::consensus::state::data_contract::data_contract_keep_history_update_error::DataContractConfigUpdateError;
+use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::contract_config::ContractConfig;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::schema_compatibility_validator::any_schema_changes;
