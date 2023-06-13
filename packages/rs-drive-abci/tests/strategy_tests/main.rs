@@ -780,7 +780,8 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_insert_one_new_identity_per_block() {
+    fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
+        // drive_abci::logging::Loggers::default().try_install().ok();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -812,7 +813,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()

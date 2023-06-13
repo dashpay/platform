@@ -32,8 +32,6 @@
 //! Defines and implements in Drive functions pertinent to groveDB operations.
 //!
 
-use path::SubtreePath;
-
 use crate::drive::batch::GroveDbOpBatch;
 use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use costs::storage_cost::transition::OperationStorageTransitionType;
@@ -43,12 +41,10 @@ use grovedb::batch::{
     key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op, OpsByLevelPath,
 };
 use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
-
-use std::collections::HashMap;
+use path::SubtreePath;
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
     PathKeyUnknownElementSize,
@@ -67,11 +63,10 @@ use grovedb::operations::insert::InsertOptions;
 use grovedb::query_result_type::{
     PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
 };
-
 use grovedb::Error as GroveError;
 use integer_encoding::VarInt;
-
 use intmap::IntMap;
+use std::collections::HashMap;
 use storage::rocksdb_storage::RocksDbStorage;
 
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`

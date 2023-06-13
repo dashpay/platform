@@ -17,7 +17,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive_abci::abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
+use drive_abci::abci::mimic::{self, MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
@@ -690,6 +690,10 @@ pub(crate) fn continue_chain_for_strategy(
             validator_set_update,
             next_validator_set_hash,
             root_app_hash,
+            state_id,
+            block_id_hash: block_hash,
+            signature,
+            app_version,
         } = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
@@ -739,9 +743,17 @@ pub(crate) fn continue_chain_for_strategy(
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
-                    root_app_hash: &root_app_hash,
-                    block_signature: &vec![], //todo
-                    quorum_hash: &current_quorum_with_test_info.quorum_hash.into_inner(),
+                    quorum_hash: current_quorum_with_test_info.quorum_hash.as_inner(),
+                    quorum_type: config.quorum_type(),
+                    app_version,
+                    chain_id: mimic::CHAIN_ID.to_string(),
+                    core_chain_locked_height: state_id.core_chain_locked_height,
+                    height: state_id.height as i64,
+                    block_hash: &block_hash,
+                    app_hash: &root_app_hash,
+                    time: state_id.time.expect("time is required in StateId"),
+                    signature: &signature,
+                    public_key: &current_quorum_with_test_info.public_key,
                 },
                 &current_identities,
                 &abci_app,
@@ -757,7 +769,7 @@ pub(crate) fn continue_chain_for_strategy(
             i += 1;
             i %= quorum_size; //todo: this could be variable
         }
-    }
+    } // for block_height
 
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()
