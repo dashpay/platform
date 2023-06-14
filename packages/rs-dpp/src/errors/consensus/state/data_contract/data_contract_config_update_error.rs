@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-#[error("Can't Data Contract {data_contract_id} config keep_history field: it is immutable")]
+#[error("Can't update Data Contract {data_contract_id} config: {additional_message}")]
 pub struct DataContractConfigUpdateError {
     /*
 

@@ -69,7 +69,10 @@ fn validate_config_update(
     if new_config.keeps_history != old_config.keeps_history {
         return Err(DataContractConfigUpdateError::new(
             contract_id,
-            "contract can not change whether it keeps history",
+            format!(
+                "contract can not change whether it keeps history: changing from {} to {}",
+                old_config.keeps_history, new_config.keeps_history
+            ),
         )
         .into());
     }
