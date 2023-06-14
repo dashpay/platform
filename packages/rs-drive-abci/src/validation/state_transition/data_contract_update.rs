@@ -629,7 +629,7 @@ mod tests {
             let error = errors.get(0).expect("to have an error");
             assert_eq!(
                 error.additional_message(),
-                "contract can not change whether it keeps history"
+                "contract can not change whether it keeps history: changing from true to false"
             );
         }
     }
