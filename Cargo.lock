@@ -3657,6 +3657,7 @@ name = "tenderdash-abci"
 version = "0.12.0-dev.2"
 dependencies = [
  "bytes",
+ "futures",
  "hex",
  "lhash",
  "prost",
@@ -3886,6 +3887,7 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

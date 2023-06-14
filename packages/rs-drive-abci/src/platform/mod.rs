@@ -261,3 +261,9 @@ impl<C> Platform<C> {
         })
     }
 }
+
+impl<C> Drop for Platform<C> {
+    fn drop(&mut self) {
+        tracing::debug!("platform is shutting down")
+    }
+}
