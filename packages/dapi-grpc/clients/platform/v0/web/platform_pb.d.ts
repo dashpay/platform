@@ -1252,18 +1252,12 @@ export class GetDataContractHistoryRequest extends jspb.Message {
   getId_asB64(): string;
   setId(value: Uint8Array | string): void;
 
-  hasLimit(): boolean;
-  clearLimit(): void;
   getLimit(): number;
   setLimit(value: number): void;
 
-  hasOffset(): boolean;
-  clearOffset(): void;
   getOffset(): number;
   setOffset(value: number): void;
 
-  hasStartAtSeconds(): boolean;
-  clearStartAtSeconds(): void;
   getStartAtSeconds(): number;
   setStartAtSeconds(value: number): void;
 

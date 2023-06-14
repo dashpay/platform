@@ -458,33 +458,25 @@ impl<C> Platform<C> {
                 let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
 
                 // TODO: make a cast safe
-                let limit = limit
-                    .map(|limit| {
-                        u16::try_from(limit).map_err(|_| {
-                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
-                                "can't fit u16 limit from the supplied value",
-                            )))
-                        })
-                    })
-                    .transpose()?;
-                let offset = offset
-                    .map(|offset| {
-                        u16::try_from(offset).map_err(|_| {
-                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
-                                "can't fit u16 offset from the supplied value",
-                            )))
-                        })
-                    })
-                    .transpose()?;
+                let limit = u16::try_from(limit).map_err(|_| {
+                    Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
+                        "can't fit u16 limit from the supplied value",
+                    )))
+                })?;
+                let offset = u16::try_from(offset).map_err(|_| {
+                    Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
+                        "can't fit u16 offset from the supplied value",
+                    )))
+                })?;
 
                 let response_data = if prove {
                     let proof =
                         check_validation_result_with_data!(self.drive.prove_contract_history(
                             contract_id.to_buffer(),
                             None,
-                            start_at_seconds.unwrap_or_default(),
-                            limit,
-                            offset
+                            start_at_seconds,
+                            Some(limit),
+                            Some(offset)
                         ));
                     GetDataContractHistoryResponse {
                         metadata: Some(metadata),
@@ -501,9 +493,9 @@ impl<C> Platform<C> {
                         check_validation_result_with_data!(self.drive.fetch_contract_with_history(
                             contract_id.to_buffer(),
                             None,
-                            start_at_seconds.unwrap_or_default(),
-                            limit,
-                            offset
+                            start_at_seconds,
+                            Some(limit),
+                            Some(offset)
                         ));
 
                     let contract_historical_entries = check_validation_result_with_data!(contracts
@@ -862,9 +854,9 @@ mod test {
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
                 id: vec![1; 32],
-                limit: Some(10),
-                offset: Some(0),
-                start_at_seconds: None,
+                limit: 10,
+                offset: 0,
+                start_at_seconds: 0,
                 prove: false,
             }
         }
@@ -1081,7 +1073,7 @@ mod test {
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id.to_buffer(),
-                request.start_at_seconds(),
+                request.start_at_seconds,
                 Some(10),
                 Some(0),
             )
@@ -1127,7 +1119,7 @@ mod test {
 
             let request = GetDataContractHistoryRequest {
                 id: original_data_contract.id.to_vec(),
-                limit: Some(100000),
+                limit: 100000,
                 ..default_request()
             };
             let request_data = request.encode_to_vec();
@@ -1161,7 +1153,7 @@ mod test {
 
             let request = GetDataContractHistoryRequest {
                 id: original_data_contract.id.to_vec(),
-                offset: Some(100000),
+                offset: 100000,
                 ..default_request()
             };
             let request_data = request.encode_to_vec();

@@ -10206,22 +10206,22 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.serializeBinaryToW
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 2));
-  if (f != null) {
+  f = message.getLimit();
+  if (f !== 0) {
     writer.writeUint32(
       2,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 3));
-  if (f != null) {
+  f = message.getOffset();
+  if (f !== 0) {
     writer.writeUint32(
       3,
       f
     );
   }
-  f = /** @type {number} */ (jspb.Message.getField(message, 4));
-  if (f != null) {
+  f = message.getStartAtSeconds();
+  if (f !== 0) {
     writer.writeUint64(
       4,
       f
@@ -10293,25 +10293,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getLimit
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setLimit = function(value) {
-  return jspb.Message.setField(this, 2, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.clearLimit = function() {
-  return jspb.Message.setField(this, 2, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.hasLimit = function() {
-  return jspb.Message.getField(this, 2) != null;
+  return jspb.Message.setProto3IntField(this, 2, value);
 };
 
 
@@ -10329,25 +10311,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getOffse
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setOffset = function(value) {
-  return jspb.Message.setField(this, 3, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.clearOffset = function() {
-  return jspb.Message.setField(this, 3, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.hasOffset = function() {
-  return jspb.Message.getField(this, 3) != null;
+  return jspb.Message.setProto3IntField(this, 3, value);
 };
 
 
@@ -10365,25 +10329,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getStart
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setStartAtSeconds = function(value) {
-  return jspb.Message.setField(this, 4, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.clearStartAtSeconds = function() {
-  return jspb.Message.setField(this, 4, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.hasStartAtSeconds = function() {
-  return jspb.Message.getField(this, 4) != null;
+  return jspb.Message.setProto3IntField(this, 4, value);
 };
 
 

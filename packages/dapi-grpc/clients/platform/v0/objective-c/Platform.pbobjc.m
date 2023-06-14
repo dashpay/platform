@@ -2690,9 +2690,9 @@ typedef struct GetDataContractsResponse_DataContracts__storage_ {
 @implementation GetDataContractHistoryRequest
 
 @dynamic id_p;
-@dynamic hasLimit, limit;
-@dynamic hasOffset, offset;
-@dynamic hasStartAtSeconds, startAtSeconds;
+@dynamic limit;
+@dynamic offset;
+@dynamic startAtSeconds;
 @dynamic prove;
 
 typedef struct GetDataContractHistoryRequest__storage_ {
@@ -2724,7 +2724,7 @@ typedef struct GetDataContractHistoryRequest__storage_ {
         .number = GetDataContractHistoryRequest_FieldNumber_Limit,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, limit),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
@@ -2733,7 +2733,7 @@ typedef struct GetDataContractHistoryRequest__storage_ {
         .number = GetDataContractHistoryRequest_FieldNumber_Offset,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, offset),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
@@ -2742,7 +2742,7 @@ typedef struct GetDataContractHistoryRequest__storage_ {
         .number = GetDataContractHistoryRequest_FieldNumber_StartAtSeconds,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, startAtSeconds),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },
       {

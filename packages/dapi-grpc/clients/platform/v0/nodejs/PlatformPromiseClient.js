@@ -30,6 +30,8 @@ const {
             GetIdentityResponse: PBJSGetIdentityResponse,
             GetDataContractRequest: PBJSGetDataContractRequest,
             GetDataContractResponse: PBJSGetDataContractResponse,
+            GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
+            GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
             GetDocumentsRequest: PBJSGetDocumentsRequest,
             GetDocumentsResponse: PBJSGetDocumentsResponse,
             GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
@@ -49,6 +51,7 @@ const {
   BroadcastStateTransitionResponse: ProtocBroadcastStateTransitionResponse,
   GetIdentityResponse: ProtocGetIdentityResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
+  GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
   GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
@@ -196,6 +199,39 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetDataContractRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   *
+   * @param {!GetDataContractHistoryRequest} getDataContractHistoryRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetDataContractResponse>}
+   */
+  getDataContractHistory(getDataContractHistoryRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    console.dir(getDataContractHistoryRequest);
+    return this.client.getDataContractHistory(
+      getDataContractHistoryRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetDataContractHistoryResponse,
+              PBJSGetDataContractHistoryResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetDataContractHistoryRequest,
             ),
           ),
         ],

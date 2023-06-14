@@ -351,6 +351,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDataContractHistory}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getDataContractHistoryCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} [response] GetDataContractHistoryResponse
+                         */
+
+                        /**
+                         * Calls getDataContractHistory.
+                         * @function getDataContractHistory
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest} request GetDataContractHistoryRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getDataContractHistoryCallback} callback Node-style callback called with the error, if any, and GetDataContractHistoryResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getDataContractHistory = function getDataContractHistory(request, callback) {
+                            return this.rpcCall(getDataContractHistory, $root.org.dash.platform.dapi.v0.GetDataContractHistoryRequest, $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse, request, callback);
+                        }, "name", { value: "getDataContractHistory" });
+
+                        /**
+                         * Calls getDataContractHistory.
+                         * @function getDataContractHistory
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest} request GetDataContractHistoryRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetDataContractHistoryResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDataContracts}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getDataContractsCallback

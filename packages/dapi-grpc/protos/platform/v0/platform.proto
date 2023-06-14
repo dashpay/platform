@@ -17,6 +17,7 @@ service Platform {
           returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDataContractHistory (GetDataContractHistoryRequest) returns (GetDataContractHistoryResponse);
   rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
@@ -269,9 +270,9 @@ message GetDataContractsResponse {
 
 message GetDataContractHistoryRequest {
   bytes id = 1;
-  optional uint32 limit = 2;
-  optional uint32 offset = 3;
-  optional uint64 start_at_seconds = 4;
+  uint32 limit = 2;
+  uint32 offset = 3;
+  uint64 start_at_seconds = 4;
   bool prove = 5;
 }
 

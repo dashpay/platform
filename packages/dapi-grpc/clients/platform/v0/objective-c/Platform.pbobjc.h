@@ -984,13 +984,10 @@ GPB_FINAL @interface GetDataContractHistoryRequest : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t limit;
 
-@property(nonatomic, readwrite) BOOL hasLimit;
 @property(nonatomic, readwrite) uint32_t offset;
 
-@property(nonatomic, readwrite) BOOL hasOffset;
 @property(nonatomic, readwrite) uint64_t startAtSeconds;
 
-@property(nonatomic, readwrite) BOOL hasStartAtSeconds;
 @property(nonatomic, readwrite) BOOL prove;
 
 @end

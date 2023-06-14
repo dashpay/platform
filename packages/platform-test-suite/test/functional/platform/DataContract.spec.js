@@ -26,9 +26,11 @@ describe('Platform', () => {
 
     before(async () => {
       dataContractFixture = await getDataContractFixture();
-      client = await createClientWithFundedWallet(350000);
+      client = await createClientWithFundedWallet(35000000);
 
-      identity = await client.platform.identities.register(300000);
+      // Looks like updating the contact and keeping history requires about
+      // 7 million credits in fees. Investigate this further.
+      identity = await client.platform.identities.register(30000000);
     });
 
     after(async () => {
@@ -223,10 +225,10 @@ describe('Platform', () => {
       );
       expect(Object.entries(contractHistory)).to.have.lengthOf(2);
 
-      const originalContract = Object.entries(contractHistory)[0];
-      const updatedContract = Object.entries(contractHistory)[1];
-
+      const [, originalContract] = Object.entries(contractHistory)[0];
       expect(originalContract.toObject()).to.be.deep.equal(dataContractFixture.toObject());
+
+      const [, updatedContract] = Object.entries(contractHistory)[1];
       expect(updatedContract.toObject()).to.be.deep.equal(fetchedDataContract.toObject());
     });
   });
