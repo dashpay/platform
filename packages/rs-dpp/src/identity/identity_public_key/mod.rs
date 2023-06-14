@@ -161,7 +161,9 @@ impl IdentityPublicKey {
                         )));
                     }
                 };
-                Ok(key.pubkey_hash().into_inner())
+                Ok(key.pubkey_hash().to_vec().try_into().map_err(|_| {
+                    ProtocolError::ParsingError("unable to convert to array".to_string())
+                })?)
             }
             KeyType::BLS12_381 => {
                 if self.data.len() != 48 {
