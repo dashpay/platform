@@ -153,7 +153,7 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                     keyword,
                     params,
                     property_name,
-                    error_message,
+                    error_message: _,
                 } = JsonSchemaErrorData::from(error.deref());
 
                 builder
