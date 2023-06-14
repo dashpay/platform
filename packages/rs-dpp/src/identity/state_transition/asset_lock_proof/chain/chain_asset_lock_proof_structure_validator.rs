@@ -1,7 +1,8 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use dashcore::consensus::Decodable;
+use dashcore::consensus::{deserialize};
+use dashcore::hashes::Hash;
 use dashcore::OutPoint;
 use lazy_static::lazy_static;
 use platform_value::Value;
@@ -106,7 +107,7 @@ where
             return Ok(result);
         }
 
-        let out_point = OutPoint::consensus_decode(&mut proof.out_point.to_vec())
+        let out_point: OutPoint = deserialize(proof.out_point.as_slice())
             .map_err(|e| NonConsensusError::SerdeParsingError(e.to_string().into()))?;
 
         let output_index = out_point.vout;
@@ -174,7 +175,11 @@ where
 
             Ok(result)
         } else {
-            let mut hash = transaction_hash.as_hash().into_inner();
+            let mut hash: [u8; 32] = transaction_hash.to_vec().try_into().map_err(|_| {
+                NonConsensusError::StateRepositoryFetchError(
+                    "transaction hash is not 32 bytes".to_string(),
+                )
+            })?;
             hash.reverse();
             result.add_error(IdentityAssetLockTransactionIsNotFoundError::new(hash));
 

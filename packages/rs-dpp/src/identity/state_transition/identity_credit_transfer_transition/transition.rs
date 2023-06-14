@@ -203,13 +203,9 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
 #[cfg(test)]
 mod test {
     use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-    use crate::identity::KeyID;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::StateTransitionType;
-    use crate::ProtocolError;
-    use bincode::{config, Decode, Encode};
-    use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-    use platform_value::{BinaryData, Identifier};
+    use platform_value::{Identifier};
     use rand::Rng;
     use std::fmt::Debug;
 

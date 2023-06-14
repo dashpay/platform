@@ -1,6 +1,7 @@
 use anyhow::Result;
-use dashcore::{Block, CompactTarget, Header};
+use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
 use dashcore::block::Version;
+use dashcore::hashes::Hash;
 use getrandom::getrandom;
 use platform_value::Value;
 #[cfg(test)]
@@ -223,8 +224,8 @@ pub fn new_block_header(timestamp_secs: Option<u32>) -> Header {
     Header {
         bits: CompactTarget::default(),
         nonce: 0,
-        merkle_root: Default::default(),
-        prev_blockhash: Default::default(),
+        merkle_root: TxMerkleNode::all_zeros(),
+        prev_blockhash: BlockHash::all_zeros(),
         version: Version::default(),
         time: timestamp_secs.unwrap_or_default(),
     }

@@ -237,7 +237,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let test_data = setup_test(None);
             let transaction = instant_asset_lock_proof_transaction_fixture(None);
             let instant_lock =
-                instant_asset_lock_is_lock_fixture(Txid::from_hash(Sha256::from_inner([0u8; 32])));
+                instant_asset_lock_is_lock_fixture(Txid::from_slice(&[0u8; 32]).unwrap());
             let asset_lock_proof = AssetLockProof::Instant(InstantAssetLockProof::new(
                 instant_lock,
                 transaction.clone(),
@@ -264,7 +264,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             assert_eq!(consensus_error.code(), 1031);
             assert_eq!(
                 error.instant_lock_transaction_id(),
-                Txid::from_hash(Sha256::from_inner([0u8; 32]))
+                Txid::from_slice(&[0u8; 32]).unwrap()
             );
             assert_eq!(error.asset_lock_transaction_id(), transaction.txid());
         }

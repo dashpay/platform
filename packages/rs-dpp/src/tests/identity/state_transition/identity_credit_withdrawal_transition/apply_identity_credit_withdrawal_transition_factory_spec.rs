@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
-    use dashcore::{consensus, Header};
+    use dashcore::{BlockHash, CompactTarget, consensus, Header, TxMerkleNode};
 
     use std::collections::BTreeMap;
 
@@ -22,6 +22,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
     use platform_value::Value;
     use std::default::Default;
     use dashcore::block::Version;
+    use dashcore::hashes::Hash;
 
     #[tokio::test]
     async fn should_fail_if_data_contract_was_not_found() {
@@ -79,10 +80,10 @@ mod apply_identity_credit_withdrawal_transition_factory {
                 let header = Header {
                     time: block_time_seconds,
                     version: Version::ONE,
-                    prev_blockhash: Default::default(),
-                    merkle_root: Default::default(),
-                    bits: Default::default(),
-                    nonce: Default::default(),
+                    prev_blockhash: BlockHash::all_zeros(),
+                    merkle_root: TxMerkleNode::all_zeros(),
+                    bits: CompactTarget::default(),
+                    nonce: 0,
                 };
 
                 anyhow::Ok(consensus::serialize(&header))
