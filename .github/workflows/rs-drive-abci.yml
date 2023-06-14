@@ -35,7 +35,7 @@ jobs:
 
   docker:
     name: Docker
-    runs-on: self-hosted
+    runs-on: ubuntu-22.04
     timeout-minutes: 180  # ARM build can take forever
     steps:
       - uses: actions/checkout@v3
