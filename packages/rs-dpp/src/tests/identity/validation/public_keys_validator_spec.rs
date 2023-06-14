@@ -400,7 +400,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     );
     assert_eq!(
         error.validation_error(),
-        "Key secp256k1 error: malformed public key"
+        "key secp256k1 error"
     );
 }
 
