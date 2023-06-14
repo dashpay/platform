@@ -51,8 +51,8 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "tracing-log",
 ], optional = true }
 atty = { version = "0.2.14", optional = true }
-#tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/canonical_vote_sign_digest" }
-tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/graceful-shutdown" }
+# tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }

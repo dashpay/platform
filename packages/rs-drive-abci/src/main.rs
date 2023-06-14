@@ -90,7 +90,7 @@ async fn main() -> Result<(), ExitCode> {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            tracing::error!(errors = e, "execution failed");
+            tracing::error!(error = e, "drive-abci failed");
             ExitCode::FAILURE
         }
     };

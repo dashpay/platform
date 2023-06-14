@@ -3655,6 +3655,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.12.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/graceful-shutdown#cfaabce82d115a7c7745367b4aebb710d17c159d"
 dependencies = [
  "bytes",
  "futures",
@@ -3674,6 +3675,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.12.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/graceful-shutdown#cfaabce82d115a7c7745367b4aebb710d17c159d"
 dependencies = [
  "bytes",
  "chrono",
@@ -3691,6 +3693,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/graceful-shutdown#cfaabce82d115a7c7745367b4aebb710d17c159d"
 dependencies = [
  "fs_extra",
  "prost-build",
