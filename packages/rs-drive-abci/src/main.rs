@@ -11,14 +11,13 @@ use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use tokio::runtime::Handle;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinSet;
 use tokio::time::{timeout, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-const SHUTDOWN_TIMEOUT_MILIS: u64 = 3000;
+const SHUTDOWN_TIMEOUT_MILIS: u64 = 7000; // 7s; Docker defaults to 10s
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -190,8 +189,7 @@ fn main_thread(cancel: CancellationToken, config: PlatformConfig, cli: Cli) -> R
             // Tenderdash won't start too until ABCI port is open.
             // wait_for_core_to_sync(&core_rpc, cancel.clone()).unwrap();
 
-            drive_abci::abci::start(cancel, &config, core_rpc, Handle::current())
-                .map_err(|e| e.to_string())?;
+            drive_abci::abci::start(cancel, &config, core_rpc).map_err(|e| e.to_string())?;
             return Ok(());
         }
         Commands::Config {} => dump_config(&config)?,

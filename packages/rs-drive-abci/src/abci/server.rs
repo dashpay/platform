@@ -26,7 +26,6 @@ pub fn start<C: CoreRPCLike>(
     cancel: CancellationToken,
     config: &PlatformConfig,
     core_rpc: C,
-    runtime: Handle,
 ) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
@@ -37,7 +36,6 @@ pub fn start<C: CoreRPCLike>(
 
     let server = tenderdash_abci::ServerBuilder::new(abci, &bind_address)
         .with_cancel_token(cancel.clone())
-        .with_runtime(runtime)
         .build()
         .map_err(super::AbciError::from)?;
 
