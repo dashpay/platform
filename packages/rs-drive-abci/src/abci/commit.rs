@@ -12,10 +12,14 @@ use tenderdash_abci::signatures::SignDigest;
 use super::AbciError;
 
 /// Represents block commit
+#[derive(Clone, Debug)]
 pub struct Commit {
-    inner: proto::types::Commit,
-    chain_id: String,
-    quorum_type: QuorumType,
+    /// Commit in Tenderdash format
+    pub inner: proto::types::Commit,
+    /// ID of chain used to sign this commit
+    pub chain_id: String,
+    /// Type of quorum used to sign this commit
+    pub quorum_type: QuorumType,
 }
 
 impl Commit {
