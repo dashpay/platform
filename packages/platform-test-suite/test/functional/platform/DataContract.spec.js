@@ -223,13 +223,20 @@ describe('Platform', () => {
       const contractHistory = await client.platform.contracts.history(
         dataContractFixture.getId(), 0, 10, 0,
       );
-      expect(Object.entries(contractHistory)).to.have.lengthOf(2);
 
-      const [, originalContract] = Object.entries(contractHistory)[0];
+      // By default, history is not really sorted, since it's a map
+      const historyPairs = Object.entries(contractHistory);
+      historyPairs.sort((a, b) => a[0] - b[0]);
+
+      expect(historyPairs).to.have.lengthOf(2);
+
+      const [originalContractDate, originalContract] = Object.entries(contractHistory)[0];
       expect(originalContract.toObject()).to.be.deep.equal(dataContractFixture.toObject());
 
-      const [, updatedContract] = Object.entries(contractHistory)[1];
+      const [updatedContractDate, updatedContract] = Object.entries(contractHistory)[1];
       expect(updatedContract.toObject()).to.be.deep.equal(fetchedDataContract.toObject());
+
+      expect(updatedContractDate).to.be.greaterThan(originalContractDate);
     });
   });
 });
