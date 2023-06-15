@@ -172,12 +172,12 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn install && \
+    cp -R /platform/.yarn/unplugged /tmp/ && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
-    yarn install && \
     yarn build && \
-    cp -R /platform/.yarn/unplugged /tmp/ && \
     sccache --show-stats
 
 #

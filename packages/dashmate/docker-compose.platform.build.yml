@@ -15,7 +15,7 @@ services:
         - ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
         - ${CACHE_FROM:-drive:local}
       cache_to:
-        - ${CACHE_TO:-drive:local}
+        - ${CACHE_TO:-type=inline}
     image: drive:local
 
   dapi_api:
@@ -29,10 +29,9 @@ services:
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
       cache_from:
-        - ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
-        - ${CACHE_FROM:-dapi:local}
+        - ${CACHE_FROM:-${PLATFORM_DAPI_API_DOCKER_IMAGE}}
       cache_to:
-        - ${CACHE_TO:-dapi:local}
+        - ${CACHE_TO:-type=inline}
     image: dapi:local
 
   dapi_tx_filter_stream:
@@ -46,10 +45,9 @@ services:
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
       cache_from:
-        - ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
-        - ${CACHE_FROM:-dapi:local}
+        - ${CACHE_FROM:-${PLATFORM_DAPI_API_DOCKER_IMAGE}}
       cache_to:
-        - ${CACHE_TO:-dapi:local}
+        - ${CACHE_TO:-type=inline}
     image: dapi:local
 
   dapi_envoy:
@@ -62,10 +60,9 @@ services:
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
       cache_from:
-        - ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
-        - ${CACHE_FROM:-dapi-envoy:local}
+        - ${CACHE_FROM:-${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE}}
       cache_to:
-        - ${CACHE_TO:-dapi-envoy:local}
+        - ${CACHE_TO:-type=inline}
     image: dapi-envoy:local
 
   dashmate_helper:
@@ -79,8 +76,7 @@ services:
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
       cache_from:
-        - ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
-        - ${CACHE_FROM:-dashmate_helper:local}
+        - ${CACHE_FROM:-${DASHMATE_HELPER_DOCKER_IMAGE}}
       cache_to:
-        - ${CACHE_TO:-dashmate_helper:local}
+        - ${CACHE_TO:-type=inline}
     image: dashmate_helper:local
