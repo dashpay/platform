@@ -11,9 +11,9 @@ use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use tokio::runtime::Builder;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::task::JoinSet;
-use tokio::time::{timeout, Duration};
+use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
@@ -72,18 +72,25 @@ enum Commands {
     Status {},
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
-async fn main() -> Result<(), ExitCode> {
+fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
     // We use `cancel` to notify other subsystems that the server is shutting down
     let cancel = tokio_util::sync::CancellationToken::new();
 
-    configure_logging(&cli, &config).expect("failed to configure logging");
+    let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
 
     install_panic_hook(cancel.clone());
 
-    let status = match start_threads(config, cli, cancel).await {
+    // Start thread listening for signals
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("cannot initialize tokio runtime");
+    let rt_guard = runtime.enter();
+    runtime.spawn(handle_signals(cancel.clone(), loggers));
+
+    let status = match main_thread(cancel.clone(), config, cli) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
             ExitCode::SUCCESS
@@ -95,81 +102,39 @@ async fn main() -> Result<(), ExitCode> {
     };
 
     tracing::info!("drive-abci server is down");
+    drop(rt_guard);
+    runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
 
     Err(status)
 }
 
-async fn start_threads(
-    config: PlatformConfig,
-    cli: Cli,
-    cancel: CancellationToken,
-) -> Result<(), String> {
-    let mut threads: JoinSet<Result<(), String>> = JoinSet::new();
-    threads.spawn(handle_signals(cancel.clone()));
-    let cancel_cloned = cancel.clone();
-    threads.spawn_blocking(|| main_thread(cancel_cloned, config, cli));
-
-    join_any(threads, cancel).await
-}
-
-async fn handle_signals(cancel: CancellationToken) -> Result<(), String> {
+async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), String> {
     let mut sigint = signal(SignalKind::interrupt()).map_err(|e| e.to_string())?;
     let mut sigterm = signal(SignalKind::terminate()).map_err(|e| e.to_string())?;
-    let mut sigquit = signal(SignalKind::quit()).map_err(|e| e.to_string())?;
+    let mut sighup = signal(SignalKind::hangup()).map_err(|e| e.to_string())?;
 
     tokio::select! {
-      _ = sigint.recv() => (),
-      _ = sigterm.recv() => (),
-      _ = sigquit.recv() => (),
-      _ = cancel.cancelled() => (),
+      _ = sigint.recv() => {
+            tracing::info!("received SIGINT (ctrl+c), initiating shutdown");
+            cancel.cancel();
+        },
+      _ = sigterm.recv() => {
+            tracing::info!("received SIGTERM, initiating shutdown");
+            cancel.cancel();
+        },
+        _ = sighup.recv() => {
+            tracing::info!("received SIGHUP, flushing and rotating logs");
+            if let Err(error)=logs.flush() {
+                tracing::error!(?error, "logs flush failed");
+            };
+            if let Err(error) =logs.rotate() {
+                tracing::error!(?error, "logs rotate failed");
+            };
+        },
+      _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
     };
-
-    tracing::debug!("initiating shutdown");
-    cancel.cancel();
 
     Ok(())
-}
-
-/// Wait for first thread to finish and cancel others, with timeout.
-///
-/// If any of these threads finishes, all other are cancelled using `cancel`.
-async fn join_any(
-    mut threads: JoinSet<Result<(), String>>,
-    cancel: CancellationToken,
-) -> Result<(), String> {
-    let mut errors = String::new();
-
-    while let Some(res) = threads.join_next().await {
-        let result = match res {
-            Err(e) => e.to_string(),
-            Ok(Err(e)) => e,
-            Ok(Ok(())) => String::new(),
-        };
-        if !result.is_empty() {
-            errors += &result;
-            errors += "\n";
-        }
-
-        cancel.cancel();
-    }
-
-    match timeout(
-        Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS),
-        threads.shutdown(),
-    )
-    .await
-    {
-        Ok(_) => (),
-        Err(e) => {
-            errors += e.to_string().as_str();
-        }
-    };
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
 }
 
 fn main_thread(cancel: CancellationToken, config: PlatformConfig, cli: Cli) -> Result<(), String> {
@@ -187,7 +152,7 @@ fn main_thread(cancel: CancellationToken, config: PlatformConfig, cli: Cli) -> R
             // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
             // We need to make sure that Core is ready before we start Drive ABCI app
             // Tenderdash won't start too until ABCI port is open.
-            // wait_for_core_to_sync(&core_rpc, cancel.clone()).unwrap();
+            wait_for_core_to_sync(&core_rpc, cancel.clone()).unwrap();
 
             drive_abci::abci::start(cancel, &config, core_rpc).map_err(|e| e.to_string())?;
             return Ok(());
@@ -304,7 +269,7 @@ fn configure_logging(
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.
 ///
-/// Depends on [set_verbosity()].
+/// Should be called after [set_verbosity()].
 fn install_panic_hook(cancel: CancellationToken) {
     std::panic::set_hook(Box::new(move |info| {
         tracing::error!(panic=%info, "panic");
