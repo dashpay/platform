@@ -219,7 +219,6 @@ class PlatformPromiseClient {
       throw new Error('metadata must be an object');
     }
 
-    console.dir(getDataContractHistoryRequest);
     return this.client.getDataContractHistory(
       getDataContractHistoryRequest,
       convertObjectToMetadata(metadata),
