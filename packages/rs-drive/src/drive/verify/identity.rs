@@ -254,12 +254,20 @@ impl Drive {
     }
 
     /// Verifies the identity's balance with a identity id
+    /// verify_subset_of_proof is used to indicate if we want to verify a subset of a bigger proof
+    /// for example if the proof can prove the balance and the revision, but here we are only
+    /// interested in verifying the balance
     pub fn verify_identity_balance_for_identity_id(
         proof: &[u8],
         identity_id: [u8; 32],
+        verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<u64>), Error> {
         let path_query = Self::identity_balance_query(&identity_id);
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
+        let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query(proof, &path_query)?
+        } else {
+            GroveDb::verify_query(proof, &path_query)?
+        };
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = &proved_key_values.remove(0);
             if path != &balance_path() {

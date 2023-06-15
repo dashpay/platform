@@ -40,8 +40,10 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new GetIdentitiesByPublicKeyHashesResponse();
-    response.setIdentitiesList(
-      [identityFixture.toBuffer()],
+    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
+    identitiesList.setIdentitiesList([identityFixture.toBuffer()]);
+    response.setIdentities(
+      identitiesList,
     );
     response.setMetadata(metadata);
 
@@ -86,7 +88,6 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   it('should return proof', async () => {
     options.prove = true;
     response.setProof(proofResponse);
-    response.setIdentitiesList([]);
 
     const result = await getIdentitiesByPublicKeyHashes([publicKeyHash], options);
 

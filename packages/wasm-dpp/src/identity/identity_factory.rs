@@ -7,8 +7,9 @@ use crate::identity::validation::IdentityValidatorWasm;
 
 use crate::{
     create_asset_lock_proof_from_wasm_instance, with_js_error, ChainAssetLockProofWasm,
-    IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
-    IdentityWasm, InstantAssetLockProofWasm,
+    IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
+    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
+    InstantAssetLockProofWasm,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 use dpp::identity::factory::IdentityFactory;
@@ -173,6 +174,23 @@ impl IdentityFactoryWasm {
 
         self.0
             .create_identity_topup_transition(identity_id.to_owned().into(), asset_lock_proof)
+            .map(Into::into)
+            .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=createIdentityCreditTransferTransition)]
+    pub fn create_identity_credit_transfer_transition(
+        &self,
+        identity_id: &IdentifierWrapper,
+        recipient_id: &IdentifierWrapper,
+        amount: u64,
+    ) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
+        self.0
+            .create_identity_credit_transfer_transition(
+                identity_id.to_owned().into(),
+                recipient_id.to_owned().into(),
+                amount,
+            )
             .map(Into::into)
             .with_js_error()
     }

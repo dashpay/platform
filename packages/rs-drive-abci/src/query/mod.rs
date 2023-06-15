@@ -3,8 +3,10 @@ use crate::error::Error;
 use crate::platform::Platform;
 use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
-    get_data_contract_history_response, get_data_contracts_response, get_identities_response,
-    get_identity_by_public_key_hashes_response, get_identity_keys_response,
+    get_data_contract_history_response, get_data_contract_response, get_data_contracts_response,
+    get_documents_response, get_identities_by_public_key_hashes_response, get_identities_response,
+    get_identity_balance_and_revision_response, get_identity_balance_response,
+    get_identity_by_public_key_hashes_response, get_identity_keys_response, get_identity_response,
     GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
     GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
     GetDocumentsRequest, GetDocumentsResponse, GetIdentitiesByPublicKeyHashesRequest,
@@ -26,6 +28,7 @@ use drive::drive::identity::IdentityProveRequestType;
 
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
+use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
@@ -113,13 +116,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_full_identity(identity_id.into_buffer(), None));
                     GetIdentityResponse {
-                        identity: vec![],
-                        proof: Some(Proof {
+                        result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -135,8 +137,7 @@ impl<C> Platform<C> {
                             .transpose()))
                     .unwrap_or_default();
                     GetIdentityResponse {
-                        identity,
-                        proof: None,
+                        result: Some(get_identity_response::Result::Identity(identity)),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -210,13 +211,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_identity_balance(identity_id.into_buffer(), None));
                     GetIdentityBalanceResponse {
-                        balance: None,
-                        proof: Some(Proof {
+                        result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -225,8 +225,9 @@ impl<C> Platform<C> {
                         .drive
                         .fetch_identity_balance(identity_id.into_buffer(), None,));
                     GetIdentityBalanceResponse {
-                        balance,
-                        proof: None,
+                        result: Some(get_identity_balance_response::Result::Balance(
+                            balance.unwrap(),
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -242,13 +243,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_identity_balance_and_revision(identity_id.into_buffer(), None));
                     GetIdentityBalanceResponse {
-                        balance: None,
-                        proof: Some(Proof {
+                        result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -260,9 +260,11 @@ impl<C> Platform<C> {
                         .drive
                         .fetch_identity_revision(identity_id.into_buffer(), true, None,));
                     GetIdentityBalanceAndRevisionResponse {
-                        balance,
-                        revision,
-                        proof: None,
+                        result: Some(
+                            get_identity_balance_and_revision_response::Result::BalanceAndRevision(
+                                BalanceAndRevision { balance, revision },
+                            ),
+                        ),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -357,13 +359,12 @@ impl<C> Platform<C> {
                         .drive
                         .prove_contract(contract_id.into_buffer(), None));
                     GetDataContractResponse {
-                        data_contract: vec![],
-                        proof: Some(Proof {
+                        result: Some(get_data_contract_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -375,8 +376,9 @@ impl<C> Platform<C> {
                     .map(|contract| contract.contract.serialize())
                     .transpose()?;
                     GetDataContractResponse {
-                        data_contract: contract.unwrap_or_default(),
-                        proof: None,
+                        result: Some(get_data_contract_response::Result::DataContract(
+                            contract.unwrap_or_default(),
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -642,13 +644,12 @@ impl<C> Platform<C> {
                         drive_query.execute_with_proof(&self.drive, None, None)
                     );
                     GetDocumentsResponse {
-                        documents: vec![],
-                        proof: Some(Proof {
+                        result: Some(get_documents_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
-                        }),
+                        })),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -658,8 +659,9 @@ impl<C> Platform<C> {
                     )
                     .0;
                     GetDocumentsResponse {
-                        documents: results,
-                        proof: None,
+                        result: Some(get_documents_response::Result::Documents(
+                            get_documents_response::Documents { documents: results },
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -733,13 +735,14 @@ impl<C> Platform<C> {
                             None
                         ));
                     GetIdentitiesByPublicKeyHashesResponse {
-                        identities: vec![],
-                        proof: Some(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        }),
+                        result: Some(get_identities_by_public_key_hashes_response::Result::Proof(
+                            Proof {
+                                grovedb_proof: proof,
+                                quorum_hash: state.last_quorum_hash().to_vec(),
+                                signature: state.last_block_signature().to_vec(),
+                                round: state.last_block_round(),
+                            },
+                        )),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -756,8 +759,13 @@ impl<C> Platform<C> {
                         .filter_map(|maybe_identity| Some(maybe_identity?.serialize_consume()))
                         .collect::<Result<Vec<Vec<u8>>, ProtocolError>>());
                     GetIdentitiesByPublicKeyHashesResponse {
-                        identities,
-                        proof: None,
+                        result: Some(
+                            get_identities_by_public_key_hashes_response::Result::Identities(
+                                get_identities_by_public_key_hashes_response::Identities {
+                                    identities,
+                                },
+                            ),
+                        ),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
@@ -835,7 +843,7 @@ impl<C> Platform<C> {
 mod test {
     pub mod query_data_contract_history {
         use crate::error::Error;
-        use crate::query::{QueryValidationResult, ValidationResult};
+        use crate::query::ValidationResult;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
         use dapi_grpc::platform::v0::{
@@ -843,7 +851,7 @@ mod test {
             GetDataContractHistoryResponse,
         };
         use dpp::block::block_info::BlockInfo;
-        use dpp::check_validation_result_with_data;
+
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use drive::drive::Drive;
@@ -967,13 +975,16 @@ mod test {
                 "expect no errors to be returned from the query"
             );
 
-            let mut data = data.expect("expect data to be returned from the query");
-            let data_ref = data.as_slice();
+            let data = data.expect("expect data to be returned from the query");
+            let _data_ref = data.as_slice();
 
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse { metadata, result } = response;
+            let GetDataContractHistoryResponse {
+                metadata: _,
+                result,
+            } = response;
             let res = result.expect("expect result to be returned from the query");
 
             let contract_history = match res {
@@ -1047,13 +1058,16 @@ mod test {
                 "expect no errors to be returned from the query"
             );
 
-            let mut data = data.expect("expect data to be returned from the query");
-            let data_ref = data.as_slice();
+            let data = data.expect("expect data to be returned from the query");
+            let _data_ref = data.as_slice();
 
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse { metadata, result } = response;
+            let GetDataContractHistoryResponse {
+                metadata: _,
+                result,
+            } = response;
             let res = result.expect("expect result to be returned from the query");
 
             let contract_proof = match res {
@@ -1064,7 +1078,7 @@ mod test {
             };
 
             // Check that the proof has correct values inside
-            let (root_hash, contract_history) = Drive::verify_contract_history(
+            let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id.to_buffer(),
                 request.start_at_seconds(),

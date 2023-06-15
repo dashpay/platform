@@ -322,7 +322,7 @@ mod tests {
                             batch,
                             true,
                             &BlockInfo::default(),
-                            Some(&transaction),
+                            Some(transaction),
                         )
                         .expect("should apply batch");
                 }

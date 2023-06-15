@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::quorum::Quorum;
+use crate::execution::quorum::ValidatorSet;
 use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
@@ -44,7 +44,7 @@ pub struct PlatformState {
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
-    pub validator_sets: IndexMap<QuorumHash, Quorum>,
+    pub validator_sets: IndexMap<QuorumHash, ValidatorSet>,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
@@ -75,7 +75,7 @@ pub struct PlatformStateForSaving {
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
     #[bincode(with_serde)]
-    pub validator_sets: Vec<(Bytes32, Quorum)>,
+    pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
@@ -312,7 +312,7 @@ impl PlatformState {
     }
 
     /// Get the current quorum
-    pub fn current_validator_set(&self) -> Result<&Quorum, Error> {
+    pub fn current_validator_set(&self) -> Result<&ValidatorSet, Error> {
         self.validator_sets
             .get(&self.current_validator_set_quorum_hash)
             .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(

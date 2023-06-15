@@ -27,9 +27,11 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proofFixture = getProofFixture();
 
     proto = new GetIdentitiesByPublicKeyHashesResponse();
+    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
+    identitiesList.setIdentitiesList([identityFixture.toBuffer()]);
 
-    proto.setIdentitiesList(
-      [identityFixture.toBuffer()],
+    proto.setIdentities(
+      identitiesList,
     );
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -95,7 +97,6 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proofProto.setGrovedbProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
 
-    proto.setIdentitiesList([]);
     proto.setProof(proofProto);
 
     getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);

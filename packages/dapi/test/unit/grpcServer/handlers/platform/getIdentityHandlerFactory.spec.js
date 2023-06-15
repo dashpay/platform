@@ -30,6 +30,7 @@ describe('getIdentityHandlerFactory', () => {
   let proofFixture;
   let proofMock;
   let response;
+  let proofResponse;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
@@ -48,8 +49,10 @@ describe('getIdentityHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetIdentityResponse();
-    response.setProof(proofMock);
     response.setIdentity(identity.toBuffer());
+
+    proofResponse = new GetIdentityResponse();
+    proofResponse.setProof(proofMock);
 
     driveStateRepositoryMock = {
       fetchIdentity: this.sinon.stub().resolves(response.serializeBinary()),
@@ -61,9 +64,6 @@ describe('getIdentityHandlerFactory', () => {
   });
 
   it('should return valid result', async () => {
-    response.setProof(null);
-    driveStateRepositoryMock.fetchIdentity.resolves(response.serializeBinary());
-
     const result = await getIdentityHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
@@ -76,6 +76,8 @@ describe('getIdentityHandlerFactory', () => {
 
   it('should return proof', async () => {
     call.request.getProve.returns(true);
+
+    driveStateRepositoryMock.fetchIdentity.resolves(proofResponse.serializeBinary());
 
     const result = await getIdentityHandler(call);
 

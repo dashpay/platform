@@ -1,15 +1,16 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::quorum::Quorum;
+use crate::execution::quorum::ValidatorSet;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
 use dashcore_rpc::json::{MasternodeListItem, MasternodeType};
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
+use indexmap::IndexMap;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -162,7 +163,8 @@ where
         let new_quorums = quorum_infos
             .into_iter()
             .map(|(key, info_result)| {
-                let quorum = Quorum::try_from_info_result(info_result, block_platform_state)?;
+                let quorum =
+                    ValidatorSet::try_from_quorum_info_result(info_result, block_platform_state)?;
                 Ok((key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -193,6 +195,69 @@ where
 
         block_platform_state.quorums_extended_info = quorum_list.quorums_by_type;
         Ok(())
+    }
+
+    /// Remove a masternode from all validator sets based on its ProTxHash.
+    ///
+    /// This function iterates through all the validator sets and removes the given masternode
+    /// using its ProTxHash. It modifies the validator_sets parameter in place.
+    ///
+    /// # Arguments
+    ///
+    /// * `pro_tx_hash` - A reference to the ProTxHash of the masternode to be removed.
+    /// * `validator_sets` - A mutable reference to an IndexMap containing QuorumHash as key
+    ///                      and ValidatorSet as value.
+    ///
+    fn remove_masternode_in_validator_sets(
+        pro_tx_hash: &ProTxHash,
+        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
+    ) {
+        validator_sets
+            .iter_mut()
+            .for_each(|(_quorum_hash, validator_set)| {
+                validator_set.members.remove(pro_tx_hash);
+            });
+    }
+
+    /// Updates a masternode in the validator sets.
+    ///
+    /// This function updates the properties of the masternode that matches the given `pro_tx_hash`.
+    /// The properties are updated based on the provided `dmn_state_diff` information.
+    /// If a matching masternode is found, the function updates its ban status, service address,
+    /// platform P2P port, and platform HTTP port accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `pro_tx_hash` - The `ProTxHash` of the masternode to be updated
+    /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
+    /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
+    ///                      representing the validator sets with the quorum hash as the key
+    fn update_masternode_in_validator_sets(
+        pro_tx_hash: &ProTxHash,
+        dmn_state_diff: &DMNStateDiff,
+        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
+    ) {
+        validator_sets
+            .iter_mut()
+            .for_each(|(_quorum_hash, validator_set)| {
+                if let Some(validator) = validator_set.members.get_mut(pro_tx_hash) {
+                    if let Some(maybe_ban_height) = dmn_state_diff.pose_ban_height {
+                        // the ban_height was changed
+                        validator.is_banned = maybe_ban_height.is_some();
+                    }
+                    if let Some(address) = dmn_state_diff.service {
+                        validator.node_ip = address.ip().to_string();
+                    }
+
+                    if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {
+                        validator.platform_p2p_port = p2p_port as u16;
+                    }
+
+                    if let Some(http_port) = dmn_state_diff.platform_http_port {
+                        validator.platform_http_port = http_port as u16;
+                    }
+                }
+            });
     }
 
     pub(crate) fn update_state_masternode_list(
@@ -245,18 +310,30 @@ where
 
         state.full_masternode_list.extend(added_masternodes);
 
-        let updated_masternodes = updated_mns
-            .iter()
-            .map(|(pro_tx_hash, masternode)| (pro_tx_hash, masternode.clone()));
-
-        updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
+        updated_mns.iter().for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
-                if let Some(masternode_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash)
-                {
-                    masternode_list_item.state.apply_diff(state_diff.clone());
+                if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash) {
+                    hpmn_list_item.state.apply_diff(state_diff.clone());
+                    // these 3 fields are the only fields that are useful for validators. If they change we need to update
+                    // validator sets
+                    if state_diff.pose_ban_height.is_some()
+                        || state_diff.service.is_some()
+                        || state_diff.platform_p2p_port.is_some()
+                    {
+                        // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
+                        Self::update_masternode_in_validator_sets(
+                            pro_tx_hash,
+                            state_diff,
+                            &mut state.validator_sets,
+                        );
+                    }
                 }
-                masternode_list_item.state.apply_diff(state_diff);
+                masternode_list_item.state.apply_diff(state_diff.clone());
             }
+        });
+
+        removed_mns.iter().for_each(|pro_tx_hash| {
+            Self::remove_masternode_in_validator_sets(pro_tx_hash, &mut state.validator_sets);
         });
 
         let deleted_masternodes = removed_mns.iter().copied().collect::<BTreeSet<ProTxHash>>();
