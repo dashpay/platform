@@ -990,16 +990,16 @@ mod test {
             let first_entry = history_entries.pop().unwrap();
 
             assert_eq!(first_entry.date, 1000);
-            let first_entry_data_contract = first_entry.value.expect("To have data contract");
+            let first_entry_data_contract = first_entry.value;
             let first_data_contract_update =
-                DataContract::deserialize_no_limit(&first_entry_data_contract.value)
+                DataContract::deserialize_no_limit(&first_entry_data_contract)
                     .expect("To decode data contract");
             assert_eq!(first_data_contract_update, original_data_contract);
 
             assert_eq!(second_entry.date, 2000);
-            let second_entry_data_contract = second_entry.value.expect("To have data contract");
+            let second_entry_data_contract = second_entry.value;
             let second_data_contract_update =
-                DataContract::deserialize_no_limit(&second_entry_data_contract.value)
+                DataContract::deserialize_no_limit(&second_entry_data_contract)
                     .expect("To decode data contract");
 
             let updated_doc = second_data_contract_update
