@@ -15,9 +15,11 @@ runs:
         node-version: "16"
 
     - name: Enable corepack
+      shell: bash
       run: corepack enable
 
     - name: Disable NPM audit
+      shell: bash
       run: npm config set audit false
 
     - name: Cache NPM build artifacts
@@ -32,4 +34,5 @@ runs:
           ${{ runner.os }}-yarn-unplugged-
 
     - name: Install dependencies
+      shell: bash
       run: yarn install
