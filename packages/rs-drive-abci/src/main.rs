@@ -19,6 +19,24 @@ use tracing::warn;
 
 const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
 
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Start server in foreground.
+    #[command()]
+    Start {},
+    /// Dump configuration
+    ///
+    /// WARNING: output can contain sensitive data!
+    #[command()]
+    Config {},
+
+    /// Check status.
+    ///
+    /// Returns 0 on success.
+    #[command()]
+    Status {},
+}
+
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
 ///
@@ -54,22 +72,33 @@ struct Cli {
     color: Option<bool>,
 }
 
-#[derive(Debug, Subcommand)]
-enum Commands {
-    /// Start server in foreground.
-    #[command()]
-    Start {},
-    /// Dump configuration
-    ///
-    /// WARNING: output can contain sensitive data!
-    #[command()]
-    Config {},
+impl Cli {
+    fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
+        match self.command {
+            Commands::Start {} => {
+                let core_rpc = DefaultCoreRPC::open(
+                    config.core.rpc.url().as_str(),
+                    config.core.rpc.username.clone(),
+                    config.core.rpc.password.clone(),
+                )
+                .unwrap();
 
-    /// Check status.
-    ///
-    /// Returns 0 on success.
-    #[command()]
-    Status {},
+                let _prometheus = start_prometheus(&config)?;
+
+                // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
+                // We need to make sure that Core is ready before we start Drive ABCI app
+                // Tenderdash won't start too until ABCI port is open.
+                wait_for_core_to_sync(&core_rpc, cancel.clone()).unwrap();
+
+                drive_abci::abci::start(&config, core_rpc, cancel).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            Commands::Config {} => dump_config(&config)?,
+            Commands::Status {} => check_status(&config)?,
+        };
+
+        Ok(())
+    }
 }
 
 fn main() -> Result<(), ExitCode> {
@@ -94,7 +123,7 @@ fn main() -> Result<(), ExitCode> {
 
     // Main thread is not started in runtime, as it is synchronous and we don't want to run into
     // potential, hard to debug, issues.
-    let status = match main_thread(cancel.clone(), config, cli) {
+    let status = match cli.run(config, cancel) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
             ExitCode::SUCCESS
@@ -129,41 +158,14 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
         },
     _ = sighup.recv() => {
             tracing::info!("received SIGHUP, flushing and rotating logs");
-            if let Err(error)=logs.flush() {
+            if let Err(error) = logs.flush() {
                 tracing::error!(?error, "logs flush failed");
             };
-            if let Err(error) =logs.rotate() {
+            if let Err(error) = logs.rotate() {
                 tracing::error!(?error, "logs rotate failed");
             };
         },
       _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
-    };
-
-    Ok(())
-}
-
-fn main_thread(cancel: CancellationToken, config: PlatformConfig, cli: Cli) -> Result<(), String> {
-    match cli.command {
-        Commands::Start {} => {
-            let core_rpc = DefaultCoreRPC::open(
-                config.core.rpc.url().as_str(),
-                config.core.rpc.username.clone(),
-                config.core.rpc.password.clone(),
-            )
-            .unwrap();
-
-            let _prometheus = start_prometheus(&config)?;
-
-            // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
-            // We need to make sure that Core is ready before we start Drive ABCI app
-            // Tenderdash won't start too until ABCI port is open.
-            wait_for_core_to_sync(&core_rpc, cancel.clone()).unwrap();
-
-            drive_abci::abci::start(cancel, &config, core_rpc).map_err(|e| e.to_string())?;
-            return Ok(());
-        }
-        Commands::Config {} => dump_config(&config)?,
-        Commands::Status {} => check_status(&config)?,
     };
 
     Ok(())

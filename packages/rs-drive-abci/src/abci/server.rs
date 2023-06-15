@@ -5,7 +5,6 @@ use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core:
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
-use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
@@ -23,9 +22,9 @@ pub struct AbciApplication<'a, C> {
 ///
 /// Should never return.
 pub fn start<C: CoreRPCLike>(
-    cancel: CancellationToken,
     config: &PlatformConfig,
     core_rpc: C,
+    cancel: CancellationToken,
 ) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
