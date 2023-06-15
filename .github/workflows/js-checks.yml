@@ -28,10 +28,6 @@ jobs:
     name: Linting
     runs-on: self-hosted
     timeout-minutes: 15
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -56,15 +52,8 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -94,10 +83,6 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 30
     if: ${{ !inputs.skip-tests }}
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@latest
@@ -128,15 +113,8 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
