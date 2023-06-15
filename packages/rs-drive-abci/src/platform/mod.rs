@@ -265,7 +265,7 @@ impl<C> Platform<C> {
 impl<C> Drop for Platform<C> {
     fn drop(&mut self) {
         tracing::trace!("platform is shutting down");
-        // FIXME: check if this is necessary
+
         if let Err(error) = self.drive.grove.flush() {
             tracing::error!(?error, "grovedb flush failed");
         }
