@@ -53,13 +53,5 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-
-
       - name: Compile WASM
         run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp

@@ -39,38 +39,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: "16"
+        uses: ./.github/actions/nodejs
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
@@ -100,38 +75,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: "16"
+        uses: ./.github/actions/nodejs
 
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
 
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"

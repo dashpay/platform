@@ -23,14 +23,6 @@ jobs:
           toolchain: stable
           components: clippy
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-
-
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -66,14 +58,6 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-
-
       - run: cargo check --package=${{ inputs.package }}
 
   test:
@@ -89,14 +73,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-
 
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features
