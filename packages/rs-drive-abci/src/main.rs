@@ -147,26 +147,28 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
     let mut sigterm = signal(SignalKind::terminate()).map_err(|e| e.to_string())?;
     let mut sighup = signal(SignalKind::hangup()).map_err(|e| e.to_string())?;
 
-    tokio::select! {
-      _ = sigint.recv() => {
-            tracing::info!("received SIGINT (ctrl+c), initiating shutdown");
-            cancel.cancel();
-        },
-      _ = sigterm.recv() => {
-            tracing::info!("received SIGTERM, initiating shutdown");
-            cancel.cancel();
-        },
-    _ = sighup.recv() => {
-            tracing::info!("received SIGHUP, flushing and rotating logs");
-            if let Err(error) = logs.flush() {
-                tracing::error!(?error, "logs flush failed");
-            };
-            if let Err(error) = logs.rotate() {
-                tracing::error!(?error, "logs rotate failed");
-            };
-        },
-      _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
-    };
+    while !cancel.is_cancelled() {
+        tokio::select! {
+          _ = sigint.recv() => {
+                tracing::info!("received SIGINT (ctrl+c), initiating shutdown");
+                cancel.cancel();
+            },
+          _ = sigterm.recv() => {
+                tracing::info!("received SIGTERM, initiating shutdown");
+                cancel.cancel();
+            },
+        _ = sighup.recv() => {
+                tracing::info!("received SIGHUP, flushing and rotating logs");
+                if let Err(error) = logs.flush() {
+                    tracing::error!(?error, "logs flush failed");
+                };
+                if let Err(error) = logs.rotate() {
+                    tracing::error!(?error, "logs rotate failed");
+                };
+            },
+          _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
+        };
+    }
 
     Ok(())
 }
