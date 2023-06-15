@@ -35,14 +35,13 @@
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 use std::time::Duration;
-use std::{thread, time};
+use std::{thread};
 
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
 use drive::fee::credits::SignedCredits;
@@ -64,6 +63,8 @@ use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
 use serde_json::Map;
+use dpp::dashcore::hashes::Hash;
+use hex::ToHex;
 
 /// The timeout between the requests to the core to get the latest core chain lock
 const WAIT_FOR_CCL_TIMEOUT: Duration = Duration::from_millis(500);
@@ -276,7 +277,7 @@ where
         let _timer = crate::metrics::abci_request_duration("process_proposal");
 
         // to be deterministic, we need to wait for core chain lock height to reach the locked height
-        self.wait_for_chain_locked_height(request.core_chain_locked_height);
+        let _ = self.wait_for_chain_locked_height(request.core_chain_locked_height);
 
         let mut block_execution_context_guard =
             self.platform.block_execution_context.write().unwrap();
@@ -397,8 +398,8 @@ where
         )? {
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round, block_hash.encode_hex::<String>(),
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.encode_hex()).unwrap_or("None".to_string())
             )))
             .into())
         } else {
@@ -449,8 +450,8 @@ where
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round,block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round,block_hash.encode_hex::<String>(),
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.encode_hex()).unwrap_or("None".to_string())
             )))
             .into());
         }

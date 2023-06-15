@@ -7,7 +7,7 @@ use dashcore_rpc::dashcore::{
     },
     consensus::Encodable,
     hashes::Hash,
-    QuorumHash, Script, TxOut,
+    QuorumHash, TxOut,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -21,6 +21,7 @@ use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 use serde_json::Value as JsonValue;
+use dpp::dashcore::ScriptBuf;
 
 use crate::block::BlockExecutionContext;
 use crate::{
@@ -498,7 +499,7 @@ where
 
             let state_transition_size = 190;
 
-            let output_script: Script = Script(output_script_bytes.into());
+            let output_script: ScriptBuf = ScriptBuf(output_script_bytes.into());
 
             let tx_out = TxOut {
                 value: convert_credits_to_satoshi(amount)?,
@@ -540,10 +541,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{
-        hashes::hex::{FromHex, ToHex},
-        BlockHash,
-    };
+    use dashcore_rpc::dashcore::{BlockHash};
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
@@ -556,6 +554,9 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
+        use std::collections::BTreeMap;
+        use std::str::FromStr;
+        use hex::ToHex;
         use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
@@ -581,7 +582,7 @@ mod tests {
                 .expect_get_block_hash()
                 .withf(|height| *height == 95)
                 .returning(|_| {
-                    Ok(BlockHash::from_hex(
+                    Ok(BlockHash::from_str(
                         "0000000000000000000000000000000000000000000000000000000000000000",
                     )
                     .unwrap())
@@ -591,7 +592,7 @@ mod tests {
                 .expect_get_block_hash()
                 .withf(|height| *height == 96)
                 .returning(|_| {
-                    Ok(BlockHash::from_hex(
+                    Ok(BlockHash::from_str(
                         "1111111111111111111111111111111111111111111111111111111111111111",
                     )
                     .unwrap())
@@ -600,7 +601,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.to_hex()
+                    bh.encode_hex::<String>()
                         == "0000000000000000000000000000000000000000000000000000000000000000"
                 })
                 .returning(|_| {
@@ -612,7 +613,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.to_hex()
+                    bh.encode_hex::<String>()
                         == "1111111111111111111111111111111111111111111111111111111111111111"
                 })
                 .returning(|_| {
@@ -645,19 +646,8 @@ mod tests {
                     is_epoch_change: false,
                 },
                 hpmn_count: 100,
-                withdrawal_transactions: Default::default(),
-                block_platform_state: PlatformState {
-                    last_committed_block_info: None,
-                    current_protocol_version_in_consensus: 0,
-                    next_epoch_protocol_version: 0,
-                    quorums_extended_info: Default::default(),
-                    current_validator_set_quorum_hash: Default::default(),
-                    next_validator_set_quorum_hash: None,
-                    validator_sets: Default::default(),
-                    full_masternode_list: Default::default(),
-                    hpmn_masternode_list: Default::default(),
-                    initialization_information: None,
-                },
+                withdrawal_transactions: BTreeMap::default(),
+                block_platform_state: PlatformState::default(),
                 proposer_results: None,
             };
 
@@ -767,7 +757,10 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-
+        use std::collections::{BTreeMap, HashMap};
+        use indexmap::IndexMap;
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::QuorumHash;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -814,17 +807,17 @@ mod tests {
                         is_epoch_change: false,
                     },
                     hpmn_count: 100,
-                    withdrawal_transactions: Default::default(),
+                    withdrawal_transactions: BTreeMap::new(),
                     block_platform_state: PlatformState {
                         last_committed_block_info: None,
                         current_protocol_version_in_consensus: 0,
                         next_epoch_protocol_version: 0,
-                        quorums_extended_info: Default::default(),
-                        current_validator_set_quorum_hash: Default::default(),
+                        quorums_extended_info: HashMap::new(),
+                        current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                         next_validator_set_quorum_hash: None,
-                        validator_sets: Default::default(),
-                        full_masternode_list: Default::default(),
-                        hpmn_masternode_list: Default::default(),
+                        validator_sets: IndexMap::new(),
+                        full_masternode_list: BTreeMap::new(),
+                        hpmn_masternode_list: BTreeMap::new(),
                         initialization_information: None,
                     },
                     proposer_results: None,
@@ -922,6 +915,8 @@ mod tests {
     }
 
     mod fetch_core_block_transactions {
+        use std::str::FromStr;
+        use hex::ToHex;
         use crate::test::helpers::setup::TestPlatformBuilder;
 
         use super::*;
@@ -938,7 +933,7 @@ mod tests {
                 .expect_get_block_hash()
                 .withf(|height| *height == 1)
                 .returning(|_| {
-                    Ok(BlockHash::from_hex(
+                    Ok(BlockHash::from_str(
                         "0000000000000000000000000000000000000000000000000000000000000000",
                     )
                     .unwrap())
@@ -948,7 +943,7 @@ mod tests {
                 .expect_get_block_hash()
                 .withf(|height| *height == 2)
                 .returning(|_| {
-                    Ok(BlockHash::from_hex(
+                    Ok(BlockHash::from_str(
                         "1111111111111111111111111111111111111111111111111111111111111111",
                     )
                     .unwrap())
@@ -957,7 +952,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.to_hex()
+                    bh.encode_hex::<String>()
                         == "0000000000000000000000000000000000000000000000000000000000000000"
                 })
                 .returning(|_| {
@@ -969,7 +964,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.to_hex()
+                    bh.encode_hex::<String>()
                         == "1111111111111111111111111111111111111111111111111111111111111111"
                 })
                 .returning(|_| {

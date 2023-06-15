@@ -32,12 +32,12 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::state::PlatformState;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
+use hex::ToHex;
 
 /// Block info
 #[derive(Debug)]
@@ -136,8 +136,8 @@ impl BlockStateInfo {
             ?height,
             ?round,
             ?core_block_height,
-            proposer_pro_tx_hash = proposer_pro_tx_hash.to_hex(),
-            commit_hash = received_hash.to_hex(),
+            proposer_pro_tx_hash = proposer_pro_tx_hash.encode_hex::<String>(),
+            commit_hash = received_hash.encode_hex::<String>(),
             "check if block info matches request"
         );
         Ok(self.height == height

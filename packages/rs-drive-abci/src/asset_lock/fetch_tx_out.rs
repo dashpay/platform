@@ -8,8 +8,8 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{OutPoint, TxOut};
+use dpp::dashcore::hashes::Hash;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::validation::ValidationResult;
 
@@ -54,7 +54,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                         return Ok(ValidationResult::new_with_error(
                             BasicError::IdentityAssetLockTransactionIsNotFoundError(
                                 IdentityAssetLockTransactionIsNotFoundError::new(
-                                    transaction_hash.as_hash().into_inner(),
+                                    transaction_hash.to_byte_array(),
                                 ),
                             )
                             .into(),
@@ -88,7 +88,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                                     return Ok(ValidationResult::new_with_error(
                                         BasicError::IdentityAssetLockTransactionIsNotFoundError(
                                             IdentityAssetLockTransactionIsNotFoundError::new(
-                                                transaction_hash.as_hash().into_inner(),
+                                                transaction_hash.to_byte_array(),
                                             ),
                                         )
                                         .into(),

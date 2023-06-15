@@ -101,32 +101,30 @@ impl From<PlatformState> for PlatformStateForSaving {
                         quorum_type,
                         quorum_extended_info
                             .into_iter()
-                            .map(|(k, v)| (k.into_inner().into(), v))
+                            .map(|(k, v)| (k.to_byte_array().into(), v))
                             .collect(),
                     )
                 })
                 .collect(),
             current_validator_set_quorum_hash: value
-                .current_validator_set_quorum_hash
-                .into_inner()
-                .into(),
+                .current_validator_set_quorum_hash.to_byte_array().into(),
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
-                .map(|quorum_hash| quorum_hash.into_inner().into()),
+                .map(|quorum_hash| quorum_hash.to_byte_array().into()),
             validator_sets: value
                 .validator_sets
                 .into_iter()
-                .map(|(k, v)| (k.into_inner().into(), v))
+                .map(|(k, v)| (k.to_byte_array().into(), v))
                 .collect(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
-                .map(|(k, v)| (k.into_inner().into(), v.into()))
+                .map(|(k, v)| (k.to_byte_array().into(), v.into()))
                 .collect(),
             hpmn_masternode_list: value
                 .hpmn_masternode_list
                 .into_iter()
-                .map(|(k, v)| (k.into_inner().into(), v.into()))
+                .map(|(k, v)| (Into::<[u8; 32]>::into(k).into(), v.into()))
                 .collect(),
             initialization_information: value.initialization_information,
         }
@@ -149,31 +147,31 @@ impl TryFrom<PlatformStateForSaving> for PlatformState {
                         quorum_type,
                         quorum_extended_info
                             .into_iter()
-                            .map(|(k, v)| (QuorumHash::from_inner(k.to_buffer()), v))
+                            .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                             .collect(),
                     )
                 })
                 .collect(),
-            current_validator_set_quorum_hash: QuorumHash::from_inner(
+            current_validator_set_quorum_hash: QuorumHash::from_byte_array(
                 value.current_validator_set_quorum_hash.to_buffer(),
             ),
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
-                .map(|bytes| QuorumHash::from_inner(bytes.to_buffer())),
+                .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
             validator_sets: value
                 .validator_sets
                 .into_iter()
-                .map(|(k, v)| (QuorumHash::from_inner(k.to_buffer()), v))
+                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                 .collect(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
-                .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
+                .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
             hpmn_masternode_list: value
                 .hpmn_masternode_list
                 .into_iter()
-                .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
+                .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
             initialization_information: value.initialization_information,
         })
@@ -187,6 +185,23 @@ pub struct PlatformInitializationState {
     pub core_initialization_height: u32,
 }
 
+impl Default for PlatformState {
+    fn default() -> Self {
+        Self {
+            last_committed_block_info: None,
+            current_protocol_version_in_consensus: 0,
+            next_epoch_protocol_version: 0,
+            quorums_extended_info: HashMap::new(),
+            current_validator_set_quorum_hash: QuorumHash::all_zeros(),
+            next_validator_set_quorum_hash: None,
+            validator_sets: IndexMap::new(),
+            full_masternode_list: BTreeMap::new(),
+            hpmn_masternode_list: BTreeMap::new(),
+            initialization_information: None,
+        }
+    }
+}
+
 impl PlatformState {
     /// The default state at init chain
     pub fn default_with_protocol_versions(
@@ -197,12 +212,12 @@ impl PlatformState {
             last_committed_block_info: None,
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-            quorums_extended_info: Default::default(),
-            current_validator_set_quorum_hash: Default::default(),
+            quorums_extended_info: HashMap::new(),
+            current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
-            validator_sets: Default::default(),
-            full_masternode_list: Default::default(),
-            hpmn_masternode_list: Default::default(),
+            validator_sets: IndexMap::new(),
+            full_masternode_list: BTreeMap::new(),
+            hpmn_masternode_list: BTreeMap::new(),
             initialization_information: None,
         }
     }

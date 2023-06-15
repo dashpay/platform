@@ -4,7 +4,6 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 
-use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
@@ -27,6 +26,7 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use dpp::dashcore::hashes::Hash;
 
 impl<C> Platform<C>
 where
@@ -140,7 +140,7 @@ where
             return Ok(());
         };
 
-        let owner_identifier: [u8; 32] = pro_tx_hash.into_inner();
+        let owner_identifier: [u8; 32] = pro_tx_hash.to_byte_array();
 
         let key_request = IdentityKeysRequest {
             identity_id: owner_identifier,
@@ -246,7 +246,7 @@ where
 
         // Part 2 : Create or Update Voting identity based on new key
         let new_voter_identity =
-            Self::create_voter_identity(pro_tx_hash.as_inner(), &new_voting_address)?;
+            Self::create_voter_identity(&(pro_tx_hash.to_byte_array()), &new_voting_address)?;
 
         // Let's check if the voting identity already exists
         let key_request = IdentityKeysRequest {
@@ -305,7 +305,7 @@ where
 
         let old_masternode = platform_state
             .full_masternode_list
-            .get(pro_tx_hash)
+            .get::<ProTxHash>(pro_tx_hash)
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCachedState(
                     "expected masternode to be in state",
@@ -607,7 +607,7 @@ where
         masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {
         Self::create_voter_identity(
-            masternode.pro_tx_hash.as_inner(),
+            &masternode.pro_tx_hash.to_byte_array(),
             &masternode.state.voting_address,
         )
     }
@@ -697,7 +697,7 @@ where
     }
 
     fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let masternode_identifier: [u8; 32] = masternode.pro_tx_hash.into_inner();
+        let masternode_identifier: [u8; 32] = masternode.pro_tx_hash.into();
         Ok(masternode_identifier)
     }
 
@@ -712,7 +712,7 @@ where
     fn get_operator_identifier_from_masternode_list_item(
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
-        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into();
         Self::get_operator_identifier(pro_tx_hash, masternode.state.pub_key_operator.as_slice())
     }
 
@@ -727,7 +727,7 @@ where
     fn get_voter_identifier_from_masternode_list_item(
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
-        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into();
         let voting_address = &masternode.state.voting_address;
         Self::get_voter_identifier(pro_tx_hash, voting_address)
     }

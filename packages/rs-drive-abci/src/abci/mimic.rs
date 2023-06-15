@@ -10,7 +10,6 @@ use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_u
 use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
 use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
-use dashcore_rpc::dashcore::consensus::Decodable;
 use dashcore_rpc::dashcore;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -29,6 +28,8 @@ use tenderdash_abci::{
     proto::{self, version::Consensus},
     Application,
 };
+use dpp::dashcore::consensus::deserialize;
+use dpp::dashcore::hashes::Hash;
 
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
@@ -237,7 +238,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     lock_time,
                     output,
                     base_payload,
-                } = AssetUnlockBaseTransactionInfo::consensus_decode(transaction.as_slice())
+                } = deserialize(&transaction)
                     .expect("a");
                 dashcore::Transaction {
                     version,
@@ -250,7 +251,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                             request_height: core_height,
                             quorum_hash: current_quorum.quorum_hash,
                         },
-                        quorum_sig: BLSSignature::from([0; 96].as_slice()),
+                        quorum_sig: BLSSignature::from([0; 96]),
                     })),
                 }
             })
