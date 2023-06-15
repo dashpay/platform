@@ -40,7 +40,7 @@ class GetDataContractHistoryResponse extends AbstractResponse {
 
       // eslint-disable-next-line no-restricted-syntax
       for (const historyEntry of dataContractHistoryEntries) {
-        history[historyEntry.getDate()] = historyEntry.getValue().getValue();
+        history[historyEntry.getDate()] = historyEntry.getValue();
       }
     }
 

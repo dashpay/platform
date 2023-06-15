@@ -34,7 +34,6 @@ CF_EXTERN_C_BEGIN
 @class GPBUInt64Value;
 @class GetDataContractHistoryResponse_DataContractHistory;
 @class GetDataContractHistoryResponse_DataContractHistoryEntry;
-@class GetDataContractHistoryResponse_DataContractValue;
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContractValue;
 @class GetDataContractsResponse_DataContracts;
@@ -1025,18 +1024,6 @@ GPB_FINAL @interface GetDataContractHistoryResponse : GPBMessage
  **/
 void GetDataContractHistoryResponse_ClearResultOneOfCase(GetDataContractHistoryResponse *message);
 
-#pragma mark - GetDataContractHistoryResponse_DataContractValue
-
-typedef GPB_ENUM(GetDataContractHistoryResponse_DataContractValue_FieldNumber) {
-  GetDataContractHistoryResponse_DataContractValue_FieldNumber_Value = 1,
-};
-
-GPB_FINAL @interface GetDataContractHistoryResponse_DataContractValue : GPBMessage
-
-@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
-
-@end
-
 #pragma mark - GetDataContractHistoryResponse_DataContractHistoryEntry
 
 typedef GPB_ENUM(GetDataContractHistoryResponse_DataContractHistoryEntry_FieldNumber) {
@@ -1048,9 +1035,7 @@ GPB_FINAL @interface GetDataContractHistoryResponse_DataContractHistoryEntry : G
 
 @property(nonatomic, readwrite) uint64_t date;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetDataContractHistoryResponse_DataContractValue *value;
-/** Test to see if @c value has been set. */
-@property(nonatomic, readwrite) BOOL hasValue;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
 
 @end
 

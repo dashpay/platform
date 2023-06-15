@@ -1318,36 +1318,14 @@ export namespace GetDataContractHistoryResponse {
     metadata?: ResponseMetadata.AsObject,
   }
 
-  export class DataContractValue extends jspb.Message {
-    getValue(): Uint8Array | string;
-    getValue_asU8(): Uint8Array;
-    getValue_asB64(): string;
-    setValue(value: Uint8Array | string): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): DataContractValue.AsObject;
-    static toObject(includeInstance: boolean, msg: DataContractValue): DataContractValue.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: DataContractValue, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): DataContractValue;
-    static deserializeBinaryFromReader(message: DataContractValue, reader: jspb.BinaryReader): DataContractValue;
-  }
-
-  export namespace DataContractValue {
-    export type AsObject = {
-      value: Uint8Array | string,
-    }
-  }
-
   export class DataContractHistoryEntry extends jspb.Message {
     getDate(): number;
     setDate(value: number): void;
 
-    hasValue(): boolean;
-    clearValue(): void;
-    getValue(): GetDataContractHistoryResponse.DataContractValue | undefined;
-    setValue(value?: GetDataContractHistoryResponse.DataContractValue): void;
+    getValue(): Uint8Array | string;
+    getValue_asU8(): Uint8Array;
+    getValue_asB64(): string;
+    setValue(value: Uint8Array | string): void;
 
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): DataContractHistoryEntry.AsObject;
@@ -1362,7 +1340,7 @@ export namespace GetDataContractHistoryResponse {
   export namespace DataContractHistoryEntry {
     export type AsObject = {
       date: number,
-      value?: GetDataContractHistoryResponse.DataContractValue.AsObject,
+      value: Uint8Array | string,
     }
   }
 

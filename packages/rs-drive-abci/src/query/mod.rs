@@ -506,12 +506,7 @@ impl<C> Platform<C> {
                         >(
                             get_data_contract_history_response::DataContractHistoryEntry {
                                 date: date_in_seconds,
-                                // TODO: figure out why this is optional
-                                value: Some(
-                                    get_data_contract_history_response::DataContractValue {
-                                        value: data_contract.serialize()?
-                                    }
-                                )
+                                value: data_contract.serialize()?
                             }
                         ))
                         .collect());

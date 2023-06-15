@@ -277,13 +277,9 @@ message GetDataContractHistoryRequest {
 }
 
 message GetDataContractHistoryResponse {
-  message DataContractValue {
-    bytes value = 1;
-  }
-
   message DataContractHistoryEntry {
     uint64 date = 1;
-    DataContractValue value = 2;
+    bytes value = 2;
   }
 
   message DataContractHistory {
