@@ -17,7 +17,7 @@ use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-const SHUTDOWN_TIMEOUT_MILIS: u64 = 7000; // 7s; Docker defaults to 10s
+const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -82,14 +82,18 @@ fn main() -> Result<(), ExitCode> {
 
     install_panic_hook(cancel.clone());
 
-    // Start thread listening for signals
+    // Start tokio runtime and thread listening for signals.
+    // The runtime will be reused by Prometheus and rs-tenderdash-abci.
     let runtime = Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("cannot initialize tokio runtime");
     let rt_guard = runtime.enter();
+
     runtime.spawn(handle_signals(cancel.clone(), loggers));
 
+    // Main thread is not started in runtime, as it is synchronous and we don't want to run into
+    // potential, hard to debug, issues.
     let status = match main_thread(cancel.clone(), config, cli) {
         Ok(()) => {
             tracing::debug!("shutdown complete");
@@ -101,13 +105,14 @@ fn main() -> Result<(), ExitCode> {
         }
     };
 
-    tracing::info!("drive-abci server is down");
     drop(rt_guard);
     runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
+    tracing::info!("drive-abci server is down");
 
     Err(status)
 }
 
+/// Handle signals received from operating system
 async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), String> {
     let mut sigint = signal(SignalKind::interrupt()).map_err(|e| e.to_string())?;
     let mut sigterm = signal(SignalKind::terminate()).map_err(|e| e.to_string())?;
@@ -122,7 +127,7 @@ async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), 
             tracing::info!("received SIGTERM, initiating shutdown");
             cancel.cancel();
         },
-        _ = sighup.recv() => {
+    _ = sighup.recv() => {
             tracing::info!("received SIGHUP, flushing and rotating logs");
             if let Err(error)=logs.flush() {
                 tracing::error!(?error, "logs flush failed");

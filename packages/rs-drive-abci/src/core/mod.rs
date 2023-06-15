@@ -1,9 +1,8 @@
-use tokio_util::sync::CancellationToken;
-
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use std::fmt::Debug;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 const CORE_SYNC_STATUS_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
