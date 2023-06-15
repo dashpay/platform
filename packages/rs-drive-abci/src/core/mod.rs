@@ -14,7 +14,13 @@ pub fn wait_for_core_to_sync<C: CoreRPCLike + Debug>(
 ) -> Result<(), Error> {
     while !cancel.is_cancelled() {
         tracing::debug!(?core_rpc, "waiting for core rpc to start");
-        let mn_sync_status = core_rpc.masternode_sync_status()?;
+        let mn_sync_status = match core_rpc.masternode_sync_status() {
+            Ok(status) => status,
+            Err(error) => {
+                tracing::warn!(?error, "cannot get masternode status, retrying");
+                continue;
+            }
+        };
 
         if !mn_sync_status.is_synced || !mn_sync_status.is_blockchain_synced {
             std::thread::sleep(CORE_SYNC_STATUS_CHECK_TIMEOUT);
