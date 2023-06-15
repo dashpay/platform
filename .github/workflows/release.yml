@@ -106,24 +106,21 @@ jobs:
         uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker BuildX
+        id: buildx
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
-
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      - name: Load Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/inject@main
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -175,6 +172,9 @@ jobs:
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
 
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
+
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
     runs-on: self-hosted
@@ -211,21 +211,17 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
-
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      - name: Load Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/inject@main
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -283,6 +279,9 @@ jobs:
           cache-to: |
             type=gha,mode=min
 
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
+
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
@@ -319,21 +318,17 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
-
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      - name: Load Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/inject@main
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -391,6 +386,9 @@ jobs:
           cache-to: |
             type=gha,mode=min
 
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
+
   release-envoy-docker-image:
     name: Release Envoy to Docker Hub
     runs-on: ubuntu-22.04
@@ -406,12 +404,6 @@ jobs:
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
-
-      - name: Set up Docker BuildX
-        id: buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          install: true
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -496,21 +488,17 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
-
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      - name: Load Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/inject@main
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -561,6 +549,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             CARGO_BUILD_PROFILE=release
+
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
 
   release-dashmate:
     name: Release Dashmate packages

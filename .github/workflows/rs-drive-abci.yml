@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 180  # ARM build can take forever
     steps:
       - uses: actions/checkout@v3
-      - uses: ./.github/actions/docker
+      - uses: ./.github/actions/docker-build
         with:
           dockerfile: ./Dockerfile
           image: dashpay/drive-abci
