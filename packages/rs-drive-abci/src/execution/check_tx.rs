@@ -107,7 +107,7 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{signer, KeyPair};
+    use dpp::dashcore::{signer};
     use dpp::data_contracts::dpns_contract;
     use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
     use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
@@ -119,6 +119,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use dpp::dashcore::key::KeyPair;
 
     #[test]
     fn data_contract_create_check_tx() {

@@ -40,7 +40,6 @@ use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
 use drive::fee::credits::SignedCredits;
@@ -62,6 +61,8 @@ use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
 use serde_json::Map;
+use dpp::dashcore::hashes::Hash;
+use hex::ToHex;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -397,8 +398,8 @@ where
         )? {
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round, block_hash.encode_hex::<String>(),
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.encode_hex()).unwrap_or("None".to_string())
             )))
             .into())
         } else {
@@ -449,8 +450,8 @@ where
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round,block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round,block_hash.encode_hex::<String>(),
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.encode_hex()).unwrap_or("None".to_string())
             )))
             .into());
         }

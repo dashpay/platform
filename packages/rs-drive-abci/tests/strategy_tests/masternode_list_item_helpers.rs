@@ -70,19 +70,19 @@ impl UpdateMasternodeListItem for MasternodeListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 
     use rand::SeedableRng;
     use std::net::SocketAddr;
     use std::str::FromStr;
+    use dpp::dashcore::hashes::Hash;
 
     #[test]
     fn test_random_keys_update_determinism() {
         let mut rng = StdRng::seed_from_u64(0);
         let i = 0;
-        let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
+        let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let private_key_operator =
             BlsPrivateKey::generate_dash(&mut rng).expect("expected to generate a private key");
         let pub_key_operator = private_key_operator
@@ -93,7 +93,7 @@ mod tests {
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash,
-            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
             collateral_address: [0; 20],
             operator_reward: 0,

@@ -1,5 +1,4 @@
-use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
+use dpp::dashcore::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
@@ -12,7 +11,9 @@ use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
+use hex::ToHex;
 use tenderdash_abci::proto::types::CoreChainLock;
+use dpp::dashcore::hashes::Hash;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
@@ -260,7 +261,7 @@ impl CoreRPCLike for DefaultCoreRPC {
             max_height
         );
 
-        let request_id = instant_lock.request_id()?.to_hex();
+        let request_id = instant_lock.request_id()?.encode_hex::<String>();
 
         retry!(self.inner.get_verifyislock(
             request_id.as_str(),
@@ -286,8 +287,8 @@ impl CoreRPCLike for DefaultCoreRPC {
         );
 
         retry!(self.inner.get_verifychainlock(
-            chain_lock.block_hash.to_hex().as_str(),
-            chain_lock.signature.to_hex().as_str(),
+            chain_lock.block_hash.encode_hex::<String>().as_str(),
+            chain_lock.signature.encode_hex::<String>().as_str(),
             max_height
         ))
     }

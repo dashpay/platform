@@ -235,7 +235,7 @@ mod tests {
         for i in 0..n {
             let i_bytes = [i as u8; 32];
 
-            let hash = QuorumHash::from_inner(i_bytes);
+            let hash = QuorumHash::from_byte_array(i_bytes);
 
             let details = ExtendedQuorumDetails {
                 creation_height: i,

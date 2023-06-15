@@ -4,7 +4,6 @@ use crate::execution::quorum::ValidatorSet;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
 use dashcore_rpc::json::{MasternodeListItem, MasternodeType};
@@ -139,7 +138,7 @@ where
             .filter(|(key, _)| {
                 !block_platform_state
                     .validator_sets
-                    .contains_key(key.as_ref())
+                    .contains_key::<QuorumHash>(key)
             })
             .map(|(key, _)| {
                 let quorum_info_result =
@@ -421,7 +420,7 @@ where
                 self.drive.remove_validators_proposed_app_versions(
                     removed_masternodes
                         .into_keys()
-                        .map(|pro_tx_hash| pro_tx_hash.into_inner()),
+                        .map(|pro_tx_hash| pro_tx_hash.into()),
                     Some(transaction),
                 )?;
             }
