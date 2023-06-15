@@ -451,7 +451,7 @@ jobs:
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Check out repo
         uses: actions/checkout@v3

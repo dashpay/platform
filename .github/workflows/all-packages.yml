@@ -65,7 +65,7 @@ jobs:
   test-suite:
     name: Run Platform Test Suite
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -126,7 +126,7 @@ jobs:
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Login to DockerHub
         uses: docker/login-action@v2
