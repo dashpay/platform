@@ -117,7 +117,7 @@ WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     export CARGO_TARGET_DIR=/platform/target ; \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
@@ -150,7 +150,7 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
@@ -169,8 +169,8 @@ RUN mkdir /artifacts
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
-    --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn install && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
