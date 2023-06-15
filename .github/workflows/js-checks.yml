@@ -122,8 +122,11 @@ jobs:
         if: ${{ inputs.start-local-network }}
 
       - name: Start local network
-        run: yarn start
         if: ${{ inputs.start-local-network }}
+        run: yarn start
+        env:
+          CACHE_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          CACHE_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"

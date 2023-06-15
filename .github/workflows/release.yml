@@ -171,6 +171,8 @@ jobs:
           build-args: |
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
@@ -272,12 +274,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             CARGO_BUILD_PROFILE=release
-          cache-from: |
-            type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
-          cache-to: |
-            type=gha,mode=min
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
@@ -379,12 +377,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             CARGO_BUILD_PROFILE=release
-          cache-from: |
-            type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
-          cache-to: |
-            type=gha,mode=min
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
@@ -451,6 +445,8 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
@@ -549,6 +545,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             CARGO_BUILD_PROFILE=release
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main

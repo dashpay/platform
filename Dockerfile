@@ -93,7 +93,7 @@ RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 # Configure sccache
 #
 # Activate sccache for Rust code
-ENV RUSTC_WRAPPER=/usr/bin/sccache
+ENV RUSTC_WRAPPER ""
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
@@ -102,7 +102,7 @@ ARG ACTIONS_RUNTIME_TOKEN
 ARG SCCACHE_MEMCACHED
 
 # Disable incremental buildings, not supported by sccache
-ARG CARGO_INCREMENTAL=false
+ARG CARGO_INCREMENTAL=true
 
 # Select whether we want dev or release
 ARG CARGO_BUILD_PROFILE=dev
@@ -114,15 +114,16 @@ ENV NODE_ENV ${NODE_ENV}
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 WORKDIR /platform
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=private,id=target_${TARGETARCH},target=/platform/target \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    export CARGO_TARGET_DIR=/platform/target ; \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export CARGO_TARGET_DIR=/platform/target ; \
-    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
+    export RUSTFLAGS="-C target-feature=-crt-static" ; \
+    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.86 && \
     cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
 
 #
@@ -146,17 +147,15 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=private,id=target_${TARGETARCH},target=/platform/target \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
-        -p drive-abci \
-       --config net.git-fetch-with-cli=true && \
+        --package drive-abci \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
     sccache --show-stats
 
@@ -167,12 +166,11 @@ FROM sources AS build-js
 
 RUN mkdir /artifacts
 
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_wasm_${TARGETARCH},target=/platform/target \
-    --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
@@ -237,10 +235,7 @@ FROM build-js AS build-dashmate-helper
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production dashmate && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production dashmate
 
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
@@ -288,10 +283,7 @@ FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/platform-test-suite && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production @dashevo/platform-test-suite
 
 #
 #  STAGE: FINAL TEST SUITE IMAGE
@@ -349,10 +341,7 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/dapi && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production @dashevo/dapi
 
 #
 # STAGE: FINAL DAPI IMAGE

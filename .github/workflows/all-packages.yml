@@ -109,6 +109,9 @@ jobs:
 
       - name: Start local network
         run: yarn start
+        env:
+          CACHE_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          CACHE_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Run test suite
         run: yarn test:suite
@@ -167,6 +170,9 @@ jobs:
 
       - name: Start local network
         run: yarn start
+        env:
+          CACHE_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          CACHE_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: Run test suite in browsers
         run: yarn test:suite:browsers
