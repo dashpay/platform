@@ -113,7 +113,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 block: 0,
                 app: APP_VERSION,
             }),
-            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
         let response_prepare_proposal = self
@@ -196,7 +196,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 block: 0,
                 app: APP_VERSION,
             }),
-            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            quorum_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
         };
 
         //we must call process proposal so the app hash is set
@@ -230,7 +230,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         for validator in current_quorum.validator_set.iter() {
             let request_verify_vote_extension = RequestVerifyVoteExtension {
                 hash: block_header_hash.to_vec(),
-                validator_pro_tx_hash: validator.pro_tx_hash.to_vec(),
+                validator_pro_tx_hash: validator.pro_tx_hash.to_byte_array().to_vec(),
                 height: height as i64,
                 round: ROUND,
                 vote_extensions: vote_extensions.clone(),
@@ -267,7 +267,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             .map(|tx_id| {
                 VoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_vec(),
+                    extension: tx_id.to_byte_array().to_vec(),
                     signature: vec![], //todo: signature
                 }
             })
@@ -320,7 +320,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             r#type: SignedMsgType::Precommit.into(),
         };
 
-        let quorum_hash = current_quorum.quorum_hash.to_vec();
+        let quorum_hash = current_quorum.quorum_hash.to_byte_array().to_vec();
 
         let mut commit_info = CommitInfo {
             round: ROUND,
@@ -363,7 +363,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let next_validator_set_hash = validator_set_update
             .as_ref()
             .map(|update| update.quorum_hash.clone())
-            .unwrap_or(current_quorum.quorum_hash.to_vec());
+            .unwrap_or(current_quorum.quorum_hash.to_byte_array().to_vec());
 
         let block = Block {
             header: Some(Header {
@@ -377,7 +377,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 last_block_id: None,
                 last_commit_hash: [0; 32].to_vec(),
                 data_hash: [0; 32].to_vec(),
-                validators_hash: current_quorum.quorum_hash.to_vec(),
+                validators_hash: current_quorum.quorum_hash.to_byte_array().to_vec(),
                 next_validators_hash: next_validator_set_hash.clone(),
                 consensus_hash: [0; 32].to_vec(),
                 next_consensus_hash: [0; 32].to_vec(),

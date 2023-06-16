@@ -409,7 +409,7 @@ where
                 .keys()
                 .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_vec(),
+                    extension: tx_id.to_byte_array().to_vec()
                 })
                 .collect();
             Ok(proto::ResponseExtendVote {
@@ -462,7 +462,7 @@ where
             .keys()
             .map(|tx_id| ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_vec(),
+                extension: tx_id.to_byte_array().to_vec(),
             })
             .collect::<Vec<_>>()
             .into();
