@@ -15,6 +15,6 @@ pub fn hash_to_hex_string(payload: impl AsRef<[u8]>) -> String {
 }
 
 pub fn ripemd160_sha256(data: &[u8]) -> [u8; 20] {
-    let hash = sha256::Hash::hash(data).to_vec();
-    ripemd160::Hash::hash(hash.as_slice()).to_vec().try_into().unwrap()
+    let hash = sha256::Hash::hash(data).to_byte_array();
+    ripemd160::Hash::hash(&hash).to_byte_array()
 }

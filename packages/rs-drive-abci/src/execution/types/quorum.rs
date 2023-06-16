@@ -171,7 +171,7 @@ impl From<ValidatorSet> for ValidatorSetUpdate {
                     }
                     let node_address = format!(
                         "tcp://{}@{}:{}",
-                        hex::encode(node_id.to_vec()),
+                        hex::encode(node_id.to_byte_array()),
                         node_ip,
                         platform_p2p_port
                     );
@@ -181,7 +181,7 @@ impl From<ValidatorSet> for ValidatorSetUpdate {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
-                        pro_tx_hash: reverse(&pro_tx_hash.to_vec().to_vec()),
+                        pro_tx_hash: reverse(&pro_tx_hash.to_byte_array()),
                         node_address,
                     })
                 })
@@ -189,7 +189,7 @@ impl From<ValidatorSet> for ValidatorSetUpdate {
             threshold_public_key: Some(crypto::PublicKey {
                 sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
-            quorum_hash: reverse(quorum_hash.to_vec().as_slice()),
+            quorum_hash: reverse(&quorum_hash.to_byte_array()),
         }
     }
 }
@@ -231,7 +231,7 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
                     }
                     let node_address = format!(
                         "tcp://{}@{}:{}",
-                        hex::encode(node_id.to_vec()),
+                        hex::encode(node_id.to_byte_array()),
                         node_ip,
                         platform_p2p_port
                     );
@@ -240,7 +240,7 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
-                        pro_tx_hash: reverse(pro_tx_hash.to_vec().as_slice()),
+                        pro_tx_hash: reverse(&pro_tx_hash.to_byte_array()),
                         node_address,
                     })
                 })
@@ -248,7 +248,7 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
             threshold_public_key: Some(crypto::PublicKey {
                 sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
-            quorum_hash: reverse(quorum_hash.to_vec().as_slice()),
+            quorum_hash: reverse(&quorum_hash.to_byte_array()),
         }
     }
 }

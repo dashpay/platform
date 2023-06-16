@@ -45,7 +45,7 @@ impl From<ValidatorSet> for abci::ValidatorSetUpdate {
                 node_address: Default::default(),
                 power: 100,
                 pub_key: pubkey,
-                pro_tx_hash: validator.pro_tx_hash.to_vec(),
+                pro_tx_hash: validator.pro_tx_hash.to_byte_array().to_vec(),
             };
 
             validator_updates.push(vu);
@@ -54,7 +54,7 @@ impl From<ValidatorSet> for abci::ValidatorSetUpdate {
         Self {
             validator_updates,
             threshold_public_key: Some(u8_to_bls12381_pubkey(value.quorum_info.quorum_public_key)),
-            quorum_hash: value.quorum_info.quorum_hash.to_vec(),
+            quorum_hash: value.quorum_info.quorum_hash.to_byte_array().to_vec(),
         }
     }
 }
@@ -191,12 +191,12 @@ impl Quorum {
 
     /// Calculate weight to use when sorting.
     fn calculate_weight(quorum_hash: &QuorumHash, entropy: &Vec<u8>) -> Vec<u8> {
-        let mut hash = quorum_hash.to_vec();
+        let mut hash = quorum_hash.to_byte_array().to_vec();
         hash.extend(entropy);
 
         let mut hasher = sha256::HashEngine::default();
         hasher.input(&hash);
-        sha256::Hash::from_engine(hasher).to_vec()
+        sha256::Hash::from_engine(hasher).to_byte_array().to_vec()
     }
 
     /// Calculate estimated quorum time-to-live

@@ -184,7 +184,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         } = rpc_call()?;
         Ok(CoreChainLock {
             core_block_height: height,
-            core_block_hash: blockhash.to_vec(),
+            core_block_hash: blockhash.to_byte_array().to_vec(),
             signature,
         })
     }
@@ -270,7 +270,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_verifyislock(
             request_id.as_str(),
             &instant_lock.txid.to_hex(),
-            &instant_lock.signature.to_hex(),
+            &instant_lock.signature.encode_hex::<String>(),
             max_height,
         ))
     }

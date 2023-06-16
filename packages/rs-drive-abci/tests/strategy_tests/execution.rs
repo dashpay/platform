@@ -523,7 +523,7 @@ pub(crate) fn start_chain_for_strategy(
                         sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
                     }),
                     power: 100,
-                    pro_tx_hash: validator_in_quorum.pro_tx_hash.to_vec(),
+                    pro_tx_hash: validator_in_quorum.pro_tx_hash.to_byte_array().to_vec(),
                     node_address: "".to_string(),
                 },
             )
@@ -533,7 +533,7 @@ pub(crate) fn start_chain_for_strategy(
                 current_quorum_with_test_info.public_key.to_bytes().to_vec(),
             )),
         }),
-        quorum_hash: current_quorum_hash.to_vec(),
+        quorum_hash: current_quorum_hash.to_byte_array().to_vec(),
     });
 
     let ResponseInitChain {
