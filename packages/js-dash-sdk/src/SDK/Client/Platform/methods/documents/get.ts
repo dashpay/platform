@@ -57,8 +57,12 @@ function convertIdentifierProperties(
   const isPropertyIdentifier = property && property.contentMediaType === Identifier.MEDIA_TYPE;
   const isSystemIdentifier = ['$id', '$ownerId'].includes(propertyName);
 
-  if (isSystemIdentifier || (isPropertyIdentifier && typeof propertyValue === 'string')) {
-    convertedPropertyValue = Identifier.from(propertyValue);
+  if (isSystemIdentifier || isPropertyIdentifier) {
+    if (Array.isArray(propertyValue)) {
+      convertedPropertyValue = propertyValue.map((id) => Identifier.from(id));
+    } else if (typeof propertyValue === 'string') {
+      convertedPropertyValue = Identifier.from(propertyValue);
+    }
   }
 
   return [propertyName, operator, convertedPropertyValue];
