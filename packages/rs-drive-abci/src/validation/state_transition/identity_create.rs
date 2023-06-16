@@ -13,7 +13,6 @@ use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
 };
-use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::rpc::core::CoreRPCLike;

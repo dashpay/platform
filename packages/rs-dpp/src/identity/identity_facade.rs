@@ -14,6 +14,7 @@ use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::Identifier;
 
+use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
@@ -110,6 +111,16 @@ where
     ) -> Result<IdentityTopUpTransition, ProtocolError> {
         self.factory
             .create_identity_topup_transition(identity_id, asset_lock_proof)
+    }
+
+    pub fn create_identity_credit_transfer_transition(
+        &self,
+        identity_id: Identifier,
+        recipient_id: Identifier,
+        amount: u64,
+    ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
+        self.factory
+            .create_identity_credit_transfer_transition(identity_id, recipient_id, amount)
     }
 
     pub fn create_identity_update_transition(

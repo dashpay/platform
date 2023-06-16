@@ -17,7 +17,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive_abci::abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
+use drive_abci::abci::mimic::{self, MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
@@ -45,7 +45,7 @@ pub(crate) fn run_chain_for_strategy(
     let mut rng = StdRng::seed_from_u64(seed);
 
     let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
-    let updated_proposers_in_strategy = strategy.proposer_strategy.updated_any_masternode_types();
+    let updated_proposers_in_strategy = strategy.proposer_strategy.any_kind_of_update_is_set();
 
     let (
         initial_masternodes_with_updates,
@@ -60,8 +60,18 @@ pub(crate) fn run_chain_for_strategy(
             Some(GenerateTestMasternodeUpdates {
                 start_core_height: config.abci.genesis_core_height,
                 end_core_height,
-                update_masternode_frequency: &strategy.proposer_strategy.updated_mastenodes,
-                update_hpmn_frequency: &strategy.proposer_strategy.updated_hpmns,
+                update_masternode_keys_frequency: &strategy.proposer_strategy.updated_masternodes,
+                update_hpmn_keys_frequency: &strategy.proposer_strategy.updated_hpmns,
+                ban_masternode_frequency: &strategy.proposer_strategy.banned_masternodes,
+                ban_hpmn_frequency: &strategy.proposer_strategy.banned_hpmns,
+                unban_masternode_frequency: &strategy.proposer_strategy.unbanned_masternodes,
+                unban_hpmn_frequency: &strategy.proposer_strategy.unbanned_hpmns,
+                change_masternode_ip_frequency: &strategy.proposer_strategy.changed_ip_masternodes,
+                change_hpmn_ip_frequency: &strategy.proposer_strategy.changed_ip_hpmns,
+                change_hpmn_p2p_port_frequency: &strategy.proposer_strategy.changed_p2p_port_hpmns,
+                change_hpmn_http_port_frequency: &strategy
+                    .proposer_strategy
+                    .changed_http_port_hpmns,
             })
         } else {
             None
@@ -91,8 +101,26 @@ pub(crate) fn run_chain_for_strategy(
                     Some(GenerateTestMasternodeUpdates {
                         start_core_height: height + 1,
                         end_core_height,
-                        update_masternode_frequency: &strategy.proposer_strategy.updated_mastenodes,
-                        update_hpmn_frequency: &strategy.proposer_strategy.updated_hpmns,
+                        update_masternode_keys_frequency: &strategy
+                            .proposer_strategy
+                            .updated_masternodes,
+                        update_hpmn_keys_frequency: &strategy.proposer_strategy.updated_hpmns,
+                        ban_masternode_frequency: &strategy.proposer_strategy.banned_masternodes,
+                        ban_hpmn_frequency: &strategy.proposer_strategy.banned_hpmns,
+                        unban_masternode_frequency: &strategy
+                            .proposer_strategy
+                            .unbanned_masternodes,
+                        unban_hpmn_frequency: &strategy.proposer_strategy.unbanned_hpmns,
+                        change_masternode_ip_frequency: &strategy
+                            .proposer_strategy
+                            .changed_ip_masternodes,
+                        change_hpmn_ip_frequency: &strategy.proposer_strategy.changed_ip_hpmns,
+                        change_hpmn_p2p_port_frequency: &strategy
+                            .proposer_strategy
+                            .changed_p2p_port_hpmns,
+                        change_hpmn_http_port_frequency: &strategy
+                            .proposer_strategy
+                            .changed_http_port_hpmns,
                     })
                 } else {
                     None
@@ -442,9 +470,8 @@ pub(crate) fn create_chain_for_strategy(
     let seed = strategy
         .failure_testing
         .as_ref()
-        .map(|strategy| strategy.deterministic_start_seed)
-        .flatten()
-        .map(|seed| StrategyRandomness::SeedEntropy(seed))
+        .and_then(|strategy| strategy.deterministic_start_seed)
+        .map(StrategyRandomness::SeedEntropy)
         .unwrap_or(StrategyRandomness::RNGEntropy(rng));
     start_chain_for_strategy(
         abci_application,
@@ -593,6 +620,8 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut next_quorum_hash = current_quorum_hash;
 
+    let mut validator_set_updates = BTreeMap::new();
+
     for block_height in block_start..(block_start + block_count) {
         let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
         if needs_rotation_on_next_block {
@@ -658,8 +687,13 @@ pub(crate) fn continue_chain_for_strategy(
 
         let MimicExecuteBlockOutcome {
             withdrawal_transactions: mut withdrawals_this_block,
+            validator_set_update,
             next_validator_set_hash,
             root_app_hash,
+            state_id,
+            block_id_hash: block_hash,
+            signature,
+            app_version,
         } = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
@@ -673,6 +707,10 @@ pub(crate) fn continue_chain_for_strategy(
                 },
             )
             .expect("expected to execute a block");
+
+        if let Some(validator_set_update) = validator_set_update {
+            validator_set_updates.insert(block_height, validator_set_update);
+        }
 
         if strategy.dont_finalize_block() {
             continue;
@@ -710,9 +748,17 @@ pub(crate) fn continue_chain_for_strategy(
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
-                    root_app_hash: &root_app_hash,
-                    block_signature: &vec![], //todo
-                    quorum_hash: &current_quorum_with_test_info.quorum_hash.into_inner(),
+                    quorum_hash: current_quorum_with_test_info.quorum_hash.as_inner(),
+                    quorum_type: config.quorum_type(),
+                    app_version,
+                    chain_id: mimic::CHAIN_ID.to_string(),
+                    core_chain_locked_height: state_id.core_chain_locked_height,
+                    height: state_id.height as i64,
+                    block_hash: &block_hash,
+                    app_hash: &root_app_hash,
+                    time: state_id.time.expect("time is required in StateId"),
+                    signature: &signature,
+                    public_key: &current_quorum_with_test_info.public_key,
                 },
                 &current_identities,
                 &abci_app,
@@ -728,7 +774,7 @@ pub(crate) fn continue_chain_for_strategy(
             i += 1;
             i %= quorum_size; //todo: this could be variable
         }
-    }
+    } // for block_height
 
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()
@@ -772,5 +818,6 @@ pub(crate) fn continue_chain_for_strategy(
         end_time_ms: current_time_ms,
         strategy,
         withdrawals: total_withdrawals,
+        validator_set_updates,
     }
 }

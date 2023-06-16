@@ -171,6 +171,16 @@ where
                     ),
                 ));
             }
+
+            StateTransition::IdentityCreditTransfer(st) => {
+                let balance = self
+                    .get_identity_owner_balance(st, execution_context)
+                    .await?;
+                if execution_context.is_dry_run() {
+                    return Ok(result);
+                }
+                balance
+            }
         };
 
         if execution_context.is_dry_run() {

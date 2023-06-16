@@ -4,6 +4,7 @@ const {
     GetProofsResponse,
   },
 } = require('@dashevo/dapi-grpc');
+const { StateTransitionTypes } = require('@dashevo/wasm-dpp');
 
 /**
  * @param {DriveClient} driveClient
@@ -38,7 +39,10 @@ function fetchProofForStateTransitionFactory(driveClient) {
       getProofsRequest.setIdentitiesList(modifiedIds.map((id) => {
         const identityRequest = new IdentityRequest();
         identityRequest.setIdentityId(id.toBuffer());
-        identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+        identityRequest.setRequestType(
+          stateTransition.getType() === StateTransitionTypes.IdentityCreditTransfer
+            ? IdentityRequest.Type.BALANCE : IdentityRequest.Type.FULL_IDENTITY,
+        );
         return identityRequest;
       }));
     } if (stateTransition.isDataContractStateTransition()) {

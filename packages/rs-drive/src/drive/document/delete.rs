@@ -758,7 +758,7 @@ impl Drive {
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
                 let document = Document::from_bytes(data.as_slice(), document_type)?;
-                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
+                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentOwnedInfo((document, storage_flags))
             } else {
                 return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(

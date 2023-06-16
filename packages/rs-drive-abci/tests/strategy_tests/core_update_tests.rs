@@ -1,0 +1,292 @@
+#[cfg(test)]
+mod tests {
+    use tenderdash_abci::proto::types::CoreChainLock;
+
+    use crate::execution::run_chain_for_strategy;
+    use crate::frequency::Frequency;
+    use crate::strategy::{MasternodeListChangesStrategy, Strategy};
+    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+
+    #[test]
+    fn run_chain_random_bans() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Default::default(),
+                removed_hpmns: Default::default(),
+                updated_hpmns: Default::default(),
+                banned_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: Some(0.1),
+                },
+                unbanned_hpmns: Default::default(),
+                changed_ip_hpmns: Default::default(),
+                changed_p2p_port_hpmns: Default::default(),
+                changed_http_port_hpmns: Default::default(),
+                new_masternodes: Default::default(),
+                removed_masternodes: Default::default(),
+                updated_masternodes: Default::default(),
+                banned_masternodes: Default::default(),
+                unbanned_masternodes: Default::default(),
+                changed_ip_masternodes: Default::default(),
+            },
+            rotate_quorums: true,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+
+        let quorum_size = 100;
+
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 1,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+
+        // we expect to see quorums with banned members
+
+        let state = outcome.abci_app.platform.state.read().unwrap();
+
+        let banned_count = state
+            .validator_sets
+            .values()
+            .map(|validator_set| {
+                validator_set
+                    .members
+                    .values()
+                    .map(|validator| validator.is_banned as usize)
+                    .sum::<usize>()
+            })
+            .sum::<usize>();
+
+        assert!(banned_count > 1);
+
+        // We should also see validator sets with less than the quorum size
+
+        let has_smaller_validator_sets =
+            outcome
+                .validator_set_updates
+                .into_iter()
+                .any(|(_, validator_set_update)| {
+                    (validator_set_update.validator_updates.len() as u16) < quorum_size
+                });
+        assert!(has_smaller_validator_sets);
+    }
+
+    #[test]
+    fn run_chain_random_removals() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Default::default(),
+                removed_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: Some(0.1),
+                },
+                updated_hpmns: Default::default(),
+                banned_hpmns: Default::default(),
+                unbanned_hpmns: Default::default(),
+                changed_ip_hpmns: Default::default(),
+                changed_p2p_port_hpmns: Default::default(),
+                changed_http_port_hpmns: Default::default(),
+                new_masternodes: Default::default(),
+                removed_masternodes: Default::default(),
+                updated_masternodes: Default::default(),
+                banned_masternodes: Default::default(),
+                unbanned_masternodes: Default::default(),
+                changed_ip_masternodes: Default::default(),
+            },
+            rotate_quorums: true,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+
+        let quorum_size = 100;
+
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 1,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 50, strategy, config, 13);
+
+        // we expect to see quorums with banned members
+
+        let _state = outcome.abci_app.platform.state.read().unwrap();
+
+        // We should also see validator sets with less than the quorum size
+
+        let has_smaller_validator_sets =
+            outcome
+                .validator_set_updates
+                .into_iter()
+                .any(|(_, validator_set_update)| {
+                    (validator_set_update.validator_updates.len() as u16) < quorum_size
+                });
+        assert!(has_smaller_validator_sets);
+    }
+
+    #[test]
+    fn run_chain_random_bans_and_unbans() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Default::default(),
+                removed_hpmns: Default::default(),
+                updated_hpmns: Default::default(),
+                banned_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: Some(0.1), //lower chance of banning
+                },
+                unbanned_hpmns: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: Some(0.3), //higher chance of unbanning
+                },
+                changed_ip_hpmns: Default::default(),
+                changed_p2p_port_hpmns: Default::default(),
+                changed_http_port_hpmns: Default::default(),
+                new_masternodes: Default::default(),
+                removed_masternodes: Default::default(),
+                updated_masternodes: Default::default(),
+                banned_masternodes: Default::default(),
+                unbanned_masternodes: Default::default(),
+                changed_ip_masternodes: Default::default(),
+            },
+            rotate_quorums: true,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+
+        let quorum_size = 100;
+
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 1,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 26, strategy, config, 13);
+
+        // We should also see validator sets with less than the quorum size
+
+        let validator_set_sizes: Vec<(u64, u16)> = outcome
+            .validator_set_updates
+            .into_iter()
+            .map(|(height, validator_set_update)| {
+                (height, validator_set_update.validator_updates.len() as u16)
+            })
+            .collect();
+
+        let mut found_smaller_then_bigger = false;
+        for i in 0..(validator_set_sizes.len() - 1) {
+            let (_height_i, size_i) = validator_set_sizes[i];
+            if validator_set_sizes
+                .iter()
+                .skip(i + 1)
+                .any(|&(_height_j, size_j)| size_j > size_i)
+            {
+                found_smaller_then_bigger = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_smaller_then_bigger,
+            "No instances found where validator set size got smaller and then bigger again"
+        );
+    }
+}

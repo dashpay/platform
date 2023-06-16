@@ -59,9 +59,12 @@ mod tests {
                 .prove_identity_balance(identity.id.to_buffer(), None)
                 .expect("should not error when proving an identity");
 
-            let (_, proved_identity_balance) =
-                Drive::verify_identity_balance_for_identity_id(proof.as_slice(), identity_id)
-                    .expect("expect that this be verified");
+            let (_, proved_identity_balance) = Drive::verify_identity_balance_for_identity_id(
+                proof.as_slice(),
+                identity_id,
+                false,
+            )
+            .expect("expect that this be verified");
 
             assert_eq!(proved_identity_balance, Some(identity.balance));
         }

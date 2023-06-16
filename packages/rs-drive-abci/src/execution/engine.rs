@@ -319,7 +319,7 @@ where
             state_cache.current_validator_set_quorum_hash = next_validator_set_quorum_hash;
         }
 
-        state_cache.last_committed_block_info = Some(block_info.clone());
+        state_cache.last_committed_block_info = Some(block_info);
 
         state_cache.initialization_information = None;
 

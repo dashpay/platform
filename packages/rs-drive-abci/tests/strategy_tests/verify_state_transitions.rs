@@ -42,13 +42,12 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .transform_into_action(&platform, &mut context, None)
                 .expect("expected state transitions to validate")
                 .into_data()
-                .expect(
-                    format!(
+                .unwrap_or_else(|_| {
+                    panic!(
                         "expected state transitions to be valid {}",
                         state_transition.get_type()
                     )
-                    .as_str(),
-                )
+                })
         })
         .collect::<Vec<_>>();
 
@@ -309,6 +308,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                     &response_proof.grovedb_proof,
                     identity_top_up_transition.identity_id.into_buffer(),
+                    false,
                 )
                 .expect("expected to verify balance identity");
                 let balance = balance.expect("expected a balance");
@@ -360,6 +360,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     identity_credit_withdrawal_transition
                         .identity_id
                         .into_buffer(),
+                    false,
                 )
                 .expect("expected to verify balance identity");
                 let _balance = balance.expect("expected a balance");
@@ -415,6 +416,69 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .any(|removed| identity.loaded_public_keys.contains_key(removed));
                 assert!(has_all_keys);
                 assert!(has_no_removed_key);
+            }
+            StateTransitionAction::IdentityCreditTransferAction(
+                identity_credit_transfer_action,
+            ) => {
+                proofs_request
+                    .identities
+                    .push(get_proofs_request::IdentityRequest {
+                        identity_id: identity_credit_transfer_action.identity_id.to_vec(),
+                        request_type: get_proofs_request::identity_request::Type::Balance.into(),
+                    });
+
+                proofs_request
+                    .identities
+                    .push(get_proofs_request::IdentityRequest {
+                        identity_id: identity_credit_transfer_action.recipient_id.to_vec(),
+                        request_type: get_proofs_request::identity_request::Type::Balance.into(),
+                    });
+
+                let result = abci_app
+                    .platform
+                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .expect("expected to query proofs");
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata: _ } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
+                // we expect to get an identity that matches the state transition
+                let (root_hash_identity, balance_identity) =
+                    Drive::verify_identity_balance_for_identity_id(
+                        &response_proof.grovedb_proof,
+                        identity_credit_transfer_action.identity_id.into_buffer(),
+                        true,
+                    )
+                    .expect("expected to verify balance identity");
+
+                assert_eq!(
+                    &root_hash_identity, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+
+                let (root_hash_recipient, balance_recipient) =
+                    Drive::verify_identity_balance_for_identity_id(
+                        &response_proof.grovedb_proof,
+                        identity_credit_transfer_action.recipient_id.into_buffer(),
+                        true,
+                    )
+                    .expect("expected to verify balance recipient");
+
+                assert_eq!(
+                    &root_hash_recipient, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+
+                let balance_recipient = balance_recipient.expect("expected a balance");
+
+                assert!(balance_recipient >= identity_credit_transfer_action.transfer_amount);
             }
         }
     }

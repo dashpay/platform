@@ -287,7 +287,7 @@ mod tests {
 
         let raw_state_transition = state_transition.to_object(false).unwrap();
 
-        let dc = data_contract.clone();
+        let dc = data_contract;
 
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -297,8 +297,8 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
-        let mut platform = TestPlatformBuilder::new()
-            .with_config(config.clone())
+        let platform = TestPlatformBuilder::new()
+            .with_config(config)
             .build_with_mock_rpc();
 
         TestData {
@@ -315,14 +315,13 @@ mod tests {
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
-        use serde_json::json;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
             let TestData {
-                raw_state_transition,
+                raw_state_transition: _,
                 mut data_contract,
-                mut platform,
+                platform,
             } = setup_test();
 
             data_contract.config.readonly = true;
@@ -379,9 +378,9 @@ mod tests {
         #[test]
         pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
             let TestData {
-                raw_state_transition,
+                raw_state_transition: _,
                 mut data_contract,
-                mut platform,
+                platform,
             } = setup_test();
 
             data_contract.config.keeps_history = true;

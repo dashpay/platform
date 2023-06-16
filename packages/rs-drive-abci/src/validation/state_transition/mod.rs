@@ -6,6 +6,7 @@ mod data_contract_update;
 mod document_state_validation;
 mod documents_batch;
 mod identity_create;
+mod identity_credit_transfer;
 mod identity_credit_withdrawal;
 mod identity_top_up;
 mod identity_update;
@@ -158,6 +159,7 @@ impl StateTransitionValidation for StateTransition {
                 st.validate_structure(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => st.validate_structure(platform, context, tx),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_structure(drive, tx),
         }
     }
 
@@ -187,7 +189,10 @@ impl StateTransitionValidation for StateTransition {
                 st.validate_identity_and_signatures(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => {
-                st.validate_identity_and_signatures(platform, context, tx)
+                st.validate_identity_and_signatures(drive, context, tx)
+            }
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.validate_identity_and_signatures(drive, context, tx)
             }
         }
     }
@@ -208,6 +213,7 @@ impl StateTransitionValidation for StateTransition {
                 st.validate_state(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => st.validate_state(platform, context, tx),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_state(platform, tx),
         }
     }
 
@@ -231,6 +237,7 @@ impl StateTransitionValidation for StateTransition {
                 st.transform_into_action(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => st.transform_into_action(platform, context, tx),
+            StateTransition::IdentityCreditTransfer(st) => st.transform_into_action(platform, tx),
         }
     }
 }

@@ -22,6 +22,7 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
 use tracing_subscriber::registry;
 use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::util::TryInitError;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
@@ -288,7 +289,7 @@ impl Loggers {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// use drive_abci::logging::{LogBuilder, Loggers};
     ///
     /// // Create logger(s) using LogBuilder
@@ -306,10 +307,28 @@ impl Loggers {
     ///
     /// This method panics if the logging subsystem is already initialized.
     pub fn install(&self) {
+        if let Err(e) = self.try_install() {
+            panic!("Logging subsystem is already initialized: {}", e)
+        }
+    }
+
+    /// Installs loggers prepared in the [LogBuilder] as a global tracing handler.
+    ///
+    /// Same as [Loggers::install()], but returns error if the logging subsystem is already initialized.
+    ///
+    /// # Example
+    ///
+    /// The following code can be used in tests. It ignores errors, as tests might actually call it more than once,
+    /// and we don't want to panic in this case.
+    ///
+    /// ```
+    /// drive_abci::logging::Loggers::default().try_install().ok();
+    /// ```
+    pub fn try_install(&self) -> Result<(), TryInitError> {
         // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
         let loggers = self.0.values().map(|l| Box::new(l.layer())).collect_vec();
 
-        registry().with(loggers).init();
+        registry().with(loggers).try_init()
     }
 
     /// Flushes all loggers.
@@ -362,6 +381,30 @@ impl Loggers {
     }
 }
 
+impl Default for Loggers {
+    /// Default loggers that are just printing human-readable logs, based on `RUST_LOG` env variable.
+    ///
+    /// Useful for tests.
+    ///
+    /// # Panics
+    ///
+    /// Panics in (a very unlikely) event when logger builder fails to add new logger.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use drive_abci::logging::Loggers;
+    ///
+    /// Loggers::default().try_install().ok();
+    /// ```
+    fn default() -> Self {
+        let mut logger_builder = LogBuilder::new();
+        logger_builder
+            .add("default", &LogConfig::default())
+            .expect("cannot configure default logger");
+        logger_builder.build()
+    }
+}
 //
 // NON-PUBLIC TYPES
 //
