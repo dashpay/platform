@@ -89,6 +89,7 @@ pub fn fetch_asset_lock_transaction_output_sync<C: CoreRPCLike>(
     }
 }
 
+/// Validates asset lock transaction structure
 pub fn validate_asset_lock_transaction_structure(
     transaction: &Transaction,
     output_index: usize,
