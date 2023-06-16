@@ -11,8 +11,7 @@ use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     InvalidInstantAssetLockProofSignatureError,
 };
-use dpp::consensus::basic::BasicError;
-use dpp::dashcore::{InstantLock, OutPoint, Transaction};
+use dpp::dashcore::{InstantLock, OutPoint};
 use dpp::identity::state_transition::asset_lock_proof::{
     InstantAssetLockProof, INSTANT_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR,
 };
@@ -21,6 +20,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::grovedb::TransactionArg;
 
+/// Validate the structure of the instant asset lock proof
 pub fn validate_structure(
     instant_asset_lock_proof: &InstantAssetLockProof,
 ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -60,6 +60,7 @@ pub fn validate_structure(
     Ok(result)
 }
 
+/// Validate the state of the instant asset lock proof
 pub fn validate_state<C: CoreRPCLike>(
     instant_asset_lock_proof: &InstantAssetLockProof,
     platform_ref: &PlatformRef<C>,

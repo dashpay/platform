@@ -1,6 +1,8 @@
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
+use crate::identity::state_transition::asset_lock_proof::{
+    AssetLockProof, AssetLockProved, InstantAssetLockProof,
+};
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;

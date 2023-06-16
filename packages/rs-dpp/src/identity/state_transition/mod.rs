@@ -1,3 +1,6 @@
+use crate::prelude::AssetLockProof;
+use crate::NonConsensusError;
+
 pub mod asset_lock_proof;
 pub mod identity_create_transition;
 pub mod identity_credit_withdrawal_transition;

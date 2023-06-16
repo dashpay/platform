@@ -1,7 +1,7 @@
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::{
-    consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
+    consensus::basic::{data_contract::InvalidDataContractIdError},
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransitionAction,
     },
@@ -20,20 +20,21 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::state_transition::StateTransitionAction;
 use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
 use drive::grovedb::TransactionArg;
-use drive::drive::Drive;
 
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::context::ValidationDataShareContext;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 use crate::validation::state_transition::StateTransitionValidation;
 
 use super::common::validate_schema;
 
 impl StateTransitionValidation for DataContractCreateTransition {
-    fn validate_structure(
+    fn validate_structure<C: CoreRPCLike>(
         &self,
-        _drive: &Drive,
+        _platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR, self);
@@ -76,13 +77,14 @@ impl StateTransitionValidation for DataContractCreateTransition {
             .map_err(Error::Protocol)
     }
 
-    fn validate_identity_and_signatures(
+    fn validate_identity_and_signatures<C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        transaction: TransactionArg,
+        platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature(drive, self, false, transaction)?
+            validate_state_transition_identity_signature(platform.drive, self, false, tx)?
                 .map(Some),
         )
     }
@@ -90,6 +92,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        context: &mut ValidationDataShareContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
@@ -111,13 +114,14 @@ impl StateTransitionValidation for DataContractCreateTransition {
                 .into(),
             ]))
         } else {
-            self.transform_into_action(platform, tx)
+            self.transform_into_action(platform, context, tx)
         }
     }
 
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         _platform: &PlatformRef<C>,
+        _context: &ValidationDataShareContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let action: StateTransitionAction =

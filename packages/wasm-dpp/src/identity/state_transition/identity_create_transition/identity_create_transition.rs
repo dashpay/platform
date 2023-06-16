@@ -33,6 +33,8 @@ use dpp::{
     state_transition::StateTransitionLike,
 };
 
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProved;
+
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
 #[derive(Clone)]
 pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);

@@ -9,14 +9,13 @@ use dpp::identity::state_transition::identity_update_transition::validate_identi
 use dpp::serialization_traits::PlatformMessageSignable;
 use dpp::serialization_traits::Signable;
 use drive::grovedb::TransactionArg;
-use drive::drive::Drive;
-
 use crate::error::execution::ExecutionError;
 use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
+use crate::validation::state_transition::context::ValidationDataShareContext;
 use crate::validation::state_transition::key_validation::{
     validate_identity_public_key_ids_dont_exist_in_state,
     validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_structure,
@@ -26,9 +25,10 @@ use crate::validation::state_transition::key_validation::{
 use super::StateTransitionValidation;
 
 impl StateTransitionValidation for IdentityUpdateTransition {
-    fn validate_structure(
+    fn validate_structure<C: CoreRPCLike>(
         &self,
-        _drive: &Drive,
+        _platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR, self);
@@ -44,10 +44,11 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         validate_identity_public_keys_structure(self.add_public_keys.as_slice())
     }
 
-    fn validate_identity_and_signatures(
+    fn validate_identity_and_signatures<C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        transaction: TransactionArg,
+        platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
@@ -64,7 +65,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         }
 
         let validation_result =
-            validate_state_transition_identity_signature(drive, self, true, transaction)?;
+            validate_state_transition_identity_signature(platform.drive, self, true, tx)?;
 
         if !validation_result.is_valid() {
             result.merge(validation_result);
@@ -93,6 +94,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        context: &mut ValidationDataShareContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
@@ -186,12 +188,13 @@ impl StateTransitionValidation for IdentityUpdateTransition {
                 }
             }
         }
-        self.transform_into_action(platform, tx)
+        self.transform_into_action(platform, context, tx)
     }
 
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         _platform: &PlatformRef<C>,
+        _context: &ValidationDataShareContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();

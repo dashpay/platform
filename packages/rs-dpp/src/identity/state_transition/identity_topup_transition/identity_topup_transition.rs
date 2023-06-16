@@ -8,11 +8,12 @@ use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, AssetLockProved};
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
+use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::serialization_traits::PlatformSerializable;
 use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
 use crate::version::LATEST_VERSION;
@@ -127,21 +128,6 @@ impl IdentityTopUpTransition {
         StateTransitionType::IdentityTopUp
     }
 
-    /// Set asset lock
-    pub fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<(), NonConsensusError> {
-        self.asset_lock_proof = asset_lock_proof;
-
-        Ok(())
-    }
-
-    /// Get asset lock proof
-    pub fn get_asset_lock_proof(&self) -> &AssetLockProof {
-        &self.asset_lock_proof
-    }
-
     /// Set identity id
     pub fn set_identity_id(&mut self, identity_id: Identifier) {
         self.identity_id = identity_id;
@@ -159,6 +145,23 @@ impl IdentityTopUpTransition {
 
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.protocol_version = protocol_version;
+    }
+}
+
+impl AssetLockProved for IdentityTopUpTransition {
+    /// Set asset lock
+    fn set_asset_lock_proof(
+        &mut self,
+        asset_lock_proof: AssetLockProof,
+    ) -> Result<(), NonConsensusError> {
+        self.asset_lock_proof = asset_lock_proof;
+
+        Ok(())
+    }
+
+    /// Get asset lock proof
+    fn get_asset_lock_proof(&self) -> &AssetLockProof {
+        &self.asset_lock_proof
     }
 }
 

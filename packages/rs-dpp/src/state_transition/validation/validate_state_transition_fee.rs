@@ -4,6 +4,7 @@ use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::consensus::fee::fee_error::FeeError;
 use crate::data_contract::errors::IdentityNotPresentError;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProved;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;

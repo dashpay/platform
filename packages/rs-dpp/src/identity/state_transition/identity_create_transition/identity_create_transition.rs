@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::signer::Signer;
-use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, AssetLockProved};
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
@@ -239,23 +239,6 @@ impl IdentityCreateTransition {
         StateTransitionType::IdentityCreate
     }
 
-    /// Set asset lock
-    pub fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<(), NonConsensusError> {
-        self.identity_id = asset_lock_proof.create_identifier()?;
-
-        self.asset_lock_proof = asset_lock_proof;
-
-        Ok(())
-    }
-
-    /// Get asset lock proof
-    pub fn get_asset_lock_proof(&self) -> &AssetLockProof {
-        &self.asset_lock_proof
-    }
-
     /// Get identity public keys
     pub fn get_public_keys(&self) -> &[IdentityPublicKeyInCreation] {
         &self.public_keys
@@ -313,6 +296,25 @@ impl IdentityCreateTransition {
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
         Ok(())
+    }
+}
+
+impl AssetLockProved for IdentityCreateTransition {
+    /// Set asset lock
+    fn set_asset_lock_proof(
+        &mut self,
+        asset_lock_proof: AssetLockProof,
+    ) -> Result<(), NonConsensusError> {
+        self.identity_id = asset_lock_proof.create_identifier()?;
+
+        self.asset_lock_proof = asset_lock_proof;
+
+        Ok(())
+    }
+
+    /// Get asset lock proof
+    fn get_asset_lock_proof(&self) -> &AssetLockProof {
+        &self.asset_lock_proof
     }
 }
 

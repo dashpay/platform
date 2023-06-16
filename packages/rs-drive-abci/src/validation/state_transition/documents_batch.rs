@@ -18,12 +18,12 @@ use dpp::{
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult, ValidationResult},
 };
 
-use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::context::ValidationDataShareContext;
 use crate::validation::state_transition::document_state_validation::validate_documents_batch_transition_state::validate_document_batch_transition_state;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
@@ -33,9 +33,10 @@ use super::{
 };
 
 impl StateTransitionValidation for DocumentsBatchTransition {
-    fn validate_structure(
+    fn validate_structure<C: CoreRPCLike>(
         &self,
-        drive: &Drive,
+        platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
@@ -72,7 +73,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             // We will be adding to block cache, contracts that are pulled
             // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
-                drive
+                platform.drive
                 .get_contract_with_fetch_info_and_fee(data_contract_id.0.0, None, true, tx)?
                 .1
             else {
@@ -101,13 +102,14 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         Ok(result)
     }
 
-    fn validate_identity_and_signatures(
+    fn validate_identity_and_signatures<C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        transaction: TransactionArg,
+        platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature(drive, self, false, transaction)?
+            validate_state_transition_identity_signature(platform.drive, self, false, tx)?
                 .map(Some),
         )
     }
@@ -115,6 +117,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let validation_result = validate_document_batch_transition_state(
@@ -130,6 +133,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _context: &ValidationDataShareContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let validation_result = validate_document_batch_transition_state(

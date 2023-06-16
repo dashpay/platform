@@ -9,7 +9,9 @@ use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use drive_abci::validation::state_transition::StateTransitionValidation;
+use drive_abci::validation::state_transition::{
+    StateTransitionValidation, ValidationDataShareContext,
+};
 
 use dpp::block::block_info::BlockInfo;
 use prost::Message;
@@ -30,12 +32,14 @@ pub(crate) fn verify_state_transitions_were_executed(
         block_info,
     };
 
+    let mut context = ValidationDataShareContext::default();
+
     //actions are easier to transform to queries
     let actions = state_transitions
         .iter()
         .map(|state_transition| {
             state_transition
-                .transform_into_action(&platform, None)
+                .transform_into_action(&platform, &mut context, None)
                 .expect("expected state transitions to validate")
                 .into_data()
                 .expect(

@@ -7,6 +7,7 @@ use dashcore::signer::verify_hash_signature;
 use crate::consensus::signature::SignatureError;
 use crate::consensus::signature::{IdentityNotFoundError, InvalidStateTransitionSignatureError};
 use crate::consensus::ConsensusError;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProved;
 use crate::prelude::ConsensusValidationResult;
 use crate::validation::AsyncDataValidator;
 use crate::{

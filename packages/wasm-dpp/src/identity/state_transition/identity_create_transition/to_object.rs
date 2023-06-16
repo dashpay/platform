@@ -1,4 +1,4 @@
-use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::identity::state_transition::asset_lock_proof::{AssetLockProof, AssetLockProved};
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::{
     identifier::Identifier,

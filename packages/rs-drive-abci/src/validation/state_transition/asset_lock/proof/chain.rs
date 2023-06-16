@@ -15,6 +15,7 @@ use dpp::identity::state_transition::asset_lock_proof::CHAIN_ASSET_LOCK_PROOF_SC
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
 
+/// Validate the structure of the chain asset lock proof
 pub fn validate_structure(
     chain_asset_lock_proof: &ChainAssetLockProof,
 ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -31,6 +32,7 @@ pub fn validate_structure(
     Ok(result)
 }
 
+/// Validate the state of the chain asset lock proof
 pub fn validate_state<C>(
     chain_asset_lock_proof: &ChainAssetLockProof,
     platform_ref: &PlatformRef<C>,

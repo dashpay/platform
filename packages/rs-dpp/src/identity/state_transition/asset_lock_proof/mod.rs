@@ -335,6 +335,17 @@ impl TryInto<Value> for &AssetLockProof {
     }
 }
 
+pub trait AssetLockProved {
+    /// Set asset lock proof
+    fn set_asset_lock_proof(
+        &mut self,
+        asset_lock_proof: AssetLockProof,
+    ) -> Result<(), NonConsensusError>;
+
+    /// Get asset lock proof
+    fn get_asset_lock_proof(&self) -> &AssetLockProof;
+}
+
 #[cfg(test)]
 mod test {
     use crate::state_repository::FetchTransactionResponse;

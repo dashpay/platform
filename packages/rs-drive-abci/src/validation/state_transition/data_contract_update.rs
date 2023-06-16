@@ -31,22 +31,23 @@ use dpp::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
-use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use serde_json::Value as JsonValue;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::schema_compatibility_validator::any_schema_changes;
 
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::context::ValidationDataShareContext;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 use crate::{error::Error, validation::state_transition::common::validate_schema};
 
 use super::StateTransitionValidation;
 
 impl StateTransitionValidation for DataContractUpdateTransition {
-    fn validate_structure(
+    fn validate_structure<C: CoreRPCLike>(
         &self,
-        _drive: &Drive,
+        _platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
@@ -69,13 +70,14 @@ impl StateTransitionValidation for DataContractUpdateTransition {
             .map_err(Error::Protocol)
     }
 
-    fn validate_identity_and_signatures(
+    fn validate_identity_and_signatures<C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        transaction: TransactionArg,
+        platform: &PlatformRef<C>,
+        _context: &mut ValidationDataShareContext,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature(drive, self, false, transaction)?
+            validate_state_transition_identity_signature(platform.drive, self, false, tx)?
                 .map(Some),
         )
     }
@@ -83,6 +85,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        context: &mut ValidationDataShareContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
@@ -221,12 +224,13 @@ impl StateTransitionValidation for DataContractUpdateTransition {
             return Ok(validation_result);
         }
 
-        self.transform_into_action(platform, tx)
+        self.transform_into_action(platform, context, tx)
     }
 
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         _platform: &PlatformRef<C>,
+        _context: &ValidationDataShareContext,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let action: StateTransitionAction =
@@ -238,7 +242,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::platform::{Platform, PlatformRef};
+    use crate::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -246,8 +250,8 @@ mod tests {
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
     use dpp::state_transition::{StateTransitionConvert, StateTransitionType};
-    use dpp::tests::fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture};
-    use dpp::version::{ProtocolVersionValidator, LATEST_VERSION};
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::LATEST_VERSION;
     use serde_json::json;
 
     struct TestData<T> {
@@ -307,15 +311,11 @@ mod tests {
     mod validate_state {
         use super::super::StateTransitionValidation;
         use super::*;
-        use dashcore_rpc::dashcore_rpc_json::Bip125Replaceable::No;
+        use crate::validation::state_transition::context::ValidationDataShareContext;
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
-        use drive::error::drive::DriveError;
-        use drive::error::Error;
         use serde_json::json;
-        use std::sync::Arc;
-        use tracing_subscriber::util::SubscriberInitExt;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -366,8 +366,10 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut context = ValidationDataShareContext::default();
+
             let result = state_transition
-                .validate_state(&platform_ref, None)
+                .validate_state(&platform_ref, &mut context, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -436,8 +438,10 @@ mod tests {
                 block_info: &BlockInfo::default(),
             };
 
+            let mut context = ValidationDataShareContext::default();
+
             let result = state_transition
-                .validate_state(&platform_ref, None)
+                .validate_state(&platform_ref, &mut context, None)
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
