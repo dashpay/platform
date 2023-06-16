@@ -61,7 +61,10 @@ RUN apk add --no-cache \
         unzip \
         wget \
         xz \
+        tree \
         zeromq-dev
+
+# TODO: Remove tree
 
 SHELL ["/bin/bash", "-c"]
 
@@ -169,6 +172,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci && \
+    tree /platform/target/ && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
