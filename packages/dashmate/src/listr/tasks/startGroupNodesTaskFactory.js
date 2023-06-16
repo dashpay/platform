@@ -13,7 +13,6 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {startNodeTask} startNodeTask
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {buildServicesTask} buildServicesTask
- * @param {buildServicesDepsTask} buildServicesDepsTask
  * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
@@ -26,7 +25,6 @@ function startGroupNodesTaskFactory(
   startNodeTask,
   waitForNodeToBeReadyTask,
   buildServicesTask,
-  buildServicesDepsTask,
   getConnectionHost,
 ) {
   /**
@@ -44,10 +42,6 @@ function startGroupNodesTaskFactory(
     ));
 
     return new Listr([
-      {
-        enabled: () => platformBuildConfig,
-        task: () => buildServicesDepsTask(platformBuildConfig),
-      },
       {
         enabled: () => platformBuildConfig,
         task: () => buildServicesTask(platformBuildConfig),

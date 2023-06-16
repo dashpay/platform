@@ -71,7 +71,6 @@ const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForN
 const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
 const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
-const buildServicesDepsTaskFactory = require('./listr/tasks/buildServicesDepsTaskFactory');
 const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
@@ -214,7 +213,6 @@ async function createDIContainer() {
    */
   container.register({
     buildServicesTask: asFunction(buildServicesTaskFactory).singleton(),
-    buildServicesDepsTask: asFunction(buildServicesDepsTaskFactory).singleton(),
     startGroupNodesTask: asFunction(startGroupNodesTaskFactory).singleton(),
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),

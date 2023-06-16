@@ -10,7 +10,6 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
- * @param {buildServicesDepsTask} buildServicesDepsTask
  * @param getConnectionHost {getConnectionHost}
  * @param ensureFileMountExists {ensureFileMountExists}
  * @return {startNodeTask}
@@ -21,7 +20,6 @@ function startNodeTaskFactory(
   waitForMasternodesSync,
   createRpcClient,
   buildServicesTask,
-  buildServicesDepsTask,
   getConnectionHost,
   ensureFileMountExists,
 ) {
@@ -78,12 +76,6 @@ function startNodeTaskFactory(
             throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
-      },
-      {
-        enabled: (ctx) => !ctx.skipBuildServices
-          && config.get('platform.enable')
-          && config.get('platform.sourcePath') !== null,
-        task: () => buildServicesDepsTask(config),
       },
       {
         enabled: (ctx) => !ctx.skipBuildServices
