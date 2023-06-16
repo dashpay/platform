@@ -43,7 +43,7 @@ function registerMasternodeGuideTaskFactory() {
       CORE: 'dashCore',
       ANDROID: 'dashAndroid',
       IOS: 'dashIOS',
-      OTHER: 'other',
+      DMT: 'dmt',
     };
 
     return new Listr([
@@ -64,14 +64,14 @@ function registerMasternodeGuideTaskFactory() {
                 { name: REGISTRARS.CORE, message: 'Dash Core Wallet' },
                 { name: REGISTRARS.ANDROID, message: 'Android Dash Wallet' },
                 { name: REGISTRARS.IOS, message: 'iOS Dash Wallet' },
-                { name: REGISTRARS.OTHER, message: 'Other' },
+                { name: REGISTRARS.DMT, message: 'DMT' },
               ],
               initial: REGISTRARS.CORE,
             },
           ]);
 
           let initialOperatorPrivateKey;
-          if (registrar === REGISTRARS.CORE || registrar === REGISTRARS.OTHER) {
+          if (registrar === REGISTRARS.CORE || registrar === REGISTRARS.DMT) {
             ({ privateKey: initialOperatorPrivateKey } = await generateBlsKeys());
           }
 
