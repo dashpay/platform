@@ -73,6 +73,25 @@ describe('Client - Platform - Documents - .get()', () => {
     ]);
   });
 
+  it('should convert identifier properties inside where condition with "in" operator', async () => {
+    const id = await generateRandomIdentifier();
+    await get.call(platform, 'app.withByteArrays', {
+      where: [
+        ['identifierField', 'in', [id.toString()]],
+      ],
+    });
+
+    expect(getDocumentsMock.getCall(0).args).to.have.deep.members([
+      appDefinition.contractId,
+      'withByteArrays',
+      {
+        where: [
+          ['identifierField', 'in', [id]],
+        ],
+      },
+    ]);
+  });
+
   it('should convert $id and $ownerId to identifiers inside where condition', async () => {
     const id = await generateRandomIdentifier();
     const ownerId = await generateRandomIdentifier();
@@ -91,6 +110,29 @@ describe('Client - Platform - Documents - .get()', () => {
         where: [
           ['$id', '==', id],
           ['$ownerId', '==', ownerId],
+        ],
+      },
+    ]);
+  });
+
+  it('should convert $id and $ownerId to identifiers inside where condition with "in" operator', async () => {
+    const id = await generateRandomIdentifier();
+    const ownerId = await generateRandomIdentifier();
+
+    await get.call(platform, 'app.withByteArrays', {
+      where: [
+        ['$id', 'in', [id.toString()]],
+        ['$ownerId', 'in', [ownerId.toString()]],
+      ],
+    });
+
+    expect(getDocumentsMock.getCall(0).args).to.have.deep.members([
+      appDefinition.contractId,
+      'withByteArrays',
+      {
+        where: [
+          ['$id', 'in', [id]],
+          ['$ownerId', 'in', [ownerId]],
         ],
       },
     ]);
