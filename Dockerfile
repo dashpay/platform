@@ -3,9 +3,9 @@
 # Docker image for rs-drive-abci
 #
 # This image is divided multiple parts:
-# - deps - includes all dependencies and some libraries
-# - depssccache - deps image with sccache included
-# - deps-bindgen-cli - includes wasm-bindgen-cli; built on top of either deps or deps-sccache
+# - deps-base - includes all base dependencies and some libraries
+# - deps-sccache - deps image with sccache included
+# - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
 # - sources - includes full source code
 # - build-* - actual build process of given image
 # - drive-abci, dashmate-helper, test-suite, dapi - final images
@@ -37,7 +37,7 @@ ARG RUSTC_WRAPPER
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM rust:alpine${ALPINE_VERSION} as deps
+FROM rust:alpine${ALPINE_VERSION} as deps-base
 
 #
 # Install some dependencies
@@ -101,7 +101,7 @@ ENV NODE_ENV ${NODE_ENV}
 
 ARG RUSTC_WRAPPER
 
-FROM deps AS depssccache
+FROM deps-base AS deps-sccache
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
@@ -124,10 +124,10 @@ ARG SCCACHE_MEMCACHED
 ARG CARGO_INCREMENTAL=false
 
 #
-# DEPS-BINDGEN-CLI: ADD DEPS-BINDGEN-CLI TOOL
+# DEPS: FULL DEPENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
-FROM deps${RUSTC_WRAPPER} AS deps-bindgen-cli
+FROM deps-${RUSTC_WRAPPER:-base} AS deps
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
@@ -145,7 +145,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 # LOAD SOURCES
 #
-FROM deps-bindgen-cli as sources
+FROM deps as sources
 
 
 WORKDIR /platform
