@@ -155,7 +155,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
-        --package drive-abci \
+        --package drive-abci && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
     sccache --show-stats
 

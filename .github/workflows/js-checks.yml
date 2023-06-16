@@ -98,7 +98,6 @@ jobs:
           cp packages/dapi/.env.example packages/dapi/.env
         if: ${{ !inputs.start-local-network }}
 
-
       - name: Set up Docker BuildX
         uses: docker/setup-buildx-action@v2
         if: ${{ inputs.start-local-network }}
@@ -113,7 +112,7 @@ jobs:
                 keepBytes = 30000000000 # 30 GB
                 keepDuration = 864000 # 10 days
 
-      - name: Extract Docker mount cache
+      - name: Load Docker mount cache
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/inject@main
 
