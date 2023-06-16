@@ -7,6 +7,7 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: drive-abci
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
@@ -24,6 +25,7 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dapi
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
@@ -40,6 +42,7 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dapi
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
@@ -55,6 +58,7 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/docker/envoy/Dockerfile
       args:
+        RUSTC_WRAPPER: "${RUSTC_WRAPPER}"
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
@@ -71,6 +75,7 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dashmate-helper
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
