@@ -101,7 +101,7 @@ jobs:
                 keepBytes = 30000000000 # 30 GB
                 keepDuration = 864000 # 10 days
 
-      - name: Extract Docker mount cache
+      - name: Load Docker mount cache
         uses: dcginfra/buildkit-cache-dance/inject@main
 
       - name: Setup local network
@@ -113,11 +113,11 @@ jobs:
           CACHE_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache
           CACHE_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
+
       - name: Run test suite
         run: yarn test:suite
-
-      - name: Extract Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/extract@main
 
       - name: Show Docker logs
         if: ${{ failure() }}
@@ -174,11 +174,11 @@ jobs:
           CACHE_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache
           CACHE_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
-      - name: Run test suite in browsers
-        run: yarn test:suite:browsers
-
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
+
+      - name: Run test suite in browsers
+        run: yarn test:suite:browsers
 
       - name: Show Docker logs
         if: ${{ failure() }}

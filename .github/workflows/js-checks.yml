@@ -127,12 +127,12 @@ jobs:
           CACHE_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache
           CACHE_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
-      - name: Run tests
-        run: yarn test --filter "${{ inputs.package }}"
-
       - name: Store Docker mount cache
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/extract@main
+
+      - name: Run tests
+        run: yarn test --filter "${{ inputs.package }}"
 
       - name: Show Docker logs
         if: ${{ failure() }}
