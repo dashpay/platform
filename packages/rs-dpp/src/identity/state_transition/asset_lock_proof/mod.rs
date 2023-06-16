@@ -335,6 +335,7 @@ impl TryInto<Value> for &AssetLockProof {
     }
 }
 
+/// Objects with Asset Lock Proof
 pub trait AssetLockProved {
     /// Set asset lock proof
     fn set_asset_lock_proof(
