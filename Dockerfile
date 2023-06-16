@@ -172,16 +172,14 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci && \
-    tree /platform/target/ && \
-    cp /platform/target/*/drive-abci /artifacts/drive-abci && \
+    tree -L 3 /platform/target/ && \
+    cp /platform/target/*/drive-abci /artifacts/ && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM sources AS build-js
-
-RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
