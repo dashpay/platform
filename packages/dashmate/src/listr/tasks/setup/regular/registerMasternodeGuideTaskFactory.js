@@ -78,6 +78,25 @@ function registerMasternodeGuideTaskFactory() {
           // TODO: We need to add description on how to find key generation form in the
           //  specified wallet
 
+          const instructions = {
+            [REGISTRARS.DMT]: {
+              collateral: '\n  Click Locate collateral and copy the transaction hash and output index.',
+              keys: '\n  Copy these values from the relevant fields in the form',
+            },
+            [REGISTRARS.CORE]: {
+              collateral: '',
+              keys: '',
+            },
+            [REGISTRARS.ANDROID]: {
+              collateral: '',
+              keys: '',
+            },
+            [REGISTRARS.IOS]: {
+              collateral: '',
+              keys: '',
+            },
+          };
+
           const validateAddressWithNetwork = (value) => validateAddress(value, ctx.preset);
 
           const collateralAmount = ctx.isHP === true
@@ -100,7 +119,9 @@ function registerMasternodeGuideTaskFactory() {
                 type: 'form',
                 name: 'collateral',
                 header: `  Dashmate needs to collect your collateral funding transaction hash and index.
-  The funding value must be exactly ${collateralAmount} ${collateralDenomination}.\n`,
+  The funding value must be exactly ${collateralAmount} ${collateralDenomination}.\n
+  ${instructions[registrar].collateral}\n
+  `,
                 message: 'Enter collateral funding transaction information:',
                 choices: [
                   {
@@ -124,7 +145,7 @@ function registerMasternodeGuideTaskFactory() {
                 name: 'keys',
                 header: `  Dashmate needs to collect details about the owner, voting and payout addresses
   to use in the masternode registration transaction. These are regular Dash
-  addresses, encoded in base58 format.\n`,
+  addresses, encoded in base58 format.\n${instructions[registrar].keys}\n}`,
                 message: 'Enter masternode addresses:',
                 choices: [
                   {
