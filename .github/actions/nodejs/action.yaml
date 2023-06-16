@@ -26,7 +26,7 @@ runs:
       uses: everpcpc/actions-cache@v1
       with:
         bucket: platform-runner-cache
-        root: cache-mounts
+        root: actions-cache
         path: |
           .yarn/unplugged
         key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}

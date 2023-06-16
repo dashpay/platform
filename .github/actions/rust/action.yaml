@@ -41,7 +41,7 @@ runs:
       uses: everpcpc/actions-cache@v1
       with:
         bucket: platform-runner-cache
-        root: cache-mounts
+        root: actions-cache
         path: |
           /home/ubuntu/.cargo/registry/index
           /home/ubuntu/.cargo/registry/cache
