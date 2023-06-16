@@ -159,7 +159,9 @@ impl StateTransitionValidation for StateTransition {
                 st.validate_structure(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => st.validate_structure(platform, context, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.validate_structure(drive, tx),
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.validate_structure(platform, context, tx)
+            }
         }
     }
 
@@ -189,10 +191,10 @@ impl StateTransitionValidation for StateTransition {
                 st.validate_identity_and_signatures(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => {
-                st.validate_identity_and_signatures(drive, context, tx)
+                st.validate_identity_and_signatures(platform, context, tx)
             }
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_identity_and_signatures(drive, context, tx)
+                st.validate_identity_and_signatures(platform, context, tx)
             }
         }
     }
@@ -213,7 +215,7 @@ impl StateTransitionValidation for StateTransition {
                 st.validate_state(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => st.validate_state(platform, context, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.validate_state(platform, tx),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_state(platform, context, tx),
         }
     }
 
@@ -237,7 +239,9 @@ impl StateTransitionValidation for StateTransition {
                 st.transform_into_action(platform, context, tx)
             }
             StateTransition::DocumentsBatch(st) => st.transform_into_action(platform, context, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.transform_into_action(platform, tx),
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.transform_into_action(platform, context, tx)
+            }
         }
     }
 }

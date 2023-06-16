@@ -95,7 +95,7 @@ impl<'a> ProofVerification<'a> {
             round as i32,
         ) {
             Ok(h) => h,
-            Err(e) => return SimpleValidationResult::new_with_error(e.into()),
+            Err(e) => return SimpleValidationResult::new_with_error(e),
         };
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
         let signature = match dpp::bls_signatures::Signature::from_bytes(self.signature) {
