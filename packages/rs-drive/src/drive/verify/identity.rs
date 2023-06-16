@@ -33,7 +33,7 @@ impl Drive {
     /// # Returns
     ///
     /// If the verification is successful, it returns a `Result` with a tuple of `RootHash` and
-    /// an `Option` of `Identity`. The `RootHash` represents the root hash of the identity tree, and the
+    /// an `Option` of `Identity`. The `RootHash` represents the root hash of GroveDB, and the
     /// `Option<Identity>` represents the full identity of the user if it exists.
     ///
     /// If the verification fails at any point, it will return an `Error`.
@@ -81,7 +81,7 @@ impl Drive {
     /// # Returns
     ///
     /// If the verification is successful, it returns a `Result` with a tuple of `RootHash` and `T`.
-    /// The `RootHash` represents the root hash of the identity tree, and `T` represents
+    /// The `RootHash` represents the root hash of GroveDB, and `T` represents
     /// the collection of the public key hash and associated identity (if it exists) for each user.
     ///
     /// # Errors
@@ -133,7 +133,7 @@ impl Drive {
     /// # Returns
     ///
     /// If the verification is successful, it returns a `Result` with a tuple of `RootHash` and
-    /// an `Option` of `Identity`. The `RootHash` represents the root hash of the identity tree, and the
+    /// an `Option` of `Identity`. The `RootHash` represents the root hash of GroveDB, and the
     /// `Option<Identity>` represents the full identity of the user if it exists.
     ///
     /// # Errors
@@ -251,7 +251,7 @@ impl Drive {
     /// # Returns
     ///
     /// If the verification is successful, it returns a `Result` with a tuple of `RootHash` and
-    /// an `Option` of `PartialIdentity`. The `RootHash` represents the root hash of the identity tree,
+    /// an `Option` of `PartialIdentity`. The `RootHash` represents the root hash of GroveDB,
     /// and the `Option<PartialIdentity>` represents the partial identity of the user if it exists.
     ///
     /// # Errors
@@ -319,7 +319,7 @@ impl Drive {
     /// # Returns
     ///
     /// If the verification is successful, it returns a `Result` with a tuple of `RootHash` and
-    /// an `Option` of a 32-byte array. The `RootHash` represents the root hash of the identity tree,
+    /// an `Option` of a 32-byte array. The `RootHash` represents the root hash of GroveDB,
     /// and the `Option<[u8; 32]>` represents the identity ID of the user if it exists.
     ///
     /// # Errors
@@ -388,7 +388,7 @@ impl Drive {
     /// # Returns
     ///
     /// If the verification is successful, it returns a `Result` with a tuple of `RootHash` and
-    /// an `Option<u64>`. The `RootHash` represents the root hash of the identity tree, and the
+    /// an `Option<u64>`. The `RootHash` represents the root hash of GroveDB, and the
     /// `Option<u64>` represents the balance of the user's identity if it exists.
     ///
     /// # Errors
