@@ -8,6 +8,7 @@ use dpp::{state_transition::{
     StateTransitionFactory, StateTransitionFactoryOptions, StateTransition, errors::StateTransitionError,
 }, version::ProtocolVersionValidator, data_contract::state_transition::{data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator, data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::{PublicKeysSignaturesValidator}, asset_lock_proof::{AssetLockProofValidator, ChainAssetLockProofStructureValidator, InstantAssetLockProofStructureValidator, AssetLockTransactionValidator}, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator, ProtocolError};
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use dpp::identity::state_transition::identity_credit_transfer_transition::validation::basic::identity_credit_transfer_basic::IdentityCreditTransferTransitionBasicValidator;
 use dpp::platform_value::Value;
 
 use crate::utils::{ToSerdeJSONExt, WithJsError};
@@ -18,7 +19,8 @@ use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm,
     with_js_error, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
+    DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm,
+    IdentityCreditTransferTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
 };
 
@@ -57,6 +59,9 @@ impl StateTransitionFactoryWasm {
                 }
                 StateTransition::IdentityTopUp(st) => {
                     Ok(IdentityTopUpTransitionWasm::from(st).into())
+                }
+                StateTransition::IdentityCreditTransfer(st) => {
+                    Ok(IdentityCreditTransferTransitionWasm::from(st).into())
                 }
                 StateTransition::DocumentsBatch(st) => {
                     Ok(DocumentsBatchTransitionWasm::from(st).into())
@@ -150,6 +155,10 @@ impl StateTransitionFactoryWasm {
                     state_repository_wrapper.clone(),
                     protocol_version_validator.clone(),
                 ),
+                IdentityCreditTransferTransitionBasicValidator::new(
+                    ProtocolVersionValidator::default(),
+                )
+                .map_err(from_dpp_init_error)?,
             ),
         );
 

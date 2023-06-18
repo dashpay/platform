@@ -90,7 +90,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
         identity_ids
-            .into_iter()
+            .iter()
             .map(|identity_id| {
                 Ok((
                     *identity_id,

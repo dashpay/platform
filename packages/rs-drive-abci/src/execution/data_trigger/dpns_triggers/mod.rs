@@ -252,7 +252,7 @@ pub fn create_domain_data_trigger(
 
     let mut salted_domain_buffer: Vec<u8> = vec![];
     salted_domain_buffer.extend(preorder_salt);
-    salted_domain_buffer.extend(full_domain_name.to_owned().as_bytes());
+    salted_domain_buffer.extend(full_domain_name.as_bytes());
 
     let salted_domain_hash = hash(salted_domain_buffer);
 

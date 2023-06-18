@@ -77,6 +77,9 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::IdentityUpdateAction(identity_update_transition) => {
                 identity_update_transition.into_high_level_drive_operations(epoch)
             }
+            StateTransitionAction::IdentityCreditTransferAction(
+                identity_credit_transfer_transition,
+            ) => identity_credit_transfer_transition.into_high_level_drive_operations(epoch),
         }
     }
 }

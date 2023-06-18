@@ -59,11 +59,9 @@
 use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
-
-use crate::drive::system::misc_path_vec;
 
 use crate::drive::asset_lock::asset_lock_storage_path;
 use grovedb::EstimatedSumTrees::SomeSumTrees;

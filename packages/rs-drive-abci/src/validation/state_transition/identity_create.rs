@@ -6,9 +6,7 @@ use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::{OutPoint, Txid};
-use dpp::identifier::Identifier;
+use dpp::dashcore::OutPoint;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
@@ -18,7 +16,6 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
-    NonConsensusError,
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;

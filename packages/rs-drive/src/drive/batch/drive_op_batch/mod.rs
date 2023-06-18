@@ -147,7 +147,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
                 .operations
                 .into_iter()
-                .map(|op| GroveOperation(op))
+                .map(GroveOperation)
                 .collect()),
         }
     }

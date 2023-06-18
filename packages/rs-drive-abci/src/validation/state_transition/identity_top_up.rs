@@ -59,7 +59,7 @@ impl StateTransitionValidation for IdentityTopUpTransition {
                 ));
                 return Ok(validation_result);
             }
-            Some(pk) => pk,
+            Some(partial_identity) => partial_identity,
         };
 
         validation_result.set_data(Some(partial_identity));

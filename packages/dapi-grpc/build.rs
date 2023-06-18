@@ -53,6 +53,7 @@ fn generate1(
     let mut pb = prost_build::Config::new();
     pb.out_dir(out_dir);
     pb.format(true);
+    pb.protoc_arg("--experimental_allow_proto3_optional");
     pb.compile_protos(files, proto_includes)
 }
 

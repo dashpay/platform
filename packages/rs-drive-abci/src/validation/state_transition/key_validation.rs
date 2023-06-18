@@ -78,7 +78,7 @@ pub fn validate_state_transition_identity_signature(
             ));
             return Ok(validation_result);
         }
-        Some(pk) => pk,
+        Some(partial_identity) => partial_identity,
     };
 
     if !partial_identity.not_found_public_keys.is_empty() {

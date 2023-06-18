@@ -27,6 +27,7 @@ use crate::{
     document::DocumentsBatchTransition,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
+        identity_credit_transfer_transition::IdentityCreditTransferTransition,
         identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         identity_topup_transition::IdentityTopUpTransition,
     },
@@ -186,6 +187,10 @@ pub async fn create_state_transition(
         StateTransitionType::IdentityUpdate => {
             let transition = IdentityUpdateTransition::new(raw_state_transition)?;
             Ok(StateTransition::IdentityUpdate(transition))
+        }
+        StateTransitionType::IdentityCreditTransfer => {
+            let transition = IdentityCreditTransferTransition::new(raw_state_transition)?;
+            Ok(StateTransition::IdentityCreditTransfer(transition))
         }
     }
 }

@@ -2,7 +2,6 @@ use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
 use crate::drive::defaults::PROTOCOL_VERSION;
-use std::borrow::Cow;
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;

@@ -57,11 +57,7 @@ pub struct TempPlatform<C> {
 impl TestPlatformBuilder {
     /// Create a new test platform builder
     pub fn new() -> Self {
-        let tempdir = TempDir::new().unwrap();
-        TestPlatformBuilder {
-            tempdir,
-            config: None,
-        }
+        Self::default()
     }
 
     /// Add platform config
@@ -89,6 +85,16 @@ impl TestPlatformBuilder {
         TempPlatform {
             platform,
             tempdir: self.tempdir,
+        }
+    }
+}
+
+impl Default for TestPlatformBuilder {
+    fn default() -> Self {
+        let tempdir = TempDir::new().unwrap();
+        Self {
+            tempdir,
+            config: None,
         }
     }
 }

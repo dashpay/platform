@@ -242,7 +242,7 @@ where
             //  can we add new documents? Does adding a new document counts as mutation?
             for (document_type, original_schema) in old_schema.iter() {
                 let new_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
-                let patch = json_patch::diff(original_schema, new_schema);
+                let _patch = json_patch::diff(original_schema, new_schema);
             }
         }
 

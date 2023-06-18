@@ -5,8 +5,7 @@ use crate::identifier::Identifier;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::identity::{IdentityPublicKey, PartialIdentity};
-use crate::ProtocolError;
-use dashcore::OutPoint;
+
 use platform_value::Bytes36;
 use serde::{Deserialize, Serialize};
 

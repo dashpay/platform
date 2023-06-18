@@ -706,7 +706,7 @@ mod tests {
             39, 25, 156, 146, 35, 108, 99, 133, 34, 187, 243, 162,
         ];
         let (_root_hash, maybe_balance) =
-            Drive::verify_identity_balance_for_identity_id(proof, identity_id)
+            Drive::verify_identity_balance_for_identity_id(proof, identity_id, false)
                 .expect("should verify");
         let actual_balance = maybe_balance.expect("should have balance");
         assert_eq!(actual_balance, 11077485418639);

@@ -8,6 +8,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const { StateTransitionTypes } = require('@dashevo/wasm-dpp');
 
 const fetchProofForStateTransitionFactory = require('../../../../lib/externalApis/drive/fetchProofForStateTransitionFactory');
 
@@ -49,6 +50,7 @@ describe('fetchProofForStateTransition', () => {
         await generateRandomIdentifierAsync(),
         await generateRandomIdentifierAsync(),
       ]),
+      getType: this.sinon.stub(),
     };
 
     fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClientMock);
@@ -56,6 +58,7 @@ describe('fetchProofForStateTransition', () => {
 
   it('should fetch identities proofs', async () => {
     stateTransitionFixture.isIdentityStateTransition.returns(true);
+    stateTransitionFixture.getType.returns(StateTransitionTypes.IdentityCreditTransfer);
     const result = await fetchProofForStateTransition(stateTransitionFixture);
     expect(result.serializeBinary()).to.deep
       .equal(identitiesProofResponse.serializeBinary());
