@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use dashcore::hashes::{ripemd160, sha256, Hash};
 use sha2::{Digest, Sha256};
 
