@@ -3,29 +3,29 @@ mod state;
 mod structure;
 
 use dpp::identity::state_transition::identity_credit_transfer_transition::{
-    IdentityCreditTransferTransition, IdentityCreditTransferTransitionAction,
+    IdentityCreditTransferTransition,
 };
 
-use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
+
 use dpp::identity::PartialIdentity;
 use dpp::{
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
-use dpp::identity::state_transition::identity_credit_transfer_transition::validation::basic::identity_credit_transfer_basic::IDENTITY_CREDIT_TRANSFER_TRANSITION_SCHEMA_VALIDATOR;
+
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
+
 use crate::validation::state_transition::identity_credit_transfer::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
 use crate::validation::state_transition::identity_credit_transfer::state::v0::StateTransitionStateValidationV0;
 use crate::validation::state_transition::identity_credit_transfer::structure::v0::StateTransitionStructureValidationV0;
 use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
 use crate::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+
 
 impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -42,7 +42,7 @@ impl StateTransitionValidationV0 for IdentityCreditTransferTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: use protocol version to determine validation
@@ -52,7 +52,7 @@ impl StateTransitionValidationV0 for IdentityCreditTransferTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         //todo: use protocol version to determine validation

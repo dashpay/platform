@@ -3,7 +3,7 @@ mod state;
 mod structure;
 
 use crate::error::Error;
-use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
+
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::identity_create::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
@@ -34,7 +34,7 @@ impl StateTransitionValidationV0 for IdentityCreateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: use protocol version to determine validation
@@ -44,7 +44,7 @@ impl StateTransitionValidationV0 for IdentityCreateTransition {
     fn validate_identity_and_signatures(
         &self,
         _drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         //todo: use protocol version to determine validation

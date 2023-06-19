@@ -1,11 +1,11 @@
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+
 use dpp::consensus::basic::document::DataContractNotPresentError;
-use dpp::data_contract::generate_data_contract_id;
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
+
+
+
 use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
 use dpp::document::DocumentsBatchTransition;
 use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;

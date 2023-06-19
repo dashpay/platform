@@ -1,13 +1,13 @@
 use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
+
+
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition, Pooling};
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;
-use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
-use crate::validation::state_transition::key_validation::validate_identity_public_keys_structure;
+use crate::validation::state_transition::common::{validate_schema};
+
 
 pub(in crate::validation::state_transition) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;

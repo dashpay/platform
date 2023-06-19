@@ -757,26 +757,6 @@ where
     }
 }
 
-/// Decode key if it's not encoded
-///
-/// TODO: This is just a workaround, remove when not needed anymore
-fn maybe_hexdecode(key: &[u8], expected_length: usize) -> Vec<u8> {
-    if key.len() == expected_length {
-        return Vec::from(key);
-    };
-    if key.len() == 2 * expected_length {
-        // let backtrace = Backtrace::force_capture();
-        // tracing::error!(?backtrace, "non hex-decoded key found");
-
-        return hex::decode(key).expect("cannot hex-decode received key");
-    };
-    panic!(
-        "unexpected key len: got {}, expected {}",
-        key.len(),
-        expected_length
-    )
-}
-
 /*
 #[cfg(test)]
 mod tests {

@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
+
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::state_transition::data_contract_create_transition::{

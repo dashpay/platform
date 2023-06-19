@@ -1,34 +1,29 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
+
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::{
     validate_identity_public_key_ids_dont_exist_in_state,
     validate_identity_public_key_ids_exist_in_state,
-    validate_state_transition_identity_signature_v0,
     validate_unique_identity_public_key_hashes_state,
 };
-use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
+
 use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::dashcore::OutPoint;
-use dpp::data_contract::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionAction,
-};
-use dpp::identity::state_transition::identity_create_transition::{
-    IdentityCreateTransition, IdentityCreateTransitionAction,
-};
+
+
+
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-use dpp::identity::PartialIdentity;
-use dpp::platform_value::Bytes36;
+
+
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
-use dpp::validation::SimpleConsensusValidationResult;
+
 use dpp::ProtocolError;
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 
 pub(in crate::validation::state_transition) trait StateTransitionStateValidationV0 {

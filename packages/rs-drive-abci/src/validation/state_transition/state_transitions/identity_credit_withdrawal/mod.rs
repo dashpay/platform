@@ -4,26 +4,26 @@ mod structure;
 
 use dpp::identity::PartialIdentity;
 use dpp::{identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, state_transition::StateTransitionAction, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
-use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
-use dpp::consensus::signature::IdentityNotFoundError;
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
-use dpp::consensus::state::state_error::StateError;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransitionAction, Pooling};
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
-use dpp::util::is_fibonacci_number::is_fibonacci_number;
+
+
+
+
+
+
+
+
 use drive::grovedb::TransactionArg;
 use drive::drive::Drive;
 
-use crate::error::execution::ExecutionError;
+
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::common::validate_schema;
+
 use crate::validation::state_transition::identity_credit_withdrawal::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
 use crate::validation::state_transition::identity_credit_withdrawal::state::v0::StateTransitionStateValidationV0;
 use crate::validation::state_transition::identity_credit_withdrawal::structure::v0::StateTransitionStructureValidationV0;
-use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature_v0;
+
 use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
 use crate::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 
@@ -42,7 +42,7 @@ impl StateTransitionValidationV0 for IdentityCreditWithdrawalTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: use protocol version to determine validation
@@ -52,7 +52,7 @@ impl StateTransitionValidationV0 for IdentityCreditWithdrawalTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         //todo: use protocol version to determine validation

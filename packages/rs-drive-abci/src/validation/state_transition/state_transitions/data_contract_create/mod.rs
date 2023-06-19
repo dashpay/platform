@@ -3,11 +3,11 @@ mod state;
 mod structure;
 
 use dpp::identity::PartialIdentity;
-use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
-use dpp::consensus::state::state_error::StateError;
+
+
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransitionAction;
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
+
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::grovedb::TransactionArg;
@@ -19,7 +19,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::data_contract_create::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
 use crate::validation::state_transition::data_contract_create::state::v0::StateTransitionStateValidationV0;
 use crate::validation::state_transition::data_contract_create::structure::v0::StateTransitionStructureValidationV0;
-use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature_v0;
+
 use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
 use crate::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 
@@ -38,7 +38,7 @@ impl StateTransitionValidationV0 for DataContractCreateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: use protocol version to determine validation
@@ -48,7 +48,7 @@ impl StateTransitionValidationV0 for DataContractCreateTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         //todo: use protocol version to determine validation

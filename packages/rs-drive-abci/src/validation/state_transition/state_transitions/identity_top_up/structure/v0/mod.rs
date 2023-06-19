@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
-use crate::validation::state_transition::key_validation::validate_identity_public_keys_structure;
-use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+
+
+
 use dpp::identity::state_transition::identity_topup_transition::validation::basic::IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::SimpleConsensusValidationResult;

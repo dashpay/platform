@@ -618,17 +618,9 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
 
-    let mut next_quorum_hash = current_quorum_hash;
-
     let mut validator_set_updates = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
-        if needs_rotation_on_next_block {
-            let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
-
-            next_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
-        }
         let epoch_info = EpochInfo::calculate(
             first_block_time,
             current_time_ms,

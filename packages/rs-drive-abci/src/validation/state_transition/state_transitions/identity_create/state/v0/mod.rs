@@ -3,32 +3,29 @@ use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::{
-    validate_state_transition_identity_signature_v0,
     validate_unique_identity_public_key_hashes_state,
 };
-use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
+
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError,
 };
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use dpp::consensus::state::state_error::StateError;
+
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
-use dpp::data_contract::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionAction,
-};
+
 use dpp::identity::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionAction,
 };
-use dpp::identity::PartialIdentity;
+
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
-use dpp::validation::SimpleConsensusValidationResult;
-use drive::drive::Drive;
+
+
 use drive::grovedb::TransactionArg;
 
 pub(in crate::validation::state_transition) trait StateTransitionStateValidationV0 {

@@ -1,8 +1,8 @@
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
-use dpp::data_contract::generate_data_contract_id;
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
+
+
+
+
+
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
 use dpp::validation::SimpleConsensusValidationResult;

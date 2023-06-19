@@ -1,5 +1,5 @@
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
+
+
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR;
 use dpp::validation::SimpleConsensusValidationResult;

@@ -5,13 +5,12 @@ mod structure;
 use dpp::identity::PartialIdentity;
 
 use dpp::{
-    data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::schema_compatibility_validator::any_schema_changes;
+
 use dpp::state_transition::StateTransitionAction;
 use crate::error::Error;
 
@@ -38,7 +37,7 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: use protocol version to determine validation
@@ -48,7 +47,7 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        protocol_version: u32,
+        _protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         //todo: use protocol version to determine validation

@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature_v0;
+
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
 use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::identity::PartialIdentity;

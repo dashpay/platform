@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
+
 use dpp::consensus::signature::IdentityNotFoundError;
-use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::state_error::StateError;
+
 use dpp::identity::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionAction,
 };

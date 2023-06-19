@@ -1,13 +1,13 @@
 use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use crate::error::Error;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature_v0;
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use dpp::consensus::basic::BasicError;
+
+
+
 use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::ConsensusError;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+
+
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
