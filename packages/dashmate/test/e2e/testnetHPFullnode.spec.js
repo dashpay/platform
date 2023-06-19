@@ -8,7 +8,6 @@ process.env.DASHMATE_HOME_DIR = path.resolve(os.tmpdir(), '.dashmate');
 const { asValue } = require('awilix');
 
 const createDIContainer = require('../../src/createDIContainer');
-const { SERVICES } = require('../../src/test/constants/services');
 const { NODE_TYPE_NAMES, getNodeTypeByName } = require('../../src/listr/tasks/setup/nodeTypes');
 const { SSL_PROVIDERS } = require('../../src/constants');
 const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderdashNodeKey');
@@ -33,6 +32,9 @@ describe('Testnet HP Fullnode', function main() {
   let isServiceRunning;
   let coreRpcClient;
   let lastBlockHeight;
+  let renderServiceTemplates;
+  let writeServiceConfigs;
+  let configFileRepository;
 
   const preset = 'testnet';
 
@@ -55,40 +57,19 @@ describe('Testnet HP Fullnode', function main() {
       configGroup: asValue(group),
     });
 
-    const renderServiceTemplates = container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = container.resolve('writeServiceConfigs');
+    renderServiceTemplates = container.resolve('renderServiceTemplates');
+    writeServiceConfigs = container.resolve('writeServiceConfigs');
 
     setupRegularPresetTask = container.resolve('setupRegularPresetTask');
     resetNodeTask = container.resolve('resetNodeTask');
     startNodeTask = container.resolve('startNodeTask');
     restartNodeTask = container.resolve('restartNodeTask');
     stopNodeTask = container.resolve('stopNodeTask');
-    const configFileRepository = container.resolve('configFileRepository');
+    configFileRepository = container.resolve('configFileRepository');
 
     dockerCompose = container.resolve('dockerCompose');
 
     configFile = container.resolve('configFile');
-
-    const config = configFile.getConfig(preset);
-
-    config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
-
-    const serviceConfigFiles = renderServiceTemplates(config);
-    writeServiceConfigs(config.getName(), serviceConfigFiles);
-
-    await configFileRepository.write(configFile);
-
-    isServiceRunning = isServiceRunningFactory(
-      config,
-      dockerCompose,
-      SERVICES,
-    );
-
-    coreRpcClient = createRpcClient({
-      port: config.get('core.rpc.port'),
-      user: config.get('core.rpc.user'),
-      pass: config.get('core.rpc.password'),
-    });
   });
 
   after(async () => {
@@ -107,7 +88,7 @@ describe('Testnet HP Fullnode', function main() {
   });
 
   describe('setup', () => {
-    it('should setup HP fullnode', async () => {
+    it('should setup fullnode', async () => {
       const setupTask = setupRegularPresetTask();
 
       const initialIp = await publicIp.v4();
@@ -132,14 +113,31 @@ describe('Testnet HP Fullnode', function main() {
         },
       });
 
-      const configExists = configFile.getConfig(preset);
+      const config = configFile.getConfig(preset);
 
-      expect(configExists).to.not.be.undefined();
+      const serviceConfigFiles = renderServiceTemplates(config);
+      writeServiceConfigs(config.getName(), serviceConfigFiles);
+
+      await configFileRepository.write(configFile);
+
+      isServiceRunning = isServiceRunningFactory(
+        config,
+        configFile,
+        dockerCompose,
+      );
+
+      coreRpcClient = createRpcClient({
+        port: config.get('core.rpc.port'),
+        user: config.get('core.rpc.user'),
+        pass: config.get('core.rpc.password'),
+      });
+
+      expect(config).to.not.be.undefined();
     });
   });
 
   describe('start', () => {
-    it('should start HP fullnode', async () => {
+    it('should start fullnode', async () => {
       const startTask = startNodeTask(configFile.getConfig(preset));
       await startTask.run();
 
@@ -174,7 +172,7 @@ describe('Testnet HP Fullnode', function main() {
   });
 
   describe('restart', () => {
-    it('should restart HP fullnode and continue syncing Dash Core', async () => {
+    it('should restart fullnode and continue syncing Dash Core', async () => {
       const task = restartNodeTask(configFile.getConfig(preset));
       await task.run();
 
@@ -193,7 +191,7 @@ describe('Testnet HP Fullnode', function main() {
   });
 
   describe('stop', () => {
-    it('should stop HP fullnode', async () => {
+    it('should stop fullnode', async () => {
       const task = stopNodeTask(configFile.getConfig(preset));
       await task.run();
 
