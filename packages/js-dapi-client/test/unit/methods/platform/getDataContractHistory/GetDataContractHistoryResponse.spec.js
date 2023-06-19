@@ -65,18 +65,15 @@ describe('GetDataContractHistoryResponse', () => {
     const {
       DataContractHistory,
       DataContractHistoryEntry,
-      DataContractValue,
     } = GetDataContractHistoryResponse;
-    const dcValueProto = new DataContractValue();
-    dcValueProto.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryEntryProto = new DataContractHistoryEntry();
     dataContractHistoryEntryProto.setDate(1000);
-    dataContractHistoryEntryProto.setValue(dcValueProto);
+    dataContractHistoryEntryProto.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryEntryProto2 = new DataContractHistoryEntry();
     dataContractHistoryEntryProto2.setDate(2000);
-    dataContractHistoryEntryProto2.setValue(dcValueProto);
+    dataContractHistoryEntryProto2.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryProto = new DataContractHistory();
     dataContractHistoryProto.setDataContractEntriesList([
@@ -154,18 +151,15 @@ describe('GetDataContractHistoryResponse', () => {
     const {
       DataContractHistory,
       DataContractHistoryEntry,
-      DataContractValue,
     } = GetDataContractHistoryResponse;
-    const dcValueProto = new DataContractValue();
-    dcValueProto.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryEntryProto = new DataContractHistoryEntry();
     dataContractHistoryEntryProto.setDate(1000);
-    dataContractHistoryEntryProto.setValue(dcValueProto);
+    dataContractHistoryEntryProto.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryEntryProto2 = new DataContractHistoryEntry();
     dataContractHistoryEntryProto2.setDate(2000);
-    dataContractHistoryEntryProto2.setValue(dcValueProto);
+    dataContractHistoryEntryProto2.setValue(dataContractFixture.toBuffer());
 
     const dataContractHistoryProto = new DataContractHistory();
     dataContractHistoryProto.setDataContractEntriesList([
