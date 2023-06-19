@@ -69,12 +69,12 @@ where
             StateTransition::IdentityCreate(st) => {
                 let output = self
                     .asset_lock_transition_output_fetcher
-                    .fetch(st.get_asset_lock_proof(), execution_context)
+                    .fetch(st.asset_lock_proof(), execution_context)
                     .await
                     .with_context(|| {
                         format!(
                             "unable to fetch asset lock transition output for: {:?}",
-                            st.get_asset_lock_proof()
+                            st.asset_lock_proof()
                         )
                     })?;
                 convert_satoshi_to_credits(output.value)?
@@ -82,12 +82,12 @@ where
             StateTransition::IdentityTopUp(st) => {
                 let output = self
                     .asset_lock_transition_output_fetcher
-                    .fetch(st.get_asset_lock_proof(), execution_context)
+                    .fetch(st.asset_lock_proof(), execution_context)
                     .await
                     .with_context(|| {
                         format!(
                             "unable to fetch asset lock transition output for: {:?}",
-                            st.get_asset_lock_proof()
+                            st.asset_lock_proof()
                         )
                     })?;
                 let balance = convert_satoshi_to_credits(output.value)?;
@@ -269,7 +269,7 @@ mod test {
 
     macro_rules! get_output_amount_from_identity_transition {
         ($transition:ident) => {
-            if let AssetLockProof::Instant(lock_proof) = $transition.get_asset_lock_proof() {
+            if let AssetLockProof::Instant(lock_proof) = $transition.asset_lock_proof() {
                 let satoshis = lock_proof
                     .output()
                     .expect("output must be present in instant lock proof")

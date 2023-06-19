@@ -313,7 +313,7 @@ impl AssetLockProved for IdentityCreateTransition {
     }
 
     /// Get asset lock proof
-    fn get_asset_lock_proof(&self) -> &AssetLockProof {
+    fn asset_lock_proof(&self) -> &AssetLockProof {
         &self.asset_lock_proof
     }
 }

@@ -42,7 +42,7 @@ where
     ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(state_transition.get_asset_lock_proof(), execution_context)
+            .fetch(state_transition.asset_lock_proof(), execution_context)
             .await?;
 
         let credits_amount = convert_satoshi_to_credits(output.value)?;
@@ -71,7 +71,7 @@ where
             .await?;
 
         let out_point = state_transition
-            .get_asset_lock_proof()
+            .asset_lock_proof()
             .out_point()
             .ok_or_else(|| anyhow!("Out point is missing from asset lock proof"))?;
 

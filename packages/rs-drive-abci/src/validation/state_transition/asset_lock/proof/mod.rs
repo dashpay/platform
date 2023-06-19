@@ -48,7 +48,7 @@ where
 {
     let asset_lock_validation = fetch_asset_lock_transaction_output_sync(
         platform_ref.core_rpc,
-        state_transition.get_asset_lock_proof(),
+        state_transition.asset_lock_proof(),
     )?;
 
     if !asset_lock_validation.is_valid() {

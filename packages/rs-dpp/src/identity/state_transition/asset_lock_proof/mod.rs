@@ -344,7 +344,7 @@ pub trait AssetLockProved {
     ) -> Result<(), NonConsensusError>;
 
     /// Get asset lock proof
-    fn get_asset_lock_proof(&self) -> &AssetLockProof;
+    fn asset_lock_proof(&self) -> &AssetLockProof;
 }
 
 #[cfg(test)]

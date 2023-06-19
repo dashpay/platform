@@ -130,8 +130,8 @@ fn get_asset_lock_proof(
     state_transition: &StateTransition,
 ) -> Result<&AssetLockProof, anyhow::Error> {
     match state_transition {
-        StateTransition::IdentityCreate(st) => Ok(st.get_asset_lock_proof()),
-        StateTransition::IdentityTopUp(st) => Ok(st.get_asset_lock_proof()),
+        StateTransition::IdentityCreate(st) => Ok(st.asset_lock_proof()),
+        StateTransition::IdentityTopUp(st) => Ok(st.asset_lock_proof()),
         _ => {
             bail!(
                 "key signature validation isn't supported for {}. Asset lock proof is required",
