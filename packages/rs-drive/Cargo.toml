@@ -63,6 +63,7 @@ rev = "33dc30ec384a90aa92bac621a6059fc7ef544b5c"
 
 [dev-dependencies]
 criterion = "0.3.5"
+anyhow = { version = "1.0.70" }
 
 [[bench]]
 name = "benchmarks"

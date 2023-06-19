@@ -1188,6 +1188,7 @@ dependencies = [
 name = "drive"
 version = "0.24.0-dev.1"
 dependencies = [
+ "anyhow",
  "base64 0.21.2",
  "bincode 2.0.0-rc.3",
  "bs58",
