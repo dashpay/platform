@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::key_validation::validate_unique_identity_public_key_hashes_state;
 
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
@@ -24,6 +23,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
+use crate::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
 
 pub(in crate::validation::state_transition) trait StateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
@@ -88,18 +88,9 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
             ));
         }
 
-        validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_state(
-                self.public_keys.as_slice(),
-                drive,
-                tx,
-            )?
-            .errors,
-        );
-
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_state(
+            validate_unique_identity_public_key_hashes_in_state_v0(
                 self.public_keys.as_slice(),
                 drive,
                 tx,

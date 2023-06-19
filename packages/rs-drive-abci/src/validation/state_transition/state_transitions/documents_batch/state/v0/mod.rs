@@ -6,7 +6,11 @@ use drive::grovedb::TransactionArg;
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::document_state_validation::validate_documents_batch_transition_state::validate_document_batch_transition_state;
+use crate::validation::state_transition::documents_batch::state::v0::validate_documents_batch_transition_state::validate_document_batch_transition_state;
+
+pub mod execute_data_triggers;
+pub mod fetch_documents;
+pub mod validate_documents_batch_transition_state;
 
 pub(in crate::validation::state_transition) trait StateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(

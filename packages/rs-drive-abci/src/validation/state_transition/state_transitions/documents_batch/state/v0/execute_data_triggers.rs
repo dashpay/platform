@@ -5,7 +5,7 @@ use crate::execution::data_trigger::{
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::ProtocolError;
 
-pub fn execute_data_triggers<'a>(
+pub(super) fn execute_data_triggers<'a>(
     document_transitions: &'a [DocumentTransitionAction],
     context: &DataTriggerExecutionContext<'a>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
@@ -13,7 +13,7 @@ pub fn execute_data_triggers<'a>(
     execute_data_triggers_with_custom_list(document_transitions, context, data_triggers_list)
 }
 
-pub fn execute_data_triggers_with_custom_list<'a>(
+pub(super) fn execute_data_triggers_with_custom_list<'a>(
     document_transitions: &'a [DocumentTransitionAction],
     context: &DataTriggerExecutionContext<'a>,
     data_triggers_list: impl IntoIterator<Item = DataTrigger>,

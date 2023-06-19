@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::validation::state_transition::common::validate_schema;
+use crate::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -10,7 +10,7 @@ pub(in crate::validation::state_transition) trait StateTransitionStructureValida
 
 impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
+        let result = validate_schema_v0(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }

@@ -9,7 +9,7 @@ use dpp::identity::state_transition::identity_credit_withdrawal_transition::vali
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;
-use crate::validation::state_transition::common::{validate_schema};
+use crate::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 
 pub(in crate::validation::state_transition) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
@@ -17,7 +17,7 @@ pub(in crate::validation::state_transition) trait StateTransitionStructureValida
 
 impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = validate_schema(
+        let mut result = validate_schema_v0(
             &IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR,
             self,
         );

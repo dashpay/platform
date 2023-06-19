@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 
 use crate::error::Error;
-use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
+use crate::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
+use crate::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 use crate::validation::state_transition::documents_batch::validate_document_transitions_basic;
 use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
 use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
@@ -31,12 +32,12 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
+        let result = validate_schema_v0(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let result = validate_protocol_version(self.protocol_version);
+        let result = validate_protocol_version_v0(self.protocol_version);
         if !result.is_valid() {
             return Ok(result);
         }

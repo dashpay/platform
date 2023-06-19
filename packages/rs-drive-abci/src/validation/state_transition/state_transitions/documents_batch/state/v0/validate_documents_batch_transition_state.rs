@@ -4,8 +4,7 @@ use std::collections::BTreeMap;
 use crate::error::Error;
 use crate::execution::data_trigger::DataTriggerExecutionContext;
 use crate::platform::PlatformStateRef;
-use crate::validation::state_transition::document_state_validation::execute_data_triggers::execute_data_triggers;
-use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
+use crate::validation::state_transition::state_transitions::documents_batch::state::v0::execute_data_triggers::execute_data_triggers;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -42,8 +41,9 @@ use dpp::{
     ProtocolError,
 };
 use drive::grovedb::TransactionArg;
+use crate::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 
-pub fn validate_document_batch_transition_state(
+pub(super) fn validate_document_batch_transition_state(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     batch_state_transition: &DocumentsBatchTransition,

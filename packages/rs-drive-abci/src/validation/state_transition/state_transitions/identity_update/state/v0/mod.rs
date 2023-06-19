@@ -3,11 +3,6 @@ use crate::error::Error;
 
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::key_validation::{
-    validate_identity_public_key_ids_dont_exist_in_state,
-    validate_identity_public_key_ids_exist_in_state,
-    validate_unique_identity_public_key_hashes_state,
-};
 
 use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
@@ -22,6 +17,9 @@ use dpp::state_transition::StateTransitionAction;
 use dpp::ProtocolError;
 
 use drive::grovedb::TransactionArg;
+use crate::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
+use crate::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::v0::validate_identity_public_key_ids_exist_in_state_v0;
+use crate::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
 
 pub(in crate::validation::state_transition) trait StateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
@@ -46,7 +44,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_state(
+            validate_unique_identity_public_key_hashes_in_state_v0(
                 self.add_public_keys.as_slice(),
                 drive,
                 tx,
@@ -59,7 +57,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         }
 
         validation_result.add_errors(
-            validate_identity_public_key_ids_dont_exist_in_state(
+            validate_identity_public_key_ids_dont_exist_in_state_v0(
                 self.identity_id,
                 self.add_public_keys.as_slice(),
                 drive,
@@ -75,21 +73,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         if !self.disable_public_keys.is_empty() {
             // We need to validate that all keys removed existed
             validation_result.add_errors(
-                validate_identity_public_key_ids_exist_in_state(
-                    self.identity_id,
-                    self.disable_public_keys.clone(),
-                    drive,
-                    tx,
-                )?
-                .errors,
-            );
-
-            if !validation_result.is_valid() {
-                return Ok(validation_result);
-            }
-
-            validation_result.add_errors(
-                validate_identity_public_key_ids_exist_in_state(
+                validate_identity_public_key_ids_exist_in_state_v0(
                     self.identity_id,
                     self.disable_public_keys.clone(),
                     drive,

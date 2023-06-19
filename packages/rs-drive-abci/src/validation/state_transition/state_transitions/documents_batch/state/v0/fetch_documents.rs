@@ -18,7 +18,7 @@ use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 #[allow(dead_code)]
-pub(super) fn fetch_documents_for_transitions(
+pub(in crate::validation::state_transition) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],
     transaction: TransactionArg,
@@ -59,7 +59,7 @@ pub(super) fn fetch_documents_for_transitions(
 }
 
 #[allow(dead_code)]
-pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
+pub(in crate::validation::state_transition) fn fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
     platform: &PlatformStateRef,
     contract_id: &Identifier,
     document_type_name: &str,
@@ -95,7 +95,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     )
 }
 
-pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
+pub(in crate::validation::state_transition) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
     drive: &Drive,
     contract: &Contract,
     document_type: &DocumentType,
