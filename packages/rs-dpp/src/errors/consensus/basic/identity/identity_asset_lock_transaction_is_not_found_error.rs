@@ -1,6 +1,5 @@
 use bincode::{Decode, Encode};
 use std::fmt::{Display, Formatter};
-use hex::ToHex;
 
 use crate::consensus::basic::BasicError;
 use serde::{Deserialize, Serialize};
@@ -20,7 +19,7 @@ pub struct IdentityAssetLockTransactionIsNotFoundError {
 
 impl Display for IdentityAssetLockTransactionIsNotFoundError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let hex = self.transaction_id.to_vec().encode_hex::<String>();
+        let hex = hex::encode(self.transaction_id);
         let message = format!("Asset Lock transaction {hex} is not found");
         f.write_str(&message)
     }

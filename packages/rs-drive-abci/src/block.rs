@@ -37,7 +37,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
-use hex::ToHex;
 
 /// Block info
 #[derive(Debug)]
@@ -136,8 +135,8 @@ impl BlockStateInfo {
             ?height,
             ?round,
             ?core_block_height,
-            proposer_pro_tx_hash = proposer_pro_tx_hash.encode_hex::<String>(),
-            commit_hash = received_hash.encode_hex::<String>(),
+            proposer_pro_tx_hash = hex::encode(proposer_pro_tx_hash),
+            commit_hash = hex::encode(received_hash),
             "check if block info matches request"
         );
         Ok(self.height == height

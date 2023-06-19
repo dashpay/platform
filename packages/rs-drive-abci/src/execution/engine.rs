@@ -472,7 +472,7 @@ where
                 "received a block for h: {} r: {}, block hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, core height: {}",
                 height,
                 round,
-                hash.encode_hex::<String>(),
+                hex::encode(hash),
                 block_header.core_chain_locked_height,
                 block_state_info.height,
                 block_state_info.round,

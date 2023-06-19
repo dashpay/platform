@@ -398,7 +398,7 @@ where
         )? {
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, block_hash.encode_hex::<String>(),
+                height, round, hex::encode(block_hash),
                 block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.encode_hex()).unwrap_or("None".to_string())
             )))
             .into())
@@ -450,7 +450,7 @@ where
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round,block_hash.encode_hex::<String>(),
+                height, round, hex::encode(block_hash),
                 block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.encode_hex()).unwrap_or("None".to_string())
             )))
             .into());

@@ -11,7 +11,6 @@ use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use hex::ToHex;
 use tenderdash_abci::proto::types::CoreChainLock;
 use dpp::dashcore::hashes::Hash;
 
@@ -261,12 +260,12 @@ impl CoreRPCLike for DefaultCoreRPC {
             max_height
         );
 
-        let request_id = instant_lock.request_id()?.encode_hex::<String>();
+        let request_id = hex::encode(instant_lock.request_id()?);
 
         retry!(self.inner.get_verifyislock(
             request_id.as_str(),
             &instant_lock.txid.to_hex(),
-            &instant_lock.signature.encode_hex::<String>(),
+            hex::encode(instant_lock.signature).as_str(),
             max_height,
         ))
     }
@@ -287,8 +286,8 @@ impl CoreRPCLike for DefaultCoreRPC {
         );
 
         retry!(self.inner.get_verifychainlock(
-            chain_lock.block_hash.encode_hex::<String>().as_str(),
-            chain_lock.signature.encode_hex::<String>().as_str(),
+            hex::encode(chain_lock.block_hash).as_str(),
+            hex::encode(chain_lock.signature).as_str(),
             max_height
         ))
     }

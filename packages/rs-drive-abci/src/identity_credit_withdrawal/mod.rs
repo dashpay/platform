@@ -601,7 +601,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.encode_hex::<String>()
+                    hex::encode(bh)
                         == "0000000000000000000000000000000000000000000000000000000000000000"
                 })
                 .returning(|_| {
@@ -613,7 +613,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.encode_hex::<String>()
+                    hex::encode(bh)
                         == "1111111111111111111111111111111111111111111111111111111111111111"
                 })
                 .returning(|_| {
@@ -952,7 +952,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.encode_hex::<String>()
+                    hex::encode(bh)
                         == "0000000000000000000000000000000000000000000000000000000000000000"
                 })
                 .returning(|_| {
@@ -964,7 +964,7 @@ mod tests {
             mock_rpc_client
                 .expect_get_block_json()
                 .withf(|bh| {
-                    bh.encode_hex::<String>()
+                    hex::encode(bh)
                         == "1111111111111111111111111111111111111111111111111111111111111111"
                 })
                 .returning(|_| {
