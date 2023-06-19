@@ -21,7 +21,7 @@ pub fn validate_structure(
 ) -> Result<SimpleConsensusValidationResult, Error> {
     match asset_lock_proof {
         AssetLockProof::Instant(proof) => instant::validate_structure(proof),
-        AssetLockProof::Chain(proof) => chain::validate_structure(proof),
+        AssetLockProof::Chain(_) => Ok(SimpleConsensusValidationResult::default()),
     }
 }
 

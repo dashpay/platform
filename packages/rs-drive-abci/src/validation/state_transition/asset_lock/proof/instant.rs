@@ -12,9 +12,7 @@ use dpp::consensus::basic::identity::{
     InvalidInstantAssetLockProofSignatureError,
 };
 use dpp::dashcore::{InstantLock, OutPoint};
-use dpp::identity::state_transition::asset_lock_proof::{
-    InstantAssetLockProof, INSTANT_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR,
-};
+use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -24,19 +22,7 @@ use drive::grovedb::TransactionArg;
 pub fn validate_structure(
     instant_asset_lock_proof: &InstantAssetLockProof,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let mut result = INSTANT_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR
-        .validate(
-            &(instant_asset_lock_proof
-                .to_cleaned_object()
-                .expect("we don't hold unserializable structs")
-                .try_into_validating_json()
-                .expect("TODO")),
-        )
-        .expect("TODO: how jsonschema validation will ever fail?");
-
-    if !result.is_valid() {
-        return Ok(result);
-    }
+    let mut result = SimpleConsensusValidationResult::default();
 
     let transaction_id = instant_asset_lock_proof.transaction().txid();
     if instant_asset_lock_proof.instant_lock().txid != transaction_id {

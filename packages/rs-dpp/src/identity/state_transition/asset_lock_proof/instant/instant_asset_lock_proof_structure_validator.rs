@@ -21,9 +21,6 @@ lazy_static! {
         "../../../../schema/identity/stateTransition/assetLockProof/instantAssetLockProof.json"
     ))
     .unwrap();
-    pub static ref INSTANT_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR: JsonSchemaValidator =
-        JsonSchemaValidator::new(INSTANT_ASSET_LOCK_PROOF_SCHEMA.clone())
-            .expect("unable to compile jsonschema");
 }
 
 pub type PublicKeyHash = [u8; 20];

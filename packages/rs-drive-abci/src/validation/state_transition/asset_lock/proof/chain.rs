@@ -6,27 +6,9 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::dashcore::OutPoint;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use dpp::identity::state_transition::asset_lock_proof::CHAIN_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::query::TransactionArg;
-
-/// Validate the structure of the chain asset lock proof
-pub fn validate_structure(
-    chain_asset_lock_proof: &ChainAssetLockProof,
-) -> Result<SimpleConsensusValidationResult, Error> {
-    let result = CHAIN_ASSET_LOCK_PROOF_SCHEMA_VALIDATOR
-        .validate(
-            &(chain_asset_lock_proof
-                .to_cleaned_object()
-                .expect("we don't hold unserializable structs")
-                .try_into_validating_json()
-                .expect("TODO")),
-        )
-        .expect("TODO: how jsonschema validation will ever fail?");
-
-    Ok(result)
-}
 
 /// Validate the state of the chain asset lock proof
 pub fn validate_state<C>(
