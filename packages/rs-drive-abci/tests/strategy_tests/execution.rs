@@ -294,7 +294,7 @@ pub(crate) fn run_chain_for_strategy(
         .returning(move |_, quorum_hash: &QuorumHash, _| {
             Ok(quorums_info
                 .get(quorum_hash.into())
-                .unwrap_or_else(|| panic!("expected to get quorum {}", quorum_hash.encode_hex::<String>()))
+                .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
         });
 
@@ -644,6 +644,8 @@ pub(crate) fn continue_chain_for_strategy(
         .expect("should calculate epoch info");
 
         current_core_height += strategy.core_height_increase.events_if_hit(&mut rng) as u32;
+
+        println!("current_core_height {:?}", current_core_height);
 
         let block_info = BlockInfo {
             time_ms: current_time_ms,
