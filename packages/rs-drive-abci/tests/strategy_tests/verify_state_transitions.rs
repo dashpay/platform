@@ -9,7 +9,7 @@ use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use drive_abci::validation::state_transition::StateTransitionValidationV0;
+use drive_abci::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 
 use prost::Message;
 

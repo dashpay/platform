@@ -1,9 +1,9 @@
 use crate::block::BlockExecutionContext;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::platform::state::PlatformState;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use crate::platform::state::PlatformState;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 impl<C> Platform<C>

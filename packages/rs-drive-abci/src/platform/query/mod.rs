@@ -853,11 +853,11 @@ mod test {
 
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;
+        use dpp::validation::ValidationResult;
         use drive::drive::Drive;
         use drive::error::contract::ContractError;
         use prost::Message;
         use serde_json::json;
-        use dpp::validation::ValidationResult;
 
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {

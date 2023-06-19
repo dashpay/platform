@@ -171,8 +171,8 @@ pub fn create_masternode_reward_shares_data_trigger(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::PlatformStateRef;
     use crate::platform::state::PlatformState;
+    use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};

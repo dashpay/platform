@@ -4,9 +4,10 @@ use crate::execution::execution_event::ExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
 };
 use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
+use crate::platform::state::PlatformState;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::process_state_transition;
+use crate::validation::state_transition::processor::process_state_transition;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
@@ -16,7 +17,6 @@ use dpp::validation::SimpleConsensusValidationResult;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::ExecTxResult;
-use crate::platform::state::PlatformState;
 
 impl<C> Platform<C>
 where

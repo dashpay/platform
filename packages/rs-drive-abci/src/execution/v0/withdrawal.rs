@@ -1,5 +1,6 @@
 //! Withdrawal transactions definitions and processing
 
+use crate::abci::AbciError;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::block::block_info::BlockInfo;
 use dpp::bls_signatures;
@@ -15,7 +16,6 @@ use tenderdash_abci::proto::{
     types::{VoteExtension, VoteExtensionType},
 };
 use tenderdash_abci::signatures::SignDigest;
-use crate::abci::AbciError;
 
 const MAX_WITHDRAWAL_TXS: u16 = 16;
 

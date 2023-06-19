@@ -5,7 +5,7 @@ use crate::execution::execution_event::ExecutionResult;
 use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::process_state_transition;
+use crate::validation::state_transition::processor::process_state_transition;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;

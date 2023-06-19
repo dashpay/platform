@@ -1,5 +1,7 @@
 /// Check tx module
 mod check_tx;
+/// The commit
+pub mod commit;
 /// Data triggers
 pub mod data_trigger;
 /// Engine module
@@ -8,6 +10,8 @@ pub mod engine;
 pub mod fee_pools;
 /// Helper methods
 pub mod helpers;
+/// Functions related to IdentityCreditWithdrawalTransaction
+pub mod identity_credit_withdrawal;
 /// Initialization
 pub mod initialization;
 /// Masternode Identities
@@ -20,10 +24,6 @@ pub mod protocol_upgrade;
 mod types;
 /// Validator set update module
 pub mod validator_set_update;
-/// The commit
-pub mod commit;
-/// Functions related to IdentityCreditWithdrawalTransaction
-pub mod identity_credit_withdrawal;
 pub mod withdrawal;
 // TODO We should compile it only for tests
 /// Asset Lock

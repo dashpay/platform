@@ -46,7 +46,7 @@ lazy_static! {
     };
 }
 
-pub fn validate_state_transition_identity_signature(
+pub fn validate_state_transition_identity_signature_v0(
     drive: &Drive,
     state_transition: &impl StateTransitionIdentitySigned,
     request_revision: bool,

@@ -34,8 +34,8 @@ use crate::block::BlockExecutionContext;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use crate::platform::state::PlatformState;
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
@@ -52,10 +52,10 @@ use dpp::serialization_traits::PlatformDeserializable;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
-/// Querying
-pub mod query;
 /// Contracts module
 pub mod contracts;
+/// Querying
+pub mod query;
 /// Platform state
 pub mod state;
 

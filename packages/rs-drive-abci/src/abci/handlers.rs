@@ -41,8 +41,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
-use crate::rpc::core::CoreRPCLike;
 use crate::platform::state::PlatformState;
+use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
@@ -63,8 +63,8 @@ use super::AbciError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
-use serde_json::Map;
 use crate::execution::withdrawal::WithdrawalTxs;
+use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where

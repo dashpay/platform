@@ -238,8 +238,12 @@ where
             })
             .collect();
 
-        let (block_fees, tx_results) =
-            self.process_raw_state_transitions(raw_state_transitions, &block_execution_context.block_platform_state, &block_info, transaction)?;
+        let (block_fees, tx_results) = self.process_raw_state_transitions(
+            raw_state_transitions,
+            &block_execution_context.block_platform_state,
+            &block_info,
+            transaction,
+        )?;
 
         self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction)?;
 
