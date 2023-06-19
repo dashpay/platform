@@ -75,7 +75,7 @@ struct Cli {
 impl Cli {
     fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
         match self.command {
-            Commands::Start {} => {
+            Commands::Start => {
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.rpc.url().as_str(),
                     config.core.rpc.username.clone(),
@@ -93,8 +93,8 @@ impl Cli {
                 drive_abci::abci::start(&config, core_rpc, cancel).map_err(|e| e.to_string())?;
                 return Ok(());
             }
-            Commands::Config {} => dump_config(&config)?,
-            Commands::Status {} => check_status(&config)?,
+            Commands::Config => dump_config(&config)?,
+            Commands::Status => check_status(&config)?,
         };
 
         Ok(())
