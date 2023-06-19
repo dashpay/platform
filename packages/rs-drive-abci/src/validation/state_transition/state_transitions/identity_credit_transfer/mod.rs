@@ -2,10 +2,7 @@ mod identity_and_signatures;
 mod state;
 mod structure;
 
-use dpp::identity::state_transition::identity_credit_transfer_transition::{
-    IdentityCreditTransferTransition,
-};
-
+use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -25,7 +22,6 @@ use crate::validation::state_transition::identity_credit_transfer::state::v0::St
 use crate::validation::state_transition::identity_credit_transfer::structure::v0::StateTransitionStructureValidationV0;
 use crate::validation::state_transition::processor::v0::StateTransitionValidationV0;
 use crate::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-
 
 impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
     fn transform_into_action<C: CoreRPCLike>(

@@ -4,14 +4,13 @@ mod structure;
 
 use dpp::identity::PartialIdentity;
 
-
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransitionAction;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::grovedb::TransactionArg;
 use drive::drive::Drive;
+use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
 use crate::platform::PlatformRef;

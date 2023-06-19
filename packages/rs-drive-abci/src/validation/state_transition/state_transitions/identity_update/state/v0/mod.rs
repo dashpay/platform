@@ -13,11 +13,8 @@ use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in
 use dpp::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use dpp::consensus::state::state_error::StateError;
 
-
-
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;

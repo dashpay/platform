@@ -1,23 +1,21 @@
+use dpp::consensus::basic::BasicError;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
-use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::basic::document::DataContractNotPresentError;
 
-
-
+use crate::error::Error;
+use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
+use crate::validation::state_transition::documents_batch::validate_document_transitions_basic;
 use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
-use dpp::document::DocumentsBatchTransition;
 use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
+use dpp::document::DocumentsBatchTransition;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::DocumentTransition;
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use crate::error::Error;
-use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
-use crate::validation::state_transition::documents_batch::validate_document_transitions_basic;
 
 pub(in crate::validation::state_transition) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(

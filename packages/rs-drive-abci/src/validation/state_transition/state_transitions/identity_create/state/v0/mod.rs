@@ -2,9 +2,7 @@ use crate::error::Error;
 use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::key_validation::{
-    validate_unique_identity_public_key_hashes_state,
-};
+use crate::validation::state_transition::key_validation::validate_unique_identity_public_key_hashes_state;
 
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
@@ -24,7 +22,6 @@ use dpp::identity::state_transition::identity_create_transition::{
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
-
 
 use drive::grovedb::TransactionArg;
 

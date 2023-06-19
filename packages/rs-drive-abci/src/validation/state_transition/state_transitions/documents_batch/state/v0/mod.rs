@@ -1,6 +1,3 @@
-
-
-
 use dpp::document::DocumentsBatchTransition;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -10,7 +7,6 @@ use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::document_state_validation::validate_documents_batch_transition_state::validate_document_batch_transition_state;
-
 
 pub(in crate::validation::state_transition) trait StateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(

@@ -1,7 +1,5 @@
 use crate::error::Error;
 
-
-
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
 
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;

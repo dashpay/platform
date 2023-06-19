@@ -2,20 +2,13 @@ mod identity_and_signatures;
 mod state;
 mod structure;
 
-
-
-
-
-
 use dpp::identity::PartialIdentity;
 use dpp::{
     document::{
         validation::basic::validate_documents_batch_transition_basic::validate_document_transitions as validate_document_transitions_basic,
         DocumentsBatchTransition,
     },
-    state_transition::{
-        StateTransitionAction,
-    },
+    state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
 

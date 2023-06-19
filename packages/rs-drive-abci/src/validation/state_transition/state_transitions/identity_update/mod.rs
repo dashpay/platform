@@ -3,19 +3,14 @@ mod state;
 mod structure;
 
 use dpp::identity::PartialIdentity;
-use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, state_transition::StateTransitionAction, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
+use dpp::{
+    identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
+    state_transition::StateTransitionAction,
+    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
+};
 
-
-
-
-
-
-
-
-use drive::grovedb::TransactionArg;
 use drive::drive::Drive;
-
-
+use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
 use crate::platform::PlatformRef;

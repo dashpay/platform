@@ -2,13 +2,6 @@ mod identity_and_signatures;
 mod state;
 mod structure;
 
-
-
-
-
-
-
-
 use dpp::identity::PartialIdentity;
 
 use dpp::{

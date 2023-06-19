@@ -3,18 +3,14 @@ use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError,
 };
 use dpp::consensus::basic::BasicError;
 
-
-
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
-
 
 use dpp::identity::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionAction,
@@ -23,7 +19,6 @@ use dpp::identity::state_transition::identity_topup_transition::{
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
-
 
 use drive::grovedb::TransactionArg;
 

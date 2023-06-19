@@ -1,8 +1,6 @@
 use crate::error::Error;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature_v0;
 
-
-
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
