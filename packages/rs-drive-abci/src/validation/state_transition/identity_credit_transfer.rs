@@ -12,17 +12,18 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::valida
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
-use super::StateTransitionValidation;
+use super::StateTransitionValidationV0;
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 
-impl StateTransitionValidation for IdentityCreditTransferTransition {
+impl StateTransitionValidationV0 for IdentityCreditTransferTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_CREDIT_TRANSFER_TRANSITION_SCHEMA_VALIDATOR, self);
@@ -36,6 +37,7 @@ impl StateTransitionValidation for IdentityCreditTransferTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();

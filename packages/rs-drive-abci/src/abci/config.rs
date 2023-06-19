@@ -9,8 +9,8 @@ use serde_with::serde_as;
 
 use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 
+// @append_only
 /// AbciAppConfig stores configuration of the ABCI Application.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AbciConfig {
     /// Address to listen for ABCI connections
@@ -80,14 +80,14 @@ impl Default for AbciConfig {
     }
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-
+// @append_only
 /// Struct to easily load from environment keys used by the Platform.
 ///
 /// Once loaded, Keys can be easily converted to [SystemIdentityPublicKeys]
 ///
 /// [SystemIdentityPublicKeys]: super::messages::SystemIdentityPublicKeys
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Keys {
     // dpns contract
     /// hex-encoded

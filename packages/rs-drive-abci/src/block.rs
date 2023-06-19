@@ -31,7 +31,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
-use crate::state::PlatformState;
+use crate::platform::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::BlockInfo;

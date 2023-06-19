@@ -38,7 +38,6 @@ use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{Deserialize, Serialize};
 use tenderdash_abci::proto::abci::RequestInitChain;
-use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use super::AbciError;
@@ -46,7 +45,7 @@ use super::AbciError;
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InitChainRequest {
+pub struct RequestInitChainCleanedParams {
     /// The genesis time in milliseconds
     pub genesis_time: TimestampMillis,
 
@@ -54,7 +53,7 @@ pub struct InitChainRequest {
     pub initial_core_height: Option<u32>,
 }
 
-impl TryFrom<RequestInitChain> for InitChainRequest {
+impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
     type Error = AbciError;
     fn try_from(request: RequestInitChain) -> Result<Self, Self::Error> {
         let genesis_time = request
@@ -72,27 +71,6 @@ impl TryFrom<RequestInitChain> for InitChainRequest {
             genesis_time,
             initial_core_height,
         })
-    }
-}
-
-impl From<InitChainRequest> for RequestInitChain {
-    fn from(value: InitChainRequest) -> Self {
-        let InitChainRequest {
-            genesis_time: genesis_time_ms,
-            initial_core_height,
-        } = value;
-        RequestInitChain {
-            time: Some(Timestamp {
-                seconds: (genesis_time_ms / 1000) as i64,
-                nanos: ((genesis_time_ms % 1000) * 1000) as i32,
-            }),
-            chain_id: "".to_string(),
-            consensus_params: None,
-            validator_set: None,
-            app_state_bytes: vec![],
-            initial_height: 0,
-            initial_core_height: initial_core_height.unwrap_or_default(),
-        }
     }
 }
 

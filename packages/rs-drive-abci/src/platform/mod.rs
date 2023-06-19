@@ -35,7 +35,7 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-use crate::state::PlatformState;
+use crate::platform::state::PlatformState;
 use drive::drive::Drive;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
@@ -52,7 +52,12 @@ use dpp::serialization_traits::PlatformDeserializable;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
-mod state_repository;
+/// Querying
+pub mod query;
+/// Contracts module
+pub mod contracts;
+/// Platform state
+pub mod state;
 
 /// Platform
 pub struct Platform<C> {

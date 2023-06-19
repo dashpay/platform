@@ -18,12 +18,13 @@ use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::validate_schema;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
-use super::StateTransitionValidation;
+use super::StateTransitionValidationV0;
 
-impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
+impl StateTransitionValidationV0 for IdentityCreditWithdrawalTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = validate_schema(
@@ -74,6 +75,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(

@@ -25,20 +25,20 @@ use crate::validation::state_transition::key_validation::{
     validate_identity_public_keys_structure, validate_unique_identity_public_key_hashes_state,
 };
 
-use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
-
 use crate::platform::PlatformRef;
 use crate::{
     error::Error,
     validation::state_transition::common::{validate_protocol_version, validate_schema},
 };
+use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 
-use super::StateTransitionValidation;
+use super::StateTransitionValidationV0;
 
-impl StateTransitionValidation for IdentityCreateTransition {
+impl StateTransitionValidationV0 for IdentityCreateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR, self);
@@ -57,6 +57,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
     fn validate_identity_and_signatures(
         &self,
         _drive: &Drive,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();

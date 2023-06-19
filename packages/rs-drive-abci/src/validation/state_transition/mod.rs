@@ -39,14 +39,26 @@ pub fn process_state_transition<'a, C: CoreRPCLike>(
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+    //Todo: feature type (next versioning pr)
+    // We will need to check the protocol version and use feature type to determine the version of
+    // the processing.
+    process_state_transition_v0(platform, state_transition, transaction)
+}
+
+fn process_state_transition_v0<'a, C: CoreRPCLike>(
+    platform: &'a PlatformRef<C>,
+    state_transition: StateTransition,
+    transaction: TransactionArg,
+) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+
     // Validating structure
-    let result = state_transition.validate_structure(platform.drive, transaction)?;
+    let result = state_transition.validate_structure(platform.drive, platform.state.current_protocol_version_in_consensus, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
     // Validating signatures
-    let result = state_transition.validate_identity_and_signatures(platform.drive, transaction)?;
+    let result = state_transition.validate_identity_and_signatures(platform.drive, platform.state.current_protocol_version_in_consensus, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
@@ -59,7 +71,7 @@ pub fn process_state_transition<'a, C: CoreRPCLike>(
 }
 
 /// A trait for validating state transitions within a blockchain.
-pub trait StateTransitionValidation {
+pub trait StateTransitionValidationV0 {
     /// Validates the structure of a transaction by checking its basic elements.
     ///
     /// # Arguments
@@ -73,6 +85,7 @@ pub trait StateTransitionValidation {
     fn validate_structure(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
@@ -89,6 +102,7 @@ pub trait StateTransitionValidation {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 
@@ -132,45 +146,47 @@ pub trait StateTransitionValidation {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionValidation for StateTransition {
+impl StateTransitionValidationV0 for StateTransition {
     fn validate_structure(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_structure(drive, tx),
-            StateTransition::DataContractUpdate(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityCreate(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityUpdate(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityTopUp(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_structure(drive, tx),
-            StateTransition::DocumentsBatch(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.validate_structure(drive, tx),
+            StateTransition::DataContractCreate(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::DataContractUpdate(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::IdentityCreate(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::IdentityUpdate(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::IdentityTopUp(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::DocumentsBatch(st) => st.validate_structure(drive, protocol_version, tx),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_structure(drive, protocol_version, tx),
         }
     }
 
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         match self {
             StateTransition::DataContractCreate(st) => {
-                st.validate_identity_and_signatures(drive, tx)
+                st.validate_identity_and_signatures(drive, protocol_version, tx)
             }
             StateTransition::DataContractUpdate(st) => {
-                st.validate_identity_and_signatures(drive, tx)
+                st.validate_identity_and_signatures(drive, protocol_version, tx)
             }
-            StateTransition::IdentityCreate(st) => st.validate_identity_and_signatures(drive, tx),
-            StateTransition::IdentityUpdate(st) => st.validate_identity_and_signatures(drive, tx),
-            StateTransition::IdentityTopUp(st) => st.validate_identity_and_signatures(drive, tx),
+            StateTransition::IdentityCreate(st) => st.validate_identity_and_signatures(drive, protocol_version, tx),
+            StateTransition::IdentityUpdate(st) => st.validate_identity_and_signatures(drive, protocol_version, tx),
+            StateTransition::IdentityTopUp(st) => st.validate_identity_and_signatures(drive, protocol_version, tx),
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_identity_and_signatures(drive, tx)
+                st.validate_identity_and_signatures(drive, protocol_version, tx)
             }
-            StateTransition::DocumentsBatch(st) => st.validate_identity_and_signatures(drive, tx),
+            StateTransition::DocumentsBatch(st) => st.validate_identity_and_signatures(drive, protocol_version,tx),
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_identity_and_signatures(drive, tx)
+                st.validate_identity_and_signatures(drive, protocol_version, tx)
             }
         }
     }
@@ -198,8 +214,8 @@ impl StateTransitionValidation for StateTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.transform_into_action(platform, tx),
-            StateTransition::DataContractUpdate(st) => st.transform_into_action(platform, tx),
+            StateTransition::DataContractCreate(st) => st.transform_into_action(platform,  tx),
+            StateTransition::DataContractUpdate(st) => st.transform_into_action(platform,  tx),
             StateTransition::IdentityCreate(st) => st.transform_into_action(platform, tx),
             StateTransition::IdentityUpdate(st) => st.transform_into_action(platform, tx),
             StateTransition::IdentityTopUp(st) => st.transform_into_action(platform, tx),

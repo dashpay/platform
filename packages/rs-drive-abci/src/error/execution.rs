@@ -2,6 +2,7 @@ use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeE
 use dpp::bls_signatures::BlsError;
 use drive::error::Error as DriveError;
 
+// @append_only
 /// Execution errors
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {

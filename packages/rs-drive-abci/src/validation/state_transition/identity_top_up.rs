@@ -1,4 +1,3 @@
-use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError,
@@ -20,16 +19,18 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
+use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 
-use super::StateTransitionValidation;
+use super::StateTransitionValidationV0;
 
-impl StateTransitionValidation for IdentityTopUpTransition {
+impl StateTransitionValidationV0 for IdentityTopUpTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR, self);
@@ -43,6 +44,7 @@ impl StateTransitionValidation for IdentityTopUpTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();

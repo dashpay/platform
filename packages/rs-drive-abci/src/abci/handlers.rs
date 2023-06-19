@@ -31,6 +31,9 @@
 //!
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
+//! Handlers in this function MUST be version agnostic, meaning that for all future versions, we
+//! can only make changes that are backwards compatible. Otherwise new calls must be made instead.
+//!
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
@@ -39,7 +42,7 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
+use crate::platform::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
@@ -55,13 +58,13 @@ use tenderdash_abci::proto::abci::{
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
 
-use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
 use serde_json::Map;
+use crate::execution::withdrawal::WithdrawalTxs;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -189,8 +192,6 @@ where
             // This is a system error, because we are proposing
             return Err(run_result.errors.first().unwrap().to_string().into());
         }
-
-        //todo: we need to set the block hash
 
         let BlockExecutionOutcome {
             app_hash,
@@ -385,7 +386,7 @@ where
             guarded_block_execution_context
                 .as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
+                    "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
         let block_state_info = &block_execution_context.block_state_info;
@@ -437,7 +438,7 @@ where
             guarded_block_execution_context
                 .as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
+                    "block execution context must be set in block begin handler for verify vote extension",
                 )))?;
 
         let block_state_info = &block_execution_context.block_state_info;

@@ -17,7 +17,6 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive_abci::abci::mimic::{self, MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
@@ -31,6 +30,7 @@ use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::Application;
+use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -746,7 +746,7 @@ pub(crate) fn continue_chain_for_strategy(
                     quorum_hash: current_quorum_with_test_info.quorum_hash.as_inner(),
                     quorum_type: config.quorum_type(),
                     app_version,
-                    chain_id: mimic::CHAIN_ID.to_string(),
+                    chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
                     core_chain_locked_height: state_id.core_chain_locked_height,
                     height: state_id.height as i64,
                     block_hash: &block_hash,

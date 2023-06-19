@@ -29,13 +29,14 @@ use crate::validation::state_transition::key_validation::validate_state_transiti
 
 use super::{
     common::{validate_protocol_version, validate_schema},
-    StateTransitionValidation,
+    StateTransitionValidationV0,
 };
 
-impl StateTransitionValidation for DocumentsBatchTransition {
+impl StateTransitionValidationV0 for DocumentsBatchTransition {
     fn validate_structure(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
@@ -104,6 +105,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(

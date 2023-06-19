@@ -23,12 +23,13 @@ use crate::validation::state_transition::key_validation::{
     validate_state_transition_identity_signature, validate_unique_identity_public_key_hashes_state,
 };
 
-use super::StateTransitionValidation;
+use super::StateTransitionValidationV0;
 
-impl StateTransitionValidation for IdentityUpdateTransition {
+impl StateTransitionValidationV0 for IdentityUpdateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR, self);
@@ -47,6 +48,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
