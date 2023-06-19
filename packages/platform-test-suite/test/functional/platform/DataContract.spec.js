@@ -234,6 +234,9 @@ describe('Platform', () => {
       expect(originalContract.toObject()).to.be.deep.equal(dataContractFixture.toObject());
 
       const [updatedContractDate, updatedContract] = Object.entries(contractHistory)[1];
+      // Version is updated separately inside SDK on a cloned contract, so we need to update it
+      //  here manually to compare
+      fetchedDataContract.incrementVersion();
       expect(updatedContract.toObject()).to.be.deep.equal(fetchedDataContract.toObject());
 
       expect(updatedContractDate).to.be.greaterThan(originalContractDate);
