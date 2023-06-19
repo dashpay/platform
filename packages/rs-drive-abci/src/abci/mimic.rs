@@ -29,8 +29,9 @@ use tenderdash_abci::{
     proto::version::Consensus,
     Application,
 };
-use dpp::dashcore::consensus::deserialize;
+use dpp::dashcore::consensus::{Decodable, deserialize};
 use dpp::dashcore::hashes::Hash;
+use bytes::Buf;
 
 /// Chain ID used in tests
 pub const CHAIN_ID: &str = "strategy_tests";
@@ -278,12 +279,14 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             .withdrawal_transactions
             .values()
             .map(|transaction| {
+                // TODO need to use deserialize function, rather than Decodable::consensus_decode
                 let AssetUnlockBaseTransactionInfo {
                     version,
                     lock_time,
                     output,
                     base_payload,
-                } = deserialize(&transaction).expect("a");
+                } = Decodable::consensus_decode(&mut transaction.reader())
+                    .expect("failed to decode a asset-unlock transaction");
                 dashcore::Transaction {
                     version,
                     lock_time,
