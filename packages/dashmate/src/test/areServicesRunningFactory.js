@@ -1,11 +1,14 @@
+const generateEnvs = require("../util/generateEnvs");
+
 /**
+ * @param {ConfigFile} configFile
  * @param {Config[]} configGroup
  * @param {DockerCompose} dockerCompose
  * @param {Object} services
  *
  * @returns {areServicesRunning}
  */
-function areServicesRunningFactory(configGroup, dockerCompose, services) {
+function areServicesRunningFactory(configFile, configGroup, dockerCompose, services) {
   /**
    * Check all node services are up and running
    *
@@ -16,10 +19,16 @@ function areServicesRunningFactory(configGroup, dockerCompose, services) {
 
     for (const config of configGroup) {
       if (config.name === 'local_seed') {
-        result = result && (await dockerCompose.isServiceRunning(config.toEnvs(), 'core'));
+        result = result && (await dockerCompose.isServiceRunning(
+          generateEnvs(configFile, config),
+          'core'
+        ));
       } else {
         for (const serviceName of Object.keys(services)) {
-          result = result && (await dockerCompose.isServiceRunning(config.toEnvs(), serviceName));
+          result = result && (await dockerCompose.isServiceRunning(
+            generateEnvs(configFile, config),
+            serviceName,
+          ));
         }
       }
     }

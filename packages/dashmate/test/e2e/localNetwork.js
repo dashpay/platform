@@ -25,7 +25,7 @@ describe('Local Network', function main() {
   let stopNodeTask;
   let restartNodeTask;
 
-  const groupName = 'testnet';
+  const groupName = 'local';
 
   before(async () => {
     container = await createDIContainer();
@@ -62,7 +62,7 @@ describe('Local Network', function main() {
 
     dockerCompose = await container.resolve('dockerCompose');
 
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
+    areServicesRunning = areServicesRunningFactory(configFile, group, dockerCompose, SERVICES);
   });
 
   after(async () => {
@@ -90,6 +90,8 @@ describe('Local Network', function main() {
         minerInterval: '2.5m',
         isVerbose: true,
       });
+
+      configFile = container.resolve('configFile');
 
       const configExists = configFile.isGroupExists(groupName);
 
