@@ -23,18 +23,18 @@ const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
 enum Commands {
     /// Start server in foreground.
     #[command()]
-    Start {},
+    Start,
     /// Dump configuration
     ///
     /// WARNING: output can contain sensitive data!
     #[command()]
-    Config {},
+    Config,
 
     /// Check status.
     ///
     /// Returns 0 on success.
     #[command()]
-    Status {},
+    Status,
 }
 
 /// Server that accepts connections from Tenderdash, and
