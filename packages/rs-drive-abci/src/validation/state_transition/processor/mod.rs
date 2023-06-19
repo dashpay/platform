@@ -4,11 +4,8 @@ use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::{StateTransition, StateTransitionAction};
-use dpp::validation::SimpleConsensusValidationResult;
-use drive::drive::Drive;
+use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
 
 /// There are 3 stages in a state transition processing:
