@@ -14,6 +14,7 @@ pub struct ChainAssetLockProof {
     #[serde(rename = "type")]
     asset_lock_type: u8,
     pub core_chain_locked_height: u32,
+    // TODO: Must be OutPoint
     pub out_point: Bytes36,
 }
 

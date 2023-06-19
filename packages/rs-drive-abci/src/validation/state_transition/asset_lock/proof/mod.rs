@@ -6,7 +6,6 @@ use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProved;
 use dpp::identity::KeyType;
 use dpp::prelude::AssetLockProof;
-use dpp::state_repository::StateRepositoryLike;
 use dpp::state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error;
 use dpp::state_transition::StateTransitionLike;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
@@ -34,7 +33,7 @@ pub fn validate_state<C: CoreRPCLike>(
 ) -> Result<SimpleConsensusValidationResult, Error> {
     match asset_lock_proof {
         AssetLockProof::Instant(proof) => instant::validate_state(proof, platform_ref, transaction),
-        AssetLockProof::Chain(proof) => chain::validate_state(proof, platform_ref),
+        AssetLockProof::Chain(proof) => chain::validate_state(proof, platform_ref, transaction),
     }
 }
 
