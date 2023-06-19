@@ -1,4 +1,6 @@
-use dpp::dashcore::{blockdata::{transaction::txout::TxOut}, consensus::encode::serialize, ScriptBuf};
+use dpp::dashcore::{
+    blockdata::transaction::txout::TxOut, consensus::encode::serialize, ScriptBuf,
+};
 
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
