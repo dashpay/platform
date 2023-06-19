@@ -94,6 +94,10 @@ class PlatformPromiseClient {
       this.client.getDataContract.bind(this.client),
     );
 
+    this.client.getDataContractHistory = promisify(
+      this.client.getDataContractHistory.bind(this.client),
+    );
+
     this.client.getDocuments = promisify(
       this.client.getDocuments.bind(this.client),
     );
