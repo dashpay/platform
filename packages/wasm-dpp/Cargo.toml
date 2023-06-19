@@ -25,6 +25,7 @@ num_enum = "0.5.7"
 wasm-bindgen-futures = "0.4.33"
 async-trait = "0.1.59"
 anyhow = "1.0.70"
+hex = { version = "0.4" }
 
 [profile.release]
 lto = true

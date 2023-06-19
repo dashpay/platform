@@ -4303,6 +4303,7 @@ dependencies = [
  "async-trait",
  "console_error_panic_hook",
  "dpp",
+ "hex",
  "itertools",
  "js-sys",
  "log",

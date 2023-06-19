@@ -1,7 +1,4 @@
-use dpp::dashcore::{
-    blockdata::{script::Script, transaction::txout::TxOut},
-    consensus::encode::serialize,
-};
+use dpp::dashcore::{blockdata::{transaction::txout::TxOut}, consensus::encode::serialize, ScriptBuf};
 
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -26,7 +23,7 @@ struct TxOutJS {
     #[serde(rename = "satoshis")]
     value: u64,
     #[serde(rename = "script")]
-    script_pubkey: Script,
+    script_pubkey: ScriptBuf,
 }
 
 #[derive(Serialize)]

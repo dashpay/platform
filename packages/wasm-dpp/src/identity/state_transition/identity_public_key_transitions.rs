@@ -1,5 +1,5 @@
 //todo: move this file to transition
-use dpp::dashcore::anyhow;
+use anyhow;
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::platform_value::BinaryData;
