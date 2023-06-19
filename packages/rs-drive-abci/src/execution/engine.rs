@@ -1,4 +1,4 @@
-use dashcore_rpc::dashcore::hashes::{Hash};
+use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
@@ -8,8 +8,8 @@ use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::error::Error::GroveDB;
 
 use drive::grovedb::Transaction;
-use std::collections::BTreeMap;
 use hex::ToHex;
+use std::collections::BTreeMap;
 
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;

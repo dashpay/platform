@@ -72,11 +72,10 @@ mod tests {
     use super::*;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
-
+    use dpp::dashcore::hashes::Hash;
     use rand::SeedableRng;
     use std::net::SocketAddr;
     use std::str::FromStr;
-    use dpp::dashcore::hashes::Hash;
 
     #[test]
     fn test_random_keys_update_determinism() {

@@ -60,9 +60,9 @@ use super::AbciError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
-use serde_json::Map;
 use dpp::dashcore::hashes::Hash;
 use hex::ToHex;
+use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -409,7 +409,7 @@ where
                 .keys()
                 .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec()
+                    extension: tx_id.to_byte_array().to_vec(),
                 })
                 .collect();
             Ok(proto::ResponseExtendVote {

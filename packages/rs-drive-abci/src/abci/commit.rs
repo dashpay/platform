@@ -170,7 +170,9 @@ mod test {
         };
 
         let block_id = BlockId {
-            hash: sha256::Hash::hash("blockID_hash".as_bytes()).to_byte_array().to_vec(),
+            hash: sha256::Hash::hash("blockID_hash".as_bytes())
+                .to_byte_array()
+                .to_vec(),
             part_set_header: Some(PartSetHeader {
                 total: 1000000,
                 hash: sha256::Hash::hash("blockID_part_set_header_hash".as_bytes())

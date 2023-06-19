@@ -9,6 +9,7 @@ use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::hashes::Hash;
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
@@ -26,7 +27,6 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::dashcore::hashes::Hash;
 
 impl<C> Platform<C>
 where

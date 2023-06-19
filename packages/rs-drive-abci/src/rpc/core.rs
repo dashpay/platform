@@ -1,4 +1,3 @@
-use dpp::dashcore::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
@@ -6,13 +5,14 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::ChainLock;
 use dpp::dashcore::InstantLock;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
 use tenderdash_abci::proto::types::CoreChainLock;
-use dpp::dashcore::hashes::Hash;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;

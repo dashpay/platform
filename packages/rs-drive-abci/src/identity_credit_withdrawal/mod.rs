@@ -11,6 +11,7 @@ use dashcore_rpc::dashcore::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::dashcore::ScriptBuf;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
@@ -21,7 +22,6 @@ use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 use serde_json::Value as JsonValue;
-use dpp::dashcore::ScriptBuf;
 
 use crate::block::BlockExecutionContext;
 use crate::{
@@ -541,7 +541,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{BlockHash};
+    use dashcore_rpc::dashcore::BlockHash;
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
@@ -554,9 +554,7 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
-        use std::collections::BTreeMap;
-        use std::str::FromStr;
-        use hex::ToHex;
+        use super::*;
         use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
@@ -567,8 +565,9 @@ mod tests {
             system_data_contracts::{load_system_data_contract, SystemDataContract},
         };
         use drive::tests::helpers::setup::setup_system_data_contract;
-
-        use super::*;
+        use hex::ToHex;
+        use std::collections::BTreeMap;
+        use std::str::FromStr;
 
         #[test]
         fn test_statuses_are_updated() {
@@ -757,8 +756,6 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-        use std::collections::{BTreeMap, HashMap};
-        use indexmap::IndexMap;
         use dpp::dashcore::hashes::Hash;
         use dpp::dashcore::QuorumHash;
         use dpp::identity::core_script::CoreScript;
@@ -769,6 +766,8 @@ mod tests {
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
+        use indexmap::IndexMap;
+        use std::collections::{BTreeMap, HashMap};
 
         use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
@@ -915,9 +914,9 @@ mod tests {
     }
 
     mod fetch_core_block_transactions {
-        use std::str::FromStr;
-        use hex::ToHex;
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use hex::ToHex;
+        use std::str::FromStr;
 
         use super::*;
 

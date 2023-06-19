@@ -8,8 +8,8 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::{OutPoint, TxOut};
 use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{OutPoint, TxOut};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::validation::ValidationResult;
 

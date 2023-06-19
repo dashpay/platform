@@ -235,8 +235,9 @@ mod test {
             },
         });
 
-        let pro_tx_hash = ProTxHash::from_str("a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f")
-            .expect("expected to create pro-tx-hash from slice");
+        let pro_tx_hash =
+            ProTxHash::from_str("a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f")
+                .expect("expected to create pro-tx-hash from slice");
 
         platform_state.hpmn_masternode_list.insert(pro_tx_hash.clone(), MasternodeListItem {
             node_type: MasternodeType::HighPerformance,

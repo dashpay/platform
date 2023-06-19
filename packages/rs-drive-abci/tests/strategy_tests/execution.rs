@@ -16,6 +16,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::dashcore::BlockHash;
 use drive_abci::abci::mimic::{self, MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
@@ -24,14 +25,13 @@ use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
+use hex::ToHex;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use std::collections::{BTreeMap, HashMap};
-use hex::ToHex;
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::Application;
-use dpp::dashcore::BlockHash;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -764,7 +764,8 @@ pub(crate) fn continue_chain_for_strategy(
             )
         }
 
-        let next_quorum_hash = QuorumHash::from_byte_array(next_validator_set_hash.try_into().unwrap());
+        let next_quorum_hash =
+            QuorumHash::from_byte_array(next_validator_set_hash.try_into().unwrap());
         if current_quorum_hash != next_quorum_hash {
             current_quorum_hash = next_quorum_hash;
             i = 0;

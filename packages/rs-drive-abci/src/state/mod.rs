@@ -107,7 +107,9 @@ impl From<PlatformState> for PlatformStateForSaving {
                 })
                 .collect(),
             current_validator_set_quorum_hash: value
-                .current_validator_set_quorum_hash.to_byte_array().into(),
+                .current_validator_set_quorum_hash
+                .to_byte_array()
+                .into(),
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
                 .map(|quorum_hash| quorum_hash.to_byte_array().into()),

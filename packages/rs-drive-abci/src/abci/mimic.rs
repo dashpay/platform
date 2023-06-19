@@ -283,8 +283,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     lock_time,
                     output,
                     base_payload,
-                } = deserialize(&transaction)
-                    .expect("a");
+                } = deserialize(&transaction).expect("a");
                 dashcore::Transaction {
                     version,
                     lock_time,

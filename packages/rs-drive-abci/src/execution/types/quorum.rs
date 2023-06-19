@@ -356,8 +356,7 @@ impl Validator {
             pro_tx_hash,
             public_key,
             node_ip: service.ip().to_string(),
-            node_id: PubkeyHash::from_slice(platform_node_id.as_slice())
-                .expect("Invalid node id"),
+            node_id: PubkeyHash::from_slice(platform_node_id.as_slice()).expect("Invalid node id"),
             core_port: service.port(),
             platform_http_port: *platform_http_port as u16,
             platform_p2p_port: *platform_p2p_port as u16,
