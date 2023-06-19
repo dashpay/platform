@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use anyhow;
-use dpp::{util::entropy_generator::EntropyGenerator};
+use dpp::util::entropy_generator::EntropyGenerator;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 pub(crate) struct TestEntropyGenerator {
