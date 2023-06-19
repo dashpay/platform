@@ -1,6 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::consensus::{deserialize};
+use dashcore::consensus::deserialize;
 use dashcore::{OutPoint, Transaction, TxOut};
 
 use serde::{Deserialize, Serialize};

@@ -1,7 +1,7 @@
 use anyhow::Result;
-use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
 use dashcore::block::Version;
 use dashcore::hashes::Hash;
+use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
 use getrandom::getrandom;
 use platform_value::Value;
 #[cfg(test)]

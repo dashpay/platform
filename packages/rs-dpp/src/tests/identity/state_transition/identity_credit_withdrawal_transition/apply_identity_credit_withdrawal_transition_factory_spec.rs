@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
-    use dashcore::{BlockHash, CompactTarget, consensus, Header, TxMerkleNode};
+    use dashcore::{consensus, BlockHash, CompactTarget, Header, TxMerkleNode};
 
     use std::collections::BTreeMap;
 
@@ -18,11 +18,11 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository::MockStateRepositoryLike,
         tests::fixtures::get_data_contract_fixture,
     };
+    use dashcore::block::Version;
+    use dashcore::hashes::Hash;
     use mockall::predicate::{always, eq};
     use platform_value::Value;
     use std::default::Default;
-    use dashcore::block::Version;
-    use dashcore::hashes::Hash;
 
     #[tokio::test]
     async fn should_fail_if_data_contract_was_not_found() {

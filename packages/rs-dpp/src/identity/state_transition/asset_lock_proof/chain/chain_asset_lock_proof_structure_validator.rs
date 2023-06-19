@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use dashcore::consensus::{deserialize};
+use dashcore::consensus::deserialize;
 use dashcore::hashes::Hash;
 use dashcore::OutPoint;
 use lazy_static::lazy_static;

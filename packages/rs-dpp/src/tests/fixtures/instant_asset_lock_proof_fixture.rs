@@ -1,10 +1,13 @@
 use std::str::FromStr;
 
-use dashcore::secp256k1::rand::thread_rng;
-use dashcore::secp256k1::Secp256k1;
-use dashcore::{secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, Transaction, TxIn, TxOut, Txid, ScriptBuf};
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
+use dashcore::secp256k1::rand::thread_rng;
+use dashcore::secp256k1::Secp256k1;
+use dashcore::{
+    secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn,
+    TxOut, Txid,
+};
 
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 

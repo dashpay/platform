@@ -205,7 +205,7 @@ mod test {
     use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::StateTransitionType;
-    use platform_value::{Identifier};
+    use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
 

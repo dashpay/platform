@@ -396,12 +396,9 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
     assert_eq!(consensus_error.code(), 1040);
     assert_eq!(
         error.public_key_id(),
-        raw_public_keys[1].get_integer::<KeyID>("id").unwrap()
+        raw_public_keys[1].get_integer::<KeyID>("id").unwrap(),
     );
-    assert_eq!(
-        error.validation_error(),
-        "key secp256k1 error"
-    );
+    assert_eq!(error.validation_error(), "key secp256k1 error");
 }
 
 #[test]

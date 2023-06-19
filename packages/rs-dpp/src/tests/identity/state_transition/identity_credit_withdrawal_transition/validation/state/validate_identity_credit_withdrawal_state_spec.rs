@@ -31,9 +31,9 @@ pub fn setup_test<SR: StateRepositoryLike>(
 #[cfg(test)]
 mod validate_identity_credit_withdrawal_transition_state_factory {
     use anyhow::Error;
-    use dashcore::{BlockHash, CompactTarget, consensus, Header, TxMerkleNode};
     use dashcore::block::Version;
     use dashcore::hashes::Hash;
+    use dashcore::{consensus, BlockHash, CompactTarget, Header, TxMerkleNode};
 
     use crate::assert_state_consensus_errors;
     use crate::consensus::codes::ErrorWithCode;
