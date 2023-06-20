@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::state;
+use crate::platform_types::platform_state;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;
@@ -30,8 +30,8 @@ where
     ///   there is a problem fetching the masternode list difference or updating the state.
     pub(in crate::execution::platform_events::core_based_updates) fn update_masternode_list_v0(
         &self,
-        platform_state: Option<&state::v0::PlatformState>,
-        block_platform_state: &mut state::v0::PlatformState,
+        platform_state: Option<&platform_state::v0::PlatformState>,
+        block_platform_state: &mut platform_state::v0::PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,

@@ -62,7 +62,7 @@ use dpp::serialization_traits::PlatformSerializable;
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use crate::platform_types::state::v0;
+use crate::platform_types::platform_state::v0;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use serde_json::Map;
 

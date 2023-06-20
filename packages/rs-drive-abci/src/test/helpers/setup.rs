@@ -113,7 +113,7 @@ impl TempPlatform<MockCoreRPCLike> {
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
         self.platform
-            .create_genesis_state(
+            .create_genesis_state_v0(
                 Default::default(),
                 static_system_identity_public_keys(),
                 None,

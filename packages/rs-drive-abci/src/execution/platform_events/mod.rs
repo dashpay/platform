@@ -4,6 +4,8 @@ pub(in crate::execution) mod block_fee_processing;
 pub(in crate::execution) mod core_based_updates;
 /// Core subsidy
 pub(in crate::execution) mod core_subsidy;
+/// Creating the genesis state
+pub(in crate::execution) mod create_genesis_state;
 /// Fee pools module
 pub(in crate::execution) mod fee_pool_inwards_distribution;
 /// Fee pool outwards distribution towards proposers
@@ -12,9 +14,6 @@ pub(in crate::execution) mod fee_pool_outwards_distribution;
 pub(in crate::execution) mod get_genesis_time;
 /// Functions related to IdentityCreditWithdrawalTransaction
 pub(in crate::execution) mod identity_credit_withdrawal;
-/// Initialization
-/// Init chain is called from abci
-pub(crate) mod initialization;
 /// Protocol upgrade events
 pub(in crate::execution) mod protocol_upgrade;
 /// State transition processing

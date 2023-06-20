@@ -219,7 +219,7 @@ mod tests {
         let genesis_time = 0;
 
         platform
-            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -254,7 +254,7 @@ mod tests {
         let genesis_time = 0;
 
         platform
-            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -294,7 +294,7 @@ mod tests {
         let genesis_time = 0;
 
         platform
-            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -318,7 +318,7 @@ mod tests {
         let genesis_time = 0;
 
         platform
-            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -369,7 +369,7 @@ mod tests {
         let genesis_time = 0;
 
         platform
-            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -448,7 +448,7 @@ mod tests {
         let genesis_time = 0;
 
         platform
-            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
             .expect("expected to create genesis state");
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);

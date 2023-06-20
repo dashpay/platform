@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::{state, validator_set};
+use crate::platform_types::{platform_state, validator_set};
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeType};
@@ -77,7 +77,7 @@ where
 
     pub(in crate::execution) fn update_state_masternode_list_v0(
         &self,
-        state: &mut state::v0::PlatformState,
+        state: &mut platform_state::v0::PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome, Error>

@@ -16,7 +16,7 @@ use dashcore_rpc::dashcore::BlockHash;
 use dpp::serialization_traits::PlatformDeserializable;
 
 use crate::execution::types::block_execution_context;
-use crate::platform_types::state::v0::PlatformState;
+use crate::platform_types::platform_state::v0::PlatformState;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 

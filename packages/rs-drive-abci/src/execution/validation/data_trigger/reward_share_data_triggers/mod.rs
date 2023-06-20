@@ -191,7 +191,7 @@ mod test {
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
-    use crate::platform_types::state::v0::PlatformState;
+    use crate::platform_types::platform_state::v0::PlatformState;
     use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};

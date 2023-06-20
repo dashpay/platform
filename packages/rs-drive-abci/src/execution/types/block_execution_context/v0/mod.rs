@@ -28,7 +28,7 @@
 //
 
 use crate::execution::types::block_state_info;
-use crate::platform_types::{epoch, state};
+use crate::platform_types::{epoch, platform_state};
 use dashcore_rpc::dashcore::Txid;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
@@ -44,7 +44,7 @@ pub struct BlockExecutionContext {
     /// Current withdrawal transactions hash -> Transaction
     pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>,
     /// Block state
-    pub block_platform_state: state::v0::PlatformState,
+    pub block_platform_state: platform_state::v0::PlatformState,
     /// The response prepare proposal if proposed by us
     pub proposer_results: Option<ResponsePrepareProposal>,
 }

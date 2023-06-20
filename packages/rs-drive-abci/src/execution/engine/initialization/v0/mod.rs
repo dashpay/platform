@@ -8,7 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
-use crate::platform_types::state::v0::PlatformInitializationState;
+use crate::platform_types::platform_state::v0::PlatformInitializationState;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
@@ -16,7 +16,7 @@ where
     C: CoreRPCLike,
 {
     /// Initialize the chain
-    pub fn init_chain(
+    pub(super) fn init_chain_v0(
         &self,
         request: RequestInitChain,
         transaction: &Transaction,
@@ -27,7 +27,7 @@ where
 
         let genesis_time = request.genesis_time;
 
-        self.create_genesis_state(
+        self.create_genesis_state_v0(
             genesis_time,
             self.config.abci.keys.clone().into(),
             Some(transaction),

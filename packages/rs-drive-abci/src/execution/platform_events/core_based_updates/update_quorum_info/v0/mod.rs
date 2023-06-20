@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::state;
+use crate::platform_types::platform_state;
 use crate::platform_types::validator_set;
 use crate::rpc::core::CoreRPCLike;
 use std::cmp::Ordering;
@@ -23,7 +23,7 @@ where
     ///   on success, or an `Error` on failure.
     pub(in crate::execution::platform_events::core_based_updates) fn update_quorum_info_v0(
         &self,
-        block_platform_state: &mut state::v0::PlatformState,
+        block_platform_state: &mut platform_state::v0::PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<(), Error> {

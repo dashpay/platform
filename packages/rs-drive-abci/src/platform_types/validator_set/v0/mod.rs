@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::platform_types::state::v0::PlatformState;
+use crate::platform_types::platform_state::v0::PlatformState;
 use crate::platform_types::validator::v0::Validator;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};

@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::state;
+use crate::platform_types::platform_state;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
@@ -14,7 +14,7 @@ where
     /// context state
     pub(in crate::execution) fn validator_set_update_v0(
         &self,
-        platform_state: &state::v0::PlatformState,
+        platform_state: &platform_state::v0::PlatformState,
         block_execution_context: &mut block_execution_context::v0::BlockExecutionContext,
     ) -> Result<Option<ValidatorSetUpdate>, Error> {
         let mut perform_rotation = false;

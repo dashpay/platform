@@ -43,10 +43,10 @@ pub mod epoch;
 pub mod masternode;
 /// Main platform structs, not versioned
 pub mod platform;
+/// Platform state
+pub mod platform_state;
 /// Querying
 pub mod query;
-/// Platform state
-pub mod state;
 /// The validator module
 /// A validator is a masternode that can participate in consensus by being part of a validator set
 pub mod validator;

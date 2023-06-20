@@ -143,7 +143,7 @@ mod tests {
     use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
     use crate::execution::types::block_state_info::v0::BlockStateInfo;
     use crate::platform_types::epoch::v0::EpochInfo;
-    use crate::platform_types::state::v0::PlatformState;
+    use crate::platform_types::platform_state::v0::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
