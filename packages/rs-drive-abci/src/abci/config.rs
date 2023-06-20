@@ -9,6 +9,8 @@ use serde_with::serde_as;
 
 use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 
+// We allow changes in the ABCI configuration, but there should be a social process
+// involved in making this change.
 // @append_only
 /// AbciAppConfig stores configuration of the ABCI Application.
 #[derive(Clone, Debug, Serialize, Deserialize)]
