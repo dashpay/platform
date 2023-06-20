@@ -29,10 +29,10 @@
 
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform::block_proposal::v0::BlockProposal;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use crate::platform::block_proposal::v0::BlockProposalV0;
 
 /// Block info
 #[derive(Debug)]
@@ -67,7 +67,7 @@ impl BlockStateInfo {
     }
     /// Generate block state info based on Prepare Proposal request
     pub fn from_block_proposal(
-        proposal: &BlockProposalV0,
+        proposal: &BlockProposal,
         previous_block_time_ms: Option<u64>,
     ) -> BlockStateInfo {
         BlockStateInfo {

@@ -16,8 +16,8 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::execution::validation::ValidationResultWasm;
 use crate::utils::WithJsError;
-use crate::validation::ValidationResultWasm;
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     DataContractCreateTransitionWasm, StateTransitionExecutionContextWasm,

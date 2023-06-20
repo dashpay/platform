@@ -6,7 +6,7 @@ use tenderdash_abci::proto::version::Consensus;
 
 /// The block proposal is the combination of information that a proposer will propose,
 /// Or that a validator or full node will process
-pub struct BlockProposalV0<'a> {
+pub struct BlockProposal<'a> {
     /// Consensus Versions
     pub consensus_versions: Consensus,
     /// Block hash
@@ -29,7 +29,7 @@ pub struct BlockProposalV0<'a> {
     pub raw_state_transitions: &'a Vec<Vec<u8>>,
 }
 
-impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposalV0<'a> {
+impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
     type Error = Error;
 
     fn try_from(value: &'a RequestPrepareProposal) -> Result<Self, Self::Error> {
@@ -78,13 +78,13 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposalV0<'a> {
             return Err(AbciError::BadRequest(
                 "height is negative in request prepare proposal".to_string(),
             )
-                .into());
+            .into());
         }
         if *round < 0 {
             return Err(AbciError::BadRequest(
                 "round is negative in request prepare proposal".to_string(),
             )
-                .into());
+            .into());
         }
         Ok(Self {
             consensus_versions,
@@ -102,7 +102,7 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposalV0<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposalV0<'a> {
+impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
     type Error = Error;
 
     fn try_from(value: &'a RequestProcessProposal) -> Result<Self, Self::Error> {
@@ -158,13 +158,13 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposalV0<'a> {
             return Err(AbciError::BadRequest(
                 "height is negative in request process proposal".to_string(),
             )
-                .into());
+            .into());
         }
         if *round < 0 {
             return Err(AbciError::BadRequest(
                 "round is negative in request process proposal".to_string(),
             )
-                .into());
+            .into());
         }
         Ok(Self {
             consensus_versions,

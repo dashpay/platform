@@ -1,15 +1,14 @@
-
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
+use crate::platform::cleaned_abci_messages::cleaned_block_id::v0::CleanedBlockId;
+use crate::platform::cleaned_abci_messages::cleaned_commit_info::v0::CleanedCommitInfo;
 use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, PartSetHeader, VoteExtension,
 };
 use tenderdash_abci::proto::version;
-use crate::platform::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
-use crate::platform::cleaned_abci_messages::cleaned_block_id::v0::CleanedBlockId;
-use crate::platform::cleaned_abci_messages::cleaned_commit_info::v0::CleanedCommitInfo;
 
 /// The `FinalizeBlockCleanedRequest` struct represents a `RequestFinalizeBlock` that has been
 /// properly formatted.
@@ -75,13 +74,13 @@ impl TryFrom<RequestFinalizeBlock> for FinalizeBlockCleanedRequest {
             return Err(AbciError::BadRequest(
                 "height is negative in request prepare proposal".to_string(),
             )
-                .into());
+            .into());
         }
         if round < 0 {
             return Err(AbciError::BadRequest(
                 "round is negative in request prepare proposal".to_string(),
             )
-                .into());
+            .into());
         }
 
         Ok(FinalizeBlockCleanedRequest {

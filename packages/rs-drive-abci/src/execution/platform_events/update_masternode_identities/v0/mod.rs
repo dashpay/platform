@@ -6,6 +6,7 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 
+use crate::platform::state::v0::PlatformState;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
@@ -26,11 +27,10 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use crate::platform::state::v0::PlatformState;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Update of the masternode identities
     pub fn update_masternode_identities_v0(
@@ -353,10 +353,10 @@ impl<C> Platform<C>
                     if needs_change_operator_payout_address {
                         if Some(key.data.as_slice())
                             == old_masternode
-                            .state
-                            .operator_payout_address
-                            .as_ref()
-                            .map(|bytes| bytes.as_slice())
+                                .state
+                                .operator_payout_address
+                                .as_ref()
+                                .map(|bytes| bytes.as_slice())
                         {
                             return Some(key_id);
                         } else if let Some(operator_payout_address) =
@@ -462,7 +462,7 @@ impl<C> Platform<C>
                     }
                     if old_masternode.state.platform_node_id.is_some()
                         && key.data.as_slice()
-                        == old_masternode.state.platform_node_id.as_ref().unwrap()
+                            == old_masternode.state.platform_node_id.as_ref().unwrap()
                     {
                         return Some(key_id);
                     }

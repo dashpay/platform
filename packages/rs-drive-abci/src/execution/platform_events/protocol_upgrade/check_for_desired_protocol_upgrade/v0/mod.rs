@@ -1,4 +1,3 @@
-
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
@@ -22,11 +21,11 @@ impl<C> Platform<C> {
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1
             + (total_hpmns as u64)
-            .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
-            .and_then(|product| product.checked_div(100))
-            .ok_or(Error::Execution(ExecutionError::Overflow(
-                "overflow for required block count",
-            )))?;
+                .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
+                .and_then(|product| product.checked_div(100))
+                .ok_or(Error::Execution(ExecutionError::Overflow(
+                    "overflow for required block count",
+                )))?;
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
         let mut cache = self.drive.cache.write().unwrap();

@@ -39,7 +39,6 @@ use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
@@ -61,10 +60,10 @@ use super::AbciError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
-use crate::execution::withdrawal::WithdrawalTxs;
-use serde_json::Map;
-use crate::platform::block_proposal::v0::BlockProposalV0;
+use crate::platform::block_execution_outcome;
+use crate::platform::block_proposal::v0::BlockProposal;
 use crate::platform::state::v0;
+use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -154,7 +153,7 @@ where
             Err(_) => None,
         };
 
-        let mut block_proposal: BlockProposalV0 = (&request).try_into()?;
+        let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             tracing::info!(
@@ -193,7 +192,7 @@ where
             return Err(run_result.errors.first().unwrap().to_string().into());
         }
 
-        let BlockExecutionOutcome {
+        let block_execution_outcome::v0::BlockExecutionOutcome {
             app_hash,
             tx_results,
             validator_set_update,
@@ -485,7 +484,7 @@ where
         //     });
         // };
 
-        let validation_result = self.platform.check_withdrawals(
+        let validation_result = self.platform.check_withdrawals_v0(
             &got,
             &expected,
             height as u64,

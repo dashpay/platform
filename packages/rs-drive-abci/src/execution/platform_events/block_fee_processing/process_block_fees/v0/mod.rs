@@ -43,10 +43,10 @@ use drive::grovedb::Transaction;
 use crate::abci::messages::BlockFees;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::Platform;
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use crate::execution::types::{block_state_info, processed_block_fees_outcome};
 use crate::platform::epoch::v0::EpochInfo;
+use crate::platform::Platform;
+use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -66,7 +66,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// and distributing the block fees from the previous block and applies the batch.
     ///
     /// Returns `ProcessedBlockFeesOutcome`.
-    pub fn process_block_fees(
+    pub fn process_block_fees_v0(
         &self,
         block_info: &block_state_info::v0::BlockStateInfo,
         epoch_info: &EpochInfo,
@@ -78,7 +78,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         let mut batch = vec![];
 
         let storage_fee_distribution_outcome = if epoch_info.is_epoch_change {
-            self.add_process_epoch_change_operations(
+            self.add_process_epoch_change_operations_v0(
                 block_info,
                 epoch_info,
                 &block_fees,
@@ -121,7 +121,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             };
 
         let payouts = self
-            .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+            .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0(
                 epoch_info.current_epoch_index,
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,
@@ -129,7 +129,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 &mut batch,
             )?;
 
-        let fees_in_pools = self.add_distribute_block_fees_into_pools_operations(
+        let fees_in_pools = self.add_distribute_block_fees_into_pools_operations_v0(
             &current_epoch,
             &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
@@ -195,261 +195,258 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 mod tests {
     use super::*;
 
+    use super::*;
     use chrono::Utc;
     use rust_decimal::prelude::ToPrimitive;
-        use super::*;
 
-        use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
-        use drive::common::helpers::identities::create_test_masternode_identities;
+    use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
+    use drive::common::helpers::identities::create_test_masternode_identities;
     use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 
     mod helpers {
-            use super::*;
-            use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
-            use crate::execution::types::block_state_info::v0::BlockStateInfo;
-            use crate::platform::epoch::v0::EPOCH_CHANGE_TIME_MS_V0;
+        use super::*;
+        use crate::execution::types::block_state_info::v0::BlockStateInfo;
+        use crate::platform::epoch::v0::EPOCH_CHANGE_TIME_MS_V0;
+        use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
-            /// Process and validate block fees
-            pub fn process_and_validate_block_fees<C>(
-                platform: &Platform<C>,
-                genesis_time_ms: u64,
-                epoch_index: u16,
-                block_height: u64,
-                previous_block_time_ms: Option<u64>,
-                proposer_pro_tx_hash: [u8; 32],
-                transaction: &Transaction,
-            ) -> BlockStateInfo {
-                let current_epoch = Epoch::new(epoch_index).unwrap();
+        /// Process and validate block fees
+        pub fn process_and_validate_block_fees<C>(
+            platform: &Platform<C>,
+            genesis_time_ms: u64,
+            epoch_index: u16,
+            block_height: u64,
+            previous_block_time_ms: Option<u64>,
+            proposer_pro_tx_hash: [u8; 32],
+            transaction: &Transaction,
+        ) -> BlockStateInfo {
+            let current_epoch = Epoch::new(epoch_index).unwrap();
 
-                let block_time_ms =
-                    genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0 + block_height;
+            let block_time_ms =
+                genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0 + block_height;
 
-                let block_info = BlockStateInfo {
-                    height: block_height,
-                    round: 0,
-                    block_time_ms,
-                    previous_block_time_ms,
-                    proposer_pro_tx_hash,
-                    core_chain_locked_height: 1,
-                    block_hash: None,
-                    app_hash: None,
-                };
+            let block_info = BlockStateInfo {
+                height: block_height,
+                round: 0,
+                block_time_ms,
+                previous_block_time_ms,
+                proposer_pro_tx_hash,
+                core_chain_locked_height: 1,
+                block_hash: None,
+                app_hash: None,
+            };
 
-                let epoch_info =
-                    EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
-                        .expect("should calculate epoch info");
+            let epoch_info =
+                EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
+                    .expect("should calculate epoch info");
 
-                let block_fees = BlockFees {
-                    storage_fee: 100000,
-                    processing_fee: 10000,
-                    refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
-                };
+            let block_fees = BlockFees {
+                storage_fee: 100000,
+                processing_fee: 10000,
+                refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
+            };
 
-                let storage_fee_distribution_outcome = platform
-                    .process_block_fees(&block_info, &epoch_info, block_fees.clone(), transaction)
-                    .expect("should process block fees");
+            let storage_fee_distribution_outcome = platform
+                .process_block_fees_v0(&block_info, &epoch_info, block_fees.clone(), transaction)
+                .expect("should process block fees");
 
-                // Should process epoch change
-                // and distribute aggregated storage fees into pools on epoch > 0
+            // Should process epoch change
+            // and distribute aggregated storage fees into pools on epoch > 0
 
-                let aggregated_storage_fees = platform
-                    .drive
-                    .get_storage_fees_from_distribution_pool(Some(transaction))
-                    .expect("should get storage fees from distribution pool");
+            let aggregated_storage_fees = platform
+                .drive
+                .get_storage_fees_from_distribution_pool(Some(transaction))
+                .expect("should get storage fees from distribution pool");
 
-                if epoch_info.is_epoch_change {
-                    if epoch_info.current_epoch_index == GENESIS_EPOCH_INDEX {
-                        assert_eq!(aggregated_storage_fees, block_fees.storage_fee);
-                    } else {
-                        // Assuming leftovers
-                        assert!(
-                            block_fees.storage_fee <= aggregated_storage_fees
-                                && aggregated_storage_fees < block_fees.storage_fee + 1000
-                        );
-                    };
+            if epoch_info.is_epoch_change {
+                if epoch_info.current_epoch_index == GENESIS_EPOCH_INDEX {
+                    assert_eq!(aggregated_storage_fees, block_fees.storage_fee);
                 } else {
-                    assert!(aggregated_storage_fees > block_fees.storage_fee);
-                }
-
-                // Should increment proposer block count
-
-                let proposers_block_count = platform
-                    .drive
-                    .get_epochs_proposer_block_count(
-                        &current_epoch,
-                        &proposer_pro_tx_hash,
-                        Some(transaction),
-                    )
-                    .expect("should get proposers");
-
-                assert_ne!(proposers_block_count, 0);
-
-                // Should pay for previous epoch
-
-                if epoch_info.is_epoch_change && epoch_index > GENESIS_EPOCH_INDEX {
-                    assert!(storage_fee_distribution_outcome.payouts.is_some());
-                } else {
-                    assert!(storage_fee_distribution_outcome.payouts.is_none());
-                }
-
-                // Should distribute block fees into pools
-
-                let processing_fees = platform
-                    .drive
-                    .get_epoch_processing_credits_for_distribution(
-                        &current_epoch,
-                        Some(transaction),
-                    )
-                    .expect("should get processing credits");
-
-                assert_ne!(processing_fees, 0);
-
-                block_info
+                    // Assuming leftovers
+                    assert!(
+                        block_fees.storage_fee <= aggregated_storage_fees
+                            && aggregated_storage_fees < block_fees.storage_fee + 1000
+                    );
+                };
+            } else {
+                assert!(aggregated_storage_fees > block_fees.storage_fee);
             }
+
+            // Should increment proposer block count
+
+            let proposers_block_count = platform
+                .drive
+                .get_epochs_proposer_block_count(
+                    &current_epoch,
+                    &proposer_pro_tx_hash,
+                    Some(transaction),
+                )
+                .expect("should get proposers");
+
+            assert_ne!(proposers_block_count, 0);
+
+            // Should pay for previous epoch
+
+            if epoch_info.is_epoch_change && epoch_index > GENESIS_EPOCH_INDEX {
+                assert!(storage_fee_distribution_outcome.payouts.is_some());
+            } else {
+                assert!(storage_fee_distribution_outcome.payouts.is_none());
+            }
+
+            // Should distribute block fees into pools
+
+            let processing_fees = platform
+                .drive
+                .get_epoch_processing_credits_for_distribution(&current_epoch, Some(transaction))
+                .expect("should get processing credits");
+
+            assert_ne!(processing_fees, 0);
+
+            block_info
         }
+    }
 
-        #[test]
-        fn test_process_3_block_fees_from_different_epochs() {
-            // We are not adding to the overall platform credits so we can't verify
-            // the sum trees
-            let platform = TestPlatformBuilder::new()
-                .with_config(PlatformConfig {
-                    verify_sum_trees: false,
-                    ..Default::default()
-                })
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
+    #[test]
+    fn test_process_3_block_fees_from_different_epochs() {
+        // We are not adding to the overall platform credits so we can't verify
+        // the sum trees
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                verify_sum_trees: false,
+                ..Default::default()
+            })
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
 
-            let transaction = platform.drive.grove.start_transaction();
+        let transaction = platform.drive.grove.start_transaction();
 
-            platform.create_mn_shares_contract(Some(&transaction));
+        platform.create_mn_shares_contract(Some(&transaction));
 
-            let proposers =
-                create_test_masternode_identities(&platform.drive, 6, Some(56), Some(&transaction));
+        let proposers =
+            create_test_masternode_identities(&platform.drive, 6, Some(56), Some(&transaction));
 
-            let genesis_time_ms = Utc::now()
-                .timestamp_millis()
-                .to_u64()
-                .expect("block time can not be before 1970");
+        let genesis_time_ms = Utc::now()
+            .timestamp_millis()
+            .to_u64()
+            .expect("block time can not be before 1970");
 
-            /*
-            Process first block of epoch 0 (genesis epoch)
+        /*
+        Process first block of epoch 0 (genesis epoch)
 
-            Should change epoch to 0
-            Should not pay to proposers
-             */
+        Should change epoch to 0
+        Should not pay to proposers
+         */
 
-            let epoch_index = GENESIS_EPOCH_INDEX;
-            let mut block_height = 1;
+        let epoch_index = GENESIS_EPOCH_INDEX;
+        let mut block_height = 1;
 
-            let block_info = helpers::process_and_validate_block_fees(
-                &platform,
-                genesis_time_ms,
-                epoch_index,
-                block_height,
-                None,
-                proposers[0],
-                &transaction,
-            );
+        let block_info = helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            epoch_index,
+            block_height,
+            None,
+            proposers[0],
+            &transaction,
+        );
 
-            /*
-            Process second block of epoch 0
+        /*
+        Process second block of epoch 0
 
-            Should not change epoch
-            Should not pay to proposers
-             */
+        Should not change epoch
+        Should not pay to proposers
+         */
 
-            let epoch_index = GENESIS_EPOCH_INDEX;
-            block_height += 1;
+        let epoch_index = GENESIS_EPOCH_INDEX;
+        block_height += 1;
 
-            let block_info = helpers::process_and_validate_block_fees(
-                &platform,
-                genesis_time_ms,
-                epoch_index,
-                block_height,
-                Some(block_info.block_time_ms),
-                proposers[1],
-                &transaction,
-            );
+        let block_info = helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            epoch_index,
+            block_height,
+            Some(block_info.block_time_ms),
+            proposers[1],
+            &transaction,
+        );
 
-            /*
-            Process first block of epoch 1
+        /*
+        Process first block of epoch 1
 
-            Should change epoch to 1
-            Should pay to proposers from epoch 0
-             */
+        Should change epoch to 1
+        Should pay to proposers from epoch 0
+         */
 
-            let epoch_index = GENESIS_EPOCH_INDEX + 1;
-            block_height += 1;
+        let epoch_index = GENESIS_EPOCH_INDEX + 1;
+        block_height += 1;
 
-            let block_info = helpers::process_and_validate_block_fees(
-                &platform,
-                genesis_time_ms,
-                epoch_index,
-                block_height,
-                Some(block_info.block_time_ms),
-                proposers[2],
-                &transaction,
-            );
+        let block_info = helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            epoch_index,
+            block_height,
+            Some(block_info.block_time_ms),
+            proposers[2],
+            &transaction,
+        );
 
-            /*
-            Process second block of epoch 1
+        /*
+        Process second block of epoch 1
 
-            Should not change epoch
-            Should not pay to proposers 0
-             */
+        Should not change epoch
+        Should not pay to proposers 0
+         */
 
-            let epoch_index = GENESIS_EPOCH_INDEX + 1;
-            block_height += 1;
+        let epoch_index = GENESIS_EPOCH_INDEX + 1;
+        block_height += 1;
 
-            let block_info = helpers::process_and_validate_block_fees(
-                &platform,
-                genesis_time_ms,
-                epoch_index,
-                block_height,
-                Some(block_info.block_time_ms),
-                proposers[3],
-                &transaction,
-            );
+        let block_info = helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            epoch_index,
+            block_height,
+            Some(block_info.block_time_ms),
+            proposers[3],
+            &transaction,
+        );
 
-            /*
-            Process first block of epoch 3, skipping epoch 2 (i.e. chain halt)
+        /*
+        Process first block of epoch 3, skipping epoch 2 (i.e. chain halt)
 
-            Should change epoch to 3
-            Should pay to proposers for epoch 1
-             */
+        Should change epoch to 3
+        Should pay to proposers for epoch 1
+         */
 
-            let epoch_index = GENESIS_EPOCH_INDEX + 3;
-            block_height += 1;
+        let epoch_index = GENESIS_EPOCH_INDEX + 3;
+        block_height += 1;
 
-            let block_info = helpers::process_and_validate_block_fees(
-                &platform,
-                genesis_time_ms,
-                epoch_index,
-                block_height,
-                Some(block_info.block_time_ms),
-                proposers[3],
-                &transaction,
-            );
+        let block_info = helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            epoch_index,
+            block_height,
+            Some(block_info.block_time_ms),
+            proposers[3],
+            &transaction,
+        );
 
-            /*
-            Process second block of epoch 3
+        /*
+        Process second block of epoch 3
 
-            Should not change epoch
-            Should not pay to proposers
-             */
+        Should not change epoch
+        Should not pay to proposers
+         */
 
-            let epoch_index = GENESIS_EPOCH_INDEX + 3;
-            block_height += 1;
+        let epoch_index = GENESIS_EPOCH_INDEX + 3;
+        block_height += 1;
 
-            helpers::process_and_validate_block_fees(
-                &platform,
-                genesis_time_ms,
-                epoch_index,
-                block_height,
-                Some(block_info.block_time_ms),
-                proposers[4],
-                &transaction,
-            );
-        }
+        helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            epoch_index,
+            block_height,
+            Some(block_info.block_time_ms),
+            proposers[4],
+            &transaction,
+        );
+    }
 }

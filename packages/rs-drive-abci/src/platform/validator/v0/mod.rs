@@ -1,7 +1,6 @@
-
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::state::PlatformState;
+
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};

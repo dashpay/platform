@@ -1,7 +1,7 @@
+pub(crate) mod cleaned_block;
+pub(crate) mod cleaned_block_id;
 pub(crate) mod cleaned_commit_info;
 pub(crate) mod cleaned_header;
-pub(crate) mod cleaned_block_id;
-pub(crate) mod cleaned_block;
 pub(crate) mod finalized_block_cleaned_request;
 
 fn hash_or_default(hash: Vec<u8>) -> Result<[u8; 32], <Vec<u8> as TryInto<[u8; 32]>>::Error> {

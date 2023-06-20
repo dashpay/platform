@@ -1,9 +1,22 @@
+use crate::error::Error;
+use crate::execution::types::execution_result::ExecutionResult::{
+    ConsensusExecutionError, SuccessfulPaidExecution,
+};
+use crate::execution::validation::state_transition::processor::process_state_transition;
+use crate::platform::state;
+use crate::platform::{Platform, PlatformRef};
+use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
+use dpp::state_transition::StateTransition;
+use dpp::validation::SimpleConsensusValidationResult;
+use drive::fee::result::FeeResult;
+use drive::grovedb::Transaction;
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-
     /// Processes the given raw state transitions based on the `block_info` and `transaction`.
     ///
     /// This function takes a reference to a vector of raw state transitions, `BlockInfo`, and a `Transaction`
@@ -27,10 +40,10 @@ impl<C> Platform<C>
     /// This function may return an `Error` variant if there is a problem with deserializing the raw
     /// state transitions, processing state transitions, or executing events.
     ///
-    pub(crate) fn process_raw_state_transitions(
+    pub(crate) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-        block_platform_state: &PlatformState,
+        block_platform_state: &state::v0::PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {

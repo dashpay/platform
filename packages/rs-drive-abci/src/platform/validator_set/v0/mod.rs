@@ -1,7 +1,7 @@
-
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::state::PlatformState;
+
+use crate::platform::validator::v0::Validator;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
@@ -12,7 +12,6 @@ use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
-use crate::platform::validator::v0::Validator;
 
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members

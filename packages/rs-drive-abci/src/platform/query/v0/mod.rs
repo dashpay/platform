@@ -26,6 +26,7 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::drive::identity::IdentityDriveQuery;
 use drive::drive::identity::IdentityProveRequestType;
 
+use crate::platform::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
@@ -38,7 +39,6 @@ use drive::error::contract::ContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
-use crate::platform::query::QueryValidationResult;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     match value {
@@ -122,7 +122,7 @@ impl<C> Platform<C> {
                         })),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let identity = check_validation_result_with_data!(self
                         .drive
@@ -133,12 +133,12 @@ impl<C> Platform<C> {
                                 .serialize_consume()
                                 .map_err(QueryError::Protocol))
                             .transpose()))
-                        .unwrap_or_default();
+                    .unwrap_or_default();
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Identity(identity)),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -164,7 +164,7 @@ impl<C> Platform<C> {
                             round: state.last_block_round(),
                         })),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let identities = check_validation_result_with_data!(self
                         .drive
@@ -196,7 +196,7 @@ impl<C> Platform<C> {
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -217,7 +217,7 @@ impl<C> Platform<C> {
                         })),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let balance = check_validation_result_with_data!(self
                         .drive
@@ -228,7 +228,7 @@ impl<C> Platform<C> {
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -249,7 +249,7 @@ impl<C> Platform<C> {
                         })),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let balance = check_validation_result_with_data!(self
                         .drive
@@ -265,7 +265,7 @@ impl<C> Platform<C> {
                         ),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -333,7 +333,7 @@ impl<C> Platform<C> {
                         })),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let keys: SerializedKeyVec = check_validation_result_with_data!(self
                         .drive
@@ -344,7 +344,7 @@ impl<C> Platform<C> {
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -365,21 +365,21 @@ impl<C> Platform<C> {
                         })),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let contract = check_validation_result_with_data!(self
                         .drive
                         .fetch_contract(contract_id.into_buffer(), None, None, None)
                         .unwrap())
-                        .map(|contract| contract.contract.serialize())
-                        .transpose()?;
+                    .map(|contract| contract.contract.serialize())
+                    .transpose()?;
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::DataContract(
                             contract.unwrap_or_default(),
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -405,7 +405,7 @@ impl<C> Platform<C> {
                             round: state.last_block_round(),
                         })),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let contracts = check_validation_result_with_data!(self
                         .drive
@@ -439,7 +439,7 @@ impl<C> Platform<C> {
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -493,7 +493,7 @@ impl<C> Platform<C> {
                             round: state.last_block_round(),
                         })),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let contracts =
                         check_validation_result_with_data!(self.drive.fetch_contract_with_history(
@@ -531,7 +531,7 @@ impl<C> Platform<C> {
                         ),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -650,19 +650,19 @@ impl<C> Platform<C> {
                         })),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let results = check_validation_result_with_data!(
                         drive_query.execute_raw_results_no_proof(&self.drive, None, None,)
                     )
-                        .0;
+                    .0;
                     GetDocumentsResponse {
                         result: Some(get_documents_response::Result::Documents(
                             get_documents_response::Documents { documents: results },
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -692,7 +692,7 @@ impl<C> Platform<C> {
                             },
                         )),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     let maybe_identity = check_validation_result_with_data!(self
                         .drive
@@ -708,7 +708,7 @@ impl<C> Platform<C> {
                             ),
                         ),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -743,7 +743,7 @@ impl<C> Platform<C> {
                         )),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 } else {
                     //todo: fix this so we return optionals
                     let identities = check_validation_result_with_data!(self
@@ -766,7 +766,7 @@ impl<C> Platform<C> {
                         ),
                         metadata: Some(metadata),
                     }
-                        .encode_to_vec()
+                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
@@ -827,7 +827,7 @@ impl<C> Platform<C> {
                     }),
                     metadata: Some(metadata),
                 }
-                    .encode_to_vec();
+                .encode_to_vec();
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             other => Ok(QueryValidationResult::new_with_error(QueryError::Query(
@@ -1083,7 +1083,7 @@ mod test {
                 Some(10),
                 Some(0),
             )
-                .expect("To verify contract history");
+            .expect("To verify contract history");
 
             let mut history_entries = contract_history.expect("history to exist");
 

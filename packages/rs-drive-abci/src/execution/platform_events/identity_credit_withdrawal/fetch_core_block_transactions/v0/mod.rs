@@ -22,7 +22,6 @@ use drive::grovedb::Transaction;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 use serde_json::Value as JsonValue;
 
-use crate::block::BlockExecutionContext;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform::Platform,
@@ -30,11 +29,11 @@ use crate::{
 };
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Fetch Core transactions by range of Core heights
-    pub fn fetch_core_block_transactions(
+    pub fn fetch_core_block_transactions_v0(
         &self,
         last_synced_core_height: u32,
         core_chain_locked_height: u32,
@@ -75,7 +74,6 @@ impl<C> Platform<C>
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use dashcore_rpc::dashcore::{
@@ -88,73 +86,67 @@ mod tests {
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
-    use crate::{
-        block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo,
-        rpc::core::MockCoreRPCLike,
-    };
-        use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::setup::TestPlatformBuilder;
 
-        use super::*;
+    use super::*;
 
-        #[test]
-        fn test_fetches_core_transactions() {
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
+    #[test]
+    fn test_fetches_core_transactions() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
 
-            let mut mock_rpc_client = MockCoreRPCLike::new();
+        let mut mock_rpc_client = MockCoreRPCLike::new();
 
-            mock_rpc_client
-                .expect_get_block_hash()
-                .withf(|height| *height == 1)
-                .returning(|_| {
-                    Ok(BlockHash::from_hex(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
-                    )
-                        .unwrap())
-                });
+        mock_rpc_client
+            .expect_get_block_hash()
+            .withf(|height| *height == 1)
+            .returning(|_| {
+                Ok(BlockHash::from_hex(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap())
+            });
 
-            mock_rpc_client
-                .expect_get_block_hash()
-                .withf(|height| *height == 2)
-                .returning(|_| {
-                    Ok(BlockHash::from_hex(
-                        "1111111111111111111111111111111111111111111111111111111111111111",
-                    )
-                        .unwrap())
-                });
+        mock_rpc_client
+            .expect_get_block_hash()
+            .withf(|height| *height == 2)
+            .returning(|_| {
+                Ok(BlockHash::from_hex(
+                    "1111111111111111111111111111111111111111111111111111111111111111",
+                )
+                .unwrap())
+            });
 
-            mock_rpc_client
-                .expect_get_block_json()
-                .withf(|bh| {
-                    bh.to_hex()
-                        == "0000000000000000000000000000000000000000000000000000000000000000"
-                })
-                .returning(|_| {
-                    Ok(json!({
-                        "tx": ["1"]
-                    }))
-                });
+        mock_rpc_client
+            .expect_get_block_json()
+            .withf(|bh| {
+                bh.to_hex() == "0000000000000000000000000000000000000000000000000000000000000000"
+            })
+            .returning(|_| {
+                Ok(json!({
+                    "tx": ["1"]
+                }))
+            });
 
-            mock_rpc_client
-                .expect_get_block_json()
-                .withf(|bh| {
-                    bh.to_hex()
-                        == "1111111111111111111111111111111111111111111111111111111111111111"
-                })
-                .returning(|_| {
-                    Ok(json!({
-                        "tx": ["2"]
-                    }))
-                });
+        mock_rpc_client
+            .expect_get_block_json()
+            .withf(|bh| {
+                bh.to_hex() == "1111111111111111111111111111111111111111111111111111111111111111"
+            })
+            .returning(|_| {
+                Ok(json!({
+                    "tx": ["2"]
+                }))
+            });
 
-            platform.core_rpc = mock_rpc_client;
+        platform.core_rpc = mock_rpc_client;
 
-            let transactions = platform
-                .fetch_core_block_transactions(1, 2)
-                .expect("to fetch core transactions");
+        let transactions = platform
+            .fetch_core_block_transactions_v0(1, 2)
+            .expect("to fetch core transactions");
 
-            assert_eq!(transactions.len(), 2);
-            assert_eq!(transactions, ["1", "2"]);
-        }
+        assert_eq!(transactions.len(), 2);
+        assert_eq!(transactions, ["1", "2"]);
+    }
 }

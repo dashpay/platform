@@ -6,8 +6,8 @@ use dpp::ProtocolError;
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
+use crate::execution::validation::ValidationResultWasm;
 use crate::utils::ToSerdeJSONExt;
-use crate::validation::ValidationResultWasm;
 
 #[wasm_bindgen(js_name=IdentityCreditTransferTransitionBasicValidator)]
 pub struct IdentityCreditTransferTransitionBasicValidatorWasm(

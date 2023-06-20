@@ -1,4 +1,3 @@
-
 use crate::abci::messages::RequestInitChainCleanedParams;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -9,12 +8,12 @@ use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 use crate::platform::state::v0::PlatformInitializationState;
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Initialize the chain
     pub fn init_chain(
@@ -36,7 +35,7 @@ impl<C> Platform<C>
 
         let mut state_cache = self.state.write().unwrap();
 
-        self.update_core_info(
+        self.update_core_info_v0(
             None,
             &mut state_cache,
             core_height,
@@ -103,7 +102,7 @@ impl<C> Platform<C>
                 "fork is not yet known (currently {:?})",
                 fork_info.status
             ))
-                .into());
+            .into());
         } else {
             tracing::debug!(?fork_info, "core fork v20 is active");
         };
@@ -133,7 +132,7 @@ impl<C> Platform<C>
                     best,
                     v20_fork,
                 }
-                    .into())
+                .into())
             }
         } else {
             tracing::trace!(v20_fork, "used fork height as initial core lock height");

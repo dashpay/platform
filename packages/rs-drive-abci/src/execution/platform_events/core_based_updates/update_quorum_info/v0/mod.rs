@@ -1,7 +1,13 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::platform::state;
+use crate::platform::{validator_set, Platform};
+use crate::rpc::core::CoreRPCLike;
+use std::cmp::Ordering;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Updates the quorum information for the platform state based on the given core block height.
     ///
@@ -14,22 +20,22 @@ impl<C> Platform<C>
     ///
     /// * `Result<SimpleConsensusValidationResult, ExecutionError>` - A `SimpleConsensusValidationResult`
     ///   on success, or an `Error` on failure.
-    pub(crate) fn update_quorum_info(
+    pub(in crate::execution::platform_events::core_based_updates) fn update_quorum_info_v0(
         &self,
-        block_platform_state: &mut PlatformState,
+        block_platform_state: &mut state::v0::PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<(), Error> {
         if !start_from_scratch && core_block_height == block_platform_state.core_height() {
             tracing::debug!(
-                method = "update_quorum_info",
+                method = "update_quorum_info_v0",
                 "no update quorum at height {}",
                 core_block_height
             );
             return Ok(()); // no need to do anything
         }
         tracing::debug!(
-            method = "update_quorum_info",
+            method = "update_quorum_info_v0",
             "update of quorums for height {}",
             core_block_height
         );
@@ -47,13 +53,13 @@ impl<C> Platform<C>
             )))?;
 
         tracing::debug!(
-            method = "update_quorum_info",
+            method = "update_quorum_info_v0",
             "old {:?}",
             block_platform_state.validator_sets
         );
 
         tracing::debug!(
-            method = "update_quorum_info",
+            method = "update_quorum_info_v0",
             "new quorum_info {:?}",
             quorum_info
         );
@@ -93,8 +99,10 @@ impl<C> Platform<C>
         let new_quorums = quorum_infos
             .into_iter()
             .map(|(key, info_result)| {
-                let quorum =
-                    ValidatorSet::try_from_quorum_info_result(info_result, block_platform_state)?;
+                let quorum = validator_set::v0::ValidatorSet::try_from_quorum_info_result(
+                    info_result,
+                    block_platform_state,
+                )?;
                 Ok((key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -118,7 +126,7 @@ impl<C> Platform<C>
             });
 
         tracing::debug!(
-            method = "update_quorum_info",
+            method = "update_quorum_info_v0",
             "new {:?}",
             block_platform_state.validator_sets
         );

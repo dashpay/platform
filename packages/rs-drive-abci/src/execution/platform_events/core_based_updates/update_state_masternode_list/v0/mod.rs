@@ -1,7 +1,15 @@
+use crate::error::Error;
+use crate::execution::types::update_state_masternode_list_outcome;
+use crate::platform::{state, validator_set, Platform};
+use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeType};
+use indexmap::IndexMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Remove a masternode from all validator sets based on its ProTxHash.
     ///
@@ -16,7 +24,7 @@ impl<C> Platform<C>
     ///
     fn remove_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
-        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
+        validator_sets: &mut IndexMap<QuorumHash, validator_set::v0::ValidatorSet>,
     ) {
         validator_sets
             .iter_mut()
@@ -41,7 +49,7 @@ impl<C> Platform<C>
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         dmn_state_diff: &DMNStateDiff,
-        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
+        validator_sets: &mut IndexMap<QuorumHash, validator_set::v0::ValidatorSet>,
     ) {
         validator_sets
             .iter_mut()
@@ -66,19 +74,21 @@ impl<C> Platform<C>
             });
     }
 
-    pub(crate) fn update_state_masternode_list(
+    pub(in crate::execution) fn update_state_masternode_list_v0(
         &self,
-        state: &mut PlatformState,
+        state: &mut state::v0::PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
-    ) -> Result<UpdateStateMasternodeListOutcome, Error> {
+    ) -> Result<update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome, Error>
+    {
         let previous_core_height = if start_from_scratch {
             // baseBlock must be a chain height and not 0
             None
         } else {
             let state_core_height = state.core_height();
             if core_block_height == state_core_height {
-                return Ok(UpdateStateMasternodeListOutcome::default()); // no need to do anything
+                return Ok(update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome::default());
+                // no need to do anything
             }
             Some(state_core_height)
         };
@@ -155,9 +165,11 @@ impl<C> Platform<C>
             }
         }
 
-        Ok(UpdateStateMasternodeListOutcome {
-            masternode_list_diff: masternode_diff,
-            removed_masternodes,
-        })
+        Ok(
+            update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
+                masternode_list_diff: masternode_diff,
+                removed_masternodes,
+            },
+        )
     }
 }

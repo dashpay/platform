@@ -1,4 +1,3 @@
-
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
@@ -18,45 +17,21 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::platform::block_proposal::v0::BlockProposalV0;
+use crate::execution::types::{block_execution_context, block_state_info};
+use crate::platform::block_proposal;
 use crate::platform::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
-use crate::platform::Platform;
+use crate::platform::epoch::v0::EpochInfo;
+use crate::platform::{block_execution_outcome, Platform};
 use crate::rpc::core::CoreRPCLike;
 
-/// The outcome of the block execution, either by prepare proposal, or process proposal
-#[derive(Clone)]
-pub struct BlockExecutionOutcome {
-    /// The app hash, also known as the commit hash, this is the root hash of grovedb
-    /// after the block has been executed
-    pub app_hash: [u8; 32],
-    /// The results of the execution of each transaction
-    pub tx_results: Vec<(Vec<u8>, ExecTxResult)>,
-    /// The changes to the validator set
-    pub validator_set_update: Option<ValidatorSetUpdate>,
-}
-
-/// The outcome of the finalization of the block
-pub struct BlockFinalizationOutcome {
-    /// The validation result of the finalization of the block.
-    /// Errors here can happen if the block that we receive to be finalized isn't actually
-    /// the one we expect, this could be a replay attack or some other kind of attack.
-    pub validation_result: SimpleValidationResult<AbciError>,
-}
-
-impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
-    fn from(validation_result: SimpleValidationResult<AbciError>) -> Self {
-        BlockFinalizationOutcome { validation_result }
-    }
-}
-
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Runs a block proposal, either from process proposal or prepare proposal.
     ///
-    /// This function takes a `BlockProposalV0` and a `Transaction` as input and processes the block
+    /// This function takes a `BlockProposal` and a `Transaction` as input and processes the block
     /// proposal. It first validates the block proposal and then processes raw state transitions,
     /// withdrawal transactions, and block fees. It also updates the validator set.
     ///
@@ -79,9 +54,10 @@ impl<C> Platform<C>
     ///
     pub fn run_block_proposal(
         &self,
-        block_proposal: BlockProposalV0,
+        block_proposal: block_proposal::v0::BlockProposal,
         transaction: &Transaction,
-    ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error> {
+    ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
+    {
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
@@ -96,8 +72,10 @@ impl<C> Platform<C>
         let mut block_platform_state = state.clone();
 
         // Init block execution context
-        let block_state_info =
-            BlockStateInfo::from_block_proposal(&block_proposal, last_block_time_ms);
+        let block_state_info = block_state_info::v0::BlockStateInfo::from_block_proposal(
+            &block_proposal,
+            last_block_time_ms,
+        );
 
         // First let's check that this is the follower to a previous block
         if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
@@ -109,7 +87,7 @@ impl<C> Platform<C>
         }
 
         // destructure the block proposal
-        let BlockProposalV0 {
+        let block_proposal::v0::BlockProposal {
             consensus_versions: _,
             block_hash: _,
             height,
@@ -134,7 +112,7 @@ impl<C> Platform<C>
         );
 
         // Update the masternode list and create masternode identities and also update the active quorums
-        self.update_core_info(
+        self.update_core_info_v0(
             Some(&state),
             &mut block_platform_state,
             core_chain_locked_height,
@@ -155,7 +133,7 @@ impl<C> Platform<C>
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let mut block_execution_context = BlockExecutionContext {
+        let mut block_execution_context = block_execution_context::v0::BlockExecutionContext {
             block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
@@ -211,7 +189,7 @@ impl<C> Platform<C>
             .block_state_info
             .core_chain_locked_height;
 
-        self.update_broadcasted_withdrawal_transaction_statuses(
+        self.update_broadcasted_withdrawal_transaction_statuses_v0(
             last_synced_core_height,
             &block_execution_context,
             transaction,
@@ -219,7 +197,7 @@ impl<C> Platform<C>
 
         // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self
-            .fetch_and_prepare_unsigned_withdrawal_transactions(
+            .fetch_and_prepare_unsigned_withdrawal_transactions_v0(
                 validator_set_quorum_hash,
                 &block_execution_context,
                 transaction,
@@ -236,19 +214,19 @@ impl<C> Platform<C>
             })
             .collect();
 
-        let (block_fees, tx_results) = self.process_raw_state_transitions(
+        let (block_fees, tx_results) = self.process_raw_state_transitions_v0(
             raw_state_transitions,
             &block_execution_context.block_platform_state,
             &block_info,
             transaction,
         )?;
 
-        self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction)?;
+        self.pool_withdrawals_into_transactions_queue_v0(&block_execution_context, transaction)?;
 
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
-        let _processed_block_fees = self.process_block_fees(
+        let _processed_block_fees = self.process_block_fees_v0(
             &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),
@@ -266,137 +244,20 @@ impl<C> Platform<C>
 
         let state = self.state.read().unwrap();
         let validator_set_update =
-            self.validator_set_update(&state, &mut block_execution_context)?;
+            self.validator_set_update_v0(&state, &mut block_execution_context)?;
 
         self.block_execution_context
             .write()
             .unwrap()
             .replace(block_execution_context);
 
-        Ok(ValidationResult::new_with_data(BlockExecutionOutcome {
-            app_hash: root_hash,
-            tx_results,
-            validator_set_update,
-        }))
-    }
-
-    /// Updates the current quorums and state cache if the `core_height` changes.
-    ///
-    /// This function takes an `ExtendedBlockInfo` and a `Transaction` as input and updates the
-    /// state cache and quorums based on the given block information. It handles protocol version
-    /// updates and sets the current and next epoch protocol versions.
-    ///
-    /// # Arguments
-    ///
-    /// * `block_info` - Extended block information for the current block.
-    /// * `transaction` - The transaction associated with the block.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
-    ///   If there is a problem with the update, it returns an `Error`.
-    ///
-    /// # Errors
-    ///
-    /// This function may return an `Error` variant if there is a problem with updating the state cache
-    /// and quorums or storing the ephemeral data.
-    ///
-    pub fn update_state_cache_and_quorums(
-        &self,
-        block_info: ExtendedBlockInfo,
-        transaction: &Transaction,
-    ) -> Result<(), Error> {
-        let mut block_execution_context = self.block_execution_context.write().unwrap();
-
-        let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution("there should be a block execution context"),
-        ))?;
-
-        let mut state_cache = self.state.write().unwrap();
-
-        *state_cache = block_execution_context.block_platform_state;
-
-        if let Some(next_validator_set_quorum_hash) =
-            state_cache.next_validator_set_quorum_hash.take()
-        {
-            state_cache.current_validator_set_quorum_hash = next_validator_set_quorum_hash;
-        }
-
-        state_cache.last_committed_block_info = Some(block_info);
-
-        state_cache.initialization_information = None;
-
-        // Persist ephemeral data
-        self.store_ephemeral_state_v0(&state_cache, transaction)?;
-
-        Ok(())
-    }
-
-    /// Checks if the received withdrawal transactions are correct and match the expected withdrawal transactions.
-    ///
-    /// This function compares the received withdrawal transactions with the expected ones. If they don't match,
-    /// an error is returned. If a validator public key is provided, the function also verifies the withdrawal
-    /// transactions' signatures.
-    ///
-    /// # Arguments
-    ///
-    /// * `received_withdrawals` - The withdrawal transactions received.
-    /// * `our_withdrawals` - The expected withdrawal transactions.
-    /// * `height` - The block height.
-    /// * `round` - The consensus round.
-    /// * `verify_with_validator_public_key` - An optional reference to a validator public key.
-    /// * `quorum_hash` - An optional byte slice reference containing the quorum hash.
-    ///
-    /// # Returns
-    ///
-    /// * `SimpleValidationResult<AbciError>` - If the received withdrawal transactions match the expected ones
-    ///   and the signatures are valid (if provided), it returns a default `SimpleValidationResult`. Otherwise,
-    ///   it returns a `SimpleValidationResult` with an error.
-    ///
-    pub fn check_withdrawals(
-        &self,
-        received_withdrawals: &WithdrawalTxs,
-        our_withdrawals: &WithdrawalTxs,
-        height: u64,
-        round: u32,
-        verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
-        quorum_hash: Option<&[u8]>,
-    ) -> SimpleValidationResult<AbciError> {
-        if received_withdrawals.ne(our_withdrawals) {
-            return SimpleValidationResult::new_with_error(
-                AbciError::VoteExtensionMismatchReceived {
-                    got: received_withdrawals.to_string(),
-                    expected: our_withdrawals.to_string(),
-                },
-            );
-        }
-
-        // we only verify if verify_with_validator_public_key exists
-        if let Some(validator_public_key) = verify_with_validator_public_key {
-            let quorum_hash = quorum_hash.expect("quorum hash is required to verify signature");
-            let validation_result = received_withdrawals.verify_signatures(
-                &self.config.abci.chain_id,
-                self.config.quorum_type(),
-                quorum_hash,
-                height,
-                round,
-                validator_public_key,
-            );
-
-            if validation_result.is_valid() {
-                SimpleValidationResult::default()
-            } else {
-                SimpleValidationResult::new_with_error(
-                    validation_result
-                        .errors
-                        .into_iter()
-                        .next()
-                        .expect("expected an error"),
-                )
-            }
-        } else {
-            SimpleValidationResult::default()
-        }
+        Ok(ValidationResult::new_with_data(
+            block_execution_outcome::v0::BlockExecutionOutcome {
+                app_hash: root_hash,
+                tx_results,
+                validator_set_update,
+            },
+        ))
     }
 
     /// Finalizes the block proposal by first validating it and then committing it to the state.
@@ -567,7 +428,7 @@ impl<C> Platform<C>
             round,
         };
 
-        self.update_state_cache_and_quorums(extended_block_info, transaction)?;
+        self.update_state_cache_v0(extended_block_info, transaction)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

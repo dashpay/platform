@@ -33,8 +33,8 @@
 //! storage fees from the distribution pool to the epoch pools.
 //!
 
-
 use crate::error::Error;
+use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::epoch::distribution::{
@@ -42,7 +42,6 @@ use drive::fee::epoch::distribution::{
 };
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
-use crate::execution::types::storage_fee_distribution_outcome;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the GroveDB op batch which distribute storage fees
@@ -90,10 +89,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 transaction,
             )?;
 
-        Ok(storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome {
-            leftovers,
-            refunded_epochs_count,
-        })
+        Ok(
+            storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome {
+                leftovers,
+                refunded_epochs_count,
+            },
+        )
     }
 }
 
@@ -239,7 +240,7 @@ mod tests {
                         epoch_index,
                         current_epoch_index,
                     )
-                        .expect("should subtract refunds");
+                    .expect("should subtract refunds");
 
                     credits_per_epochs
                         .into_values()

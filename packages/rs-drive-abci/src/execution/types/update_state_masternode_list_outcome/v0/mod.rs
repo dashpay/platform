@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
-use dashcore_rpc::dashcore_rpc_json::{MasternodeListDiff, MasternodeListItem};
 use dashcore_rpc::dashcore::ProTxHash;
+use dashcore_rpc::dashcore_rpc_json::{MasternodeListDiff, MasternodeListItem};
+use std::collections::BTreeMap;
 
 /// Represents the outcome of an attempt to update the state of a masternode list.
 pub struct UpdateStateMasternodeListOutcome {
     /// The diff between two masternode lists.
-    masternode_list_diff: MasternodeListDiff,
+    pub masternode_list_diff: MasternodeListDiff,
     /// The set of ProTxHashes that correspond to masternodes that were deleted from the list.
-    removed_masternodes: BTreeMap<ProTxHash, MasternodeListItem>,
+    pub removed_masternodes: BTreeMap<ProTxHash, MasternodeListItem>,
 }
 
 impl Default for UpdateStateMasternodeListOutcome {

@@ -4,13 +4,13 @@
 
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
+use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
 use tracing::warn;
-use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.

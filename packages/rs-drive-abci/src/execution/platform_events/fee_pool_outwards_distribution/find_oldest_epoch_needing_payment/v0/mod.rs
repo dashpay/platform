@@ -1,15 +1,15 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::unpaid_epoch;
+use crate::platform::Platform;
 use dpp::block::epoch::Epoch;
 use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
-use crate::error::Error;
-use crate::error::execution::ExecutionError;
-use crate::execution::types::unpaid_epoch;
-use crate::platform::Platform;
 
 impl<C> Platform<C> {
     /// Finds and returns the oldest epoch that hasn't been paid out yet.
-    fn find_oldest_epoch_needing_payment(
+    pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn find_oldest_epoch_needing_payment_v0(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
@@ -104,7 +104,6 @@ impl<C> Platform<C> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +112,9 @@ mod tests {
 
     mod find_oldest_epoch_needing_payment {
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee_pools::epochs::operations_factory::EpochOperations;
+        use drive::fee_pools::update_unpaid_epoch_index_operation;
 
         use super::*;
 
@@ -124,7 +126,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(
+                .find_oldest_epoch_needing_payment_v0(
                     GENESIS_EPOCH_INDEX,
                     None,
                     None,
@@ -161,7 +163,7 @@ mod tests {
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(
+                .find_oldest_epoch_needing_payment_v0(
                     current_epoch_index,
                     None,
                     None,
@@ -198,7 +200,7 @@ mod tests {
             let cached_current_epoch_start_block_core_height = Some(2);
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(
+                .find_oldest_epoch_needing_payment_v0(
                     current_epoch_index,
                     cached_current_epoch_start_block_height,
                     cached_current_epoch_start_block_core_height,
@@ -224,7 +226,8 @@ mod tests {
         }
 
         #[test]
-        fn test_use_stored_start_block_height_from_current_epoch_as_end_block_if_unpaid_epoch_is_previous() {
+        fn test_use_stored_start_block_height_from_current_epoch_as_end_block_if_unpaid_epoch_is_previous(
+        ) {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -249,7 +252,7 @@ mod tests {
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(
+                .find_oldest_epoch_needing_payment_v0(
                     current_epoch_index,
                     None,
                     None,
@@ -303,7 +306,7 @@ mod tests {
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(
+                .find_oldest_epoch_needing_payment_v0(
                     current_epoch_index,
                     None,
                     None,
@@ -353,7 +356,7 @@ mod tests {
             let cached_current_epoch_start_block_core_height = Some(2);
 
             let unpaid_epoch = platform
-                .find_oldest_epoch_needing_payment(
+                .find_oldest_epoch_needing_payment_v0(
                     current_epoch_index,
                     cached_current_epoch_start_block_height,
                     cached_current_epoch_start_block_core_height,
@@ -379,7 +382,8 @@ mod tests {
         }
 
         #[test]
-        fn test_error_if_cached_start_block_height_is_not_present_and_not_found_in_case_of_epoch_change() {
+        fn test_error_if_cached_start_block_height_is_not_present_and_not_found_in_case_of_epoch_change(
+        ) {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -399,7 +403,7 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction))
                 .expect("should apply batch");
 
-            let unpaid_epoch = platform.find_oldest_epoch_needing_payment(
+            let unpaid_epoch = platform.find_oldest_epoch_needing_payment_v0(
                 current_epoch_index,
                 None,
                 None,

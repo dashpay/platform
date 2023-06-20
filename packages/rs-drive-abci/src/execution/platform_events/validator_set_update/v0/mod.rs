@@ -1,17 +1,17 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::{Platform, state};
+use crate::execution::types::block_execution_context;
+use crate::platform::{state, Platform};
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
-use crate::execution::types::block_execution_context;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// We need to validate against the platform state for rotation and not the block execution
     /// context state
-    pub(in crate::execution) fn validator_set_update(
+    pub(in crate::execution) fn validator_set_update_v0(
         &self,
         platform_state: &state::v0::PlatformState,
         block_execution_context: &mut block_execution_context::v0::BlockExecutionContext,
@@ -23,7 +23,7 @@ impl<C> Platform<C>
             == 0
         {
             tracing::debug!(
-                method = "validator_set_update",
+                method = "validator_set_update_v0",
                 "rotation: previous quorum finished members"
             );
             perform_rotation = true;
@@ -36,7 +36,7 @@ impl<C> Platform<C>
             .is_none()
         {
             tracing::debug!(
-                method = "validator_set_update",
+                method = "validator_set_update_v0",
                 "rotation: new quorums not containing current quorum current {:?}, {}",
                 block_execution_context
                     .block_platform_state
@@ -81,7 +81,7 @@ impl<C> Platform<C>
                             .get(quorum_hash)
                         {
                             tracing::debug!(
-                                method = "validator_set_update",
+                                method = "validator_set_update_v0",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
                                 new_validator_set.members.len()
@@ -103,7 +103,7 @@ impl<C> Platform<C>
                             .block_platform_state
                             .next_validator_set_quorum_hash = Some(*quorum_hash);
                         tracing::debug!(
-                            method = "validator_set_update",
+                            method = "validator_set_update_v0",
                             "rotation: all quorums changed, rotation to new quorum: {}",
                             &quorum_hash
                         );
@@ -121,12 +121,15 @@ impl<C> Platform<C>
                 // Something changed, for example the IP of a validator changed, or someone's ban status
 
                 tracing::debug!(
-                    method = "validator_set_update",
+                    method = "validator_set_update_v0",
                     "validator set update without rotation"
                 );
                 Ok(Some(current_validator_set.into()))
             } else {
-                tracing::debug!(method = "validator_set_update", "no validator set update");
+                tracing::debug!(
+                    method = "validator_set_update_v0",
+                    "no validator set update"
+                );
                 Ok(None)
             }
         }

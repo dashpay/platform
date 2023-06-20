@@ -20,9 +20,8 @@ use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
-use serde_json::Value as JsonValue;
 
-use crate::block::BlockExecutionContext;
+use crate::execution::types::block_execution_context;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform::Platform,
@@ -32,14 +31,14 @@ use crate::{
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Prepares a list of an unsigned withdrawal transaction bytes
-    pub fn fetch_and_prepare_unsigned_withdrawal_transactions(
+    pub fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        block_execution_context: &BlockExecutionContext,
+        block_execution_context: &block_execution_context::v0::BlockExecutionContext,
         transaction: &Transaction,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let block_info = BlockInfo {

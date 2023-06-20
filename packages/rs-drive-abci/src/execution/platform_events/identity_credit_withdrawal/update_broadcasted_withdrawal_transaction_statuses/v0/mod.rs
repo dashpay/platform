@@ -22,25 +22,24 @@ use drive::grovedb::Transaction;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 use serde_json::Value as JsonValue;
 
-use crate::block::BlockExecutionContext;
+use crate::execution::types::block_execution_context;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform::Platform,
     rpc::core::CoreRPCLike,
 };
 
-
 const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Update statuses for broadcasted withdrawals
-    pub fn update_broadcasted_withdrawal_transaction_statuses(
+    pub fn update_broadcasted_withdrawal_transaction_statuses_v0(
         &self,
         last_synced_core_height: u32,
-        block_execution_context: &BlockExecutionContext,
+        block_execution_context: &block_execution_context::v0::BlockExecutionContext,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
@@ -65,7 +64,7 @@ impl<C> Platform<C>
             ));
         };
 
-        let core_transactions = self.fetch_core_block_transactions(
+        let core_transactions = self.fetch_core_block_transactions_v0(
             last_synced_core_height,
             block_execution_context
                 .block_state_info
@@ -175,7 +174,6 @@ impl<C> Platform<C>
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use dashcore_rpc::dashcore::{
@@ -188,131 +186,126 @@ mod tests {
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
-    use crate::{
-        block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo,
-        rpc::core::MockCoreRPCLike,
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
+    use crate::execution::types::block_state_info::v0::BlockStateInfo;
+    use crate::platform::epoch::v0::EpochInfo;
+    use crate::platform::state::v0::PlatformState;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::identity::core_script::CoreScript;
+    use dpp::platform_value::platform_value;
+    use dpp::{
+        data_contract::DataContract,
+        prelude::Identifier,
+        system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
-        use crate::platform::state::PlatformState;
-        use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
-        use dpp::identity::core_script::CoreScript;
-        use dpp::platform_value::platform_value;
-        use dpp::{
-            data_contract::DataContract,
-            prelude::Identifier,
-            system_data_contracts::{load_system_data_contract, SystemDataContract},
+    use drive::tests::helpers::setup::setup_system_data_contract;
+
+    #[test]
+    fn test_statuses_are_updated() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let mut mock_rpc_client = MockCoreRPCLike::new();
+
+        mock_rpc_client
+            .expect_get_block_hash()
+            .withf(|height| *height == 95)
+            .returning(|_| {
+                Ok(BlockHash::from_hex(
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                )
+                .unwrap())
+            });
+
+        mock_rpc_client
+            .expect_get_block_hash()
+            .withf(|height| *height == 96)
+            .returning(|_| {
+                Ok(BlockHash::from_hex(
+                    "1111111111111111111111111111111111111111111111111111111111111111",
+                )
+                .unwrap())
+            });
+
+        mock_rpc_client
+            .expect_get_block_json()
+            .withf(|bh| {
+                bh.to_hex() == "0000000000000000000000000000000000000000000000000000000000000000"
+            })
+            .returning(|_| {
+                Ok(json!({
+                    "tx": ["0101010101010101010101010101010101010101010101010101010101010101"]
+                }))
+            });
+
+        mock_rpc_client
+            .expect_get_block_json()
+            .withf(|bh| {
+                bh.to_hex() == "1111111111111111111111111111111111111111111111111111111111111111"
+            })
+            .returning(|_| {
+                Ok(json!({
+                    "tx": ["0202020202020202020202020202020202020202020202020202020202020202"]
+                }))
+            });
+
+        platform.core_rpc = mock_rpc_client;
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                height: 1,
+                round: 0,
+                block_time_ms: 1,
+                previous_block_time_ms: Some(1),
+                proposer_pro_tx_hash: [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ],
+                core_chain_locked_height: 96,
+                block_hash: None,
+                app_hash: None,
+            },
+            epoch_info: EpochInfo {
+                current_epoch_index: 1,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            },
+            hpmn_count: 100,
+            withdrawal_transactions: Default::default(),
+            block_platform_state: PlatformState {
+                last_committed_block_info: None,
+                current_protocol_version_in_consensus: 0,
+                next_epoch_protocol_version: 0,
+                quorums_extended_info: Default::default(),
+                current_validator_set_quorum_hash: Default::default(),
+                next_validator_set_quorum_hash: None,
+                validator_sets: Default::default(),
+                full_masternode_list: Default::default(),
+                hpmn_masternode_list: Default::default(),
+                initialization_information: None,
+            },
+            proposer_results: None,
         };
-        use drive::tests::helpers::setup::setup_system_data_contract;
 
-        use super::*;
+        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+            .expect("to load system data contract");
 
-        #[test]
-        fn test_statuses_are_updated() {
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
+        // TODO: figure out the bug in data contract factory
+        let data_contract = DataContract::from_cbor(
+            data_contract
+                .to_cbor()
+                .expect("to convert contract to CBOR"),
+        )
+        .expect("to create data contract from CBOR");
 
-            let mut mock_rpc_client = MockCoreRPCLike::new();
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
-            mock_rpc_client
-                .expect_get_block_hash()
-                .withf(|height| *height == 95)
-                .returning(|_| {
-                    Ok(BlockHash::from_hex(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
-                    )
-                        .unwrap())
-                });
+        let owner_id = Identifier::new([1u8; 32]);
 
-            mock_rpc_client
-                .expect_get_block_hash()
-                .withf(|height| *height == 96)
-                .returning(|_| {
-                    Ok(BlockHash::from_hex(
-                        "1111111111111111111111111111111111111111111111111111111111111111",
-                    )
-                        .unwrap())
-                });
-
-            mock_rpc_client
-                .expect_get_block_json()
-                .withf(|bh| {
-                    bh.to_hex()
-                        == "0000000000000000000000000000000000000000000000000000000000000000"
-                })
-                .returning(|_| {
-                    Ok(json!({
-                        "tx": ["0101010101010101010101010101010101010101010101010101010101010101"]
-                    }))
-                });
-
-            mock_rpc_client
-                .expect_get_block_json()
-                .withf(|bh| {
-                    bh.to_hex()
-                        == "1111111111111111111111111111111111111111111111111111111111111111"
-                })
-                .returning(|_| {
-                    Ok(json!({
-                        "tx": ["0202020202020202020202020202020202020202020202020202020202020202"]
-                    }))
-                });
-
-            platform.core_rpc = mock_rpc_client;
-
-            let transaction = platform.drive.grove.start_transaction();
-
-            let block_execution_context = BlockExecutionContext {
-                block_state_info: BlockStateInfo {
-                    height: 1,
-                    round: 0,
-                    block_time_ms: 1,
-                    previous_block_time_ms: Some(1),
-                    proposer_pro_tx_hash: [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    core_chain_locked_height: 96,
-                    block_hash: None,
-                    app_hash: None,
-                },
-                epoch_info: EpochInfo {
-                    current_epoch_index: 1,
-                    previous_epoch_index: None,
-                    is_epoch_change: false,
-                },
-                hpmn_count: 100,
-                withdrawal_transactions: Default::default(),
-                block_platform_state: PlatformState {
-                    last_committed_block_info: None,
-                    current_protocol_version_in_consensus: 0,
-                    next_epoch_protocol_version: 0,
-                    quorums_extended_info: Default::default(),
-                    current_validator_set_quorum_hash: Default::default(),
-                    next_validator_set_quorum_hash: None,
-                    validator_sets: Default::default(),
-                    full_masternode_list: Default::default(),
-                    hpmn_masternode_list: Default::default(),
-                    initialization_information: None,
-                },
-                proposer_results: None,
-            };
-
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
-
-            // TODO: figure out the bug in data contract factory
-            let data_contract = DataContract::from_cbor(
-                data_contract
-                    .to_cbor()
-                    .expect("to convert contract to CBOR"),
-            )
-                .expect("to create data contract from CBOR");
-
-            setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
-
-            let owner_id = Identifier::new([1u8; 32]);
-
-            let document_1 = get_withdrawal_document_fixture(
+        let document_1 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
                 platform_value!({
@@ -328,19 +321,19 @@ mod tests {
                 None,
             ).expect("expected withdrawal document");
 
-            let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
-                .expect("expected to get document type");
+        let document_type = data_contract
+            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .expect("expected to get document type");
 
-            setup_document(
-                &platform.drive,
-                &document_1,
-                &data_contract,
-                document_type,
-                Some(&transaction),
-            );
+        setup_document(
+            &platform.drive,
+            &document_1,
+            &data_contract,
+            document_type,
+            Some(&transaction),
+        );
 
-            let document_2 = get_withdrawal_document_fixture(
+        let document_2 = get_withdrawal_document_fixture(
                 &data_contract,
                 owner_id,
                 platform_value!({
@@ -356,48 +349,48 @@ mod tests {
                 None,
             ).expect("expected withdrawal document");
 
-            setup_document(
-                &platform.drive,
-                &document_2,
-                &data_contract,
-                document_type,
+        setup_document(
+            &platform.drive,
+            &document_2,
+            &data_contract,
+            document_type,
+            Some(&transaction),
+        );
+
+        platform
+            .update_broadcasted_withdrawal_transaction_statuses_v0(
+                95,
+                &block_execution_context,
+                &transaction,
+            )
+            .expect("to update withdrawal statuses");
+
+        let documents = platform
+            .drive
+            .fetch_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
-            );
+            )
+            .expect("to fetch documents by status");
 
-            platform
-                .update_broadcasted_withdrawal_transaction_statuses(
-                    95,
-                    &block_execution_context,
-                    &transaction,
-                )
-                .expect("to update withdrawal statuses");
+        assert_eq!(documents.len(), 1);
+        assert_eq!(
+            documents.get(0).unwrap().id.to_vec(),
+            document_2.id.to_vec()
+        );
 
-            let documents = platform
-                .drive
-                .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
-                    Some(&transaction),
-                )
-                .expect("to fetch documents by status");
+        let documents = platform
+            .drive
+            .fetch_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
+                Some(&transaction),
+            )
+            .expect("to fetch documents by status");
 
-            assert_eq!(documents.len(), 1);
-            assert_eq!(
-                documents.get(0).unwrap().id.to_vec(),
-                document_2.id.to_vec()
-            );
-
-            let documents = platform
-                .drive
-                .fetch_withdrawal_documents_by_status(
-                    withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
-                    Some(&transaction),
-                )
-                .expect("to fetch documents by status");
-
-            assert_eq!(documents.len(), 1);
-            assert_eq!(
-                documents.get(0).unwrap().id.to_vec(),
-                document_1.id.to_vec()
-            );
-        }
+        assert_eq!(documents.len(), 1);
+        assert_eq!(
+            documents.get(0).unwrap().id.to_vec(),
+            document_1.id.to_vec()
+        );
+    }
 }

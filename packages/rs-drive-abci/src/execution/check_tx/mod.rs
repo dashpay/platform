@@ -1,7 +1,11 @@
 use crate::error::Error;
+#[cfg(test)]
+use crate::execution::types::execution_result::ExecutionResult;
+#[cfg(test)]
+use crate::execution::types::execution_result::ExecutionResult::ConsensusExecutionError;
+use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::processor::process_state_transition;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
@@ -12,10 +16,6 @@ use dpp::validation::ValidationResult;
 use drive::fee::result::FeeResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
-#[cfg(test)]
-use crate::execution::types::execution_result::ExecutionResult;
-#[cfg(test)]
-use crate::execution::types::execution_result::ExecutionResult::ConsensusExecutionError;
 
 impl<C> Platform<C>
 where
@@ -42,7 +42,7 @@ where
 
         if state_transition_execution_event.is_valid() {
             let execution_event = state_transition_execution_event.into_data()?;
-            self.execute_event(execution_event, block_info, transaction)
+            self.execute_event_v0(execution_event, block_info, transaction)
         } else {
             Ok(ConsensusExecutionError(
                 SimpleConsensusValidationResult::new_with_errors(
@@ -86,11 +86,11 @@ where
         if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &block_info.basic_info, None)
+                self.validate_fees_of_event_v0(execution_event, &block_info.basic_info, None)
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None)
+                self.validate_fees_of_event_v0(execution_event, &BlockInfo::default(), None)
             })
         }
     }
@@ -99,6 +99,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
+    use crate::execution::types::execution_result::ExecutionResult::SuccessfulPaidExecution;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
@@ -118,7 +119,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use crate::execution::types::execution_result::ExecutionResult::SuccessfulPaidExecution;
 
     #[test]
     fn data_contract_create_check_tx() {

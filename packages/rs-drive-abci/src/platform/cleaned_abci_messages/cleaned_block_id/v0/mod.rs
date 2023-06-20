@@ -1,13 +1,12 @@
-
 use crate::abci::AbciError;
 use crate::error::Error;
+use crate::platform::cleaned_abci_messages::hash_or_default;
 use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, PartSetHeader, VoteExtension,
 };
 use tenderdash_abci::proto::version;
-use crate::platform::cleaned_abci_messages::hash_or_default;
 
 /// The `CleanedBlockId` struct represents a `blockId` that has been properly formatted.
 /// It stores essential data required to finalize a block in a simplified format.

@@ -2,14 +2,14 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
+use crate::platform::state::v0::PlatformState;
 use dpp::serialization_traits::PlatformSerializable;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
-use crate::platform::state::v0::PlatformState;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Stores ephemeral state data, including the block information and quorum hash in GroveDB.
     ///

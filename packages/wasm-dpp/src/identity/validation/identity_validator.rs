@@ -1,8 +1,8 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::errors::from_dpp_err;
+use crate::execution::validation::ValidationResultWasm;
 use crate::utils::with_serde_to_platform_value;
-use crate::validation::ValidationResultWasm;
 use dpp::identity::validation::{IdentityValidator, PublicKeysValidator};
 use dpp::version::ProtocolVersionValidator;
 use std::sync::Arc;

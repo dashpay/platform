@@ -49,9 +49,9 @@ use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
+use crate::platform::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use crate::platform::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
 impl<C> Platform<C> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.

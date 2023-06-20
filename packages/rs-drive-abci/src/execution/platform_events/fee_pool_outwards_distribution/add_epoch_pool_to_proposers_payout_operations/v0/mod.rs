@@ -1,12 +1,25 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::unpaid_epoch;
+use crate::platform::Platform;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::ProtocolError;
+use drive::drive::batch::DriveOperation;
+use drive::drive::batch::DriveOperation::IdentityOperation;
+use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
+use drive::fee::credits::Credits;
+use drive::grovedb::Transaction;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
     /// Returns the number of proposers to be paid out.
-    fn add_epoch_pool_to_proposers_payout_operations(
+    fn add_epoch_pool_to_proposers_payout_operations_v0(
         &self,
-        unpaid_epoch: &UnpaidEpoch,
+        unpaid_epoch: &unpaid_epoch::v0::UnpaidEpoch,
         core_block_rewards: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
@@ -49,8 +62,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
             let mut masternode_payout_leftover = total_masternode_payout;
 
-            let documents =
-                self.fetch_reward_shares_list_for_masternode_v0(&proposer_tx_hash, Some(transaction))?;
+            let documents = self
+                .fetch_reward_shares_list_for_masternode_v0(&proposer_tx_hash, Some(transaction))?;
 
             for document in documents {
                 let pay_to_id = document
@@ -83,8 +96,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 masternode_payout_leftover = masternode_payout_leftover
                     .checked_sub(share_payout)
                     .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "overflow when subtracting for the masternode share leftover",
-                    )))?;
+                    "overflow when subtracting for the masternode share leftover",
+                )))?;
 
                 drive_operations.push(IdentityOperation(AddToIdentityBalance {
                     identity_id: pay_to_id.to_buffer(),
@@ -128,7 +141,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,11 +149,14 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
+        use crate::execution::types::unpaid_epoch::v0::UnpaidEpoch;
         use crate::test::helpers::{
             fee_pools::create_test_masternode_share_identities_and_documents,
             setup::TestPlatformBuilder,
         };
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use drive::drive::batch::GroveDbOpBatch;
+        use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 
@@ -221,7 +236,7 @@ mod tests {
             };
 
             let proposers_paid_count = platform
-                .add_epoch_pool_to_proposers_payout_operations(
+                .add_epoch_pool_to_proposers_payout_operations_v0(
                     &unpaid_epoch,
                     0,
                     &transaction,

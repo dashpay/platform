@@ -1,19 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::quorum::ValidatorSet;
-use crate::platform::state::PlatformState;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
-use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
-use dashcore_rpc::json::{MasternodeListItem, MasternodeType};
-use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
-use indexmap::IndexMap;
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
-
 
 impl<C> Platform<C>
 where
@@ -51,5 +40,3 @@ where
         }
     }
 }
-
-

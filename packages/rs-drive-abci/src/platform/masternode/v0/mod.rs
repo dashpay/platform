@@ -1,4 +1,3 @@
-
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dashcore_rpc::json::MasternodeListItem;
 use dpp::bincode::{Decode, Encode};

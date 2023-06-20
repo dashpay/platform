@@ -13,8 +13,8 @@ use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 
+use crate::execution::validation::ValidationResultWasm;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
-use crate::validation::ValidationResultWasm;
 use crate::{
     create_asset_lock_proof_from_wasm_instance, with_js_error, ChainAssetLockProofWasm,
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,

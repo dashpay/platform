@@ -1,3 +1,5 @@
+use crate::platform::validator::v0::Validator;
+use crate::platform::validator_set::v0::ValidatorSet;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
@@ -7,8 +9,6 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use crate::platform::validator::v0::Validator;
-use crate::platform::validator_set::v0::ValidatorSet;
 
 /// ValidatorInQuorum represents a validator in a quorum or consensus algorithm.
 /// Each validator is identified by a `ProTxHash` and has a corresponding BLS private key and public key.

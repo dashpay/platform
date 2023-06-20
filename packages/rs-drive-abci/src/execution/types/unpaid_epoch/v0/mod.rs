@@ -21,7 +21,7 @@ pub struct UnpaidEpoch {
 
 impl UnpaidEpoch {
     /// Counts and returns the number of blocks in the epoch
-    fn block_count(&self) -> Result<u64, error::Error> {
+    pub fn block_count(&self) -> Result<u64, error::Error> {
         self.next_epoch_start_block_height
             .checked_sub(self.start_block_height)
             .ok_or(error::Error::Fee(FeeError::Overflow(

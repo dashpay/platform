@@ -1,5 +1,3 @@
-
-
 //! Withdrawal transactions definitions and processing
 use crate::abci::AbciError;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
@@ -216,8 +214,8 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
             left.r#type == right.r#type
                 && left.extension == right.extension
                 && (left.signature.is_empty()
-                || right.signature.is_empty()
-                || left.signature == right.signature)
+                    || right.signature.is_empty()
+                    || left.signature == right.signature)
         })
     }
 }
@@ -252,7 +250,7 @@ mod test {
                 82u8, 79, 29, 3, 209, 216, 30, 148, 160, 153, 4, 39, 54, 212, 11, 217, 104, 27,
                 134, 115, 33, 68, 63, 245, 138, 69, 104, 226, 116, 219, 216, 59,
             ]
-                .into(),
+            .into(),
             signature,
             r#type: VoteExtensionType::ThresholdRecover.into(),
         });

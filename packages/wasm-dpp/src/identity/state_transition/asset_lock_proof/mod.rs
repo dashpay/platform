@@ -16,11 +16,11 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::errors::dpp_error::from_dpp_error_ref;
+use crate::execution::validation::ValidationResultWasm;
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::UnknownAssetLockProofTypeErrorWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::utils::generic_of_js_val;
-use crate::validation::ValidationResultWasm;
 use crate::{Deserialize, StateTransitionExecutionContextWasm};
 use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockProof, AssetLockProofType, AssetLockPublicKeyHashFetcher,

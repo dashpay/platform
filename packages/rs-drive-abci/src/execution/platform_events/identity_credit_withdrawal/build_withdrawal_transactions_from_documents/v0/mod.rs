@@ -1,28 +1,21 @@
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use dashcore_rpc::dashcore::{
-    blockdata::transaction::special_transaction::asset_unlock::{
-        request_info::AssetUnlockRequestInfo,
-        unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
+    blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{
+        AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
     },
     consensus::Encodable,
     hashes::Hash,
     QuorumHash, Script, TxOut,
 };
-use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_satoshi;
-use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
-use drive::grovedb::Transaction;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
-use serde_json::Value as JsonValue;
 
-use crate::block::BlockExecutionContext;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform::Platform,
@@ -30,12 +23,11 @@ use crate::{
 };
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-
     /// Build list of Core transactions from withdrawal documents
-    pub fn build_withdrawal_transactions_from_documents(
+    pub fn build_withdrawal_transactions_from_documents_v0(
         &self,
         documents: &[Document],
         drive_operation_types: &mut Vec<DriveOperation>,
@@ -120,7 +112,6 @@ impl<C> Platform<C>
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use dashcore_rpc::dashcore::{
@@ -129,14 +120,6 @@ mod tests {
     };
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::setup_document;
-    use serde_json::json;
-
-    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-
-    use crate::{
-        block::BlockExecutionContext, execution::fee_pools::epoch::EpochInfo,
-        rpc::core::MockCoreRPCLike,
-    };
 
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::block_info::BlockInfo;
@@ -182,7 +165,7 @@ mod tests {
                 }),
                 None,
             )
-                .expect("expected withdrawal document");
+            .expect("expected withdrawal document");
 
             let document_type = data_contract
                 .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
@@ -209,7 +192,7 @@ mod tests {
                 }),
                 None,
             )
-                .expect("expected withdrawal document");
+            .expect("expected withdrawal document");
 
             setup_document(
                 &platform.drive,
@@ -224,7 +207,7 @@ mod tests {
             let mut batch = vec![];
 
             let transactions = platform
-                .build_withdrawal_transactions_from_documents(
+                .build_withdrawal_transactions_from_documents_v0(
                     &documents,
                     &mut batch,
                     Some(&transaction),
@@ -260,9 +243,9 @@ mod tests {
                         ],
                     ),
                 ]
-                    .into_iter()
-                    .sorted()
-                    .collect::<Vec<WithdrawalTransactionIdAndBytes>>(),
+                .into_iter()
+                .sorted()
+                .collect::<Vec<WithdrawalTransactionIdAndBytes>>(),
             );
         }
     }

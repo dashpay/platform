@@ -1,14 +1,14 @@
+use crate::error::Error;
+use crate::execution::types::update_state_masternode_list_outcome;
+use crate::platform::{state, Platform};
+use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
-use crate::error::Error;
-use crate::execution::types::update_state_masternode_list_outcome;
-use crate::platform::{Platform, state};
-use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Updates the masternode list in the platform state based on changes in the masternode list
     /// from Dash Core between two block heights.
@@ -27,7 +27,7 @@ impl<C> Platform<C>
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
     ///   there is a problem fetching the masternode list difference or updating the state.
-    fn update_masternode_list(
+    pub(in crate::execution::platform_events::core_based_updates) fn update_masternode_list_v0(
         &self,
         platform_state: Option<&state::v0::PlatformState>,
         block_platform_state: &mut state::v0::PlatformState,
@@ -41,7 +41,7 @@ impl<C> Platform<C>
         {
             if core_block_height == last_commited_block_info.basic_info.core_height {
                 tracing::debug!(
-                    method = "update_masternode_list",
+                    method = "update_masternode_list_v0",
                     "no update mnl at height {}",
                     core_block_height
                 );
@@ -49,7 +49,7 @@ impl<C> Platform<C>
             }
         }
         tracing::debug!(
-            method = "update_masternode_list",
+            method = "update_masternode_list_v0",
             "update mnl to height {} at block {}",
             core_block_height,
             block_platform_state.core_height()
@@ -58,7 +58,7 @@ impl<C> Platform<C>
             let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
                 removed_masternodes,
-            } = self.update_state_masternode_list(
+            } = self.update_state_masternode_list_v0(
                 block_platform_state,
                 core_block_height,
                 is_init_chain,

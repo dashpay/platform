@@ -1,8 +1,18 @@
-
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::execution_event::ExecutionEvent;
+use crate::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::prelude::ConsensusValidationResult;
+use drive::fee::result::FeeResult;
+use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Validates the fees of a given `ExecutionEvent`.
     ///
@@ -21,7 +31,7 @@ impl<C> Platform<C>
     ///
     /// * This function may return an `Error::Execution` if the identity balance is not found.
     /// * This function may return an `Error::Drive` if there's an issue with applying drive operations.
-    pub(crate) fn validate_fees_of_event(
+    pub(crate) fn validate_fees_of_event_v0(
         &self,
         event: &ExecutionEvent,
         block_info: &BlockInfo,
@@ -56,7 +66,7 @@ impl<C> Platform<C>
                                 previous_balance_with_top_up,
                             ),
                         )
-                            .into()],
+                        .into()],
                     ))
                 }
             }
@@ -83,7 +93,7 @@ impl<C> Platform<C>
                         vec![StateError::IdentityInsufficientBalanceError(
                             IdentityInsufficientBalanceError::new(identity.id, balance),
                         )
-                            .into()],
+                        .into()],
                     ))
                 }
             }

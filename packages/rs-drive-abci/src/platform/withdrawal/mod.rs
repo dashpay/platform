@@ -1,1 +1,1 @@
-mod withdrawal_txs;
+pub(crate) mod withdrawal_txs;

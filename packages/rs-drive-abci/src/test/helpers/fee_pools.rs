@@ -42,6 +42,7 @@ use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
+use crate::platform::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 use dpp::block::block_info::BlockInfo;
 use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
@@ -51,8 +52,6 @@ use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use crate::platform::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
-
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
 fn create_test_mn_share_document(

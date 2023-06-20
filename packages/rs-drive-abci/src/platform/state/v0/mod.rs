@@ -16,8 +16,8 @@ use dpp::ProtocolError;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 
-use std::collections::{BTreeMap, HashMap};
 use crate::platform::validator_set::v0::ValidatorSet;
+use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize)]

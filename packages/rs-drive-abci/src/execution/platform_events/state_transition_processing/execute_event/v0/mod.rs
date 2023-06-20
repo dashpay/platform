@@ -1,7 +1,18 @@
+use crate::error::Error;
+use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_result::ExecutionResult;
+use crate::execution::types::execution_result::ExecutionResult::{
+    ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
+};
+use crate::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
+use dpp::validation::SimpleConsensusValidationResult;
+use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Executes the given `event` based on the `block_info` and `transaction`.
     ///
@@ -25,7 +36,7 @@ impl<C> Platform<C>
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
-    pub(crate) fn execute_event(
+    pub(crate) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
         block_info: &BlockInfo,
@@ -34,7 +45,7 @@ impl<C> Platform<C>
         //todo: we need to split out errors
         //  between failed execution and internal errors
         let validation_result =
-            self.validate_fees_of_event(&event, block_info, Some(transaction))?;
+            self.validate_fees_of_event_v0(&event, block_info, Some(transaction))?;
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
@@ -59,14 +70,6 @@ impl<C> Platform<C>
                         balance_change,
                         Some(transaction),
                     )?;
-
-                    // println!("State transition fees {:#?}", outcome.actual_fee_paid);
-                    //
-                    // println!(
-                    //     "Identity balance {:?} changed {:#?}",
-                    //     identity.balance,
-                    //     balance_change.change()
-                    // );
 
                     Ok(SuccessfulPaidExecution(
                         validation_result.into_data()?,

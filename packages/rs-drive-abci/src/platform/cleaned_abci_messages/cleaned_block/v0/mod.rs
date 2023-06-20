@@ -1,4 +1,3 @@
-
 use crate::abci::AbciError;
 use crate::error::Error;
 use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};

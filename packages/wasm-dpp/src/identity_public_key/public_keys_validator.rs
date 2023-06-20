@@ -1,7 +1,7 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::utils::{to_vec_of_serde_values, ToSerdeJSONExt};
-use crate::validation_result::ValidationResultWasm;
+use crate::execution::validation_result::ValidationResultWasm;
 use dpp::identity::validation::{PublicKeysValidator, TPublicKeysValidator};
 
 use wasm_bindgen::prelude::*;

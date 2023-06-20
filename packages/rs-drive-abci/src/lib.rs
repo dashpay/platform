@@ -13,12 +13,6 @@
 /// ABCI module
 pub mod abci;
 
-/// Block module
-mod block;
-
-/// Validation module
-pub mod validation;
-
 /// Errors module
 pub mod error;
 

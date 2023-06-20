@@ -1,15 +1,14 @@
+use crate::error::Error;
+use crate::platform::state;
+use crate::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
-use crate::error::Error;
-use crate::platform::Platform;
-use crate::platform::state;
-use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-
     /// Updates the core information in the platform state based on the given core block height.
     ///
     /// This function updates both the masternode list and the quorum information in the platform
@@ -30,7 +29,7 @@ impl<C> Platform<C>
     ///
     /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
     /// there is a problem updating the masternode list, quorum information, or the state.
-    pub(crate) fn update_core_info(
+    pub(crate) fn update_core_info_v0(
         &self,
         platform_state: Option<&state::v0::PlatformState>,
         block_platform_state: &mut state::v0::PlatformState,
@@ -39,7 +38,7 @@ impl<C> Platform<C>
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        self.update_masternode_list(
+        self.update_masternode_list_v0(
             platform_state,
             block_platform_state,
             core_block_height,
@@ -48,6 +47,6 @@ impl<C> Platform<C>
             transaction,
         )?;
 
-        self.update_quorum_info(block_platform_state, core_block_height, false)
+        self.update_quorum_info_v0(block_platform_state, core_block_height, false)
     }
 }
