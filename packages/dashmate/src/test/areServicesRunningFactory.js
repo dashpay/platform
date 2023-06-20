@@ -1,4 +1,4 @@
-const generateEnvs = require("../util/generateEnvs");
+const generateEnvs = require('../util/generateEnvs');
 
 /**
  * @param {ConfigFile} configFile
@@ -21,7 +21,7 @@ function areServicesRunningFactory(configFile, configGroup, dockerCompose, servi
       if (config.name === 'local_seed') {
         result = result && (await dockerCompose.isServiceRunning(
           generateEnvs(configFile, config),
-          'core'
+          'core',
         ));
       } else {
         for (const serviceName of Object.keys(services)) {

@@ -1,4 +1,4 @@
-const generateEnvs = require("../util/generateEnvs");
+const generateEnvs = require('../util/generateEnvs');
 
 /**
  * @param {Config} config
