@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;

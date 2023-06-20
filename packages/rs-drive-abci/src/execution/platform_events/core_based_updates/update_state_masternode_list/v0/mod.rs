@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
-use crate::platform::{state, validator_set, Platform};
+use crate::platform_types::platform::Platform;
+use crate::platform_types::{state, validator_set};
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeType};

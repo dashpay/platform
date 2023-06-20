@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::grovedb::Transaction;

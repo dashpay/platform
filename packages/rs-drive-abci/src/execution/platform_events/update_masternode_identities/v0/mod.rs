@@ -1,12 +1,12 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 
-use crate::platform::state::v0::PlatformState;
+use crate::platform_types::state::v0::PlatformState;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;

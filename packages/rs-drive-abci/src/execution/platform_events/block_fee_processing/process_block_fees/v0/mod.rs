@@ -44,8 +44,8 @@ use crate::abci::messages::BlockFees;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::{block_state_info, processed_block_fees_outcome};
-use crate::platform::epoch::v0::EpochInfo;
-use crate::platform::Platform;
+use crate::platform_types::epoch::v0::EpochInfo;
+use crate::platform_types::platform::Platform;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
@@ -206,7 +206,7 @@ mod tests {
     mod helpers {
         use super::*;
         use crate::execution::types::block_state_info::v0::BlockStateInfo;
-        use crate::platform::epoch::v0::EPOCH_CHANGE_TIME_MS_V0;
+        use crate::platform_types::epoch::v0::EPOCH_CHANGE_TIME_MS_V0;
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
         /// Process and validate block fees

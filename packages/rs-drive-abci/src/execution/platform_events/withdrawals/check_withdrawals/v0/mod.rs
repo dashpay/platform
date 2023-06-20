@@ -1,6 +1,6 @@
 use crate::abci::AbciError;
-use crate::platform::withdrawal::withdrawal_txs;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
+use crate::platform_types::withdrawal::withdrawal_txs;
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;

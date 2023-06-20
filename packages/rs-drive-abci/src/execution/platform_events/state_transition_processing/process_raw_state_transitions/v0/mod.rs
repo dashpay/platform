@@ -3,8 +3,8 @@ use crate::execution::types::execution_result::ExecutionResult::{
     ConsensusExecutionError, SuccessfulPaidExecution,
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::platform::state;
-use crate::platform::{Platform, PlatformRef};
+use crate::platform_types::platform::{Platform, PlatformRef};
+use crate::platform_types::state;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
@@ -64,7 +64,7 @@ where
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
-                    self.execute_event(execution_event, block_info, transaction)?
+                    self.execute_event_v0(execution_event, block_info, transaction)?
                 } else {
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,

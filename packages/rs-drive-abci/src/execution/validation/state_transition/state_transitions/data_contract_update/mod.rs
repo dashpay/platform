@@ -12,7 +12,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::Error;
 use dpp::state_transition::StateTransitionAction;
 
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::data_contract_update::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::data_contract_update::state::v0::StateTransitionStateValidationV0;
@@ -65,7 +65,7 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::platform::PlatformRef;
+    use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;

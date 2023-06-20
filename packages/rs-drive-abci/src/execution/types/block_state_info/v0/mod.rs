@@ -29,7 +29,7 @@
 
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::platform::block_proposal::v0::BlockProposal;
+use crate::platform_types::block_proposal::v0::BlockProposal;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;

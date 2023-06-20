@@ -16,7 +16,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::documents_batch::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;

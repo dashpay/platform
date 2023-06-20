@@ -1,7 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::state;
-use crate::platform::{validator_set, Platform};
+use crate::platform_types::platform::Platform;
+use crate::platform_types::state;
+use crate::platform_types::validator_set;
 use crate::rpc::core::CoreRPCLike;
 use std::cmp::Ordering;
 

@@ -30,7 +30,7 @@
 use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::execution::types::fees_in_pools::v0::FeesInPools;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::Credits;

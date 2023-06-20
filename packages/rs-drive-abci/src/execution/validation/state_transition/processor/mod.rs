@@ -1,8 +1,8 @@
 pub(crate) mod v0;
 
 use crate::error::Error;
-use crate::execution::execution_event::ExecutionEvent;
-use crate::platform::PlatformRef;
+use crate::execution::types::execution_event::ExecutionEvent;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;

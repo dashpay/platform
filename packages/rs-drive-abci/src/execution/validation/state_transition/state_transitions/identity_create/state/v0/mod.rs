@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::basic::identity::{

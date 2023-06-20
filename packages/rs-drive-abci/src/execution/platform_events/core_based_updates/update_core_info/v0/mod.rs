@@ -1,6 +1,6 @@
 use crate::error::Error;
-use crate::platform::state;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
+use crate::platform_types::state;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;

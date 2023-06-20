@@ -4,7 +4,7 @@ use dpp::state_transition::state_transition_execution_context::StateTransitionEx
 use dpp::state_transition::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::documents_batch::state::v0::validate_documents_batch_transition_state::validate_document_batch_transition_state;
 

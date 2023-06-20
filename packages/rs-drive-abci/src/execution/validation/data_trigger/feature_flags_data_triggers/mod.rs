@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::data_trigger::create_error;
+use crate::execution::validation::data_trigger::create_error;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::get_from_transition_action;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -88,8 +88,8 @@ pub fn create_feature_flag_data_trigger(
 #[cfg(test)]
 mod test {
     use super::create_feature_flag_data_trigger;
-    use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::platform::PlatformStateRef;
+    use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
+    use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::DocumentTransitionAction;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;

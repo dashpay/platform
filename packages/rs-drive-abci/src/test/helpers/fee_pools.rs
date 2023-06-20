@@ -42,7 +42,7 @@ use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use crate::platform::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
+use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 use dpp::block::block_info::BlockInfo;
 use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;

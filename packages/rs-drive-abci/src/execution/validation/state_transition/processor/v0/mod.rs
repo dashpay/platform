@@ -1,6 +1,7 @@
 use crate::error::Error;
+use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;

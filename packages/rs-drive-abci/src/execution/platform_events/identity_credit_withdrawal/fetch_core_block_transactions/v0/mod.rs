@@ -24,7 +24,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     error::{execution::ExecutionError, Error},
-    platform::Platform,
+    platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
 

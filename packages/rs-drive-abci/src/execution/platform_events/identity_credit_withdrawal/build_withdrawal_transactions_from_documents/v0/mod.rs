@@ -18,7 +18,7 @@ use drive::{drive::batch::DriveOperation, query::TransactionArg};
 
 use crate::{
     error::{execution::ExecutionError, Error},
-    platform::Platform,
+    platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
 

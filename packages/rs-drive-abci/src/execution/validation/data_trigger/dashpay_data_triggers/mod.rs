@@ -1,7 +1,9 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
-use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use crate::execution::validation::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
+use crate::execution::validation::data_trigger::{
+    DataTriggerExecutionContext, DataTriggerExecutionResult,
+};
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -126,9 +128,9 @@ pub fn create_contact_request_data_trigger(
 
 #[cfg(test)]
 mod test {
-    use crate::execution::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
-    use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::platform::PlatformStateRef;
+    use crate::execution::validation::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
+    use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
+    use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};

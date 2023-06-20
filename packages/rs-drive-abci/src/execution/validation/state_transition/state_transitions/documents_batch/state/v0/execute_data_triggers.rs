@@ -1,5 +1,7 @@
-use crate::execution::data_trigger::get_data_triggers_factory::{data_triggers, get_data_triggers};
-use crate::execution::data_trigger::{
+use crate::execution::validation::data_trigger::get_data_triggers_factory::{
+    data_triggers, get_data_triggers,
+};
+use crate::execution::validation::data_trigger::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use dpp::document::document_transition::DocumentTransitionAction;

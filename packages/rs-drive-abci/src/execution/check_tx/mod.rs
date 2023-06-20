@@ -4,7 +4,7 @@ use crate::execution::types::execution_result::ExecutionResult;
 #[cfg(test)]
 use crate::execution::types::execution_result::ExecutionResult::ConsensusExecutionError;
 use crate::execution::validation::state_transition::processor::process_state_transition;
-use crate::platform::{Platform, PlatformRef};
+use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;

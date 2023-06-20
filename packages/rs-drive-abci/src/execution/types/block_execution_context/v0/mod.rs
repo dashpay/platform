@@ -28,7 +28,7 @@
 //
 
 use crate::execution::types::block_state_info;
-use crate::platform::{epoch, state};
+use crate::platform_types::{epoch, state};
 use dashcore_rpc::dashcore::Txid;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;

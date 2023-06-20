@@ -18,11 +18,13 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::{block_execution_context, block_state_info};
-use crate::platform::block_proposal;
-use crate::platform::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
-use crate::platform::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
-use crate::platform::epoch::v0::EpochInfo;
-use crate::platform::{block_execution_outcome, Platform};
+use crate::platform_types;
+use crate::platform_types::block_execution_outcome;
+use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
+use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
+use crate::platform_types::epoch::v0::EpochInfo;
+use crate::platform_types::platform::Platform;
+use crate::platform_types::{block_proposal, commit};
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -281,7 +283,7 @@ where
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
-    ) -> Result<BlockFinalizationOutcome, Error> {
+    ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         // Retrieve block execution context before we do anything at all
@@ -293,7 +295,7 @@ where
                     "block execution context must be set in block begin handler for finalize block proposal",
                 )))?;
 
-        let BlockExecutionContext {
+        let block_execution_context::v0::BlockExecutionContext {
             block_state_info,
             epoch_info,
             block_platform_state,
@@ -366,7 +368,7 @@ where
             // Verify commit
 
             let quorum_type = self.config.quorum_type();
-            let commit = Commit::new_from_cleaned(
+            let commit = commit::v0::Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,
                 height,

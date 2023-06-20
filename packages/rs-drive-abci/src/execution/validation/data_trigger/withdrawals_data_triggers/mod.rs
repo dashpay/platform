@@ -2,6 +2,9 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
 
+use crate::execution::validation::data_trigger::{
+    DataTriggerExecutionContext, DataTriggerExecutionResult,
+};
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -9,8 +12,6 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
-
-use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 /// Creates a data trigger for handling deletion of withdrawal documents.
 ///
@@ -115,7 +116,7 @@ pub fn delete_withdrawal_data_trigger(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::PlatformStateRef;
+    use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::document::document_transition::{

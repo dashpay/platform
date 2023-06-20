@@ -4,7 +4,7 @@ use crate::execution::types::execution_result::ExecutionResult;
 use crate::execution::types::execution_result::ExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
 };
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;

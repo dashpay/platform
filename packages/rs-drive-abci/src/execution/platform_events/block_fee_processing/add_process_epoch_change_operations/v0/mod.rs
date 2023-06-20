@@ -43,7 +43,8 @@ use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::execution::types::block_state_info::v0::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
-use crate::platform::{epoch, Platform};
+use crate::platform_types::epoch;
+use crate::platform_types::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
@@ -139,7 +140,7 @@ mod tests {
 
     mod helpers {
         use super::*;
-        use crate::platform::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
+        use crate::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
         use dpp::block::block_info::BlockInfo;
         use drive::fee::epoch::CreditsPerEpoch;
 

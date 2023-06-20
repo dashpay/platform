@@ -35,7 +35,7 @@
 
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::epoch::distribution::{
     distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,

@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -17,7 +17,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
     /// Returns the number of proposers to be paid out.
-    fn add_epoch_pool_to_proposers_payout_operations_v0(
+    pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn add_epoch_pool_to_proposers_payout_operations_v0(
         &self,
         unpaid_epoch: &unpaid_epoch::v0::UnpaidEpoch,
         core_block_rewards: Credits,

@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;

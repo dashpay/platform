@@ -38,4 +38,4 @@ pub mod test;
 /// Mimic of block execution for tests
 pub mod mimic;
 /// Platform module
-pub mod platform;
+pub mod platform_types;

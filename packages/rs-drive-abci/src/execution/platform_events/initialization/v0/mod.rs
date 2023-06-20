@@ -1,14 +1,14 @@
 use crate::abci::messages::RequestInitChainCleanedParams;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
 use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
-use crate::platform::state::v0::PlatformInitializationState;
+use crate::platform_types::state::v0::PlatformInitializationState;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>

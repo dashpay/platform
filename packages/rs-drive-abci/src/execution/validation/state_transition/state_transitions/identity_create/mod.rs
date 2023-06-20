@@ -9,7 +9,7 @@ use crate::execution::validation::state_transition::identity_create::state::v0::
 use crate::execution::validation::state_transition::identity_create::structure::v0::StateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform::PlatformRef;
+use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::PartialIdentity;

@@ -60,9 +60,10 @@ use super::AbciError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
-use crate::platform::block_execution_outcome;
-use crate::platform::block_proposal::v0::BlockProposal;
-use crate::platform::state::v0;
+use crate::platform_types::block_execution_outcome;
+use crate::platform_types::block_proposal::v0::BlockProposal;
+use crate::platform_types::state::v0;
+use crate::platform_types::withdrawal::withdrawal_txs;
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
@@ -351,7 +352,7 @@ where
             };
             Ok(response)
         } else {
-            let BlockExecutionOutcome {
+            let block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash,
                 tx_results,
                 validator_set_update,
@@ -455,7 +456,7 @@ where
             .into());
         }
 
-        let got: WithdrawalTxs = vote_extensions.into();
+        let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
             .withdrawal_transactions
             .keys()

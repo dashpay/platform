@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::data_trigger::create_error;
+use crate::execution::validation::data_trigger::create_error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -172,7 +172,7 @@ pub fn create_masternode_reward_shares_data_trigger(
 mod test {
     use super::*;
 
-    use crate::platform::PlatformStateRef;
+    use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};
@@ -191,6 +191,7 @@ mod test {
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
+    use crate::platform_types::state::v0::PlatformState;
     use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};

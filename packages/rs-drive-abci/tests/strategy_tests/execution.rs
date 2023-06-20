@@ -22,7 +22,7 @@ use drive_abci::config::PlatformConfig;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
-use drive_abci::platform::Platform;
+use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use rand::prelude::{SliceRandom, StdRng};

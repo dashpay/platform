@@ -1,4 +1,4 @@
-use crate::platform::PlatformStateRef;
+use crate::platform_types::platform::PlatformStateRef;
 use dpp::{
     prelude::{DataContract, Identifier},
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,

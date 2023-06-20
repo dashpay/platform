@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
-use crate::platform::{state, Platform};
+use crate::platform_types::platform::Platform;
+use crate::platform_types::state;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;

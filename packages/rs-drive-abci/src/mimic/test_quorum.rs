@@ -1,5 +1,5 @@
-use crate::platform::validator::v0::Validator;
-use crate::platform::validator_set::v0::ValidatorSet;
+use crate::platform_types::validator::v0::Validator;
+use crate::platform_types::validator_set::v0::ValidatorSet;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};

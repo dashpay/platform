@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::proposer_payouts;
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
@@ -46,7 +46,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             },
         ));
 
-        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
+        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations_v0(
             &unpaid_epoch,
             core_block_rewards,
             transaction,

@@ -2,7 +2,7 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 use crate::error::Error;
-use crate::platform::PlatformStateRef;
+use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;

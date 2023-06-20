@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::execution::platform_events::core_subsidy::{
     CORE_GENESIS_BLOCK_SUBSIDY, CORE_SUBSIDY_HALVING_INTERVAL,
 };
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
 use drive::fee::credits::Credits;
 use lazy_static::lazy_static;
