@@ -1,6 +1,6 @@
-use crate::validator_set::ValidatorSetError;
 use dpp::bls_signatures::BlsError;
 
+// @append_only
 /// Error returned within ABCI server
 #[derive(Debug, thiserror::Error)]
 pub enum AbciError {
@@ -61,10 +61,6 @@ pub enum AbciError {
     /// Error occurred related to threshold signing, either of commit
     #[error("bls error from Tenderdash for threshold mechanisms: {1}: {0}")]
     BlsErrorOfTenderdashThresholdMechanism(BlsError, String),
-
-    /// Error occurred during validator set creation
-    #[error("validator set: {0}")]
-    ValidatorSet(#[from] ValidatorSetError),
 
     /// Generic with code should only be used in tests
     #[error("generic with code: {0}")]

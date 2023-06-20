@@ -104,7 +104,7 @@ impl<'a> ProofVerification<'a> {
                 return SimpleValidationResult::new_with_error(
                     AbciError::BlsErrorOfTenderdashThresholdMechanism(
                         e,
-                        format!("Malformed signature data: {}", hex::encode(&self.signature)),
+                        format!("Malformed signature data: {}", hex::encode(self.signature)),
                     ),
                 )
             }
@@ -129,7 +129,7 @@ impl<'a> ProofVerification<'a> {
 
     /// Verify proof returned by the Platform.
     pub fn verify_proof(&self, app_hash: &[u8], proof: Proof) -> SimpleValidationResult<AbciError> {
-        tracing::debug!(?proof, app_hash = hex::encode(&app_hash), "verifying proof");
+        tracing::debug!(?proof, app_hash = hex::encode(app_hash), "verifying proof");
 
         if self.app_hash != app_hash {
             return SimpleValidationResult::new_with_error(AbciError::InvalidState(
