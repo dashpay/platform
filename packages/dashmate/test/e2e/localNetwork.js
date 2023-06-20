@@ -103,8 +103,6 @@ describe('Local Network', function main() {
 
   describe('start', () => {
     it('should start local network', async () => {
-      group = configFile.getGroupConfigs(groupName);
-
       for (const config of group) {
         config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
       }
@@ -121,8 +119,6 @@ describe('Local Network', function main() {
 
   describe('restart', () => {
     it('should restart local network', async () => {
-      group = configFile.getGroupConfigs(groupName);
-
       for (const config of group) {
         const task = restartNodeTask(config);
         await task.run();
@@ -136,8 +132,6 @@ describe('Local Network', function main() {
 
   describe('stop', () => {
     it('should stop local network', async () => {
-      group = configFile.getGroupConfigs(groupName);
-
       for (const config of group.reverse()) {
         const task = stopNodeTask(config);
         await task.run();

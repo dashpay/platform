@@ -13,8 +13,8 @@ const { SSL_PROVIDERS } = require('../../src/constants');
 const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderdashNodeKey');
 const createSelfSignedCertificate = require('../../src/test/createSelfSignedCertificate');
 const isServiceRunningFactory = require('../../src/test/isServiceRunningFactory');
-const wait = require('../../src/util/wait');
 const createRpcClient = require('../../src/core/createRpcClient');
+const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
 
 describe('Testnet HP Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -35,6 +35,7 @@ describe('Testnet HP Fullnode', function main() {
   let renderServiceTemplates;
   let writeServiceConfigs;
   let configFileRepository;
+  let waitForCoreData;
 
   const preset = 'testnet';
 
@@ -132,6 +133,8 @@ describe('Testnet HP Fullnode', function main() {
         pass: config.get('core.rpc.password'),
       });
 
+      waitForCoreData = waitForCoreDataFactory(coreRpcClient);
+
       expect(config).to.not.be.undefined();
     });
   });
@@ -149,25 +152,7 @@ describe('Testnet HP Fullnode', function main() {
 
   describe('sync', () => {
     it('should sync Dash Core', async () => {
-      await wait(360000);
-
-      let blockchainInfo = await coreRpcClient.getBlockchainInfo();
-
-      if (blockchainInfo.result.headers.length === 0) {
-        expect.fail('Core is not syncing');
-      }
-
-      lastBlockHeight = blockchainInfo.result.headers;
-
-      await wait(120000);
-
-      blockchainInfo = await coreRpcClient.getBlockchainInfo();
-
-      if (blockchainInfo.result.headers <= lastBlockHeight) {
-        expect.fail('Core is not syncing');
-      }
-
-      lastBlockHeight = blockchainInfo.result.headers;
+      lastBlockHeight = await waitForCoreData(0, (currentValue) => currentValue > 0);
     });
   });
 
@@ -180,13 +165,10 @@ describe('Testnet HP Fullnode', function main() {
 
       expect(isRunning).to.be.true();
 
-      await wait(120000);
-
-      const blockchainInfo = await coreRpcClient.getBlockchainInfo();
-
-      if (blockchainInfo.result.headers <= lastBlockHeight) {
-        expect.fail('Core is not syncing after restart');
-      }
+      await waitForCoreData(
+        lastBlockHeight,
+        (currentValue, originalValue) => currentValue > originalValue,
+      );
     });
   });
 
