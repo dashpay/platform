@@ -1,5 +1,8 @@
+const convertDate = require('./convertDate');
+
 class Certificate {
   id;
+
   type;
 
   /**
@@ -96,7 +99,7 @@ class Certificate {
    * @param {number} days
    */
   isExpiredInDays(days) {
-    let expiresInDays = new Date(this.expires);
+    const expiresInDays = new Date(this.expires);
     expiresInDays.setDate(expiresInDays.getDate() - days);
 
     return expiresInDays.getTime() <= Date.now();
@@ -108,11 +111,6 @@ class Certificate {
   isExpiredSoon() {
     return this.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS);
   }
-}
-
-function convertDate(dateString) {
-  const parts = dateString.split(/[- :]/);
-  return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]);
 }
 
 module.exports = Certificate;

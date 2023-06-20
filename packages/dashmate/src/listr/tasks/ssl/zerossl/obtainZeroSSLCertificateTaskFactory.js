@@ -25,8 +25,6 @@ function obtainZeroSSLCertificateTaskFactory(
   listCertificates,
   saveCertificateTask,
   verificationServer,
-  configFileRepository,
-  configFile,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
