@@ -27,8 +27,8 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::abci::messages::BlockFees;
 use crate::error::Error;
+use crate::execution::types::block_fees;
 use crate::execution::types::fees_in_pools::v0::FeesInPools;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
@@ -47,7 +47,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     pub fn add_distribute_block_fees_into_pools_operations_v0(
         &self,
         current_epoch: &Epoch,
-        block_fees: &BlockFees,
+        block_fees: &block_fees::v0::BlockFees,
         cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
@@ -123,7 +123,7 @@ mod tests {
         platform
             .add_distribute_block_fees_into_pools_operations_v0(
                 &current_epoch_tree,
-                &BlockFees::from_fees(storage_fees, processing_fees),
+                &block_fees::v0::BlockFees::from_fees(storage_fees, processing_fees),
                 None,
                 Some(&transaction),
                 &mut batch,
@@ -176,7 +176,7 @@ mod tests {
         platform
             .add_distribute_block_fees_into_pools_operations_v0(
                 &current_epoch_tree,
-                &BlockFees::from_fees(storage_fees, processing_fees),
+                &block_fees::v0::BlockFees::from_fees(storage_fees, processing_fees),
                 None,
                 Some(&transaction),
                 &mut batch,

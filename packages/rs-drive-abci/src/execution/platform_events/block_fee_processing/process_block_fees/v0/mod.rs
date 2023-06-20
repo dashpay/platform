@@ -40,10 +40,9 @@ use drive::drive::batch::DriveOperation;
 use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::grovedb::Transaction;
 
-use crate::abci::messages::BlockFees;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::{block_state_info, processed_block_fees_outcome};
+use crate::execution::types::{block_fees, block_state_info, processed_block_fees_outcome};
 use crate::platform_types::epoch::v0::EpochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
@@ -70,7 +69,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         block_info: &block_state_info::v0::BlockStateInfo,
         epoch_info: &EpochInfo,
-        block_fees: BlockFees,
+        block_fees: block_fees::v0::BlockFees,
         transaction: &Transaction,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index)?;
@@ -204,6 +203,7 @@ mod tests {
 
     mod helpers {
         use super::*;
+        use crate::execution::types::block_fees::v0::BlockFees;
         use crate::execution::types::block_state_info::v0::BlockStateInfo;
         use crate::platform_types::epoch::v0::EPOCH_CHANGE_TIME_MS_V0;
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};

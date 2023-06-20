@@ -26,8 +26,6 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::abci::messages::SystemIdentityPublicKeys;
-
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
@@ -39,6 +37,7 @@ use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
+use crate::platform_types::system_identity_public_keys;
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -65,7 +64,7 @@ impl<C> Platform<C> {
     pub fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
-        system_identity_public_keys: SystemIdentityPublicKeys,
+        system_identity_public_keys: system_identity_public_keys::v0::SystemIdentityPublicKeys,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         self.drive

@@ -7,8 +7,6 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
-
 // We allow changes in the ABCI configuration, but there should be a social process
 // involved in making this change.
 // @append_only
@@ -149,33 +147,6 @@ impl Keys {
                 .random_public_key_data(&mut rng),
             withdrawals_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
             withdrawals_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-        }
-    }
-}
-
-impl From<Keys> for SystemIdentityPublicKeys {
-    fn from(keys: Keys) -> Self {
-        Self {
-            masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
-                master: keys.masternode_reward_shares_master_public_key,
-                high: keys.masternode_reward_shares_second_public_key,
-            },
-            feature_flags_contract_owner: RequiredIdentityPublicKeysSet {
-                master: keys.feature_flags_master_public_key,
-                high: keys.feature_flags_second_public_key,
-            },
-            dpns_contract_owner: RequiredIdentityPublicKeysSet {
-                master: keys.dpns_master_public_key,
-                high: keys.dpns_second_public_key,
-            },
-            withdrawals_contract_owner: RequiredIdentityPublicKeysSet {
-                master: keys.withdrawals_master_public_key,
-                high: keys.withdrawals_second_public_key,
-            },
-            dashpay_contract_owner: RequiredIdentityPublicKeysSet {
-                master: keys.dashpay_master_public_key,
-                high: keys.dashpay_second_public_key,
-            },
         }
     }
 }

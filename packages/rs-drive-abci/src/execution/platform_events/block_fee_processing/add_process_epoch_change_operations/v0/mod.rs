@@ -39,10 +39,9 @@ use dpp::block::epoch::Epoch;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;
 
-use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::execution::types::block_state_info::v0::BlockStateInfo;
-use crate::execution::types::storage_fee_distribution_outcome;
+use crate::execution::types::{block_fees, storage_fee_distribution_outcome};
 use crate::platform_types::epoch;
 use crate::platform_types::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
@@ -72,7 +71,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         &self,
         block_info: &BlockStateInfo,
         epoch_info: &epoch::v0::EpochInfo,
-        block_fees: &BlockFees,
+        block_fees: &block_fees::v0::BlockFees,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
     ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>
@@ -138,6 +137,7 @@ mod tests {
 
     mod helpers {
         use super::*;
+        use crate::execution::types::block_fees::v0::BlockFees;
         use crate::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
         use dpp::block::block_info::BlockInfo;
         use drive::fee::epoch::CreditsPerEpoch;

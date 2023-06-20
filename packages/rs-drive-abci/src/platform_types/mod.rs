@@ -47,6 +47,10 @@ pub mod platform;
 pub mod platform_state;
 /// Querying
 pub mod query;
+/// Required identity public key set for system identities
+pub mod required_identity_public_key_set;
+/// System identity public keys
+pub mod system_identity_public_keys;
 /// The validator module
 /// A validator is a masternode that can participate in consensus by being part of a validator set
 pub mod validator;

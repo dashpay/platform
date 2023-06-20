@@ -3,8 +3,6 @@ mod error;
 /// The handlers of abci messages
 pub mod handlers;
 
-pub mod messages;
-
 // new code - config,
 #[cfg(feature = "server")]
 pub mod config;

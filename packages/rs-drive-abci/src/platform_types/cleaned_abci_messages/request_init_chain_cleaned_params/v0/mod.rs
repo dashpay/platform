@@ -33,14 +33,11 @@
 //! as well as defining and implementing the trait for serializing/deserializing them.
 //!
 
+use crate::abci::AbciError;
 use drive::dpp::identity::TimestampMillis;
-use drive::fee::epoch::CreditsPerEpoch;
-use drive::fee::result::FeeResult;
 use serde::{Deserialize, Serialize};
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
-
-use super::AbciError;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -71,66 +68,5 @@ impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
             genesis_time,
             initial_core_height,
         })
-    }
-}
-
-/// System identity public keys
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SystemIdentityPublicKeys {
-    /// Required public key set for masternode reward shares contract owner identity
-    pub masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet,
-    /// Required public key set for feature flags contract owner identity
-    pub feature_flags_contract_owner: RequiredIdentityPublicKeysSet,
-    /// Required public key set for dpns contract owner identity
-    pub dpns_contract_owner: RequiredIdentityPublicKeysSet,
-    /// Required public key set for withdrawals contract owner identity
-    pub withdrawals_contract_owner: RequiredIdentityPublicKeysSet,
-    /// Required public key set for dashpay contract owner identity
-    pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
-}
-
-// impl Default for SystemIdentityPublicKeys {}
-
-/// Required public key set for an identity
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct RequiredIdentityPublicKeysSet {
-    /// Authentication key with master security level
-    pub master: Vec<u8>,
-    /// Authentication key with high security level
-    pub high: Vec<u8>,
-}
-
-/// Aggregated fees after block execution
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockFees {
-    /// Processing fee
-    pub processing_fee: u64,
-    /// Storage fee
-    pub storage_fee: u64,
-    /// Fee refunds per epoch
-    pub refunds_per_epoch: CreditsPerEpoch,
-}
-
-impl BlockFees {
-    /// Create block fee result from fees
-    pub fn from_fees(storage_fee: u64, processing_fee: u64) -> Self {
-        Self {
-            storage_fee,
-            processing_fee,
-            ..Default::default()
-        }
-    }
-}
-
-impl From<FeeResult> for BlockFees {
-    fn from(value: FeeResult) -> Self {
-        Self {
-            storage_fee: value.storage_fee,
-            processing_fee: value.processing_fee,
-            refunds_per_epoch: value.fee_refunds.sum_per_epoch(),
-        }
     }
 }

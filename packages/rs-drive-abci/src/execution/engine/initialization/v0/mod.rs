@@ -1,4 +1,3 @@
-use crate::abci::messages::RequestInitChainCleanedParams;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -8,6 +7,7 @@ use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
+use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
 use crate::platform_types::platform_state::v0::PlatformInitializationState;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
@@ -21,7 +21,10 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
-        let request = RequestInitChainCleanedParams::try_from(request)?;
+        let request =
+            request_init_chain_cleaned_params::v0::RequestInitChainCleanedParams::try_from(
+                request,
+            )?;
         // We get core height early, as this also verifies v20 fork
         let core_height = self.initial_core_height(request.initial_core_height)?;
 
