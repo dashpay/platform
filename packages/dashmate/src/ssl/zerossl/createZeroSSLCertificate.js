@@ -6,13 +6,13 @@ const Certificate = require('./Certificate');
 /**
  * Create a ZeroSSL Certificate
  *
- * @typedef {createCertificate}
+ * @typedef {createZeroSSLCertificate}
  * @param {string} csr
  * @param {string} externalIp
  * @param {string} apiKey
  * @return {Promise<Certificate>}
  */
-async function createCertificate(
+async function createZeroSSLCertificate(
   csr,
   externalIp,
   apiKey,
@@ -46,4 +46,4 @@ async function createCertificate(
   return new Certificate(data);
 }
 
-module.exports = createCertificate;
+module.exports = createZeroSSLCertificate;

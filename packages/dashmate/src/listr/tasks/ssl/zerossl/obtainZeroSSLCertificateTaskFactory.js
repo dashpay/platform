@@ -6,7 +6,7 @@ const { EXPIRATION_LIMIT_DAYS } = require('../../../../ssl/zerossl/Certificate')
 /**
  * @param {generateCsr} generateCsr
  * @param {generateKeyPair} generateKeyPair
- * @param {createCertificate} createZeroSSLCertificate
+ * @param {createZeroSSLCertificate} createZeroSSLCertificate
  * @param {verifyDomain} verifyDomain
  * @param {downloadCertificate} downloadCertificate
  * @param {getCertificate} getCertificate
@@ -25,6 +25,8 @@ function obtainZeroSSLCertificateTaskFactory(
   listCertificates,
   saveCertificateTask,
   verificationServer,
+  configFileRepository,
+  configFile,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
@@ -36,11 +38,6 @@ function obtainZeroSSLCertificateTaskFactory(
     config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
     config.get('externalIp', true);
 
-    /*
-    1. obtain certificate if id is exists. exit if valid
-    2. get list of certificates with current IP. update ID and exit if valid. verify if need
-     verification; draft, pending_validation, issued
-     */
     return new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
@@ -51,11 +48,14 @@ function obtainZeroSSLCertificateTaskFactory(
 
           const certificateId = await config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id');
 
+          // Certificate is already configured
           if (certificateId) {
             const certificate = await getCertificate(ctx.apiKey, certificateId);
 
+            // Certificate is not going to expire soon
             if (!certificate.isExpiredInDays(ctx.expirationDays)) {
-              // TODO: Continue here
+              // Certificate is already created, so we just need to pass validation
+              // if status is draft or pending_validation and download certificate file
               if (['issued', 'pending_validation', 'draft'].includes(ctx.certificate.status)) {
                 ctx.certificate = certificate;
 
@@ -64,6 +64,7 @@ function obtainZeroSSLCertificateTaskFactory(
                 // eslint-disable-next-line no-param-reassign
                 task.output = `Certificate already exists and expires at ${ctx.certificate.expires}`;
               }
+            // Certificate is going to expire soon, we need to obtain a new one
             } else {
               // eslint-disable-next-line no-param-reassign
               task.output = `Certificate exists but expires in less than ${EXPIRATION_LIMIT_DAYS} days at ${ctx.certificate.expires}. Obtain a new one`;
@@ -73,8 +74,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate a keypair',
-        skip: (ctx) => !ctx.certificate
-          || !(),
+        skip: (ctx) => ctx.certificate,
         task: async (ctx) => {
           ctx.keyPair = await generateKeyPair();
           ctx.privateKeyFile = ctx.keyPair.privateKey;
@@ -82,7 +82,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate CSR',
-        skip: (ctx) => ctx.exists,
+        skip: (ctx) => ctx.certificate,
         task: async (ctx) => {
           ctx.csr = await generateCsr(
             ctx.keyPair,
@@ -92,7 +92,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Create a certificate',
-        skip: (ctx) => ctx.exists,
+        skip: (ctx) => ctx.certificate,
         task: async (ctx) => {
           ctx.certificate = await createZeroSSLCertificate(
             ctx.csr,
@@ -107,7 +107,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Set up verification server',
-        skip: (ctx) => ctx.exists,
+        skip: (ctx) => !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx) => {
           const validationResponse = ctx.certificate.validation.other_methods[config.get('externalIp')];
           const route = validationResponse.file_validation_url_http.replace(`http://${config.get('externalIp')}`, '');
@@ -118,12 +118,12 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Start verification server',
-        skip: (ctx) => ctx.exists,
+        skip: (ctx) => !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async () => verificationServer.start(),
       },
       {
         title: 'Verify IP',
-        skip: (ctx) => ctx.exists,
+        skip: (ctx) => !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx, task) => {
           let retry;
           do {
@@ -169,7 +169,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Stop verification server',
-        skip: (ctx) => ctx.exists,
+        skip: (ctx) => !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async () => {
           await verificationServer.stop();
           await verificationServer.destroy();
