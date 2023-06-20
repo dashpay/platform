@@ -1,13 +1,11 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
-use dashcore_rpc::dashcore::Txid;
+
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 
-use dpp::validation::{SimpleValidationResult, ValidationResult};
-use drive::error::Error::GroveDB;
+use dpp::validation::SimpleValidationResult;
 
 use drive::grovedb::Transaction;
-use std::collections::BTreeMap;
 
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -15,14 +13,14 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::types::{block_execution_context, block_state_info};
+use crate::execution::types::block_execution_context;
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
-use crate::platform_types::epoch::v0::EpochInfo;
+
+use crate::platform_types::commit;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::{block_proposal, commit};
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>

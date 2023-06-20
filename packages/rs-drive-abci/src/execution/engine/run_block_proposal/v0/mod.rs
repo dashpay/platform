@@ -1,9 +1,9 @@
-use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
+use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::Txid;
-use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
+
 use dpp::block::epoch::Epoch;
 
-use dpp::validation::{SimpleValidationResult, ValidationResult};
+use dpp::validation::ValidationResult;
 use drive::error::Error::GroveDB;
 
 use drive::grovedb::Transaction;
@@ -16,9 +16,9 @@ use crate::error::Error;
 use crate::execution::types::{block_execution_context, block_state_info};
 
 use crate::platform_types::block_execution_outcome;
+use crate::platform_types::block_proposal;
 use crate::platform_types::epoch::v0::EpochInfo;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::{block_proposal, commit};
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
