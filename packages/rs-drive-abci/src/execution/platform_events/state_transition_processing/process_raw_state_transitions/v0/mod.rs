@@ -51,7 +51,7 @@ where
         let mut aggregate_fee_result = FeeResult::default();
         let platform_ref = PlatformRef {
             drive: &self.drive,
-            state: &block_platform_state,
+            state: block_platform_state,
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
