@@ -133,16 +133,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{
-        hashes::hex::{FromHex, ToHex},
-        BlockHash,
-    };
+
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
-    use serde_json::json;
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
     use crate::execution::types::block_state_info::v0::BlockStateInfo;

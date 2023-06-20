@@ -58,15 +58,11 @@ mod tests {
         hashes::hex::{FromHex, ToHex},
         BlockHash,
     };
-    use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
-    use drive::tests::helpers::setup::setup_document;
-    use serde_json::json;
 
-    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+    use serde_json::json;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
-    use super::*;
     use crate::rpc::core::MockCoreRPCLike;
 
     #[test]

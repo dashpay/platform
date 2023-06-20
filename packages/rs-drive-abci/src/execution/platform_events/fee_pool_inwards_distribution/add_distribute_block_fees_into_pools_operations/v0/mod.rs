@@ -97,10 +97,8 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-    use drive::drive::batch::GroveDbOpBatch;
 
-    use super::*;
+    use drive::drive::batch::GroveDbOpBatch;
 
     #[test]
     fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {

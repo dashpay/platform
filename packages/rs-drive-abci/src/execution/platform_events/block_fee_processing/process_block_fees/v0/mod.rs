@@ -195,7 +195,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 mod tests {
     use super::*;
 
-    use super::*;
     use chrono::Utc;
     use rust_decimal::prelude::ToPrimitive;
 

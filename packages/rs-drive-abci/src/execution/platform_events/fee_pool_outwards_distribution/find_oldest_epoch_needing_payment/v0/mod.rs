@@ -108,8 +108,6 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
 
-    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-
     mod find_oldest_epoch_needing_payment {
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::drive::batch::GroveDbOpBatch;

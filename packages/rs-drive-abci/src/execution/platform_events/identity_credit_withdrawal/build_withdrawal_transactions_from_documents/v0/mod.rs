@@ -113,10 +113,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{
-        hashes::hex::{FromHex, ToHex},
-        BlockHash,
-    };
+
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::setup_document;
 

@@ -1,14 +1,11 @@
-use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
-use dpp::platform_value::Value;
+
 use drive::contract::Contract;
-use drive::dpp::document::Document;
 
 use drive::drive::flags::StorageFlags;
-use drive::drive::query::QueryDocumentsOutcome;
+
 use drive::grovedb::TransactionArg;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use std::borrow::Cow;
 

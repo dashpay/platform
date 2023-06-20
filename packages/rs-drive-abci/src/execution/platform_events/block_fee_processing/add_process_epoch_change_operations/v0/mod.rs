@@ -136,8 +136,6 @@ mod tests {
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
-    use super::*;
-
     mod helpers {
         use super::*;
         use crate::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
