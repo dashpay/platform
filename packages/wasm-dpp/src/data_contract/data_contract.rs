@@ -334,7 +334,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=setConfig)]
     pub fn set_config(&mut self, config: JsValue) -> Result<(), JsValue> {
-        let res = serde_wasm_bindgen::from_value(config.clone());
+        let res = serde_wasm_bindgen::from_value(config);
         self.inner.config = res.unwrap();
         Ok(())
     }

@@ -65,7 +65,6 @@ fn validate_config_update(
         .into());
     }
 
-    // TODO: that's the place that fails
     if new_config.keeps_history != old_config.keeps_history {
         return Err(DataContractConfigUpdateError::new(
             contract_id,
@@ -447,7 +446,6 @@ mod tests {
             data_contract.config.keeps_history = true;
             data_contract.config.readonly = false;
 
-            // TODO: check that keep_history actually works
             apply_contract(
                 &platform,
                 &data_contract,
@@ -563,7 +561,6 @@ mod tests {
             data_contract.config.keeps_history = true;
             data_contract.config.readonly = false;
 
-            // TODO: check that keep_history actually works
             apply_contract(
                 &platform,
                 &data_contract,

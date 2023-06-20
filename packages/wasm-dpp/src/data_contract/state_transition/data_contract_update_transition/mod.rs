@@ -81,7 +81,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=setDataContractConfig)]
     pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
-        let res = serde_wasm_bindgen::from_value(config.clone());
+        let res = serde_wasm_bindgen::from_value(config);
         self.0.data_contract.config = res.unwrap();
         Ok(())
     }
