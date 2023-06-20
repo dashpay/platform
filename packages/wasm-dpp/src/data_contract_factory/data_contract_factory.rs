@@ -1,7 +1,6 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use dpp::data_contract::contract_config::ContractConfig;
 use dpp::data_contract::CreatedDataContract;
 use dpp::{
     data_contract::{

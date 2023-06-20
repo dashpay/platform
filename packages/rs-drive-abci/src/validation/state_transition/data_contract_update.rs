@@ -1,6 +1,8 @@
 use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -34,9 +36,7 @@ use dpp::{
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use serde_json::Value as JsonValue;
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
-use dpp::consensus::state::state_error::StateError;
+
 use dpp::data_contract::contract_config::ContractConfig;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::schema_compatibility_validator::any_schema_changes;
 use dpp::prelude::Identifier;
@@ -555,9 +555,9 @@ mod tests {
         #[test]
         fn should_fail_if_trying_to_update_config() {
             let TestData {
-                raw_state_transition,
+                raw_state_transition: _,
                 mut data_contract,
-                mut platform,
+                platform,
             } = setup_test();
 
             data_contract.config.keeps_history = true;

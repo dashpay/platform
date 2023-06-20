@@ -44,8 +44,6 @@ describe('Platform', () => {
       // random is generated within the function
       dataContractFixture = await getDataContractFixture();
 
-      console.dir(dataContractFixture.getConfig());
-
       let broadcastError;
 
       try {
