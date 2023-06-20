@@ -48,6 +48,7 @@ pub use dpp::block::epoch::EpochIndex;
 
 #[cfg(feature = "full")]
 /// Genesis epoch index
+//todo move to dpp
 pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;
 
 #[cfg(feature = "full")]

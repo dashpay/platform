@@ -17,7 +17,21 @@ function buildServicesTaskFactory(
     return new Listr({
       title: 'Build services',
       task: async (ctx, task) => {
-        const obs = await dockerCompose.build(config.toEnvs());
+        // prebuild dependencies
+
+        const envs = {
+          ...config.toEnvs(),
+          COMPOSE_FILE: 'docker-compose.platform.deps.yml',
+        };
+
+        let obs = await dockerCompose.build(envs, 'deps');
+
+        await new Promise((res, rej) => {
+          obs
+            .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
+        });
+
+        obs = await dockerCompose.build(config.toEnvs());
 
         await new Promise((res, rej) => {
           obs

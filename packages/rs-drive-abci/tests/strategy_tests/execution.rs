@@ -17,12 +17,12 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive_abci::abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
-use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-use drive_abci::execution::test_quorum::TestQuorumInfo;
-use drive_abci::platform::Platform;
+use drive_abci::mimic::test_quorum::TestQuorumInfo;
+use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
+use drive_abci::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
+use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use rand::prelude::{SliceRandom, StdRng};
@@ -591,13 +591,13 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count as u64;
+    let _quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count as u64;
     let first_block_time = 0;
     let mut current_identities = vec![];
     let mut signer = SimpleSigner::default();
     let mut i = 0;
 
-    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / config.block_spacing_ms;
+    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS_V0 / config.block_spacing_ms;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
@@ -618,17 +618,9 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
 
-    let mut next_quorum_hash = current_quorum_hash;
-
     let mut validator_set_updates = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
-        if needs_rotation_on_next_block {
-            let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
-
-            next_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
-        }
         let epoch_info = EpochInfo::calculate(
             first_block_time,
             current_time_ms,
@@ -690,6 +682,10 @@ pub(crate) fn continue_chain_for_strategy(
             validator_set_update,
             next_validator_set_hash,
             root_app_hash,
+            state_id,
+            block_id_hash: block_hash,
+            signature,
+            app_version,
         } = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
@@ -739,9 +735,17 @@ pub(crate) fn continue_chain_for_strategy(
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
-                    root_app_hash: &root_app_hash,
-                    block_signature: &vec![], //todo
-                    quorum_hash: &current_quorum_with_test_info.quorum_hash.into_inner(),
+                    quorum_hash: current_quorum_with_test_info.quorum_hash.as_inner(),
+                    quorum_type: config.quorum_type(),
+                    app_version,
+                    chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
+                    core_chain_locked_height: state_id.core_chain_locked_height,
+                    height: state_id.height as i64,
+                    block_hash: &block_hash,
+                    app_hash: &root_app_hash,
+                    time: state_id.time.expect("time is required in StateId"),
+                    signature: &signature,
+                    public_key: &current_quorum_with_test_info.public_key,
                 },
                 &current_identities,
                 &abci_app,
@@ -757,7 +761,7 @@ pub(crate) fn continue_chain_for_strategy(
             i += 1;
             i %= quorum_size; //todo: this could be variable
         }
-    }
+    } // for block_height
 
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()

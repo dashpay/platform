@@ -9,7 +9,27 @@ use dpp::document::Document;
 use grovedb::GroveDb;
 
 impl SingleDocumentDriveQuery {
-    /// Verifies the document
+    /// Verifies the proof of a document while keeping it serialized.
+    ///
+    /// `is_subset` indicates if the function should verify a subset of a larger proof.
+    ///
+    /// # Parameters
+    ///
+    /// - `is_subset`: A boolean indicating whether to verify a subset of a larger proof.
+    /// - `proof`: A byte slice representing the proof to be verified.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` with a tuple of `RootHash` and `Option<Vec<u8>>`. The `Option<Vec<u8>>`
+    /// represents the serialized document if it exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error` if:
+    ///
+    /// - The proof is corrupted.
+    /// - The GroveDb verification fails.
+    /// - The elements returned are not items, the proof is incorrect.
     pub fn verify_proof_keep_serialized(
         &self,
         is_subset: bool,
@@ -37,7 +57,28 @@ impl SingleDocumentDriveQuery {
         Ok((root_hash, serialized))
     }
 
-    /// Verifies the proof of a single document query
+    /// Verifies the proof of a single document query.
+    ///
+    /// `is_subset` indicates if the function should verify a subset of a larger proof.
+    ///
+    /// # Parameters
+    ///
+    /// - `is_subset`: A boolean indicating whether to verify a subset of a larger proof.
+    /// - `proof`: A byte slice representing the proof to be verified.
+    /// - `document_type`: The type of the document being verified.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` with a tuple of `RootHash` and `Option<Document>`. The `Option<Document>`
+    /// represents the deserialized document if it exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error` if:
+    ///
+    /// - The proof is corrupted.
+    /// - The GroveDb query fails.
+    /// - The document serialization fails.
     pub fn verify_proof(
         &self,
         is_subset: bool,

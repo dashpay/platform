@@ -780,7 +780,8 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_insert_one_new_identity_per_block() {
+    fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
+        // drive_abci::logging::Loggers::default().try_install().ok();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -812,7 +813,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
-            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            testing_configs: PlatformTestConfig::default(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -898,7 +899,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "8e90cef4a253c8a6e2d9364f14d5b37b53a41e1f2aff9a0085c311d4e23df038".to_string()
+            "e51e1f015314e8c1f46c37db22a4d29f9ee116cb23e80ce75582ad136ba2c028".to_string()
         )
     }
 
@@ -1422,7 +1423,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "a8d44b2db75668043189416351db1d812e58dccda3c4a35d319299754bdebd27".to_string()
+            "5c01c4a47d4be68d44cec1b0d2cb0cd39d5228b1ad55643aa29f5d29eba3a102".to_string()
         )
     }
 

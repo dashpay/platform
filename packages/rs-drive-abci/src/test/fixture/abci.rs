@@ -30,7 +30,8 @@
 //! Execution Tests
 //!
 
-use crate::abci::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
+use crate::platform_types::required_identity_public_key_set::v0::RequiredIdentityPublicKeysSet;
+use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeys;
 use drive::dpp::identity::KeyType::ECDSA_SECP256K1;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
