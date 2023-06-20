@@ -2,7 +2,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
-use crate::execution::validation::ValidationResultWasm;
+use crate::validation::ValidationResultWasm;
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 

@@ -22,7 +22,7 @@ where
     C: CoreRPCLike,
 {
     #[cfg(test)]
-    pub fn execute_tx(
+    pub(in crate::execution) fn execute_tx(
         &self,
         raw_tx: Vec<u8>,
         block_info: &BlockInfo,

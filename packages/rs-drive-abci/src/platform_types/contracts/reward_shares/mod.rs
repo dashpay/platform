@@ -37,6 +37,7 @@
 //! For example, the address of someone who manages the masternode for the owner.
 //!
 
+/// Module for fetching reward shares list for masternode
 pub mod fetch_reward_shares_list_for_masternode;
 
 use crate::error::Error;

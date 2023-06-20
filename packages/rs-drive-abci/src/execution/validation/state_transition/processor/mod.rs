@@ -21,7 +21,7 @@ use drive::grovedb::TransactionArg;
 /// Validate state verifies that there are no state based conflicts, for example that a document
 /// with a unique index isn't already taken.
 ///
-pub fn process_state_transition<'a, C: CoreRPCLike>(
+pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,

@@ -10,8 +10,8 @@ use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
-use crate::execution::validation::ValidationResultWasm;
 use crate::utils::{get_bool_from_options, IntoWasm, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
+use crate::validation::ValidationResultWasm;
 
 use dpp::{Convertible, ProtocolError};
 use std::sync::Arc;

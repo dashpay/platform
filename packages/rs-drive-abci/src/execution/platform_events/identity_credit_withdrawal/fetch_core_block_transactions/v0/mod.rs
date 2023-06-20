@@ -89,6 +89,7 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
 
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
 
     #[test]
     fn test_fetches_core_transactions() {

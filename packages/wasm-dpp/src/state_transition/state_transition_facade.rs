@@ -1,10 +1,10 @@
 use crate::bls_adapter::BlsAdapter;
 use std::convert::TryInto;
 
-use crate::execution::validation::ValidationResultWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
+use crate::validation::ValidationResultWasm;
 use crate::{with_js_error, StateTransitionExecutionContextWasm};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::{

@@ -307,7 +307,7 @@ pub fn create_domain_data_trigger(
 
 #[cfg(test)]
 mod test {
-    use crate::execution::data_trigger::DataTriggerExecutionContext;
+    use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};

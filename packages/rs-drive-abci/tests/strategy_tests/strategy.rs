@@ -30,7 +30,7 @@ use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
-use drive_abci::execution::test_quorum::TestQuorumInfo;
+use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};

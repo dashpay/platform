@@ -10,7 +10,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
-pub(crate) fn process_state_transition_v0<'a, C: CoreRPCLike>(
+pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
-use crate::execution::validation::ValidationResultWasm;
+use crate::validation::ValidationResultWasm;
 use crate::{IdentityUpdateTransitionWasm, StateTransitionExecutionContextWasm};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;

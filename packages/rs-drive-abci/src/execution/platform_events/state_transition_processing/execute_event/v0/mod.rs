@@ -36,7 +36,7 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
-    pub(crate) fn execute_event_v0(
+    pub(in crate::execution) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
         block_info: &BlockInfo,

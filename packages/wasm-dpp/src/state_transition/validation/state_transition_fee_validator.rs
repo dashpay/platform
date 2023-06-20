@@ -4,9 +4,9 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
-use crate::execution::validation::ValidationResultWasm;
 use crate::state_transition::conversion::create_state_transition_from_wasm_instance;
 use crate::utils::WithJsError;
+use crate::validation::ValidationResultWasm;
 use crate::StateTransitionExecutionContextWasm;
 
 #[wasm_bindgen(js_name=StateTransitionFeeValidator)]

@@ -190,6 +190,7 @@ mod tests {
     use crate::execution::types::block_state_info::v0::BlockStateInfo;
     use crate::platform_types::epoch::v0::EpochInfo;
     use crate::platform_types::state::v0::PlatformState;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;

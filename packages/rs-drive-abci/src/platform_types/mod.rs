@@ -52,4 +52,5 @@ pub mod state;
 pub mod validator;
 /// Quorum methods
 pub mod validator_set;
+/// Withdrawal types
 pub mod withdrawal;

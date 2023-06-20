@@ -1,7 +1,7 @@
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::execution::validation::ValidationResultWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::utils::WithJsError;
+use crate::validation::ValidationResultWasm;
 
 use crate::errors::consensus::consensus_error::from_consensus_error;
 use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;

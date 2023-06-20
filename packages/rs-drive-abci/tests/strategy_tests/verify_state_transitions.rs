@@ -9,8 +9,8 @@ use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use drive_abci::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 
+use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use prost::Message;
 
 pub(crate) fn verify_state_transitions_were_executed(

@@ -153,7 +153,7 @@ impl TryFrom<&EpochInfo> for Epoch {
 #[cfg(test)]
 mod test {
     mod calculate {
-        use crate::execution::types::epoch::v0::EpochInfo;
+        use crate::platform_types::epoch::v0::EpochInfo;
 
         #[test]
         fn test_epoch_change_to_0_epoch() {

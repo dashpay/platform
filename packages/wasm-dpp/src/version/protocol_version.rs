@@ -1,6 +1,6 @@
 use crate::errors::CompatibleProtocolVersionIsNotDefinedErrorWasm;
-use crate::execution::validation::ValidationResultWasm;
 use crate::utils::ToSerdeJSONExt;
+use crate::validation::ValidationResultWasm;
 use dpp::util::json_value::JsonValueExt;
 use dpp::version::ProtocolVersionValidator;
 use std::collections::HashMap;

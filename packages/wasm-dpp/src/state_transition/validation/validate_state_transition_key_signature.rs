@@ -1,6 +1,6 @@
-use crate::execution::validation::ValidationResultWasm;
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::utils::WithJsError;
+use crate::validation::ValidationResultWasm;
 use crate::StateTransitionExecutionContextWasm;
 use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,

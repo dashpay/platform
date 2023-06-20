@@ -1,7 +1,7 @@
 use crate::errors::from_dpp_err;
-use crate::execution::validation::ValidationResultWasm;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 use crate::utils::WithJsError;
+use crate::validation::ValidationResultWasm;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
 use dpp::identity::validation::TPublicKeysValidator;

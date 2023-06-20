@@ -13,8 +13,8 @@ use wasm_bindgen::prelude::*;
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 
-use crate::execution::validation::ValidationResultWasm;
 use crate::utils::ToSerdeJSONExt;
+use crate::validation::ValidationResultWasm;
 
 #[wasm_bindgen(js_name=IdentityUpdateTransitionBasicValidator)]
 pub struct IdentityUpdateTransitionBasicValidatorWasm(
