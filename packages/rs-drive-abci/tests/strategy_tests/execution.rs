@@ -19,7 +19,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
-use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
+use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::platform::Platform;
@@ -591,13 +591,13 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count as u64;
+    let _quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count as u64;
     let first_block_time = 0;
     let mut current_identities = vec![];
     let mut signer = SimpleSigner::default();
     let mut i = 0;
 
-    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / config.block_spacing_ms;
+    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS_V0 / config.block_spacing_ms;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {

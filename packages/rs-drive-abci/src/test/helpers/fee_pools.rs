@@ -51,8 +51,8 @@ use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+use crate::platform::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
-use crate::platform::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
 fn create_test_mn_share_document(

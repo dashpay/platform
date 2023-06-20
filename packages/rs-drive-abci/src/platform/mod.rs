@@ -30,11 +30,9 @@
 //! Platform Init
 //!
 
-use crate::block::BlockExecutionContext;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::state::PlatformState;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 
@@ -51,6 +49,7 @@ use dpp::serialization_traits::PlatformDeserializable;
 
 use drive::error::Error::GroveDB;
 use serde_json::json;
+use crate::platform::state::v0::PlatformState;
 
 /// Contracts module
 pub mod contracts;
@@ -58,7 +57,26 @@ pub mod contracts;
 pub mod query;
 /// Platform state
 pub mod state;
+/// Quorum methods
+pub mod validator_set;
+/// The block proposal
+pub mod block_proposal;
+/// A clean version of the the requst to finalize a block
+pub mod cleaned_abci_messages;
+/// Masternode
+pub mod masternode;
+/// The validator module
+/// A validator is a masternode that can participate in consensus by being part of a validator set
+pub mod validator;
+/// Epoch
+pub mod epoch;
+pub mod withdrawal;
+/// The commit
+pub mod commit;
+/// The outcome of a block execution
+mod block_execution_outcome;
 
+// @append_only
 /// Platform
 pub struct Platform<C> {
     /// Drive
@@ -73,6 +91,7 @@ pub struct Platform<C> {
     pub core_rpc: C,
 }
 
+// @append_only
 /// Platform Ref
 pub struct PlatformRef<'a, C> {
     /// Drive
@@ -85,6 +104,7 @@ pub struct PlatformRef<'a, C> {
     pub core_rpc: &'a C,
 }
 
+// @append_only
 /// Platform State Ref
 pub struct PlatformStateRef<'a> {
     /// Drive

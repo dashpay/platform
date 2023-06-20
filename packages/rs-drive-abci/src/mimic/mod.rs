@@ -3,7 +3,6 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
 use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
@@ -26,6 +25,10 @@ use tenderdash_abci::proto::types::{
 };
 use tenderdash_abci::signatures::SignBytes;
 use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
+use crate::mimic::test_quorum::TestQuorumInfo;
+
+/// Test quorum for mimic block execution
+pub mod test_quorum;
 
 /// Chain ID used in tests
 pub const CHAIN_ID: &str = "strategy_tests";

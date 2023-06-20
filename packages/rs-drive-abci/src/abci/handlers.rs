@@ -39,9 +39,7 @@ use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
-use crate::platform::state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
@@ -65,6 +63,8 @@ use dpp::serialization_traits::PlatformSerializable;
 
 use crate::execution::withdrawal::WithdrawalTxs;
 use serde_json::Map;
+use crate::platform::block_proposal::v0::BlockProposalV0;
+use crate::platform::state::v0;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -112,7 +112,7 @@ where
             );
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
-            *platform_state_write_guard = PlatformState::default_with_protocol_versions(
+            *platform_state_write_guard = v0::PlatformState::default_with_protocol_versions(
                 protocol_version_in_consensus,
                 protocol_version_in_consensus,
             );
@@ -154,7 +154,7 @@ where
             Err(_) => None,
         };
 
-        let mut block_proposal: BlockProposal = (&request).try_into()?;
+        let mut block_proposal: BlockProposalV0 = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             tracing::info!(

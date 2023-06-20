@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::transformer::StateTransitionActionTransformerV0;

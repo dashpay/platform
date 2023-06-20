@@ -25,17 +25,11 @@ pub mod error;
 /// Execution module
 pub mod execution;
 
-/// Platform module
-pub mod platform;
-
 /// Platform configuration
 pub mod config;
 
 /// Logging and tracing
 pub mod logging;
-
-/// Platform constants
-pub mod constants;
 
 /// Anything related to 3rd party RPC
 pub mod rpc;
@@ -49,3 +43,5 @@ pub mod test;
 
 /// Mimic of block execution for tests
 pub mod mimic;
+/// Platform module
+pub mod platform;
