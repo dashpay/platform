@@ -1,11 +1,8 @@
 use crate::abci::AbciError;
 use crate::error::Error;
-use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};
-use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::types::{
-    Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, PartSetHeader, VoteExtension,
-};
-use tenderdash_abci::proto::version;
+use tenderdash_abci::proto::abci::CommitInfo;
+
+use tenderdash_abci::proto::types::VoteExtension;
 
 /// The `CleanedCommitInfo` struct represents a `CommitInfo` that has been properly formatted.
 /// It stores essential data required to finalize a block in a simplified format.

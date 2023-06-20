@@ -5,8 +5,7 @@ use dashcore_rpc::dashcore::{
         AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
     },
     consensus::Encodable,
-    hashes::Hash,
-    QuorumHash, Script, TxOut,
+    Script, TxOut,
 };
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;

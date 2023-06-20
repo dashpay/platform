@@ -1,26 +1,13 @@
-use std::{collections::HashMap, ops::Deref};
+use std::ops::Deref;
 
-use dashcore_rpc::dashcore::{
-    blockdata::transaction::special_transaction::asset_unlock::{
-        request_info::AssetUnlockRequestInfo,
-        unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
-    },
-    consensus::Encodable,
-    hashes::Hash,
-    QuorumHash, Script, TxOut,
-};
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::document::Document;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use drive::dpp::contracts::withdrawals_contract;
-use drive::dpp::identifier::Identifier;
-use drive::dpp::identity::convert_credits_to_satoshi;
+
 use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
-use drive::{drive::batch::DriveOperation, query::TransactionArg};
-use serde_json::Value as JsonValue;
 
 use crate::execution::types::block_execution_context;
 use crate::{

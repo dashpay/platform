@@ -1,11 +1,9 @@
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::cleaned_abci_messages::cleaned_block_id;
-use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};
+
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::types::{
-    Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, PartSetHeader, VoteExtension,
-};
+use tenderdash_abci::proto::types::Header;
 use tenderdash_abci::proto::version;
 
 /// The `CleanedHeader` struct represents a header that has been properly formatted.

@@ -1,17 +1,10 @@
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-
 use crate::platform_types::state::v0::PlatformState;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
+use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
-use dashcore_rpc::json::QuorumInfoResult;
+
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use tenderdash_abci::proto::abci::ValidatorSetUpdate;
-use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
-use tenderdash_abci::proto::{abci, crypto};
 
 /// A validator in the context of a quorum
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]

@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::platform_types::state::v0::PlatformState;
 use crate::platform_types::validator::v0::Validator;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
-use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+
 use dashcore_rpc::json::QuorumInfoResult;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use serde::{Deserialize, Serialize};

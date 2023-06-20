@@ -3,12 +3,7 @@ use crate::error::Error;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform_types::cleaned_abci_messages::cleaned_block_id::v0::CleanedBlockId;
 use crate::platform_types::cleaned_abci_messages::cleaned_commit_info::v0::CleanedCommitInfo;
-use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};
-use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::types::{
-    Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, PartSetHeader, VoteExtension,
-};
-use tenderdash_abci::proto::version;
+use tenderdash_abci::proto::abci::{Misbehavior, RequestFinalizeBlock};
 
 /// The `FinalizeBlockCleanedRequest` struct represents a `RequestFinalizeBlock` that has been
 /// properly formatted.

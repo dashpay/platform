@@ -5,7 +5,7 @@ use dpp::block::epoch::Epoch;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
-use drive::grovedb;
+
 use drive::grovedb::Transaction;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
@@ -89,6 +89,7 @@ mod tests {
 
     use crate::execution::types::proposer_payouts::v0::ProposersPayouts;
     use drive::error::Error as DriveError;
+    use drive::grovedb;
 
     #[test]
     fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {

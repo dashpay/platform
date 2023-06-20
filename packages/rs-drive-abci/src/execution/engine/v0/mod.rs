@@ -2,7 +2,6 @@ use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
-use dpp::bls_signatures;
 
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::error::Error::GroveDB;
@@ -10,7 +9,6 @@ use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
-use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::AbciError;
@@ -18,7 +16,7 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::{block_execution_context, block_state_info};
-use crate::platform_types;
+
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;

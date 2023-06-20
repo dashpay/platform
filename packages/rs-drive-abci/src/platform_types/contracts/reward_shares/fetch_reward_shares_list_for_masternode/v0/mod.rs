@@ -39,18 +39,17 @@
 
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dpp::block::block_info::BlockInfo;
+
 use dpp::platform_value::Value;
-use drive::contract::Contract;
+
 use drive::dpp::document::Document;
 
-use drive::drive::flags::StorageFlags;
 use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
-use std::borrow::Cow;
+
 use std::collections::BTreeMap;
 
 impl<C> Platform<C> {

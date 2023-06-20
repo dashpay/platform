@@ -1,18 +1,10 @@
 mod v0;
 
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent::{
-    PaidDriveEvent, PaidFromAssetLockDriveEvent,
-};
-use dpp::block::epoch::Epoch;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use dpp::identity::PartialIdentity;
-use dpp::state_transition::StateTransitionAction;
+
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
-use drive::drive::batch::DriveOperation;
-use drive::fee::credits::{Credits, SignedCredits};
+
+use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
