@@ -239,7 +239,7 @@ describe('Platform', () => {
       fetchedDataContract.incrementVersion();
       expect(updatedContract.toObject()).to.be.deep.equal(fetchedDataContract.toObject());
 
-      expect(updatedContractDate).to.be.greaterThan(originalContractDate);
+      expect(Number(updatedContractDate)).to.be.greaterThan(Number(originalContractDate));
     });
   });
 });
