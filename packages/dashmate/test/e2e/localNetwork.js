@@ -61,8 +61,6 @@ describe('Local Network', function main() {
     stopNodeTask = await container.resolve('stopNodeTask');
 
     dockerCompose = await container.resolve('dockerCompose');
-
-    areServicesRunning = areServicesRunningFactory(configFile, group, dockerCompose, SERVICES);
   });
 
   after(async () => {
@@ -95,6 +93,10 @@ describe('Local Network', function main() {
 
       const configExists = configFile.isGroupExists(groupName);
 
+      group = configFile.getGroupConfigs(groupName);
+
+      areServicesRunning = areServicesRunningFactory(configFile, group, dockerCompose, SERVICES);
+
       expect(configExists).to.be.true();
     });
   });
@@ -102,8 +104,6 @@ describe('Local Network', function main() {
   describe('start', () => {
     it('should start local network', async () => {
       group = configFile.getGroupConfigs(groupName);
-
-      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
       for (const config of group) {
         config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
@@ -123,8 +123,6 @@ describe('Local Network', function main() {
     it('should restart local network', async () => {
       group = configFile.getGroupConfigs(groupName);
 
-      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
-
       for (const config of group) {
         const task = restartNodeTask(config);
         await task.run();
@@ -139,8 +137,6 @@ describe('Local Network', function main() {
   describe('stop', () => {
     it('should stop local network', async () => {
       group = configFile.getGroupConfigs(groupName);
-
-      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
       for (const config of group.reverse()) {
         const task = stopNodeTask(config);
