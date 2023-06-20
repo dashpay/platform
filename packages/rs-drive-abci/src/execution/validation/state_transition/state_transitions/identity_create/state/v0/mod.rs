@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -23,6 +22,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
+use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -113,7 +113,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
 
         let tx_out_validation = self
             .asset_lock_proof
-            .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
+            .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,

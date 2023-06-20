@@ -101,7 +101,7 @@ where
         } = block_proposal;
         // todo: verify that we support the consensus versions
         // We start by getting the epoch we are in
-        let genesis_time_ms = self.get_genesis_time(height, block_time_ms, transaction)?;
+        let genesis_time_ms = self.get_genesis_time_v0(height, block_time_ms, transaction)?;
 
         let epoch_info =
             EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;

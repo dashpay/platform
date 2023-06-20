@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::execution::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -20,6 +19,7 @@ use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
+use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -86,7 +86,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
 
         let tx_out_validation = self
             .asset_lock_proof
-            .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
+            .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,

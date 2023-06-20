@@ -14,7 +14,7 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::validation::ValidationResult;
 
 /// A trait for fetching asset lock transaction output from a Core RPC-like instance.
-pub trait FetchAssetLockProofTxOut {
+pub trait FetchAssetLockProofTxOutV0 {
     /// Synchronously fetches the asset lock transaction output from the core
     /// based on either an `Instant` or a `Chain` asset lock proof.
     ///
@@ -32,15 +32,15 @@ pub trait FetchAssetLockProofTxOut {
     ///   - Ok(ValidationResult::WithData) if the transaction output is found,
     ///   - Ok(ValidationResult::WithError) for any errors encountered during the process,
     ///   - Err(Error) if there's an execution error.
-    fn fetch_asset_lock_transaction_output_sync<C: CoreRPCLike>(
+    fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
         &self,
         core: &C,
     ) -> Result<ValidationResult<TxOut, ConsensusError>, Error>;
 }
 
-impl FetchAssetLockProofTxOut for AssetLockProof {
+impl FetchAssetLockProofTxOutV0 for AssetLockProof {
     /// This fetches the asset lock transaction output from core
-    fn fetch_asset_lock_transaction_output_sync<C: CoreRPCLike>(
+    fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
         &self,
         core: &C,
     ) -> Result<ValidationResult<TxOut, ConsensusError>, Error> {
