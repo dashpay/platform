@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const errorDescriptions = require('./errors/errorDescriptions');
+const Certificate = require('./Certificate');
 
 /**
  * Get ZeroSSL certificate
@@ -7,7 +8,7 @@ const errorDescriptions = require('./errors/errorDescriptions');
  * @typedef {getCertificate}
  * @param {string} apiKey
  * @param {string} id
- * @return {Promise<Object>}
+ * @return {Promise<Certificate>}
  */
 async function getCertificate(apiKey, id) {
   const url = `https://api.zerossl.com/certificates/${id}?access_key=${apiKey}`;
@@ -27,7 +28,7 @@ async function getCertificate(apiKey, id) {
     throw new Error(errorMessage || JSON.stringify(data.error));
   }
 
-  return data;
+  return new Certificate(data);
 }
 
 module.exports = getCertificate;

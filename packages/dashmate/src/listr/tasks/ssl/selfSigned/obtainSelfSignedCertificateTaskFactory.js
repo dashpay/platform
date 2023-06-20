@@ -23,8 +23,10 @@ function obtainSelfSignedCertificateTaskFactory(
       {
         task: async (ctx) => {
           ctx.keyPair = await generateKeyPair();
+          ctx.privateKeyFile = ctx.keyPair.privateKey;
           ctx.csr = await generateCsr(ctx.keyPair, config.get('externalIp', true));
-          ctx.certificate = await createSelfSignedCertificate(ctx.keyPair, ctx.csr);
+
+          ctx.certificateFile = await createSelfSignedCertificate(ctx.keyPair, ctx.csr);
 
           return saveCertificateTask(config);
         },
