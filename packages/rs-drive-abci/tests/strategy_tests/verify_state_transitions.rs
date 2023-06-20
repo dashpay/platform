@@ -7,10 +7,10 @@ use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransit
 use drive::drive::Drive;
 use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
-use drive_abci::platform::PlatformRef;
+use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use drive_abci::validation::state_transition::StateTransitionValidation;
 
+use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use prost::Message;
 
 pub(crate) fn verify_state_transitions_were_executed(
@@ -440,7 +440,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let response_proof = proof.expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
-                let (root_hash_identity, balance_identity) =
+                let (root_hash_identity, _balance_identity) =
                     Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
                         identity_credit_transfer_action.identity_id.into_buffer(),

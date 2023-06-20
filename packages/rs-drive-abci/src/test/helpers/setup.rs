@@ -34,7 +34,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use crate::platform::Platform;
+use crate::platform_types::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
@@ -113,7 +113,7 @@ impl TempPlatform<MockCoreRPCLike> {
     /// Sets Platform to genesis state.
     pub fn set_genesis_state(self) -> Self {
         self.platform
-            .create_genesis_state(
+            .create_genesis_state_v0(
                 Default::default(),
                 static_system_identity_public_keys(),
                 None,
