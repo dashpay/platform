@@ -140,16 +140,16 @@ class Fetcher {
   /**
    * Fetches data contract by it's ID
    * @param id
-   * @param startAtSeconds
+   * @param startAMs
    * @param limit
    * @param offset
    */
   public async fetchDataContractHistory(
-    id: Identifier, startAtSeconds: number, limit: number, offset: number,
+    id: Identifier, startAMs: number, limit: number, offset: number,
   ): Promise<GetDataContractHistoryResponse> {
     // Define query
     const query = async (): Promise<GetDataContractHistoryResponse> => await this
-      .dapiClient.platform.getDataContractHistory(id, startAtSeconds, limit, offset);
+      .dapiClient.platform.getDataContractHistory(id, startAMs, limit, offset);
 
     // Define retry attempts.
     // In case we acknowledged this identifier, we want to retry to mitigate

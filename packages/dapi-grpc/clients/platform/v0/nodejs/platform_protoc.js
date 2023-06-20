@@ -10090,7 +10090,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.toObject = functio
     id: msg.getId_asB64(),
     limit: jspb.Message.getFieldWithDefault(msg, 2, 0),
     offset: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    startAtSeconds: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    startAtMs: jspb.Message.getFieldWithDefault(msg, 4, 0),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
 
@@ -10142,7 +10142,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.deserializeBinaryF
       break;
     case 4:
       var value = /** @type {number} */ (reader.readUint64());
-      msg.setStartAtSeconds(value);
+      msg.setStartAtMs(value);
       break;
     case 5:
       var value = /** @type {boolean} */ (reader.readBool());
@@ -10198,7 +10198,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.serializeBinaryToW
       f
     );
   }
-  f = message.getStartAtSeconds();
+  f = message.getStartAtMs();
   if (f !== 0) {
     writer.writeUint64(
       4,
@@ -10294,10 +10294,10 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setOffse
 
 
 /**
- * optional uint64 start_at_seconds = 4;
+ * optional uint64 start_at_ms = 4;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getStartAtSeconds = function() {
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getStartAtMs = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
 };
 
@@ -10306,7 +10306,7 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getStart
  * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setStartAtSeconds = function(value) {
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setStartAtMs = function(value) {
   return jspb.Message.setProto3IntField(this, 4, value);
 };
 

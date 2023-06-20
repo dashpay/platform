@@ -10366,7 +10366,7 @@ $root.org = (function() {
                          * @property {Uint8Array|null} [id] GetDataContractHistoryRequest id
                          * @property {number|null} [limit] GetDataContractHistoryRequest limit
                          * @property {number|null} [offset] GetDataContractHistoryRequest offset
-                         * @property {number|Long|null} [startAtSeconds] GetDataContractHistoryRequest startAtSeconds
+                         * @property {number|Long|null} [startAtMs] GetDataContractHistoryRequest startAtMs
                          * @property {boolean|null} [prove] GetDataContractHistoryRequest prove
                          */
 
@@ -10410,12 +10410,12 @@ $root.org = (function() {
                         GetDataContractHistoryRequest.prototype.offset = 0;
 
                         /**
-                         * GetDataContractHistoryRequest startAtSeconds.
-                         * @member {number|Long} startAtSeconds
+                         * GetDataContractHistoryRequest startAtMs.
+                         * @member {number|Long} startAtMs
                          * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
                          * @instance
                          */
-                        GetDataContractHistoryRequest.prototype.startAtSeconds = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+                        GetDataContractHistoryRequest.prototype.startAtMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                         /**
                          * GetDataContractHistoryRequest prove.
@@ -10455,8 +10455,8 @@ $root.org = (function() {
                                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
                             if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
                                 writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.offset);
-                            if (message.startAtSeconds != null && Object.hasOwnProperty.call(message, "startAtSeconds"))
-                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtSeconds);
+                            if (message.startAtMs != null && Object.hasOwnProperty.call(message, "startAtMs"))
+                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtMs);
                             if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                 writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
                             return writer;
@@ -10503,7 +10503,7 @@ $root.org = (function() {
                                     message.offset = reader.uint32();
                                     break;
                                 case 4:
-                                    message.startAtSeconds = reader.uint64();
+                                    message.startAtMs = reader.uint64();
                                     break;
                                 case 5:
                                     message.prove = reader.bool();
@@ -10552,9 +10552,9 @@ $root.org = (function() {
                             if (message.offset != null && message.hasOwnProperty("offset"))
                                 if (!$util.isInteger(message.offset))
                                     return "offset: integer expected";
-                            if (message.startAtSeconds != null && message.hasOwnProperty("startAtSeconds"))
-                                if (!$util.isInteger(message.startAtSeconds) && !(message.startAtSeconds && $util.isInteger(message.startAtSeconds.low) && $util.isInteger(message.startAtSeconds.high)))
-                                    return "startAtSeconds: integer|Long expected";
+                            if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
+                                if (!$util.isInteger(message.startAtMs) && !(message.startAtMs && $util.isInteger(message.startAtMs.low) && $util.isInteger(message.startAtMs.high)))
+                                    return "startAtMs: integer|Long expected";
                             if (message.prove != null && message.hasOwnProperty("prove"))
                                 if (typeof message.prove !== "boolean")
                                     return "prove: boolean expected";
@@ -10582,15 +10582,15 @@ $root.org = (function() {
                                 message.limit = object.limit >>> 0;
                             if (object.offset != null)
                                 message.offset = object.offset >>> 0;
-                            if (object.startAtSeconds != null)
+                            if (object.startAtMs != null)
                                 if ($util.Long)
-                                    (message.startAtSeconds = $util.Long.fromValue(object.startAtSeconds)).unsigned = true;
-                                else if (typeof object.startAtSeconds === "string")
-                                    message.startAtSeconds = parseInt(object.startAtSeconds, 10);
-                                else if (typeof object.startAtSeconds === "number")
-                                    message.startAtSeconds = object.startAtSeconds;
-                                else if (typeof object.startAtSeconds === "object")
-                                    message.startAtSeconds = new $util.LongBits(object.startAtSeconds.low >>> 0, object.startAtSeconds.high >>> 0).toNumber(true);
+                                    (message.startAtMs = $util.Long.fromValue(object.startAtMs)).unsigned = true;
+                                else if (typeof object.startAtMs === "string")
+                                    message.startAtMs = parseInt(object.startAtMs, 10);
+                                else if (typeof object.startAtMs === "number")
+                                    message.startAtMs = object.startAtMs;
+                                else if (typeof object.startAtMs === "object")
+                                    message.startAtMs = new $util.LongBits(object.startAtMs.low >>> 0, object.startAtMs.high >>> 0).toNumber(true);
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
                             return message;
@@ -10621,9 +10621,9 @@ $root.org = (function() {
                                 object.offset = 0;
                                 if ($util.Long) {
                                     var long = new $util.Long(0, 0, true);
-                                    object.startAtSeconds = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    object.startAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                 } else
-                                    object.startAtSeconds = options.longs === String ? "0" : 0;
+                                    object.startAtMs = options.longs === String ? "0" : 0;
                                 object.prove = false;
                             }
                             if (message.id != null && message.hasOwnProperty("id"))
@@ -10632,11 +10632,11 @@ $root.org = (function() {
                                 object.limit = message.limit;
                             if (message.offset != null && message.hasOwnProperty("offset"))
                                 object.offset = message.offset;
-                            if (message.startAtSeconds != null && message.hasOwnProperty("startAtSeconds"))
-                                if (typeof message.startAtSeconds === "number")
-                                    object.startAtSeconds = options.longs === String ? String(message.startAtSeconds) : message.startAtSeconds;
+                            if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
+                                if (typeof message.startAtMs === "number")
+                                    object.startAtMs = options.longs === String ? String(message.startAtMs) : message.startAtMs;
                                 else
-                                    object.startAtSeconds = options.longs === String ? $util.Long.prototype.toString.call(message.startAtSeconds) : options.longs === Number ? new $util.LongBits(message.startAtSeconds.low >>> 0, message.startAtSeconds.high >>> 0).toNumber(true) : message.startAtSeconds;
+                                    object.startAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startAtMs) : options.longs === Number ? new $util.LongBits(message.startAtMs.low >>> 0, message.startAtMs.high >>> 0).toNumber(true) : message.startAtMs;
                             if (message.prove != null && message.hasOwnProperty("prove"))
                                 object.prove = message.prove;
                             return object;

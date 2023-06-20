@@ -2691,7 +2691,7 @@ typedef struct GetDataContractsResponse_DataContracts__storage_ {
 @dynamic id_p;
 @dynamic limit;
 @dynamic offset;
-@dynamic startAtSeconds;
+@dynamic startAtMs;
 @dynamic prove;
 
 typedef struct GetDataContractHistoryRequest__storage_ {
@@ -2699,7 +2699,7 @@ typedef struct GetDataContractHistoryRequest__storage_ {
   uint32_t limit;
   uint32_t offset;
   NSData *id_p;
-  uint64_t startAtSeconds;
+  uint64_t startAtMs;
 } GetDataContractHistoryRequest__storage_;
 
 // This method is threadsafe because it is initially called
@@ -2736,11 +2736,11 @@ typedef struct GetDataContractHistoryRequest__storage_ {
         .dataType = GPBDataTypeUInt32,
       },
       {
-        .name = "startAtSeconds",
+        .name = "startAtMs",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetDataContractHistoryRequest_FieldNumber_StartAtSeconds,
+        .number = GetDataContractHistoryRequest_FieldNumber_StartAtMs,
         .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, startAtSeconds),
+        .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, startAtMs),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },

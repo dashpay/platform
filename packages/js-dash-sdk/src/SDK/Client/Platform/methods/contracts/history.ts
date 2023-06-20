@@ -13,7 +13,7 @@ declare type ContractIdentifier = string | Identifier;
  * Get contracts from the platform
  *
  * @param {ContractIdentifier} identifier - identifier of the contract to fetch
- * @param startAtSeconds
+ * @param startAtMs
  * @param limit
  * @param offset
  * @returns contracts
@@ -21,7 +21,7 @@ declare type ContractIdentifier = string | Identifier;
 export async function history(
   this: Platform,
   identifier: ContractIdentifier,
-  startAtSeconds: number,
+  startAtMs: number,
   limit: number,
   offset: number,
 ): Promise<any> {
@@ -33,7 +33,7 @@ export async function history(
   let dataContractHistoryResponse: GetDataContractHistoryResponse;
   try {
     dataContractHistoryResponse = await this.fetcher.fetchDataContractHistory(
-      contractId, startAtSeconds, limit, offset,
+      contractId, startAtMs, limit, offset,
     );
     this.logger.silly(`[Contracts#history] Fetched Data Contract History for "${identifier}"`);
   } catch (e) {

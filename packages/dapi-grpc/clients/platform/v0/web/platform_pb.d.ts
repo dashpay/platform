@@ -1258,8 +1258,8 @@ export class GetDataContractHistoryRequest extends jspb.Message {
   getOffset(): number;
   setOffset(value: number): void;
 
-  getStartAtSeconds(): number;
-  setStartAtSeconds(value: number): void;
+  getStartAtMs(): number;
+  setStartAtMs(value: number): void;
 
   getProve(): boolean;
   setProve(value: boolean): void;
@@ -1279,7 +1279,7 @@ export namespace GetDataContractHistoryRequest {
     id: Uint8Array | string,
     limit: number,
     offset: number,
-    startAtSeconds: number,
+    startAtMs: number,
     prove: boolean,
   }
 }

@@ -96,7 +96,7 @@ describe('getDataContractHistoryFactory', () => {
     request.setId(contractId);
     request.setLimit(10);
     request.setOffset(0);
-    request.setStartAtSeconds(0);
+    request.setStartAtMs(0);
     request.setProve(false);
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
@@ -126,7 +126,7 @@ describe('getDataContractHistoryFactory', () => {
     request.setId(contractId);
     request.setLimit(10);
     request.setOffset(0);
-    request.setStartAtSeconds(0);
+    request.setStartAtMs(0);
     request.setProve(true);
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
@@ -159,7 +159,7 @@ describe('getDataContractHistoryFactory', () => {
     request.setId(contractId.toBuffer());
     request.setLimit(10);
     request.setOffset(0);
-    request.setStartAtSeconds(0);
+    request.setStartAtMs(0);
     request.setProve(false);
 
     try {

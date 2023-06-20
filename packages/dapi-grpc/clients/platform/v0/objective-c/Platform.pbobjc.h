@@ -973,7 +973,7 @@ typedef GPB_ENUM(GetDataContractHistoryRequest_FieldNumber) {
   GetDataContractHistoryRequest_FieldNumber_Id_p = 1,
   GetDataContractHistoryRequest_FieldNumber_Limit = 2,
   GetDataContractHistoryRequest_FieldNumber_Offset = 3,
-  GetDataContractHistoryRequest_FieldNumber_StartAtSeconds = 4,
+  GetDataContractHistoryRequest_FieldNumber_StartAtMs = 4,
   GetDataContractHistoryRequest_FieldNumber_Prove = 5,
 };
 
@@ -985,7 +985,7 @@ GPB_FINAL @interface GetDataContractHistoryRequest : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t offset;
 
-@property(nonatomic, readwrite) uint64_t startAtSeconds;
+@property(nonatomic, readwrite) uint64_t startAtMs;
 
 @property(nonatomic, readwrite) BOOL prove;
 

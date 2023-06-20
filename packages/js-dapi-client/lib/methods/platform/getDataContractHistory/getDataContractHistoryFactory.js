@@ -18,7 +18,7 @@ function getDataContractHistoryFactory(grpcTransport) {
    *
    * @typedef {getDataContractHistory}
    * @param {Buffer} contractId
-   * @param {number} [startAtSeconds]
+   * @param {number} [startAtMs]
    * @param {number} [limit]
    * @param {number} [offset]
    * @param {DAPIClientOptions & {prove: boolean}} [options]
@@ -26,7 +26,7 @@ function getDataContractHistoryFactory(grpcTransport) {
    */
   async function getDataContractHistory(
     contractId,
-    startAtSeconds = 0,
+    startAtMs = 0,
     limit = 10,
     offset = 0,
     options = {},
@@ -42,7 +42,7 @@ function getDataContractHistoryFactory(grpcTransport) {
     }
 
     getDataContractHistoryRequest.setId(contractId);
-    getDataContractHistoryRequest.setStartAtSeconds(startAtSeconds);
+    getDataContractHistoryRequest.setStartAtMs(startAtMs);
     getDataContractHistoryRequest.setLimit(limit);
     getDataContractHistoryRequest.setOffset(offset);
     getDataContractHistoryRequest.setProve(!!options.prove);

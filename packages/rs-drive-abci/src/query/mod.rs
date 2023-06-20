@@ -450,7 +450,7 @@ impl<C> Platform<C> {
                     id,
                     limit,
                     offset,
-                    start_at_seconds,
+                    start_at_ms,
                     prove,
                 } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(
                     query_data
@@ -474,7 +474,7 @@ impl<C> Platform<C> {
                         check_validation_result_with_data!(self.drive.prove_contract_history(
                             contract_id.to_buffer(),
                             None,
-                            start_at_seconds,
+                            start_at_ms,
                             Some(limit),
                             Some(offset)
                         ));
@@ -493,7 +493,7 @@ impl<C> Platform<C> {
                         check_validation_result_with_data!(self.drive.fetch_contract_with_history(
                             contract_id.to_buffer(),
                             None,
-                            start_at_seconds,
+                            start_at_ms,
                             Some(limit),
                             Some(offset)
                         ));
@@ -851,7 +851,7 @@ mod test {
                 id: vec![1; 32],
                 limit: 10,
                 offset: 0,
-                start_at_seconds: 0,
+                start_at_ms: 0,
                 prove: false,
             }
         }
@@ -1068,7 +1068,7 @@ mod test {
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id.to_buffer(),
-                request.start_at_seconds,
+                request.start_at_ms,
                 Some(10),
                 Some(0),
             )
