@@ -136,7 +136,7 @@ function obtainZeroSSLCertificateTaskFactory(
             ctx.isBundleFilePresent = false;
 
             if (!ctx.isCrtFilePresent) {
-              throw new Error(`Certificate request file is not found in ${csrFilePath}.\n`
+              throw new Error(`Certificate request file not found in ${csrFilePath}.\n`
                 + 'To renew certificate please use the obtain'
                 + ' command with the --force flag, and revoke the previous certificate in'
                 + ' the ZeroSSL dashboard');
