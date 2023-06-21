@@ -5,10 +5,14 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::consensus::ConsensusError;
+use dpp::data_contract::contract_config::ContractConfig;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::any_schema_changes;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use dpp::document::document_transition::document_base_transition::JsonValue;
+use dpp::identifier::Identifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::{
     consensus::basic::data_contract::{
@@ -31,10 +35,6 @@ use dpp::{
     state_transition::StateTransitionAction,
     Convertible, ProtocolError,
 };
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
-use dpp::data_contract::contract_config::ContractConfig;
-use dpp::identifier::Identifier;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -63,7 +63,7 @@ fn validate_config_update(
             contract_id,
             "contract can not be changed to readonly",
         )
-            .into());
+        .into());
     }
 
     if new_config.keeps_history != old_config.keeps_history {
@@ -74,7 +74,7 @@ fn validate_config_update(
                 old_config.keeps_history, new_config.keeps_history
             ),
         )
-            .into());
+        .into());
     }
 
     if new_config.documents_keep_history_contract_default
@@ -84,7 +84,7 @@ fn validate_config_update(
             contract_id,
             "contract can not change the default of whether documents keeps history",
         )
-            .into());
+        .into());
     }
 
     if new_config.documents_mutable_contract_default
@@ -94,7 +94,7 @@ fn validate_config_update(
             contract_id,
             "contract can not change the default of whether documents are mutable",
         )
-            .into());
+        .into());
     }
 
     Ok(())
