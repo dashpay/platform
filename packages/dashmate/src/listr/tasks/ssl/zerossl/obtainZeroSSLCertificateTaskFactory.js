@@ -59,7 +59,7 @@ function obtainZeroSSLCertificateTaskFactory(
             // Certificate is not configured
 
             // eslint-disable-next-line no-param-reassign
-            task.output = 'Certificate is configure yet. Create a new one';
+            task.output = 'Certificate is not configured yet, creating a new one';
 
             return;
           }
@@ -76,21 +76,21 @@ function obtainZeroSSLCertificateTaskFactory(
           // This function will throw an error if certificate with specified ID is not present
           const certificate = await getCertificate(apiKey, certificateId);
 
-          // If certificate exists but private key is not, then we can't setup TLS connection
+          // If certificate exists but private key does not, then we can't setup TLS connection
           // In this case we need to regenerate certificate or put back this private key
           if (!ctx.isPrivateKeyFilePresent) {
-            throw new Error(`Certificate private key file is not found in ${privateKeyFilePath}.\n`
+            throw new Error(`Certificate private key file not found in ${privateKeyFilePath}.\n`
               + 'Please regenerate the certificate using the the obtain'
-              + ' command with --force flag and revoke previous certificate in ZeroSSL'
-              + ' dashboard');
+              + ' command with the --force flag, and revoke the previous certificate in'
+              + ' the ZeroSSL dashboard');
           }
 
           // We need to make sure that external IP and certificate IP match
           if (certificate.common_name !== externalIp) {
             throw new Error(`Certificate IPe ${certificate.common_name} does not match external IP ${externalIp}.\n`
-            + 'Please change external IP or regenerate the certificate using the obtain'
-            + ' command with --force flag and revoke previous certificate in ZeroSSL'
-            + ' dashboard');
+            + 'Please change the external IP in config or regenerate the certificate '
+            + ' using the obtain command with the --force flag, and revoke the previous'
+            + ' certificate in the ZeroSSL dashboard');
           }
 
           if (!certificate.isExpiredInDays(ctx.expirationDays)) {
@@ -111,7 +111,7 @@ function obtainZeroSSLCertificateTaskFactory(
               ctx.isBundleFilePresent = false;
 
               // eslint-disable-next-line no-param-reassign
-              task.output = 'Certificate is already created, but not validated yet.';
+              task.output = 'Certificate was already created, but not validated yet.';
             } else {
               // Certificate is not valid, so we need to re-create it
 
@@ -119,10 +119,10 @@ function obtainZeroSSLCertificateTaskFactory(
               ctx.isBundleFilePresent = false;
 
               if (!ctx.isCrtFilePresent) {
-                throw new Error(`Certificate request file is not found in ${csrFilePath}.\n`
-                  + 'To create a new certificate please use the obtain'
-                  + ' command with --force flag and revoke previous certificate in ZeroSSL'
-                  + ' dashboard');
+                throw new Error(`Certificate request file not found in ${csrFilePath}.\n`
+                  + 'To create a new certificate, please use the obtain'
+                  + ' command with the --force flag and revoke the previous certificate'
+                  + ' in the ZeroSSL dashboard');
               }
 
               ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
@@ -137,10 +137,10 @@ function obtainZeroSSLCertificateTaskFactory(
             ctx.isBundleFilePresent = false;
 
             if (!ctx.isCrtFilePresent) {
-              throw new Error(`Certificate request file is not found in ${csrFilePath}.\n`
+              throw new Error(`Certificate request file not found in ${csrFilePath}.\n`
                 + 'To renew certificate please use the obtain'
-                + ' command with --force flag and revoke previous certificate in ZeroSSL'
-                + ' dashboard');
+                + ' command with the --force flag, and revoke the previous certificate in'
+                + ' the ZeroSSL dashboard');
             }
 
             ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
