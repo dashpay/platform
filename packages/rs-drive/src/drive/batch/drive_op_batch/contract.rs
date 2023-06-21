@@ -3,7 +3,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::DataContract as Contract;
 use dpp::platform_value::Identifier;
 use grovedb::batch::KeyInfoPath;

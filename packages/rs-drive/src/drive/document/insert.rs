@@ -82,7 +82,7 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::document_type::document_field::v0::{
     encode_unsigned_integer, DocumentFieldTypeV0,
 };

@@ -105,7 +105,7 @@ mod tests {
     use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
 
     mod add_distribute_storage_fee_to_epochs_operations {
-        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
         use drive::drive::batch::DriveOperation;
         use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;

@@ -4,7 +4,7 @@ use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
 use dashcore_rpc::json::QuorumType;
-use dpp::block::block_info::ExtendedBlockInfo;
+use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
 
 use dpp::bincode::{config, Decode, Encode};

@@ -132,7 +132,7 @@ use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::query::GroveError;
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
 

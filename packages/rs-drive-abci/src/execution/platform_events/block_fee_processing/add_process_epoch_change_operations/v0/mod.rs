@@ -139,7 +139,7 @@ mod tests {
         use super::*;
         use crate::execution::types::block_fees::v0::BlockFees;
         use crate::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
-        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::BlockInfo;
         use drive::fee::epoch::CreditsPerEpoch;
 
         /// Process and validate an epoch change

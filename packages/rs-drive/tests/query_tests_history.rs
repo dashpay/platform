@@ -78,7 +78,7 @@ use drive::error::{query::QuerySyntaxError, Error};
 use drive::query::DriveQuery;
 
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 #[cfg(feature = "full")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 

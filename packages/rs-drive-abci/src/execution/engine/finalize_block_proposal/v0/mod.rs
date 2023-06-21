@@ -1,6 +1,6 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 
-use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
+use dpp::block::extended_block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::SimpleValidationResult;
@@ -8,6 +8,7 @@ use dpp::validation::SimpleValidationResult;
 use drive::grovedb::Transaction;
 
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
@@ -187,13 +188,13 @@ where
 
         drop(guarded_block_execution_context);
 
-        let extended_block_info = ExtendedBlockInfo {
+        let extended_block_info = ExtendedBlockInfoV0 {
             basic_info: to_commit_block_info,
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             signature: commit_info.block_signature,
             round,
-        };
+        }.into();
 
         self.update_state_cache_v0(extended_block_info, transaction)?;
 

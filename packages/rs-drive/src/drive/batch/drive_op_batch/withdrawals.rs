@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 

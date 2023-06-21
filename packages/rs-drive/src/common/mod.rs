@@ -63,7 +63,7 @@ use crate::contract::Contract;
 use crate::drive::Drive;
 
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
 

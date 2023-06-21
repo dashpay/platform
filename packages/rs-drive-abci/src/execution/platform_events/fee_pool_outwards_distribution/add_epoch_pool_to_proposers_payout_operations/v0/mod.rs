@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
 use crate::platform_types::platform::Platform;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;

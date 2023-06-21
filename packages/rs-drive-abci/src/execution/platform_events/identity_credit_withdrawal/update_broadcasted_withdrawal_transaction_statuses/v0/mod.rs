@@ -1,4 +1,4 @@
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;

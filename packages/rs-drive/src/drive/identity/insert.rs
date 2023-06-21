@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -164,7 +164,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::identity::Identity;
 
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
     use tempfile::TempDir;
 
     use crate::drive::Drive;

@@ -71,7 +71,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 
 use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,

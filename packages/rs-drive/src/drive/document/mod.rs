@@ -232,7 +232,7 @@ pub(crate) mod tests {
 
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::prelude::DataContract;
 

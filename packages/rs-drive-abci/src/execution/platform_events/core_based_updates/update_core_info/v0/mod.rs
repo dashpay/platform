@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>

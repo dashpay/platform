@@ -24,7 +24,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use crate::query::QueryResultEncoding;
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::platform_value::platform_value;
 #[cfg(feature = "full")]
 use grovedb::Element::{Item, SumItem};

@@ -8,7 +8,7 @@ use crate::fee::calculate_fee;
 use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;

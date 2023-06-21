@@ -94,7 +94,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 

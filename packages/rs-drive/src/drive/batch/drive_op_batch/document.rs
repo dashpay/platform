@@ -6,7 +6,7 @@ use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;

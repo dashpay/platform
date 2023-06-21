@@ -58,7 +58,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{

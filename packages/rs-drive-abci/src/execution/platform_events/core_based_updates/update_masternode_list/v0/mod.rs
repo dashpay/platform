@@ -4,7 +4,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -40,7 +40,7 @@ where
         if let Some(last_commited_block_info) =
             block_platform_state.last_committed_block_info.as_ref()
         {
-            if core_block_height == last_commited_block_info.basic_info.core_height {
+            if core_block_height == last_commited_block_info.basic_info().core_height {
                 tracing::debug!(
                     method = "update_masternode_list_v0",
                     "no update mnl at height {}",

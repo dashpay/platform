@@ -1,4 +1,4 @@
-const identitySchema = require('../../../../../../../../rs-dpp/src/schema/identity/identity.json');
+const identitySchema = require('../../../../../../../../rs-dpp/src/schema/identity/v0/identity.json');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');

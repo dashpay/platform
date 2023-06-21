@@ -9,7 +9,7 @@ use crate::signer::SimpleSigner;
 use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;

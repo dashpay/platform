@@ -118,7 +118,7 @@ mod tests {
     use super::*;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
     use dpp::document::document_transition::{
         DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
     };

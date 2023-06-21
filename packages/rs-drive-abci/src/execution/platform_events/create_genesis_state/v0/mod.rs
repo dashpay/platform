@@ -38,7 +38,7 @@ use drive::dpp::identity::{
 };
 
 use crate::platform_types::system_identity_public_keys;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{

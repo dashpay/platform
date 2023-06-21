@@ -6,7 +6,7 @@ use crate::execution::types::execution_result::ExecutionResult::ConsensusExecuti
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -86,7 +86,7 @@ where
         if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event_v0(execution_event, &block_info.basic_info, None)
+                self.validate_fees_of_event_v0(execution_event, &block_info.basic_info(), None)
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {
@@ -101,7 +101,7 @@ mod tests {
     use crate::config::PlatformConfig;
     use crate::execution::types::execution_result::ExecutionResult::SuccessfulPaidExecution;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;

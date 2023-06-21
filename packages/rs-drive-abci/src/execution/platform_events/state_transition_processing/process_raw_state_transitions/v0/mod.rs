@@ -6,7 +6,7 @@ use crate::execution::validation::state_transition::processor::process_state_tra
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::fee::result::FeeResult;

@@ -62,7 +62,7 @@ pub use conditions::WhereClause;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereOperator;
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -1677,7 +1677,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::drive::config::DriveConfig;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
 
     fn setup_family_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();

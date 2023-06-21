@@ -19,10 +19,11 @@ use crate::{
     version::ProtocolVersionValidator,
     ProtocolError,
 };
+use crate::mocks::JsonSchemaValidator;
 
 lazy_static! {
     pub static ref DATA_CONTRACT_CREATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../../schema/data_contract/stateTransition/dataContractCreate.json"
+        "../../../../../../schema/data_contract/v0/stateTransition/dataContractCreate.json"
     ))
     .unwrap();
     pub static ref DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
@@ -33,12 +34,10 @@ lazy_static! {
 pub struct DataContractCreateTransitionBasicValidator {
     json_schema_validator: JsonSchemaValidator,
     protocol_validator: Arc<ProtocolVersionValidator>,
-    data_contract_validator: DataContractValidator,
 }
 
 impl DataContractCreateTransitionBasicValidator {
     pub fn new(protocol_validator: Arc<ProtocolVersionValidator>) -> Result<Self, ProtocolError> {
-        let data_contract_validator = DataContractValidator::new(protocol_validator.clone());
         let json_schema_validator = JsonSchemaValidator::new(DATA_CONTRACT_CREATE_SCHEMA.clone())
             .map_err(|e| {
             anyhow!("cannot create instance of json validator for Data Contract Create schema: {e}")
@@ -46,7 +45,6 @@ impl DataContractCreateTransitionBasicValidator {
 
         Ok(Self {
             protocol_validator,
-            data_contract_validator,
             json_schema_validator,
         })
     }

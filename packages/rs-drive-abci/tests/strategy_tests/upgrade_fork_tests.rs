@@ -90,7 +90,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 0
@@ -120,7 +120,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
 
@@ -164,7 +164,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 1
@@ -195,7 +195,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -228,7 +228,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 2
@@ -325,7 +325,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 5
@@ -360,7 +360,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome {
@@ -400,7 +400,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 11
@@ -430,7 +430,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -459,7 +459,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 12
@@ -553,7 +553,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 4
@@ -578,7 +578,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome {
@@ -618,7 +618,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 11
@@ -675,7 +675,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms / 5; //speed things up
@@ -719,7 +719,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 12
@@ -745,7 +745,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
@@ -780,7 +780,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 13
@@ -874,7 +874,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 3
@@ -933,7 +933,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -966,7 +966,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 4

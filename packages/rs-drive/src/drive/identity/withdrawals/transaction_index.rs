@@ -121,7 +121,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use grovedb::Element;
 

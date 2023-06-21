@@ -31,7 +31,7 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
 
     use dpp::identity::Identity;
     use grovedb::query_result_type::QueryResultType;

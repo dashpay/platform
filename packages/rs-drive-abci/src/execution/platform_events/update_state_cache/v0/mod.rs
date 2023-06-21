@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::block_info::ExtendedBlockInfo;
+use dpp::block::extended_block_info::ExtendedBlockInfo;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -33,7 +33,7 @@ where
     ///
     pub fn update_state_cache_v0(
         &self,
-        block_info: ExtendedBlockInfo,
+        extended_block_info: ExtendedBlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let mut block_execution_context = self.block_execution_context.write().unwrap();
@@ -52,7 +52,7 @@ where
             state_cache.current_validator_set_quorum_hash = next_validator_set_quorum_hash;
         }
 
-        state_cache.last_committed_block_info = Some(block_info);
+        state_cache.last_committed_block_info = Some(extended_block_info);
 
         state_cache.initialization_information = None;
 

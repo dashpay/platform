@@ -1,13 +1,10 @@
-use crate::block::epoch::Epoch;
-
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use crate::block::block_info::BlockInfo;
 
 /// Extended Block information
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
-pub struct ExtendedBlockInfo {
-    /// Version byte (in case we need to extend this later)
-    pub version: u16,
+pub struct ExtendedBlockInfoV0 {
     /// Basic block info
     pub basic_info: BlockInfo,
     /// App hash
@@ -27,15 +24,15 @@ mod signature_serializer {
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(signature: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where
+            S: Serializer,
     {
         serializer.serialize_bytes(signature)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 96], D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         let buf: Vec<u8> = Deserialize::deserialize(deserializer)?;
         if buf.len() != 96 {
@@ -47,53 +44,14 @@ mod signature_serializer {
     }
 }
 
-/// Block information
-#[derive(Clone, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
-pub struct BlockInfo {
-    /// Block time in milliseconds
-    pub time_ms: u64,
-
-    /// Block height
-    pub height: u64,
-
-    /// Core height
-    pub core_height: u32,
-
-    /// Current fee epoch
-    pub epoch: Epoch,
-}
-
-impl BlockInfo {
-    /// Create block info for genesis block
-    pub fn genesis() -> BlockInfo {
-        BlockInfo::default()
-    }
-
-    /// Create default block with specified time
-    pub fn default_with_time(time_ms: u64) -> BlockInfo {
-        BlockInfo {
-            time_ms,
-            ..Default::default()
-        }
-    }
-
-    /// Create default block with specified fee epoch
-    pub fn default_with_epoch(epoch: Epoch) -> BlockInfo {
-        BlockInfo {
-            epoch,
-            ..Default::default()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ciborium::{de::from_reader, ser::into_writer};
 
     #[test]
-    fn test_extended_block_info_serde() {
-        let block_info = ExtendedBlockInfo {
+    fn test_extended_block_info_v0_serde_ciborium() {
+        let block_info = ExtendedBlockInfoV0 {
             basic_info: BlockInfo::default(),
             app_hash: [1; 32],
             quorum_hash: [2; 32],
@@ -106,7 +64,7 @@ mod tests {
         into_writer(&block_info, &mut encoded).unwrap();
 
         // Deserialize from the vector
-        let decoded: ExtendedBlockInfo = from_reader(&encoded[..]).unwrap();
+        let decoded: ExtendedBlockInfoV0 = from_reader(&encoded[..]).unwrap();
 
         assert_eq!(block_info, decoded);
     }

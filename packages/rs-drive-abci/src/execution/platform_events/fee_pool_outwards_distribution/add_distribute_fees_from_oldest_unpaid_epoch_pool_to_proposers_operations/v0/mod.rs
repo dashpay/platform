@@ -81,7 +81,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
 
     use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 

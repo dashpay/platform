@@ -48,7 +48,7 @@ use dpp::document::Document;
 
 use dpp::ProtocolError;
 
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 
 #[derive(Debug, Default)]

@@ -80,7 +80,7 @@ use crate::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "full")]
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::flags::StorageFlags;
@@ -2130,7 +2130,7 @@ mod tests {
         use super::*;
         use crate::error::drive::DriveError;
         use crate::error::Error;
-        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::BlockInfo;
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use serde_json::json;

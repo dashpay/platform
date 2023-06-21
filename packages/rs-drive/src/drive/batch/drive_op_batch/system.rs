@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::credits::Credits;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::platform_value::Bytes36;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

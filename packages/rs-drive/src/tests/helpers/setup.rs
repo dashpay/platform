@@ -34,7 +34,7 @@
 
 use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 
 use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};

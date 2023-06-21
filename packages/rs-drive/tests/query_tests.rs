@@ -90,7 +90,7 @@ use dpp::platform_value::Value;
 use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
 #[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract;
 use dpp::platform_value;
 

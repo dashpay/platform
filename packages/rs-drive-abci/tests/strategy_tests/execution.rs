@@ -15,7 +15,7 @@ use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
     MasternodeListItem, QuorumInfoResult, QuorumType,
 };
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
@@ -788,7 +788,7 @@ pub(crate) fn continue_chain_for_strategy(
             .last_committed_block_info
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .epoch
             .index
     };

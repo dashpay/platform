@@ -156,7 +156,7 @@ mod tests {
 
     mod fetch_full_identities {
         use super::*;
-        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::BlockInfo;
 
         #[test]
         fn should_get_full_identities() {
@@ -191,7 +191,7 @@ mod tests {
 
     mod fetch_full_identity {
         use super::*;
-        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::BlockInfo;
 
         #[test]
         fn should_return_none_if_identity_is_not_present() {

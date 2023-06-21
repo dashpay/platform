@@ -1,4 +1,4 @@
-const identitySchema = require('../../../../../../../../rs-dpp/src/schema/identity/identity.json');
+const identitySchema = require('../../../../../../../../rs-dpp/src/schema/identity/v0/identity.json');
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');
 const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');

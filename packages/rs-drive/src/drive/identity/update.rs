@@ -1,4 +1,4 @@
-use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::BlockInfo;
 
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;

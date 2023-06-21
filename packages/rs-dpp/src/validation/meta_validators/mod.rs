@@ -4,39 +4,39 @@ use serde_json::{json, Value};
 
 lazy_static! {
     static ref DRAFT202012: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/schema.json"
+        "../../../schema/meta_schemas/draft2020-12/schema.json"
     ))
     .expect("Valid schema!");
     static ref DRAFT202012_CORE: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/meta/core.json"
+        "../../../schema/meta_schemas/draft2020-12/meta/core.json"
     ))
     .expect("Valid schema!");
     static ref DRAFT202012_APPLICATOR: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/meta/applicator.json"
+        "../../../schema/meta_schemas/draft2020-12/meta/applicator.json"
     ))
     .expect("Valid schema!");
     static ref DRAFT202012_UNEVALUATED: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/meta/unevaluated.json"
+        "../../../schema/meta_schemas/draft2020-12/meta/unevaluated.json"
     ))
     .expect("Valid schema!");
     static ref DRAFT202012_VALIDATION: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/meta/validation.json"
+        "../../../schema/meta_schemas/draft2020-12/meta/validation.json"
     ))
     .expect("Valid schema!");
     static ref DRAFT202012_META_DATA: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/meta/meta-data.json"
+        "../../../schema/meta_schemas/draft2020-12/meta/meta-data.json"
     ))
     .expect("Valid schema!");
     static ref DRAFT202012_FORMAT_ANNOTATION: serde_json::Value = serde_json::from_str(
-        include_str!("../../schema/meta_schemas/draft2020-12/meta/format-annotation.json")
+        include_str!("../../../schema/meta_schemas/draft2020-12/meta/format-annotation.json")
     )
     .expect("Valid schema!");
     static ref DRAFT202012_CONTENT: serde_json::Value = serde_json::from_str(include_str!(
-        "../../schema/meta_schemas/draft2020-12/meta/content.json"
+        "../../../schema/meta_schemas/draft2020-12/meta/content.json"
     ))
     .expect("Valid schema!");
-    static ref DATA_CONTRACT: Value = serde_json::from_str::<Value>(include_str!(
-        "../schema/data_contract/dataContractMeta.json"
+    static ref DATA_CONTRACT_V0: Value = serde_json::from_str::<Value>(include_str!(
+        "../../schema/data_contract/v0/dataContractMeta.json"
     ))
     .unwrap();
 
@@ -81,7 +81,7 @@ lazy_static! {
 
 
     // Compiled version of data contract meta schema
-    pub static ref DATA_CONTRACT_META_SCHEMA: JSONSchema = JSONSchema::options()
+    pub static ref DATA_CONTRACT_META_SCHEMA_V0: JSONSchema = JSONSchema::options()
         .add_keyword(
                 "byteArray",
                 KeywordDefinition::Schema(json!({
@@ -131,6 +131,6 @@ lazy_static! {
             DRAFT202012.clone(),
         )
         .to_owned()
-        .compile(&DATA_CONTRACT)
+        .compile(&DATA_CONTRACT_V0)
         .expect("Invalid data contract schema");
 }

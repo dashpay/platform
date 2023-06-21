@@ -1,3 +1,4 @@
+
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,8 @@ pub const EPOCH_KEY_OFFSET: u16 = 256;
 /// Epoch index type
 pub type EpochIndex = u16;
 
+// We make this immutable because it should never be changed or updated
+// @immutable
 /// Epoch struct
 #[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq, Copy, Encode, Decode, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +19,7 @@ pub struct Epoch {
     pub index: EpochIndex,
 
     /// Key
+    // todo: don't serialize key
     pub key: [u8; 2],
 }
 

@@ -118,7 +118,7 @@ mod tests {
     use drive::tests::helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
-        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::BlockInfo;
 
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;

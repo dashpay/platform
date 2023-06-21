@@ -914,7 +914,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::BlockInfo;
     use dpp::identity::Identity;
 
     use super::*;

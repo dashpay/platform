@@ -132,7 +132,8 @@ mod test {
     use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
+    use dpp::block::extended_block_info::{BlockInfo, ExtendedBlockInfo};
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::errors::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use dpp::platform_value;
@@ -206,8 +207,7 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
-            version: 0,
+        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfoV0 {
             basic_info: BlockInfo {
                 time_ms: 500000,
                 height: 100,
@@ -218,7 +218,7 @@ mod test {
             quorum_hash: [0u8; 32],
             signature: [0u8; 96],
             round: 0,
-        });
+        }.into());
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_write_guard,
@@ -286,8 +286,7 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
-            version: 0,
+        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfoV0 {
             basic_info: BlockInfo {
                 time_ms: 500000,
                 height: 100,
@@ -298,7 +297,7 @@ mod test {
             quorum_hash: [0u8; 32],
             signature: [0u8; 96],
             round: 0,
-        });
+        }.into());
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
