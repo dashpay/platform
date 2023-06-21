@@ -1,3 +1,15 @@
+### [0.24.8](https://github.com/dashpay/platform/compare/v0.24.7...v0.24.8) (2023-06-21)
+
+
+### Features
+
+* **dashmate:** re-use ZeroSSL private key ([#1180](https://github.com/dashpay/platform/issues/1180))
+
+
+### Continuous Integration
+
+* cancel runs for already merged PRs ([#1179](https://github.com/dashpay/platform/issues/1179))
+
 ### [0.24.7](https://github.com/dashpay/platform/compare/v0.24.6...v0.24.7) (2023-06-21)
 
 
