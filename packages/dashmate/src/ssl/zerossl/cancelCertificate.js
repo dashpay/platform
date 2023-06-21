@@ -1,6 +1,5 @@
 const fetch = require('node-fetch');
 const errorDescriptions = require('./errors/errorDescriptions');
-const Certificate = require('./Certificate');
 
 /**
  * Get ZeroSSL certificate
@@ -10,12 +9,14 @@ const Certificate = require('./Certificate');
  * @param {string} id
  * @return {Promise<Certificate>}
  */
-async function getCertificate(apiKey, id) {
-  const url = `https://api.zerossl.com/certificates/${id}?access_key=${apiKey}`;
+async function cancelCertificate(apiKey, id) {
+  const url = `https://api.zerossl.com/certificates/${id}/cancel?access_key=${apiKey}`;
 
   const requestOptions = {
-    method: 'GET',
-    headers: { },
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
   };
 
   const response = await fetch(url, requestOptions);
@@ -27,8 +28,6 @@ async function getCertificate(apiKey, id) {
 
     throw new Error(errorMessage || JSON.stringify(data.error));
   }
-
-  return new Certificate(data);
 }
 
-module.exports = getCertificate;
+module.exports = cancelCertificate;
