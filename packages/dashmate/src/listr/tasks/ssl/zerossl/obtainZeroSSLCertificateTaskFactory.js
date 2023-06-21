@@ -58,7 +58,7 @@ function obtainZeroSSLCertificateTaskFactory(
             // Certificate is not configured
 
             // eslint-disable-next-line no-param-reassign
-            task.output = 'Certificate is configure yet. Create a new one';
+            task.output = 'Certificate is not configured yet, creating a new one';
 
             return;
           }
