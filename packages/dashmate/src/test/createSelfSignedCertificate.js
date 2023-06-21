@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const generateKeyPair = require('../ssl/generateKeyPair');
 const generateCsr = require('../ssl/zerossl/generateCsr');
-const createCertificate = require('../ssl/selfSigned/createCertificate');
+const createCertificate = require('../ssl/selfSigned/createSelfSignedCertificate');
 
 async function createSelfSignedCertificate(ip) {
   const keyPair = await generateKeyPair();
