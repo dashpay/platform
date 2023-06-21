@@ -82,7 +82,7 @@ function obtainZeroSSLCertificateTaskFactory(
           // In this case we need to regenerate certificate or put back this private key
           if (!ctx.isPrivateKeyFilePresent) {
             throw new Error(`Certificate private key file is not found in ${privateKeyFilePath}.\n`
-              + 'Please regenerate the certificated using the the obtain'
+              + 'Please regenerate the certificate using the the obtain'
               + ' command with --force flag and revoke previous certificate in ZeroSSL'
               + ' dashboard');
           }
@@ -90,7 +90,7 @@ function obtainZeroSSLCertificateTaskFactory(
           // We need to make sure that external IP and certificate IP match
           if (certificate.common_name !== config.get('externalIp')) {
             throw new Error(`Certificate IPe ${certificate.common_name} does not match external IP ${config.get('externalIp')}.\n`
-            + 'Please change external IP or regenerate the certificated using the obtain'
+            + 'Please change external IP or regenerate the certificate using the obtain'
             + ' command with --force flag and revoke previous certificate in ZeroSSL'
             + ' dashboard');
           }
