@@ -1,3 +1,14 @@
+### [0.24.7](https://github.com/dashpay/platform/compare/v0.24.6...v0.24.7) (2023-06-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** handle already configured certificate in obtain command (#1176)
+
+### Features
+
+* **dashmate:** handle already configured certificate in obtain command ([#1176](https://github.com/dashpay/platform/issues/1176))
+
 ### [0.24.6](https://github.com/dashpay/platform/compare/v0.24.5...v0.24.6) (2023-06-19)
 
 
