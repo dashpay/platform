@@ -110,7 +110,7 @@ function obtainZeroSSLCertificateTaskFactory(
               ctx.isBundleFilePresent = false;
 
               // eslint-disable-next-line no-param-reassign
-              task.output = 'Certificate is already created, but not validated yet.';
+              task.output = 'Certificate was already created, but not validated yet.';
             } else {
               // Certificate is not valid, so we need to re-create it
 
