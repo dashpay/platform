@@ -103,9 +103,9 @@ describe('Local Network', function main() {
 
   describe('start', () => {
     it('should start local network', async () => {
-      for (const config of group) {
-        config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
-      }
+      // for (const config of group) {
+      //   config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
+      // }
 
       const task = startGroupNodesTask(group);
 
