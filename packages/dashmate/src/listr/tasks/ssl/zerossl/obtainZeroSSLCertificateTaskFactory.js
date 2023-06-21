@@ -68,15 +68,15 @@ function obtainZeroSSLCertificateTaskFactory(
 
           // Certificate is already configured
 
-          // This function will throw an error if certificate with specified ID is not present
-          const certificate = await getCertificate(ctx.apiKey, certificateId);
-
           // Check if certificate files are present
           ctx.isCrtFilePresent = fs.existsSync(csrFilePath);
 
           ctx.isPrivateKeyFilePresent = fs.existsSync(privateKeyFilePath);
 
           ctx.isBundleFilePresent = fs.existsSync(bundleFilePath);
+
+          // This function will throw an error if certificate with specified ID is not present
+          const certificate = await getCertificate(ctx.apiKey, certificateId);
 
           // If certificate exists but private key is not, then we can't setup TLS connection
           // In this case we need to regenerate certificate or put back this private key
@@ -161,7 +161,7 @@ function obtainZeroSSLCertificateTaskFactory(
         },
       },
       {
-        title: 'Generate CSR',
+        title: 'Generate certificate request',
         enabled: (ctx) => !ctx.isCrtFilePresent,
         task: async (ctx) => {
           ctx.csr = await generateCsr(
