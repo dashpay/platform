@@ -284,7 +284,6 @@ function obtainZeroSSLCertificateTaskFactory(
       },
     ], {
       rendererOptions: {
-        clearOutput: false,
         showErrorMessage: true,
       },
     });
