@@ -119,9 +119,9 @@ function obtainZeroSSLCertificateTaskFactory(
 
               if (!ctx.isCrtFilePresent) {
                 throw new Error(`Certificate request file not found in ${csrFilePath}.\n`
-                  + 'To create a new certificate please use the obtain'
-                  + ' command with --force flag and revoke previous certificate in ZeroSSL'
-                  + ' dashboard');
+                  + 'To create a new certificate, please use the obtain'
+                  + ' command with the --force flag and revoke the previous certificate'
+                  + ' in the ZeroSSL dashboard');
               }
 
               ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
