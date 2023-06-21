@@ -75,7 +75,7 @@ function obtainZeroSSLCertificateTaskFactory(
           // This function will throw an error if certificate with specified ID is not present
           const certificate = await getCertificate(apiKey, certificateId);
 
-          // If certificate exists but private key is not, then we can't setup TLS connection
+          // If certificate exists but private key does not, then we can't setup TLS connection
           // In this case we need to regenerate certificate or put back this private key
           if (!ctx.isPrivateKeyFilePresent) {
             throw new Error(`Certificate private key file is not found in ${privateKeyFilePath}.\n`
