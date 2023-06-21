@@ -1,7 +1,10 @@
 const { Listr } = require('listr2');
 
 const chalk = require('chalk');
+const path = require('path');
+const fs = require('fs');
 const { EXPIRATION_LIMIT_DAYS } = require('../../../../ssl/zerossl/Certificate');
+const { HOME_DIR_PATH } = require('../../../../constants');
 
 /**
  * @param {generateCsr} generateCsr
@@ -36,6 +39,14 @@ function obtainZeroSSLCertificateTaskFactory(
     config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
     config.get('externalIp', true);
 
+    const sslConfigDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
+    const csrFilePath = path.join(sslConfigDir, 'csr.pem');
+    const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
+    const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');
+
+    // Ensure we have config dir created
+    fs.mkdirSync(sslConfigDir, { recursive: true });
+
     return new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
@@ -44,33 +55,104 @@ function obtainZeroSSLCertificateTaskFactory(
         task: async (ctx, task) => {
           ctx.apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey');
 
+          // Certificate is already configured
           const certificateId = await config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id');
 
-          // Certificate is already configured
-          if (certificateId) {
-            const certificate = await getCertificate(ctx.apiKey, certificateId);
+          if (!certificateId) {
+            // eslint-disable-next-line no-param-reassign
+            task.output = 'Certificate is configure yet. Create a new one';
 
+            return;
+          }
+
+          // This function will throw an error if certificate with specified ID is not present
+          const certificate = await getCertificate(ctx.apiKey, certificateId);
+
+          // Check if certificate files are present
+          ctx.isCrtFilePresent = fs.existsSync(csrFilePath);
+
+          ctx.isPrivateKeyFilePresent = fs.existsSync(privateKeyFilePath);
+
+          ctx.isBundleFilePresent = fs.existsSync(bundleFilePath);
+
+          // If certificate exists but private key is not, then we can't setup TLS connection
+          // In this case we need to regenerate certificate or put back this private key
+          if (!ctx.isPrivateKeyFilePresent) {
+            throw new Error(`Certificate private key file is not found in ${privateKeyFilePath}.\n`
+              + 'Please regenerate the certificated using the the obtain'
+              + ' command with --force flag and revoke previous certificate in ZeroSSL'
+              + ' dashboard');
+          }
+
+          // We need to make sure that external IP and certificate IP match
+          if (certificate.common_name !== config.get('externalIp')) {
+            throw new Error(`Certificate IPe ${certificate.common_name} does not match external IP ${config.get('externalIp')}.\n`
+            + 'Please change external IP or regenerate the certificated using the obtain'
+            + ' command with --force flag and revoke previous certificate in ZeroSSL'
+            + ' dashboard');
+          }
+
+          if (!certificate.isExpiredInDays(ctx.expirationDays)) {
             // Certificate is not going to expire soon
-            if (!certificate.isExpiredInDays(ctx.expirationDays)) {
-              // Certificate is already created, so we just need to pass validation
-              // if status is draft or pending_validation and download certificate file
-              if (['issued', 'pending_validation', 'draft'].includes(ctx.certificate.status)) {
-                ctx.certificate = certificate;
 
-                // eslint-disable-next-line no-param-reassign
-                task.output = `Certificate already exists and expires at ${ctx.certificate.expires}`;
-              }
-            // Certificate is going to expire soon, we need to obtain a new one
-            } else {
+            if (ctx.certificate.status === 'issued') {
+              // Certificate is valid, so we might need only to download certificate bundle
+              ctx.certificate = certificate;
+
               // eslint-disable-next-line no-param-reassign
-              task.output = `Certificate exists but expires in less than ${EXPIRATION_LIMIT_DAYS} days at ${ctx.certificate.expires}. Obtain a new one`;
+              task.output = `Certificate is valid and expires at ${ctx.certificate.expires}`;
+            } else if (['pending_validation', 'draft'].includes(ctx.certificate.status)) {
+              // Certificate is already created, so we just need to pass validation
+              // and download certificate file
+              ctx.certificate = certificate;
+
+              // We need to re-download certificate bundle
+              ctx.isBundleFilePresent = false;
+
+              // eslint-disable-next-line no-param-reassign
+              task.output = 'Certificate is already created, but not validated yet.';
+            } else {
+              // Certificate is not valid, so we need to re-create it
+              ctx.certificate = null;
+
+              // We need to re-download certificate bundle
+              ctx.isBundleFilePresent = false;
+
+              if (!ctx.isCrtFilePresent) {
+                throw new Error(`Certificate request file is not found in ${csrFilePath}.\n`
+                  + 'To create a new certificate please use the obtain'
+                  + ' command with --force flag and revoke previous certificate in ZeroSSL'
+                  + ' dashboard');
+              }
+
+              ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
+
+              // eslint-disable-next-line no-param-reassign
+              task.output = 'Certificate is not valid. Create a new one';
             }
+          } else {
+            // Certificate is going to expire soon, we need to obtain a new one
+
+            // We need to re-download certificate bundle
+            ctx.isBundleFilePresent = false;
+
+            if (!ctx.csr) {
+              throw new Error(`Certificate request file is not found in ${csrFilePath}.\n`
+                + 'To renew certificate please use the obtain'
+                + ' command with --force flag and revoke previous certificate in ZeroSSL'
+                + ' dashboard');
+            }
+
+            ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = `Certificate exists but expires in less than ${EXPIRATION_LIMIT_DAYS} days at ${ctx.certificate.expires}. Obtain a new one`;
           }
         },
       },
       {
         title: 'Generate a keypair',
-        skip: (ctx) => ctx.certificate,
+        skip: (ctx) => ctx.csr,
         task: async (ctx) => {
           ctx.keyPair = await generateKeyPair();
           ctx.privateKeyFile = ctx.keyPair.privateKey;
@@ -78,7 +160,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate CSR',
-        skip: (ctx) => ctx.certificate,
+        skip: (ctx) => ctx.csr,
         task: async (ctx) => {
           ctx.csr = await generateCsr(
             ctx.keyPair,
@@ -96,6 +178,7 @@ function obtainZeroSSLCertificateTaskFactory(
             ctx.apiKey,
           );
 
+          config.set('platform.dapi.envoy.ssl.enabled', true);
           config.set('platform.dapi.envoy.ssl.provider', 'zerossl');
           config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
         },
@@ -117,7 +200,7 @@ function obtainZeroSSLCertificateTaskFactory(
         task: async () => verificationServer.start(),
       },
       {
-        title: 'Verify IP',
+        title: 'Verify certificate IP address',
         skip: (ctx) => !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx, task) => {
           let retry;
@@ -150,7 +233,8 @@ function obtainZeroSSLCertificateTaskFactory(
         },
       },
       {
-        title: 'Download certificate files',
+        title: 'Download certificate file',
+        skip: (ctx) => ctx.isBundleFilePresent,
         task: async (ctx) => {
           ctx.certificateFile = await downloadCertificate(
             ctx.certificate.id,
@@ -159,8 +243,34 @@ function obtainZeroSSLCertificateTaskFactory(
         },
       },
       {
-        title: 'Save certificate files',
-        task: async () => saveCertificateTask(config),
+        title: 'Save certificate private key file',
+        skip: (ctx) => ctx.isPrivateKeyFilePresent,
+        task: async (ctx, task) => {
+          fs.writeFileSync(privateKeyFilePath, ctx.privateKeyFile, 'utf8');
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = privateKeyFilePath;
+        },
+      },
+      {
+        title: 'Save certificate request file',
+        skip: (ctx) => ctx.isCrtFilePresent,
+        task: async (ctx, task) => {
+          fs.writeFileSync(csrFilePath, ctx.csr, 'utf8');
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = csrFilePath;
+        },
+      },
+      {
+        title: 'Save certificate file',
+        skip: (ctx) => ctx.isBundleFilePresent,
+        task: async (ctx, task) => {
+          fs.writeFileSync(bundleFilePath, ctx.certificateFile, 'utf8');
+
+          // eslint-disable-next-line no-param-reassign
+          task.output = bundleFilePath;
+        },
       },
       {
         title: 'Stop verification server',
