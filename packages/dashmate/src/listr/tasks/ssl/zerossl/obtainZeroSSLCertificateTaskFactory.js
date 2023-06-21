@@ -155,7 +155,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate a keypair',
-        skip: (ctx) => ctx.csr,
+        enabled: (ctx) => !ctx.csr,
         task: async (ctx) => {
           ctx.keyPair = await generateKeyPair();
           ctx.privateKeyFile = ctx.keyPair.privateKey;
@@ -163,7 +163,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate CSR',
-        skip: (ctx) => ctx.csr,
+        enabled: (ctx) => !ctx.csr,
         task: async (ctx) => {
           ctx.csr = await generateCsr(
             ctx.keyPair,
@@ -247,7 +247,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Save certificate private key file',
-        skip: (ctx) => ctx.isPrivateKeyFilePresent,
+        enabled: (ctx) => !ctx.isPrivateKeyFilePresent,
         task: async (ctx, task) => {
           fs.writeFileSync(privateKeyFilePath, ctx.privateKeyFile, 'utf8');
 
@@ -257,7 +257,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Save certificate request file',
-        skip: (ctx) => ctx.isCrtFilePresent,
+        enabled: (ctx) => !ctx.isCrtFilePresent,
         task: async (ctx, task) => {
           fs.writeFileSync(csrFilePath, ctx.csr, 'utf8');
 
