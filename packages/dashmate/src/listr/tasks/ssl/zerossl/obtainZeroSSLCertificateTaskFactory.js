@@ -109,7 +109,7 @@ function obtainZeroSSLCertificateTaskFactory(
               // and download certificate file
               ctx.certificate = certificate;
 
-              // We need to re-download certificate bundle
+              // We need to download new certificate bundle
               ctx.isBundleFilePresent = false;
 
               // eslint-disable-next-line no-param-reassign
@@ -118,7 +118,7 @@ function obtainZeroSSLCertificateTaskFactory(
               // Certificate is not valid, so we need to re-create it
               ctx.certificate = null;
 
-              // We need to re-download certificate bundle
+              // We need to download certificate bundle
               ctx.isBundleFilePresent = false;
 
               if (!ctx.isCrtFilePresent) {
@@ -136,7 +136,7 @@ function obtainZeroSSLCertificateTaskFactory(
           } else {
             // Certificate is going to expire soon, we need to obtain a new one
 
-            // We need to re-download certificate bundle
+            // We need to download new certificate bundle
             ctx.isBundleFilePresent = false;
 
             if (!ctx.isCrtFilePresent) {
