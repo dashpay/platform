@@ -4,8 +4,8 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state;
 use crate::platform_types::validator_set;
 use crate::rpc::core::CoreRPCLike;
-use std::cmp::Ordering;
 use dpp::dashcore::QuorumHash;
+use std::cmp::Ordering;
 
 impl<C> Platform<C>
 where

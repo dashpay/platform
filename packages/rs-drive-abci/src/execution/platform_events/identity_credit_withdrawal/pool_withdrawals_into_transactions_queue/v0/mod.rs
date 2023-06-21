@@ -133,13 +133,12 @@ where
 
 #[cfg(test)]
 mod tests {
-
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::QuorumHash;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::QuorumHash;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContext;

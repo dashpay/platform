@@ -6,7 +6,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use crate::consensus::basic::BasicError;
     use crate::consensus::consensus_error::ConsensusError;
 
-    
     use dashcore::hashes::Hash;
     use dashcore::Txid;
     use dashcore::{PrivateKey, Transaction};

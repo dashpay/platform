@@ -3,13 +3,13 @@ use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
+use dpp::dashcore::hashes::Hash;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
-use dpp::dashcore::hashes::Hash;
 
 #[derive(Clone, Debug)]
 pub struct GenerateTestMasternodeUpdates<'a> {

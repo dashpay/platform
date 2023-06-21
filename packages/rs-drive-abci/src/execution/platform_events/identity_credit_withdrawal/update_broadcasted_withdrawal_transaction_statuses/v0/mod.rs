@@ -161,12 +161,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::str::FromStr;
     use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
+    use std::collections::HashMap;
+    use std::str::FromStr;
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
@@ -176,6 +176,7 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformState;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::dashcore::hashes::Hash;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
     use dpp::{
@@ -183,7 +184,6 @@ mod tests {
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
-    use dpp::dashcore::hashes::Hash;
     use drive::tests::helpers::setup::setup_system_data_contract;
 
     #[test]
@@ -217,7 +217,8 @@ mod tests {
         mock_rpc_client
             .expect_get_block_json()
             .withf(|bh| {
-                hex::encode(bh) == "0000000000000000000000000000000000000000000000000000000000000000"
+                hex::encode(bh)
+                    == "0000000000000000000000000000000000000000000000000000000000000000"
             })
             .returning(|_| {
                 Ok(json!({
@@ -228,7 +229,8 @@ mod tests {
         mock_rpc_client
             .expect_get_block_json()
             .withf(|bh| {
-                hex::encode(bh) == "1111111111111111111111111111111111111111111111111111111111111111"
+                hex::encode(bh)
+                    == "1111111111111111111111111111111111111111111111111111111111111111"
             })
             .returning(|_| {
                 Ok(json!({

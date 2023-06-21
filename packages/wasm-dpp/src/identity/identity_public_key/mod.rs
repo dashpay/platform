@@ -1,4 +1,3 @@
-
 use dpp::document::document_transition::document_base_transition::JsonValue;
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
