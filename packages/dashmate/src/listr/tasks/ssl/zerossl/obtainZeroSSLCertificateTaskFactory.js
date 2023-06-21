@@ -55,15 +55,18 @@ function obtainZeroSSLCertificateTaskFactory(
         task: async (ctx, task) => {
           ctx.apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey');
 
-          // Certificate is already configured
           const certificateId = await config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id');
 
           if (!certificateId) {
+            // Certificate is not configured
+
             // eslint-disable-next-line no-param-reassign
             task.output = 'Certificate is configure yet. Create a new one';
 
             return;
           }
+
+          // Certificate is already configured
 
           // This function will throw an error if certificate with specified ID is not present
           const certificate = await getCertificate(ctx.apiKey, certificateId);
@@ -136,7 +139,7 @@ function obtainZeroSSLCertificateTaskFactory(
             // We need to re-download certificate bundle
             ctx.isBundleFilePresent = false;
 
-            if (!ctx.csr) {
+            if (!ctx.isCrtFilePresent) {
               throw new Error(`Certificate request file is not found in ${csrFilePath}.\n`
                 + 'To renew certificate please use the obtain'
                 + ' command with --force flag and revoke previous certificate in ZeroSSL'
