@@ -5,7 +5,7 @@ const DockerStatusEnum = require('../enums/dockerStatus');
  * @returns {getServicesScopeFactory}
  * @param dockerCompose {DockerCompose}
  */
-function getServicesScopeFactory(dockerCompose) {
+function getServicesScopeFactory(dockerCompose, getServiceList) {
   /**
    * Get platform status scope
    *
@@ -14,29 +14,11 @@ function getServicesScopeFactory(dockerCompose) {
    * @returns {Promise<Object>}
    */
   async function getServicesScope(config) {
-    const services = {};
+    const services = getServiceList(config);
 
-    const serviceHumanNames = {
-      core: 'Core',
-    };
+    const scope = {};
 
-    if (config.get('core.masternode.enable')) {
-      Object.assign(serviceHumanNames, {
-        sentinel: 'Sentinel',
-      });
-    }
-
-    if (config.get('platform.enable')) {
-      Object.assign(serviceHumanNames, {
-        drive_abci: 'Drive ABCI',
-        drive_tenderdash: 'Drive Tenderdash',
-        dapi_api: 'DAPI API',
-        dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
-        dapi_envoy: 'DAPI Envoy',
-      });
-    }
-
-    for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
+    for (const { serviceName, humanName } of services) {
       let containerId;
       let status;
       let image;
@@ -52,8 +34,8 @@ function getServicesScopeFactory(dockerCompose) {
           },
         } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
 
-        services[serviceName] = {
-          humanName: serviceDescription,
+        scope[serviceName] = {
+          humanName,
           containerId: containerId ? containerId.slice(0, 12) : null,
           image,
           status,
@@ -68,8 +50,8 @@ function getServicesScopeFactory(dockerCompose) {
           console.error(e);
         }
 
-        services[serviceName] = {
-          humanName: serviceDescription,
+        scope[serviceName] = {
+          humanName,
           containerId: null,
           image: null,
           status,
@@ -77,7 +59,7 @@ function getServicesScopeFactory(dockerCompose) {
       }
     }
 
-    return services;
+    return scope;
   }
 
   return getServicesScope;

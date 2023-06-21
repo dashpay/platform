@@ -1,50 +1,59 @@
-const { Listr } = require('listr2');
+const _ = require('lodash');
+const { Flags } = require('@oclif/core');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
-
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+const printObject = require('../printers/printObject');
+const { OUTPUT_FORMATS } = require('../constants');
 
 class UpdateCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
-   * @param {Object} flags
-   * @param {DockerCompose} dockerCompose
+   * @param {string} format
+   * @param {getServiceList} getServiceList
+   * @param {docker} docker
    * @param {Config} config
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     {
-      verbose: isVerbose,
-    },
-    dockerCompose,
-    config,
+      format,
+    }, getServiceList, docker, config,
   ) {
-    const tasks = new Listr(
-      [
-        {
-          title: 'Download updates',
-          task: () => dockerCompose.pull(config.toEnvs()),
-        },
-      ],
-      {
-        renderer: isVerbose ? 'verbose' : 'default',
-        rendererOptions: {
-          showTimer: isVerbose,
-          clearOutput: false,
-          collapse: false,
-          showSubtasks: true,
-        },
-      },
+    const services = getServiceList(config);
+
+    const updated = await Promise.all(
+      _.uniqBy(services, 'image')
+        .map(async ({ serviceName, image }) => new Promise((resolve, reject) => {
+          docker.pull(image, (err, stream) => {
+            let pulled = null;
+
+            stream.on('data', (data) => {
+              try {
+                const [status] = data
+                  .toString()
+                  .trim()
+                  .split('\r\n')
+                  .map((str) => JSON.parse(str))
+                  .filter((obj) => obj.status.startsWith('Status: '));
+
+                if (status?.status.includes('Image is up to date for')) {
+                  pulled = false;
+                } else if (status?.status.includes('Downloaded newer image for')) {
+                  pulled = true;
+                }
+              } catch (e) {
+                // eslint-disable-next-line no-empty
+              }
+            });
+            stream.on('error', reject);
+            stream.on('end', () => resolve({ serviceName, image, pulled }));
+          });
+        })),
     );
 
-    try {
-      await tasks.run({
-        isVerbose,
-      });
-    } catch (e) {
-      throw new MuteOneLineError(e);
-    }
+    printObject(updated
+      .reduce((acc, { serviceName, pulled }) => ({ ...acc, [serviceName]: pulled }), {}), format);
   }
 }
 
@@ -52,6 +61,11 @@ UpdateCommand.description = 'Update node software';
 
 UpdateCommand.flags = {
   ...ConfigBaseCommand.flags,
+  format: Flags.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.PLAIN,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
 };
 
 module.exports = UpdateCommand;

@@ -8,6 +8,7 @@ const {
 
 const Docker = require('dockerode');
 
+const getServiceListFactory = require('./config/getServiceListFactory');
 const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
 const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
@@ -104,6 +105,7 @@ async function createDIContainer() {
    * Config
    */
   container.register({
+    getServiceList: asFunction(getServiceListFactory).singleton(),
     ensureHomeDir: asFunction(ensureHomeDirFactory).singleton(),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
     systemConfigs: asValue(systemConfigs),
