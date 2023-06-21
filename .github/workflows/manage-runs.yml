@@ -6,7 +6,7 @@ on:
       - v[0-9]+\.[0-9]+-dev
 
 jobs:
-  cancel-mergerd-pr-runs:
+  cancel-merged-pr-runs:
     name: Cancel runs for already merged PRs
     runs-on: ubuntu-22.04
     steps:
