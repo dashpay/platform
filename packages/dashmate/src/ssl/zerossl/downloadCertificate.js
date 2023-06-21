@@ -1,5 +1,4 @@
-const fetch = require('node-fetch');
-const errorDescriptions = require('./errors/errorDescriptions');
+const requestApi = require('./requestApi');
 
 /**
  * Download the certificate specified by id
@@ -17,14 +16,7 @@ async function downloadCertificate(id, apiKey) {
     headers: { },
   };
 
-  const response = await fetch(url, requestOptions);
-  const data = await response.json();
-
-  if (data.error) {
-    const errorMessage = errorDescriptions[data.error.code];
-
-    throw new Error(errorMessage || JSON.stringify(data.error));
-  }
+  const data = await requestApi(url, requestOptions);
 
   return `${data['certificate.crt']}\n${data['ca_bundle.crt']}`;
 }

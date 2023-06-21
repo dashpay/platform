@@ -4,6 +4,7 @@ const chalk = require('chalk');
 const path = require('path');
 const fs = require('fs');
 const { HOME_DIR_PATH } = require('../../../../constants');
+const wait = require('../../../../util/wait');
 
 /**
  * @param {generateCsr} generateCsr
@@ -234,12 +235,24 @@ function obtainZeroSSLCertificateTaskFactory(
       {
         title: 'Download certificate file',
         skip: (ctx) => ctx.isBundleFilePresent,
-        task: async (ctx) => {
-          ctx.certificateFile = await downloadCertificate(
-            ctx.certificate.id,
-            apiKey,
-          );
+        task: async (ctx, task) => {
+          await wait(5000);
+
+          try {
+            ctx.certificateFile = await downloadCertificate(
+              ctx.certificate.id,
+              apiKey,
+            );
+          } catch (e) {
+            if (e.code !== 2832) {
+              throw e;
+            }
+
+            // eslint-disable-next-line no-param-reassign
+            task.output = 'Certificate is not ready yet. Waiting for 5 seconds...';
+          }
         },
+        retry: 50,
       },
       {
         title: 'Save certificate private key file',

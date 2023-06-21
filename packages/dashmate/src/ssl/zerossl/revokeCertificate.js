@@ -1,5 +1,4 @@
-const fetch = require('node-fetch');
-const errorDescriptions = require('./errors/errorDescriptions');
+const requestApi = require('./requestApi');
 
 /**
  * Create a ZeroSSL Certificate
@@ -22,15 +21,7 @@ async function revokeCertificate(
     },
   };
 
-  const response = await fetch(url, requestOptions);
-
-  const data = await response.json();
-
-  if (data.error) {
-    const errorMessage = errorDescriptions[data.error.code];
-
-    throw new Error(errorMessage || JSON.stringify(data.error));
-  }
+  return requestApi(url, requestOptions);
 }
 
 module.exports = revokeCertificate;
