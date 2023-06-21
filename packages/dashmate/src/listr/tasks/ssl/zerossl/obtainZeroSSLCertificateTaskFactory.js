@@ -80,8 +80,8 @@ function obtainZeroSSLCertificateTaskFactory(
           if (!ctx.isPrivateKeyFilePresent) {
             throw new Error(`Certificate private key file not found in ${privateKeyFilePath}.\n`
               + 'Please regenerate the certificate using the the obtain'
-              + ' command with --force flag and revoke previous certificate in ZeroSSL'
-              + ' dashboard');
+              + ' command with the --force flag, and revoke the previous certificate in'
+              + ' the ZeroSSL dashboard');
           }
 
           // We need to make sure that external IP and certificate IP match
