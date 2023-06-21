@@ -38,6 +38,7 @@ class ObtainCommand extends ConfigBaseCommand {
         clearOutput: false,
         collapse: false,
         showSubtasks: true,
+        removeEmptyLines: false,
       },
     });
 
