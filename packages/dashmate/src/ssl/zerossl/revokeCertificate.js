@@ -1,7 +1,5 @@
 const fetch = require('node-fetch');
-const qs = require('qs');
 const errorDescriptions = require('./errors/errorDescriptions');
-const Certificate = require('./Certificate');
 
 /**
  * Create a ZeroSSL Certificate
