@@ -55,8 +55,8 @@ class ObtainCommand extends ConfigBaseCommand {
 
 ObtainCommand.description = `Obtain SSL certificate
 
-Create a new SSL certificate or download already existing one using ZeroSSL provider
-In case if certificate is about to expire (see 'expiration-days' flag) it will be renewed
+Create a new SSL certificate or download an already existing one using ZeroSSL as provider
+Certificate will be renewed if it is about to expire (see 'expiration-days' flag)
 `;
 
 ObtainCommand.flags = {
