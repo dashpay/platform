@@ -154,7 +154,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate a keypair',
-        enabled: (ctx) => !ctx.csr,
+        enabled: (ctx) => !ctx.isCrtFilePresent,
         task: async (ctx) => {
           ctx.keyPair = await generateKeyPair();
           ctx.privateKeyFile = ctx.keyPair.privateKey;
@@ -162,7 +162,7 @@ function obtainZeroSSLCertificateTaskFactory(
       },
       {
         title: 'Generate CSR',
-        enabled: (ctx) => !ctx.csr,
+        enabled: (ctx) => !ctx.isCrtFilePresent,
         task: async (ctx) => {
           ctx.csr = await generateCsr(
             ctx.keyPair,
