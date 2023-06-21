@@ -5,9 +5,10 @@ const generateEnvs = require('../../util/generateEnvs');
 /**
  * @param {DockerCompose} dockerCompose
  * @param {ConfigFile} configFile
+ * @param getServiceList
  * @returns {getServicesScopeFactory}
  */
-function getServicesScopeFactory(dockerCompose, getServiceList) {
+function getServicesScopeFactory(dockerCompose, configFile, getServiceList) {
   /**
    * Get platform status scope
    *
