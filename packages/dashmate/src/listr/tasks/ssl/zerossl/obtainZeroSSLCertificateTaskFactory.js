@@ -282,7 +282,12 @@ function obtainZeroSSLCertificateTaskFactory(
           await verificationServer.destroy();
         },
       },
-    ]);
+    ], {
+      rendererOptions: {
+        clearOutput: false,
+        showErrorMessage: true,
+      },
+    });
   }
 
   return obtainZeroSSLCertificateTask;
