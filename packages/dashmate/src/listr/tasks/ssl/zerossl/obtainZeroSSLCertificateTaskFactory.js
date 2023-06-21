@@ -98,13 +98,13 @@ function obtainZeroSSLCertificateTaskFactory(
           if (!certificate.isExpiredInDays(ctx.expirationDays)) {
             // Certificate is not going to expire soon
 
-            if (ctx.certificate.status === 'issued') {
+            if (certificate.status === 'issued') {
               // Certificate is valid, so we might need only to download certificate bundle
               ctx.certificate = certificate;
 
               // eslint-disable-next-line no-param-reassign
-              task.output = `Certificate is valid and expires at ${ctx.certificate.expires}`;
-            } else if (['pending_validation', 'draft'].includes(ctx.certificate.status)) {
+              task.output = `Certificate is valid and expires at ${certificate.expires}`;
+            } else if (['pending_validation', 'draft'].includes(certificate.status)) {
               // Certificate is already created, so we just need to pass validation
               // and download certificate file
               ctx.certificate = certificate;
@@ -116,7 +116,6 @@ function obtainZeroSSLCertificateTaskFactory(
               task.output = 'Certificate is already created, but not validated yet.';
             } else {
               // Certificate is not valid, so we need to re-create it
-              ctx.certificate = null;
 
               // We need to download certificate bundle
               ctx.isBundleFilePresent = false;
@@ -149,7 +148,7 @@ function obtainZeroSSLCertificateTaskFactory(
             ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
 
             // eslint-disable-next-line no-param-reassign
-            task.output = `Certificate exists but expires in less than ${EXPIRATION_LIMIT_DAYS} days at ${ctx.certificate.expires}. Obtain a new one`;
+            task.output = `Certificate exists but expires in less than ${EXPIRATION_LIMIT_DAYS} days at ${certificate.expires}. Obtain a new one`;
           }
         },
       },
