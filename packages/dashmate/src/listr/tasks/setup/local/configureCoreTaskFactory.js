@@ -89,7 +89,10 @@ function configureCoreTaskFactory(
               task: async () => {
                 const config = configGroup.find((c) => c.getName() === 'local_seed');
 
-                ctx.coreService = await startCore(config, { wallet: true, addressIndex: true });
+                ctx.coreService = await startCore(
+                  config,
+                  { wallet: true, addressIndex: true },
+                );
               },
             },
             {

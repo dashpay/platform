@@ -80,14 +80,14 @@ const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/o
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
 const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
 
-const createZeroSSLCertificate = require('./ssl/zerossl/createCertificate');
+const createZeroSSLCertificate = require('./ssl/zerossl/createZeroSSLCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
 const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
 const getCertificate = require('./ssl/zerossl/getCertificate');
 const listCertificates = require('./ssl/zerossl/listCertificates');
 const generateCsr = require('./ssl/zerossl/generateCsr');
 const generateKeyPair = require('./ssl/generateKeyPair');
-const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
+const createSelfSignedCertificate = require('./ssl/selfSigned/createSelfSignedCertificate');
 
 const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
 const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');

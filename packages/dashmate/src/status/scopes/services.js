@@ -1,9 +1,11 @@
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 const DockerStatusEnum = require('../enums/dockerStatus');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
+ * @param {DockerCompose} dockerCompose
+ * @param {ConfigFile} configFile
  * @returns {getServicesScopeFactory}
- * @param dockerCompose {DockerCompose}
  */
 function getServicesScopeFactory(dockerCompose, getServiceList) {
   /**
@@ -32,7 +34,7 @@ function getServicesScopeFactory(dockerCompose, getServiceList) {
           Config: {
             Image: image,
           },
-        } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
+        } = await dockerCompose.inspectService(generateEnvs(configFile, config), serviceName));
 
         scope[serviceName] = {
           humanName,

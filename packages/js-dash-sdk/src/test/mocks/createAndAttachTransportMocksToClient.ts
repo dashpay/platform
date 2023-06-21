@@ -11,11 +11,8 @@ import { wait } from '../../utils/wait';
 
 const GetIdentityResponse = require('@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse');
 
-// @ts-ignore
 const TxStreamMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamMock');
-// @ts-ignore
 const TxStreamDataResponseMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamDataResponseMock');
-// @ts-ignore
 const TransportMock = require('@dashevo/wallet-lib/src/test/mocks/TransportMock');
 
 function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {

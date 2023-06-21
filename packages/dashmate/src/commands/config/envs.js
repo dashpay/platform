@@ -6,12 +6,14 @@ const { Flags } = require('@oclif/core');
 const { HOME_DIR_PATH } = require('../../constants');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const generateEnvs = require('../../util/generateEnvs');
 
 class ConfigEnvsCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -20,10 +22,11 @@ class ConfigEnvsCommand extends ConfigBaseCommand {
       'output-file': outputFile,
     },
     config,
+    configFile,
   ) {
     let envOutput = '';
 
-    for (const [key, value] of Object.entries(config.toEnvs())) {
+    for (const [key, value] of Object.entries(generateEnvs(configFile, config))) {
       envOutput += `${key}=${value}\n`;
     }
 

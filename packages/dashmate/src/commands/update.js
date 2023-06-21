@@ -2,6 +2,9 @@ const _ = require('lodash');
 const { Flags } = require('@oclif/core');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+
+const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+const generateEnvs = require('../util/generateEnvs');
 const printObject = require('../printers/printObject');
 const { OUTPUT_FORMATS } = require('../constants');
 
@@ -12,11 +15,17 @@ class UpdateCommand extends ConfigBaseCommand {
    * @param {getServiceList} getServiceList
    * @param {docker} docker
    * @param {Config} config
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     {
+      verbose: isVerbose,
+    },
+    dockerCompose,
+    config,
+    configFile,
       format,
     }, getServiceList, docker, config,
   ) {
