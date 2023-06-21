@@ -28,8 +28,6 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
- * @param {saveCertificateTask} saveCertificateTask
- * @param {listCertificates} listCertificates
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
@@ -41,8 +39,6 @@ function setupRegularPresetTaskFactory(
   renderServiceTemplates,
   writeServiceConfigs,
   obtainZeroSSLCertificateTask,
-  saveCertificateTask,
-  listCertificates,
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,

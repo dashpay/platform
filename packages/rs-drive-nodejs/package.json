@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/rs-drive",
-  "version": "0.24.6",
+  "version": "0.24.7",
   "description": "Node.JS binding for Rust Drive",
   "main": "Drive.js",
   "scripts": {

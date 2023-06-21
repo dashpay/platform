@@ -69,10 +69,8 @@ function configureSSLCertificateTaskFactory(
             });
           }
 
-          ctx.certificate = fs.readFileSync(form.chainFilePath, 'utf8');
-          ctx.keyPair = {
-            privateKey: fs.readFileSync(form.privateFilePath, 'utf8'),
-          };
+          ctx.certificateFile = fs.readFileSync(form.chainFilePath, 'utf8');
+          ctx.privateKeyFile = fs.readFileSync(form.privateFilePath, 'utf8');
 
           return saveCertificateTask(ctx.config);
         },
@@ -83,9 +81,9 @@ function configureSSLCertificateTaskFactory(
           const apiKey = await task.prompt({
             type: 'input',
             message: 'Enter ZeroSSL API key',
-            validate: async (state) => {
+            validate: async (key) => {
               try {
-                await listCertificates(state);
+                await listCertificates(key);
 
                 return true;
               } catch (e) {
