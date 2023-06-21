@@ -121,7 +121,6 @@ module.exports = {
             zerossl: {
               apiKey: null,
               id: null,
-              privateKey: null,
             },
           },
         },

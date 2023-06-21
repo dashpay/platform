@@ -368,12 +368,8 @@ module.exports = {
                               type: ['string', 'null'],
                               minLength: 32,
                             },
-                            privateKey: {
-                              type: ['string', 'null'],
-                              minLength: 32,
-                            },
                           },
-                          required: ['apiKey', 'id', 'privateKey'],
+                          required: ['apiKey', 'id'],
                           additionalProperties: false,
                         },
                       },

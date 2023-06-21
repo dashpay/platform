@@ -574,14 +574,4 @@ module.exports = {
       });
     return configFile;
   },
-  '0.24.7': (configFile) => {
-    Object.entries(configFile.configs)
-      .forEach(([, config]) => {
-        // Update images
-        if (!config.platform.dapi.envoy.ssl.providerConfigs.zerossl.privateKey) {
-          config.platform.dapi.envoy.ssl.providerConfigs.zerossl.privateKey = null;
-        }
-      });
-    return configFile;
-  },
 };

@@ -57,8 +57,6 @@ function obtainZeroSSLCertificateTaskFactory(
               if (['issued', 'pending_validation', 'draft'].includes(ctx.certificate.status)) {
                 ctx.certificate = certificate;
 
-                ctx.privateKeyFile = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.privateKey', true);
-
                 // eslint-disable-next-line no-param-reassign
                 task.output = `Certificate already exists and expires at ${ctx.certificate.expires}`;
               }
@@ -100,7 +98,6 @@ function obtainZeroSSLCertificateTaskFactory(
 
           config.set('platform.dapi.envoy.ssl.provider', 'zerossl');
           config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
-          config.set('platform.dapi.envoy.ssl.providerConfigs.zerossl.privateKey', ctx.privateKeyFile);
         },
       },
       {
