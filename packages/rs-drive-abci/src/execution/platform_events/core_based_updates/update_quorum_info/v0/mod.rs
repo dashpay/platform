@@ -5,6 +5,7 @@ use crate::platform_types::platform_state;
 use crate::platform_types::validator_set;
 use crate::rpc::core::CoreRPCLike;
 use std::cmp::Ordering;
+use dpp::dashcore::QuorumHash;
 
 impl<C> Platform<C>
 where
@@ -76,7 +77,7 @@ where
             .filter(|(key, _)| {
                 !block_platform_state
                     .validator_sets
-                    .contains_key(key.as_ref())
+                    .contains_key::<QuorumHash>(key)
             })
             .map(|(key, _)| {
                 let quorum_info_result =

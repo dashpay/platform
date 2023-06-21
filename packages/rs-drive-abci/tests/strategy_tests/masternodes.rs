@@ -9,6 +9,7 @@ use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
+use dpp::dashcore::hashes::Hash;
 
 #[derive(Clone, Debug)]
 pub struct GenerateTestMasternodeUpdates<'a> {

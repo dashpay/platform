@@ -161,10 +161,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{
-        hashes::hex::{FromHex, ToHex},
-        BlockHash,
-    };
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
@@ -184,6 +183,7 @@ mod tests {
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
+    use dpp::dashcore::hashes::Hash;
     use drive::tests::helpers::setup::setup_system_data_contract;
 
     #[test]
@@ -198,7 +198,7 @@ mod tests {
             .expect_get_block_hash()
             .withf(|height| *height == 95)
             .returning(|_| {
-                Ok(BlockHash::from_hex(
+                Ok(BlockHash::from_str(
                     "0000000000000000000000000000000000000000000000000000000000000000",
                 )
                 .unwrap())
@@ -208,7 +208,7 @@ mod tests {
             .expect_get_block_hash()
             .withf(|height| *height == 96)
             .returning(|_| {
-                Ok(BlockHash::from_hex(
+                Ok(BlockHash::from_str(
                     "1111111111111111111111111111111111111111111111111111111111111111",
                 )
                 .unwrap())
@@ -217,7 +217,7 @@ mod tests {
         mock_rpc_client
             .expect_get_block_json()
             .withf(|bh| {
-                bh.to_hex() == "0000000000000000000000000000000000000000000000000000000000000000"
+                hex::encode(bh) == "0000000000000000000000000000000000000000000000000000000000000000"
             })
             .returning(|_| {
                 Ok(json!({
@@ -228,7 +228,7 @@ mod tests {
         mock_rpc_client
             .expect_get_block_json()
             .withf(|bh| {
-                bh.to_hex() == "1111111111111111111111111111111111111111111111111111111111111111"
+                hex::encode(bh) == "1111111111111111111111111111111111111111111111111111111111111111"
             })
             .returning(|_| {
                 Ok(json!({
@@ -265,8 +265,8 @@ mod tests {
                 last_committed_block_info: None,
                 current_protocol_version_in_consensus: 0,
                 next_epoch_protocol_version: 0,
-                quorums_extended_info: Default::default(),
-                current_validator_set_quorum_hash: Default::default(),
+                quorums_extended_info: HashMap::new(),
+                current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                 next_validator_set_quorum_hash: None,
                 validator_sets: Default::default(),
                 full_masternode_list: Default::default(),

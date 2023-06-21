@@ -138,6 +138,8 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::QuorumHash;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
@@ -188,7 +190,7 @@ mod tests {
                     current_protocol_version_in_consensus: 0,
                     next_epoch_protocol_version: 0,
                     quorums_extended_info: Default::default(),
-                    current_validator_set_quorum_hash: Default::default(),
+                    current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                     next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
                     full_masternode_list: Default::default(),

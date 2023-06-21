@@ -3,7 +3,6 @@ use crate::execution::types::update_state_masternode_list_outcome;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
@@ -77,7 +76,7 @@ where
                 self.drive.remove_validators_proposed_app_versions(
                     removed_masternodes
                         .into_keys()
-                        .map(|pro_tx_hash| pro_tx_hash.into_inner()),
+                        .map(|pro_tx_hash| pro_tx_hash.into()),
                     Some(transaction),
                 )?;
             }

@@ -40,7 +40,6 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
 use drive::fee::credits::SignedCredits;

@@ -5,8 +5,9 @@ use dashcore_rpc::dashcore::{
         AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo,
     },
     consensus::Encodable,
-    Script, TxOut,
+    TxOut,
 };
+use dpp::dashcore::ScriptBuf;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
@@ -71,7 +72,7 @@ where
 
             let state_transition_size = 190;
 
-            let output_script: Script = Script(output_script_bytes.into());
+            let output_script = ScriptBuf::from_bytes(output_script_bytes.into());
 
             let tx_out = TxOut {
                 value: convert_credits_to_satoshi(amount)?,
