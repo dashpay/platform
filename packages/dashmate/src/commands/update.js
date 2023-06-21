@@ -24,7 +24,7 @@ class UpdateCommand extends ConfigBaseCommand {
 
     const updated = await Promise.all(
       _.uniqBy(services, 'image')
-        .map(async ({ serviceName, image }) => new Promise((resolve, reject) => {
+        .map(async ({ serviceName, image, humanName }) => new Promise((resolve, reject) => {
           docker.pull(image, (err, stream) => {
             let pulled = null;
 
@@ -47,13 +47,21 @@ class UpdateCommand extends ConfigBaseCommand {
               }
             });
             stream.on('error', reject);
-            stream.on('end', () => resolve({ serviceName, image, pulled }));
+            stream.on('end', () => resolve({
+              serviceName, humanName, image, pulled,
+            }));
           });
         })),
     );
 
     printObject(updated
-      .reduce((acc, { serviceName, pulled }) => ({ ...acc, [serviceName]: pulled }), {}), format);
+      .reduce((acc, { serviceName, humanName, pulled }) => {
+        if (format === OUTPUT_FORMATS.PLAIN) {
+          return { ...acc, [humanName]: pulled };
+        }
+
+        return ({ ...acc, [serviceName]: pulled });
+      }, {}), format);
   }
 }
 
