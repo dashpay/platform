@@ -6,6 +6,7 @@ use drive::error::Error as DriveError;
 use prost::DecodeError;
 use tenderdash_abci::proto::abci::ResponseException;
 
+// @append_only
 /// Errors
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {

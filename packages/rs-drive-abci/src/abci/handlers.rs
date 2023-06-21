@@ -31,15 +31,16 @@
 //!
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
+//! Handlers in this function MUST be version agnostic, meaning that for all future versions, we
+//! can only make changes that are backwards compatible. Otherwise new calls must be made instead.
+//!
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::block_proposal::BlockProposal;
-use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
 use drive::fee::credits::SignedCredits;
@@ -54,12 +55,15 @@ use tenderdash_abci::proto::abci::{
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
 
-use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
+use crate::platform_types::block_execution_outcome;
+use crate::platform_types::block_proposal::v0::BlockProposal;
+use crate::platform_types::platform_state::v0;
+use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::hashes::Hash;
 use hex::ToHex;
 use serde_json::Map;
@@ -110,7 +114,7 @@ where
             );
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
-            *platform_state_write_guard = PlatformState::default_with_protocol_versions(
+            *platform_state_write_guard = v0::PlatformState::default_with_protocol_versions(
                 protocol_version_in_consensus,
                 protocol_version_in_consensus,
             );
@@ -191,9 +195,7 @@ where
             return Err(run_result.errors.first().unwrap().to_string().into());
         }
 
-        //todo: we need to set the block hash
-
-        let BlockExecutionOutcome {
+        let block_execution_outcome::v0::BlockExecutionOutcome {
             app_hash,
             tx_results,
             validator_set_update,
@@ -352,7 +354,7 @@ where
             };
             Ok(response)
         } else {
-            let BlockExecutionOutcome {
+            let block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash,
                 tx_results,
                 validator_set_update,
@@ -386,7 +388,7 @@ where
             guarded_block_execution_context
                 .as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
+                    "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
         let block_state_info = &block_execution_context.block_state_info;
@@ -438,7 +440,7 @@ where
             guarded_block_execution_context
                 .as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
+                    "block execution context must be set in block begin handler for verify vote extension",
                 )))?;
 
         let block_state_info = &block_execution_context.block_state_info;
@@ -456,7 +458,7 @@ where
             .into());
         }
 
-        let got: WithdrawalTxs = vote_extensions.into();
+        let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
             .withdrawal_transactions
             .keys()
@@ -485,7 +487,7 @@ where
         //     });
         // };
 
-        let validation_result = self.platform.check_withdrawals(
+        let validation_result = self.platform.check_withdrawals_v0(
             &got,
             &expected,
             height as u64,
