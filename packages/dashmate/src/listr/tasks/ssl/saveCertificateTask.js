@@ -21,11 +21,8 @@ function saveCertificateTask(config) {
 
         fs.writeFileSync(crtFile, ctx.certificateFile, 'utf8');
 
-        if (ctx.privateKeyFile) {
-          const keyFile = path.join(configDir, 'private.key');
-
-          fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
-        }
+        const keyFile = path.join(configDir, 'private.key');
+        fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
 
         config.set('platform.dapi.envoy.ssl.enabled', true);
       },

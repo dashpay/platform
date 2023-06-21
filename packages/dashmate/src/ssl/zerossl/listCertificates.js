@@ -1,6 +1,5 @@
-const fetch = require('node-fetch');
-const errorDescriptions = require('./errors/errorDescriptions');
 const Certificate = require('./Certificate');
+const requestApi = require('./requestApi');
 
 /**
  * List ZeroSSL certificates
@@ -28,15 +27,7 @@ async function listCertificates(apiKey, statuses = [], search = undefined) {
     headers: {},
   };
 
-  const response = await fetch(url, requestOptions);
-
-  const data = await response.json();
-
-  if (data.error) {
-    const errorMessage = errorDescriptions[data.error.code];
-
-    throw new Error(errorMessage || JSON.stringify(data.error));
-  }
+  const data = await requestApi(url, requestOptions);
 
   return data.results.map((certificateData) => new Certificate(certificateData));
 }
