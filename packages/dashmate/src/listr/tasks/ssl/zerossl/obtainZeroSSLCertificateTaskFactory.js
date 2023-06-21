@@ -87,9 +87,9 @@ function obtainZeroSSLCertificateTaskFactory(
           // We need to make sure that external IP and certificate IP match
           if (certificate.common_name !== externalIp) {
             throw new Error(`Certificate IPe ${certificate.common_name} does not match external IP ${externalIp}.\n`
-            + 'Please change external IP or regenerate the certificate using the obtain'
-            + ' command with --force flag and revoke previous certificate in ZeroSSL'
-            + ' dashboard');
+            + 'Please change the external IP in config or regenerate the certificate '
+            + ' using the obtain command with the --force flag, and revoke the previous'
+            + ' certificate in the ZeroSSL dashboard');
           }
 
           if (!certificate.isExpiredInDays(ctx.expirationDays)) {
