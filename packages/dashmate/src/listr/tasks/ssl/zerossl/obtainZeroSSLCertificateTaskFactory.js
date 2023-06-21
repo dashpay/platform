@@ -3,7 +3,6 @@ const { Listr } = require('listr2');
 const chalk = require('chalk');
 const path = require('path');
 const fs = require('fs');
-const { EXPIRATION_LIMIT_DAYS } = require('../../../../ssl/zerossl/Certificate');
 const { HOME_DIR_PATH } = require('../../../../constants');
 
 /**
@@ -36,8 +35,8 @@ function obtainZeroSSLCertificateTaskFactory(
    */
   async function obtainZeroSSLCertificateTask(config) {
     // Make sure that required config options are set
-    config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
-    config.get('externalIp', true);
+    const apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
+    const externalIp = config.get('externalIp', true);
 
     const sslConfigDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
     const csrFilePath = path.join(sslConfigDir, 'csr.pem');
@@ -53,8 +52,6 @@ function obtainZeroSSLCertificateTaskFactory(
         // Skips the check if force flag is set
         skip: (ctx) => ctx.force,
         task: async (ctx, task) => {
-          ctx.apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey');
-
           const certificateId = await config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id');
 
           if (!certificateId) {
@@ -76,7 +73,7 @@ function obtainZeroSSLCertificateTaskFactory(
           ctx.isBundleFilePresent = fs.existsSync(bundleFilePath);
 
           // This function will throw an error if certificate with specified ID is not present
-          const certificate = await getCertificate(ctx.apiKey, certificateId);
+          const certificate = await getCertificate(apiKey, certificateId);
 
           // If certificate exists but private key is not, then we can't setup TLS connection
           // In this case we need to regenerate certificate or put back this private key
@@ -88,8 +85,8 @@ function obtainZeroSSLCertificateTaskFactory(
           }
 
           // We need to make sure that external IP and certificate IP match
-          if (certificate.common_name !== config.get('externalIp')) {
-            throw new Error(`Certificate IPe ${certificate.common_name} does not match external IP ${config.get('externalIp')}.\n`
+          if (certificate.common_name !== externalIp) {
+            throw new Error(`Certificate IPe ${certificate.common_name} does not match external IP ${externalIp}.\n`
             + 'Please change external IP or regenerate the certificate using the obtain'
             + ' command with --force flag and revoke previous certificate in ZeroSSL'
             + ' dashboard');
@@ -148,7 +145,7 @@ function obtainZeroSSLCertificateTaskFactory(
             ctx.csr = fs.readFileSync(csrFilePath, 'utf8');
 
             // eslint-disable-next-line no-param-reassign
-            task.output = `Certificate exists but expires in less than ${EXPIRATION_LIMIT_DAYS} days at ${certificate.expires}. Obtain a new one`;
+            task.output = `Certificate exists but expires in less than ${ctx.expirationDays} days at ${certificate.expires}. Obtain a new one`;
           }
         },
       },
@@ -166,7 +163,7 @@ function obtainZeroSSLCertificateTaskFactory(
         task: async (ctx) => {
           ctx.csr = await generateCsr(
             ctx.keyPair,
-            config.get('externalIp'),
+            externalIp,
           );
         },
       },
@@ -176,8 +173,8 @@ function obtainZeroSSLCertificateTaskFactory(
         task: async (ctx) => {
           ctx.certificate = await createZeroSSLCertificate(
             ctx.csr,
-            config.get('externalIp'),
-            ctx.apiKey,
+            externalIp,
+            apiKey,
           );
 
           config.set('platform.dapi.envoy.ssl.enabled', true);
@@ -189,8 +186,8 @@ function obtainZeroSSLCertificateTaskFactory(
         title: 'Set up verification server',
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx) => {
-          const validationResponse = ctx.certificate.validation.other_methods[config.get('externalIp')];
-          const route = validationResponse.file_validation_url_http.replace(`http://${config.get('externalIp')}`, '');
+          const validationResponse = ctx.certificate.validation.other_methods[externalIp];
+          const route = validationResponse.file_validation_url_http.replace(`http://${externalIp}`, '');
           const body = validationResponse.file_validation_content.join('\\n');
 
           await verificationServer.setup(config, route, body);
@@ -208,14 +205,14 @@ function obtainZeroSSLCertificateTaskFactory(
           let retry;
           do {
             try {
-              await verifyDomain(ctx.certificate.id, ctx.apiKey);
+              await verifyDomain(ctx.certificate.id, apiKey);
             } catch (e) {
               if (ctx.noRetry !== true) {
                 retry = await task.prompt({
                   type: 'toggle',
                   header: chalk`  An error occurred during verification: {red ${e.message}}
   
-    Please ensure that port 80 on your public IP address ${config.get('externalIp')} is open
+    Please ensure that port 80 on your public IP address ${externalIp} is open
     for incoming HTTP connections. You may need to configure your firewall to
     ensure this port is accessible from the public internet. If you are using
     Network Address Translation (NAT), please enable port forwarding for port 80
@@ -240,7 +237,7 @@ function obtainZeroSSLCertificateTaskFactory(
         task: async (ctx) => {
           ctx.certificateFile = await downloadCertificate(
             ctx.certificate.id,
-            ctx.apiKey,
+            apiKey,
           );
         },
       },
