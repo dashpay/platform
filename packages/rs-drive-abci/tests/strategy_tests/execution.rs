@@ -292,7 +292,7 @@ pub(crate) fn run_chain_for_strategy(
         .expect_get_quorum_info()
         .returning(move |_, quorum_hash: &QuorumHash, _| {
             Ok(quorums_info
-                .get(quorum_hash.into())
+                .get(quorum_hash)
                 .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
         });

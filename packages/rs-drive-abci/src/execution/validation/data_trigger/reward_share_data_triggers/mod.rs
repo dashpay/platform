@@ -212,7 +212,7 @@ mod test {
             Identifier::from_bytes(&hex::decode(top_level_identifier_hex).unwrap()).unwrap();
 
         let pro_tx_hash = ProTxHash::from_byte_array(top_level_identifier.to_buffer());
-        platform_state.hpmn_masternode_list.insert(pro_tx_hash.clone(), MasternodeListItem {
+        platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
             pro_tx_hash,
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
@@ -240,7 +240,7 @@ mod test {
             ProTxHash::from_str("a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f")
                 .expect("expected to create pro-tx-hash from slice");
 
-        platform_state.hpmn_masternode_list.insert(pro_tx_hash.clone(), MasternodeListItem {
+        platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
             pro_tx_hash,
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),

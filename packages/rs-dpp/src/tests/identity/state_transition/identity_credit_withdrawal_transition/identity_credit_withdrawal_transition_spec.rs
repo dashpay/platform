@@ -9,7 +9,7 @@ use crate::{
 };
 
 mod deserialization {
-    use dashcore::{PubkeyHash, Script, ScriptBuf};
+    use dashcore::{PubkeyHash, ScriptBuf};
     use lazy_static::__Deref;
     use platform_value::BinaryData;
 

@@ -72,7 +72,7 @@ where
 
             let state_transition_size = 190;
 
-            let output_script = ScriptBuf::from_bytes(output_script_bytes.into());
+            let output_script = ScriptBuf::from_bytes(output_script_bytes);
 
             let tx_out = TxOut {
                 value: convert_credits_to_satoshi(amount)?,
