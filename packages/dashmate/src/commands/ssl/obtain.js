@@ -4,6 +4,7 @@ const { Flags } = require('@oclif/core');
 const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const { EXPIRATION_LIMIT_DAYS } = require('../../ssl/zerossl/Certificate');
 
 class ObtainCommand extends ConfigBaseCommand {
   /**
@@ -18,6 +19,8 @@ class ObtainCommand extends ConfigBaseCommand {
     {
       verbose: isVerbose,
       'no-retry': noRetry,
+      'expiration-days': expirationDays,
+      force,
     },
     config,
     obtainZeroSSLCertificateTask,
@@ -41,6 +44,8 @@ class ObtainCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         noRetry,
+        force,
+        expirationDays,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -50,13 +55,20 @@ class ObtainCommand extends ConfigBaseCommand {
 
 ObtainCommand.description = `Obtain SSL certificate
 
-Obtain SSL certificate using ZeroSSL API Key
+Create a new SSL certificate or download an already existing one using ZeroSSL as provider
+Certificate will be renewed if it is about to expire (see 'expiration-days' flag)
 `;
 
 ObtainCommand.flags = {
   ...ConfigBaseCommand.flags,
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
   'no-retry': Flags.boolean({ description: 'do not retry on IP verification failure', default: false }),
+  force: Flags.boolean({ description: 'renew even if certificate is valid', default: false }),
+  'expiration-days': Flags.integer({
+    description: 'renew even if expiration period is less than'
+      + ' specified number of days',
+    default: EXPIRATION_LIMIT_DAYS,
+  }),
 };
 
 module.exports = ObtainCommand;

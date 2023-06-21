@@ -1,32 +1,22 @@
 const fetch = require('node-fetch');
-const qs = require('qs');
 const errorDescriptions = require('./errors/errorDescriptions');
 
 /**
  * Create a ZeroSSL Certificate
  *
- * @typedef {createZerosslCertificate}
- * @param {string} csr
- * @param {string} externalIp
+ * @typedef {revokeCertificate}
  * @param {string} apiKey
- * @return {Promise<string>}
+ * @param {string} id
+ * @return {Promise<Certificate>}
  */
-async function createCertificate(
-  csr,
-  externalIp,
+async function revokeCertificate(
   apiKey,
+  id,
 ) {
-  const body = qs.stringify({
-    certificate_domains: externalIp,
-    certificate_validity_days: '90',
-    certificate_csr: csr,
-  });
-
-  const url = `https://api.zerossl.com/certificates?access_key=${apiKey}`;
+  const url = `https://api.zerossl.com/certificates/${id}/revoke?access_key=${apiKey}`;
 
   const requestOptions = {
     method: 'POST',
-    body,
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
@@ -41,8 +31,6 @@ async function createCertificate(
 
     throw new Error(errorMessage || JSON.stringify(data.error));
   }
-
-  return data;
 }
 
-module.exports = createCertificate;
+module.exports = revokeCertificate;

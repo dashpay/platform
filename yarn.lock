@@ -6166,6 +6166,7 @@ __metadata:
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
     awilix: ^4.2.6
+    babel-eslint: ^10.1.0
     begoo: ^2.0.2
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
