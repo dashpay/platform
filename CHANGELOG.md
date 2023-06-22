@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** hard reset deletes related files (#1188)
+* **dashmate:** SSL certificates and other configuration files will be deleted with the hard reset command (#1188)
 
 ### Features
 
