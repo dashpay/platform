@@ -11,7 +11,7 @@ use crate::state_transition::StateTransitionType;
 use crate::NonConsensusError;
 use crate::{
     identity::{
-        convert_satoshi_to_credits,
+        convert_duffs_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
     },
     state_repository::StateRepositoryLike,
@@ -76,7 +76,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                convert_satoshi_to_credits(output.value)?
+                convert_duffs_to_credits(output.value)?
             }
             StateTransition::IdentityTopUp(st) => {
                 let output = self
@@ -89,7 +89,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                let balance = convert_satoshi_to_credits(output.value)?;
+                let balance = convert_duffs_to_credits(output.value)?;
                 let identity_id = st.get_owner_id();
                 let identity_balance: i64 = self
                     .state_repository

@@ -1,4 +1,3 @@
-use super::*;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use integer_encoding::VarInt;

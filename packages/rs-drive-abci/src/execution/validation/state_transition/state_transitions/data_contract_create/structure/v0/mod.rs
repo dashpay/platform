@@ -1,8 +1,8 @@
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
 use dpp::data_contract::generate_data_contract_id;
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
@@ -13,10 +13,7 @@ pub(crate) trait StateTransitionStructureValidationV0 {
 
 impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema_v0(&DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR, self);
-        if !result.is_valid() {
-            return Ok(result);
-        }
+
 
         //todo: re-enable version validation
         // // Validate protocol version

@@ -11,7 +11,7 @@ use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
 use drive::dpp::identifier::Identifier;
-use drive::dpp::identity::convert_credits_to_satoshi;
+use drive::dpp::identity::convert_credits_to_duffs;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::{drive::batch::DriveOperation, query::TransactionArg};
 
@@ -74,7 +74,7 @@ where
             let output_script: Script = Script(output_script_bytes.into());
 
             let tx_out = TxOut {
-                value: convert_credits_to_satoshi(amount)?,
+                value: convert_credits_to_duffs(amount)?,
                 script_pubkey: output_script,
             };
 

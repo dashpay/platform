@@ -33,7 +33,6 @@ pub mod validation;
 
 mod dash_platform_protocol;
 
-pub mod block_time_window;
 pub mod mocks;
 
 mod bls;

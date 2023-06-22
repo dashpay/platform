@@ -39,8 +39,10 @@ pub mod state_transition_execution_context;
 pub mod apply_state_transition;
 mod serialization;
 mod state_transition_action;
+mod state_transitions;
 
-use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+pub use state_transitions::*;
+
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::util::hash;
 use crate::version::FeatureVersion;

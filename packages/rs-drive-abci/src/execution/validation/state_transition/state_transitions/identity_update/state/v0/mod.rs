@@ -15,6 +15,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
 use dpp::ProtocolError;
+use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
@@ -95,7 +96,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                     )),
                 )?;
 
-                let window_validation_result = validate_time_in_block_time_window(
+                let window_validation_result = validate_time_in_block_time_window_v0(
                     last_block_time,
                     disabled_at_ms,
                     platform.config.block_spacing_ms,

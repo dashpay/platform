@@ -92,10 +92,12 @@ mod public_key_serialization {
 }
 
 impl Convertible for IdentityV0 {
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         //same as object for Identities
         let mut value = self.to_object()?;
@@ -107,16 +109,19 @@ impl Convertible for IdentityV0 {
         Ok(value)
     }
 
+    #[cfg(feature = "platform-value")]
     fn into_object(self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()

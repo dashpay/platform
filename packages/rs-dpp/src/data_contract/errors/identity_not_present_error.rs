@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::ProtocolError;
 
+// @append_only
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Identity is not present")]
 pub struct IdentityNotPresentError {

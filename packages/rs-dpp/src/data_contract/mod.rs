@@ -31,7 +31,7 @@ use crate::data_contract::v0::data_contract::DataContractV0;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
-use platform_versioning::PlatformVersioned;
+use platform_versioning::PlatformSerdeVersioned;
 use crate::data_contract::document_type::DocumentType;
 
 pub mod property_names {
@@ -58,7 +58,7 @@ pub trait DataContractLike {
     PartialEq,
     Encode,
     Decode,
-    PlatformVersioned,
+    PlatformSerdeVersioned,
     PlatformSerialize,
     PlatformDeserialize,
     PlatformDeserializeNoLimit,

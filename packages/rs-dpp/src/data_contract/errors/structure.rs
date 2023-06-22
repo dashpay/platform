@@ -1,3 +1,5 @@
+
+// @append_only
 /// structure errors
 #[derive(Debug, thiserror::Error)]
 pub enum StructureError {

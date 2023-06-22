@@ -21,6 +21,8 @@ pub mod byte_array_meta;
 mod json_schema_validator;
 mod meta_validators;
 mod validation_result;
+pub mod block_time_window;
+mod identity;
 
 /// Validator validates data of given type
 pub trait DataValidator {

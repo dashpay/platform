@@ -2,17 +2,13 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-use super::{
-    document_field::{DocumentFieldTypeV0, DocumentFieldV0},
-    index::{Index, IndexProperty},
-};
-use crate::data_contract::document_type::{property_names, ArrayFieldType};
+use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::data_contract::document_type::document_field::v0::{
     DocumentFieldTypeV0, DocumentFieldV0,
 };
-use crate::data_contract::document_type::index::v0::IndexV0;
+use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
@@ -20,8 +16,12 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
+use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub mod document_factory;
+pub mod random_document;
+pub mod random_document_type;
+
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32
 pub const BASE_CONTRACT_KEEPING_HISTORY_STORAGE_PATH_SIZE: usize = 34; // 1 + 32 + 1
@@ -41,7 +41,7 @@ pub struct DocumentTypeV0 {
     pub name: String,
     pub indices: Vec<IndexV0>,
     #[serde(skip)]
-    pub index_structure: IndexLevel,
+    pub index_structure: IndexLevelV0,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
     pub flattened_properties: BTreeMap<String, DocumentFieldV0>,
@@ -58,44 +58,6 @@ pub struct DocumentTypeV0 {
     pub data_contract_id: Identifier,
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct IndexLevel {
-    /// the lower index levels from this level
-    pub sub_index_levels: BTreeMap<String, IndexLevel>,
-    /// did an index terminate at this level
-    pub has_index_with_uniqueness: Option<bool>,
-    /// unique level identifier
-    pub level_identifier: u64,
-}
-
-impl From<&[IndexV0]> for IndexLevel {
-    fn from(indices: &[IndexV0]) -> Self {
-        let mut index_level = IndexLevel::default();
-        let mut counter: u64 = 0;
-        for index in indices {
-            let mut current_level = &mut index_level;
-            let mut properties_iter = index.properties.iter().peekable();
-            while let Some(index_part) = properties_iter.next() {
-                current_level = current_level
-                    .sub_index_levels
-                    .entry(index_part.name.clone())
-                    .or_insert_with(|| {
-                        counter += 1;
-                        IndexLevel {
-                            level_identifier: counter,
-                            ..Default::default()
-                        }
-                    });
-                if properties_iter.peek().is_none() {
-                    current_level.has_index_with_uniqueness = Some(index.unique);
-                }
-            }
-        }
-
-        index_level
-    }
-}
-
 impl DocumentTypeV0 {
     pub fn new(
         data_contract_id: Identifier,
@@ -106,9 +68,9 @@ impl DocumentTypeV0 {
         documents_keep_history: bool,
         documents_mutable: bool,
     ) -> Self {
-        let index_structure = IndexLevel::from(indices.as_slice());
+        let index_structure = IndexLevelV0::from(indices.as_slice());
         let (identifier_paths, binary_paths) = Self::find_identifier_and_binary_paths(&properties);
-        DocumentType {
+        DocumentTypeV0 {
             name,
             indices,
             index_structure,
@@ -153,7 +115,7 @@ impl DocumentTypeV0 {
     /// Unique id that combines the index_level and the base event id
     pub fn unique_id_for_document_field(
         &self,
-        index_level: &IndexLevel,
+        index_level: &IndexLevelV0,
         base_event: [u8; 32],
     ) -> Vec<u8> {
         let mut bytes = index_level.level_identifier.to_be_bytes().to_vec();
@@ -343,7 +305,7 @@ impl DocumentTypeV0 {
 
         let (identifier_paths, binary_paths) =
             Self::find_identifier_and_binary_paths(&document_properties);
-        Ok(DocumentType {
+        Ok(DocumentTypeV0 {
             name: String::from(name),
             indices,
             index_structure,
@@ -385,8 +347,8 @@ impl DocumentTypeV0 {
             .unwrap_or(u16::MAX)
     }
 
-    pub fn top_level_indices(&self) -> Vec<&IndexProperty> {
-        let mut index_properties: Vec<&IndexProperty> = Vec::with_capacity(self.indices.len());
+    pub fn top_level_indices(&self) -> Vec<&IndexPropertyV0> {
+        let mut index_properties: Vec<&IndexPropertyV0> = Vec::with_capacity(self.indices.len());
         for index in &self.indices {
             if let Some(property) = index.properties.get(0) {
                 index_properties.push(property);

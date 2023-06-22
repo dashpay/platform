@@ -7,12 +7,12 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-use platform_versioning::PlatformVersioned;
+use platform_versioning::PlatformSerdeVersioned;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(
     Debug,
-    PlatformVersioned,
+    PlatformSerdeVersioned,
     Encode,
     Decode,
     Clone,

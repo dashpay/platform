@@ -3,10 +3,11 @@ use crate::data_contract::state_transition::property_names::{DATA_CONTRACT, ENTR
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
+use crate::data_contract::DataContract;
 
 #[derive(Clone, Debug)]
 pub struct CreatedDataContractV0 {
-    pub data_contract: DataContractV0,
+    pub data_contract: DataContract,
     pub entropy_used: Bytes32,
 }
 

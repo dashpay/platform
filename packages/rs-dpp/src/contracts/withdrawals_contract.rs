@@ -22,6 +22,7 @@ pub mod property_names {
     pub const OWNER_ID: &str = "$ownerId";
 }
 
+// @append_only
 #[repr(u8)]
 #[derive(
     Serialize_repr,

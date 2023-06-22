@@ -14,8 +14,7 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-
-use super::array_field::ArrayFieldType;
+use crate::data_contract::document_type::array_field::v0::ArrayFieldTypeV0;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentFieldV0 {
@@ -34,8 +33,8 @@ pub enum DocumentFieldTypeV0 {
     Boolean,
     Date,
     Object(BTreeMap<String, DocumentFieldV0>),
-    Array(ArrayFieldType),
-    VariableTypeArray(Vec<ArrayFieldType>),
+    Array(ArrayFieldTypeV0),
+    VariableTypeArray(Vec<ArrayFieldTypeV0>),
 }
 
 impl DocumentFieldTypeV0 {

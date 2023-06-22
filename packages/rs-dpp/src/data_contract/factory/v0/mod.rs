@@ -31,6 +31,7 @@ use crate::{
     prelude::Identifier,
     Convertible,
 };
+use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -125,10 +126,10 @@ impl DataContractFactoryV0 {
         .into();
 
         data_contract.generate_binary_properties();
-        Ok(CreatedDataContract {
+        Ok(CreatedDataContractV0 {
             data_contract,
             entropy_used: entropy,
-        })
+        }.into())
     }
 
     #[cfg(feature = "platform-value")]

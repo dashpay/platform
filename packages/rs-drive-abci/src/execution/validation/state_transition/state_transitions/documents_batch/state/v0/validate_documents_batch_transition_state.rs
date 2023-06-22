@@ -39,6 +39,7 @@ use dpp::{
     validation::ConsensusValidationResult,
     ProtocolError,
 };
+use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
@@ -579,7 +580,7 @@ pub fn check_created_inside_time_window(
         None => return Ok(result),
     };
 
-    let window_validation = validate_time_in_block_time_window(
+    let window_validation = validate_time_in_block_time_window_v0(
         last_block_ts_millis,
         created_at,
         average_block_spacing_ms,
@@ -612,7 +613,7 @@ pub fn check_updated_inside_time_window(
         None => return Ok(result),
     };
 
-    let window_validation = validate_time_in_block_time_window(
+    let window_validation = validate_time_in_block_time_window_v0(
         last_block_ts_millis,
         updated_at,
         average_block_spacing_ms,

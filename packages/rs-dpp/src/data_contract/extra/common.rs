@@ -12,6 +12,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 
 /// Reads a JSON file and converts it to serde_value.
 pub fn json_document_to_json_value(
@@ -89,10 +90,10 @@ pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
 ) -> Result<CreatedDataContract, ProtocolError> {
     let data_contract = json_document_to_contract(path)?;
-    Ok(CreatedDataContract {
+    Ok(CreatedDataContractV0 {
         data_contract,
         entropy_used: Default::default(),
-    })
+    }.into())
 }
 
 #[cfg(feature = "platform-value")]

@@ -4,14 +4,14 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Ident};
 
-#[proc_macro_derive(PlatformVersioned)]
+#[proc_macro_derive(PlatformSerdeVersioned)]
 pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = &input.ident;
     let data_enum = match &input.data {
         Data::Enum(data_enum) => data_enum,
-        _ => panic!("PlatformVersioned can only be used with enums"),
+        _ => panic!("PlatformSerdeVersioned can only be used with enums"),
     };
 
     let variant_idents: Vec<&Ident> = data_enum
@@ -147,6 +147,86 @@ fn generate_deserialize_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::Toke
                     let inner: #ident = map.next_value()?;
                     Ok(Self::#ident(inner))
                 }
+            }
+        })
+        .collect()
+}
+
+#[proc_macro_derive(PlatformVersioned, attributes(platform_version_path))]
+pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    let name = &input.ident;
+    let path = parse_path(&input.attrs);
+
+    let data_enum = match &input.data {
+        Data::Enum(data_enum) => data_enum,
+        _ => panic!("PlatformVersioned can only be used with enums"),
+    };
+
+    let variant_idents: Vec<&Ident> = data_enum
+        .variants
+        .iter()
+        .map(|variant| &variant.ident)
+        .collect();
+
+    let version_arms = generate_version_arms(&variant_idents);
+    let verify_arms = generate_verify_arms(&variant_idents, &path);
+
+    let output = quote! {
+        impl #name {
+            pub fn version(&self) -> FeatureVersion {
+                match self {
+                    #(#version_arms),*
+                }
+            }
+
+            pub fn verify_protocol_version(&self, protocol_version: u32) -> Result<bool, ProtocolError> {
+                let protocol_version = PlatformVersion::get(protocol_version)?;
+                Ok(protocol_version.#path.check_version(self.version()))
+            }
+        }
+    };
+
+    TokenStream::from(output)
+}
+
+fn parse_path(attrs: &[Attribute]) -> proc_macro2::TokenStream {
+    for attr in attrs {
+        if attr.path.is_ident("platform_version_path") {
+            match attr.parse_meta() {
+                Ok(Meta::NameValue(nv)) => {
+                    if let Lit::Str(lit) = nv.lit {
+                        let path: proc_macro2::TokenStream = lit.parse().expect("Failed to parse path");
+                        return path;
+                    }
+                },
+                _ => panic!("expected platform_version_path attribute to be a string"),
+            }
+        }
+    }
+    panic!("platform_version_path attribute not found");
+}
+
+fn generate_version_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStream> {
+    variant_idents
+        .iter()
+        .enumerate()
+        .map(|(index, ident)| {
+            let index_feature = index as u32;
+            quote! {
+                Self::#ident(_) => #index_feature
+            }
+        })
+        .collect()
+}
+
+fn generate_verify_arms(variant_idents: &[&Ident], path: &proc_macro2::TokenStream) -> Vec<proc_macro2::TokenStream> {
+    variant_idents
+        .iter()
+        .map(|ident| {
+            quote! {
+                Self::#ident(_) => protocol_version.#path.check_version(self.version())
             }
         })
         .collect()

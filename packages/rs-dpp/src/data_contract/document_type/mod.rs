@@ -1,18 +1,16 @@
 pub mod array_field;
-pub mod document_factory;
 pub mod document_field;
 pub mod index;
-pub mod random_document;
-pub mod random_document_type;
 pub mod v0;
+pub mod index_level;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use std::borrow::Cow;
 pub use {
-    array_field::ArrayFieldType,
-    document_field::{DocumentFieldTypeV0, DocumentFieldV0},
+    array_field::v0::ArrayFieldTypeV0,
+    document_field::v0::{DocumentFieldTypeV0, DocumentFieldV0},
     document_type::{DocumentType, IndexLevel},
-    index::{Index, IndexProperty},
+    index::v0::{IndexV0, IndexPropertyV0},
 };
 
 pub(self) mod property_names {
