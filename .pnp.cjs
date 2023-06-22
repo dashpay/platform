@@ -2518,24 +2518,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashcore-lib", [\
-        ["npm:0.20.6", {\
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.20.6-dfe918f9a6-730145e130.zip/node_modules/@dashevo/dashcore-lib/",\
-          "packageDependencies": [\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
-            ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/x11-hash-js", "npm:1.0.2"],\
-            ["@types/node", "npm:12.20.37"],\
-            ["bloom-filter", "npm:0.2.0"],\
-            ["bn.js", "npm:4.12.0"],\
-            ["bs58", "npm:4.0.1"],\
-            ["elliptic", "npm:6.5.4"],\
-            ["inherits", "npm:2.0.1"],\
-            ["lodash", "npm:4.17.21"],\
-            ["ripemd160", "npm:2.0.2"],\
-            ["unorm", "npm:1.6.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:0.20.9", {\
           "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.20.9-2b8a961230-a92adaf441.zip/node_modules/@dashevo/dashcore-lib/",\
           "packageDependencies": [\
@@ -8210,7 +8192,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/docker-compose", "npm:0.24.2"],\
