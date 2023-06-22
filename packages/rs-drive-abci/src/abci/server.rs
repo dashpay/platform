@@ -1,7 +1,10 @@
 //! This module implements ABCI application server.
 //!
 use crate::error::execution::ExecutionError;
-use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
+use crate::{
+    config::PlatformConfig, error::Error, platform_types::platform::Platform,
+    rpc::core::CoreRPCLike,
+};
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
