@@ -1,3 +1,25 @@
+### [0.24.9](https://github.com/dashpay/platform/compare/v0.24.8...v0.24.9) (2023-06-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** hard reset deletes related files (#1188)
+
+### Features
+
+* **dashmate:** hard reset deletes related files ([#1188](https://github.com/dashpay/platform/issues/1188))
+
+
+### Bug Fixes
+
+* **dashmate:** download certificate retry logic ([#1187](https://github.com/dashpay/platform/issues/1187))
+* merkle root from the diff doesn't match calculated merkle root ([#1189](https://github.com/dashpay/platform/issues/1189))
+
+
+### Continuous Integration
+
+* fix cancel runs for already merged PRs ([#1185](https://github.com/dashpay/platform/issues/1185))
+
 ### [0.24.8](https://github.com/dashpay/platform/compare/v0.24.7...v0.24.8) (2023-06-21)
 
 
