@@ -1,6 +1,9 @@
 const { Listr } = require('listr2');
+const fs = require('node:fs');
+const path = require('node:path');
 const wait = require('../../util/wait');
 const generateEnvs = require('../../util/generateEnvs');
+const { HOME_DIR_PATH } = require('../../constants');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -134,6 +137,24 @@ function resetNodeTaskFactory(
             // Delete config if no base config
             configFile.removeConfig(config.getName());
           }
+
+          // Remove service configs
+          let serviceConfigsPath = path.join(HOME_DIR_PATH, baseConfigName);
+
+          if (ctx.isPlatformOnlyReset) {
+            serviceConfigsPath = path.join(serviceConfigsPath, 'platform')
+          }
+
+          fs.rmSync(serviceConfigsPath, {
+            recursive: true,
+            force: true,
+          });
+
+          // Remove SSL files
+          fs.rmSync(path.join(HOME_DIR_PATH, 'ssl', baseConfigName), {
+            recursive: true,
+            force: true,
+          });
         },
       },
     ]);
