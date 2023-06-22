@@ -142,7 +142,7 @@ function resetNodeTaskFactory(
           let serviceConfigsPath = path.join(HOME_DIR_PATH, baseConfigName);
 
           if (ctx.isPlatformOnlyReset) {
-            serviceConfigsPath = path.join(serviceConfigsPath, 'platform')
+            serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
           }
 
           fs.rmSync(serviceConfigsPath, {
