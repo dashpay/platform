@@ -114,14 +114,14 @@ function initChainHandlerFactory(
       `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
     );
 
-    contextLogger.trace(
-      {
-        createdEntities: createdEntities.map((item) => item.toJSON()),
-        updatedEntities: updatedEntities.map((item) => item.toJSON()),
-        removedEntities: removedEntities.map((item) => item.toJSON()),
-      },
-      'Synchronized masternode identities',
-    );
+    // contextLogger.trace(
+    //   {
+    //     createdEntities: createdEntities.map((item) => item.toJSON()),
+    //     updatedEntities: updatedEntities.map((item) => item.toJSON()),
+    //     removedEntities: removedEntities.map((item) => item.toJSON()),
+    //   },
+    //   'Synchronized masternode identities',
+    // );
 
     // Set initial validator set
 
