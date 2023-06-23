@@ -16,7 +16,7 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 
 use crate::platform_types::masternode;
-use crate::platform_types::validator_set::v0::ValidatorSetV0;
+
 use crate::platform_types::validator_set::ValidatorSet;
 use std::collections::{BTreeMap, HashMap};
 
