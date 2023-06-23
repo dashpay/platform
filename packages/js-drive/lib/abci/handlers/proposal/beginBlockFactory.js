@@ -206,16 +206,18 @@ function beginBlockFactory(
         `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
 
-      if (createdEntities.length > 0 || updatedEntities.length > 0 || removedEntities.length > 0) {
-        contextLogger.trace(
-          {
-            createdEntities: createdEntities.map((item) => item.toJSON()),
-            updatedEntities: updatedEntities.map((item) => item.toJSON()),
-            removedEntities: removedEntities.map((item) => item.toJSON()),
-          },
-          'Synchronized masternode identities',
-        );
-      }
+      // TODO: Enable keys when we have support of non unique keys in DPP
+      // if (createdEntities.length > 0 || updatedEntities.length > 0
+      // || removedEntities.length > 0) {
+      //   contextLogger.trace(
+      //     {
+      //       createdEntities: createdEntities.map((item) => item.toJSON()),
+      //       updatedEntities: updatedEntities.map((item) => item.toJSON()),
+      //       removedEntities: removedEntities.map((item) => item.toJSON()),
+      //     },
+      //     'Synchronized masternode identities',
+      //   );
+      // }
     }
   }
 
