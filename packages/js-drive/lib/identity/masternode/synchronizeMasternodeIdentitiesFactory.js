@@ -160,55 +160,57 @@ function synchronizeMasternodeIdentitiesFactory(
         //   result = mergeEntities(result, affectedEntities);
         // }
 
-        if (mnEntry.payoutAddress) {
-          const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
-            previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-            && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
-          ));
+        // TODO: Enable keys when we have support of non unique keys in DPP
+        // if (mnEntry.payoutAddress) {
+        //   const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
+        //     previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+        //     && previousMnListEntry.payoutAddress !== mnEntry.payoutAddress
+        //   ));
+        //
+        //   if (mnEntryWithChangedPayoutAddress) {
+        //     const newPayoutScript = new Script(Address.fromString(mnEntry.payoutAddress));
+        //     const previousPayoutScript = mnEntryWithChangedPayoutAddress.payoutAddress
+        //       ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
+        //       : undefined;
+        //
+        //     const affectedEntities = await handleUpdatedScriptPayout(
+        //       Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
+        //       newPayoutScript,
+        //       blockInfo,
+        //       previousPayoutScript,
+        //     );
+        //
+        //     result = mergeEntities(result, affectedEntities);
+        //   }
+        // }
 
-          if (mnEntryWithChangedPayoutAddress) {
-            const newPayoutScript = new Script(Address.fromString(mnEntry.payoutAddress));
-            const previousPayoutScript = mnEntryWithChangedPayoutAddress.payoutAddress
-              ? new Script(Address.fromString(mnEntryWithChangedPayoutAddress.payoutAddress))
-              : undefined;
-
-            const affectedEntities = await handleUpdatedScriptPayout(
-              Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
-              newPayoutScript,
-              blockInfo,
-              previousPayoutScript,
-            );
-
-            result = mergeEntities(result, affectedEntities);
-          }
-        }
-
-        if (mnEntry.operatorPayoutAddress) {
-          const mnEntryWithChangedOperatorPayoutAddress = previousMNList
-            .find((previousMnListEntry) => (
-              previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-              && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
-            ));
-
-          if (mnEntryWithChangedOperatorPayoutAddress) {
-            const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
-
-            const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
-
-            const previousOperatorPayoutScript = operatorPayoutAddress
-              ? new Script(Address.fromString(operatorPayoutAddress))
-              : undefined;
-
-            const affectedEntities = await handleUpdatedScriptPayout(
-              createOperatorIdentifier(mnEntry),
-              new Script(newOperatorPayoutAddress),
-              blockInfo,
-              previousOperatorPayoutScript,
-            );
-
-            result = mergeEntities(result, affectedEntities);
-          }
-        }
+        // TODO: Enable keys when we have support of non unique keys in DPP
+        // if (mnEntry.operatorPayoutAddress) {
+        //   const mnEntryWithChangedOperatorPayoutAddress = previousMNList
+        //     .find((previousMnListEntry) => (
+        //       previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+        //       && previousMnListEntry.operatorPayoutAddress !== mnEntry.operatorPayoutAddress
+        //     ));
+        //
+        //   if (mnEntryWithChangedOperatorPayoutAddress) {
+        //     const newOperatorPayoutAddress = Address.fromString(mnEntry.operatorPayoutAddress);
+        //
+        //     const { operatorPayoutAddress } = mnEntryWithChangedOperatorPayoutAddress;
+        //
+        //     const previousOperatorPayoutScript = operatorPayoutAddress
+        //       ? new Script(Address.fromString(operatorPayoutAddress))
+        //       : undefined;
+        //
+        //     const affectedEntities = await handleUpdatedScriptPayout(
+        //       createOperatorIdentifier(mnEntry),
+        //       new Script(newOperatorPayoutAddress),
+        //       blockInfo,
+        //       previousOperatorPayoutScript,
+        //     );
+        //
+        //     result = mergeEntities(result, affectedEntities);
+        //   }
+        // }
       }
     }
 
