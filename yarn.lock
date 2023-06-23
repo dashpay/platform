@@ -1508,9 +1508,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.20.9":
-  version: 0.20.9
-  resolution: "@dashevo/dashcore-lib@npm:0.20.9"
+"@dashevo/dashcore-lib@github:dashevo/dashcore-lib#feat/asset-lock-tx":
+  version: 0.20.8
+  resolution: "@dashevo/dashcore-lib@https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"
   dependencies:
     "@dashevo/bls": ~1.2.9
     "@dashevo/x11-hash-js": ^1.0.2
@@ -1524,7 +1524,7 @@ __metadata:
     ripemd160: ^2.0.2
     tsd: ^0.28.1
     unorm: ^1.6.0
-  checksum: a92adaf44107c9c8418dd91989db24e3c594083ca54cf56afe478fbedb3f3b8129fadbba5a362c5e85843dd6c75555d1435f306335b461a7555f6dfd1e53de5f
+  checksum: ccced8645bd7756a59757c1b43ad6dd0261f6df2097557b1c2fdefbdbfbbafcac1188373f47fd486c6220df89a1636ddbad8aee40f03d9cc58930247e864e0f4
   languageName: node
   linkType: hard
 
