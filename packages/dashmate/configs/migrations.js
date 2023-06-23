@@ -571,7 +571,12 @@ module.exports = {
 
         config.platform.dapi.envoy.docker.image = systemConfigs.base.platform
           .dapi.envoy.docker.image;
-
+      });
+    return configFile;
+  },
+  '0.24.12': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
         // Update ports
         config.platform.dashmate.helper.api.port = systemConfigs.base.platform
           .dashmate.helper.api.port;
