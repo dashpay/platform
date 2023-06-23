@@ -221,12 +221,12 @@ where
 
         let (block_fees, tx_results) = self.process_raw_state_transitions_v0(
             raw_state_transitions,
-            &block_execution_context.block_platform_state(),
+            block_execution_context.block_platform_state(),
             &block_info,
             transaction,
         )?;
 
-        let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
+        let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
         self.pool_withdrawals_into_transactions_queue_v0(&block_execution_context, transaction)?;
 

@@ -264,7 +264,7 @@ mod tests {
         let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
         platform
             .pool_withdrawals_into_transactions_queue_v0(
-                block_execution_context.into(),
+                block_execution_context,
                 &transaction,
             )
             .expect("to pool withdrawal documents into transactions");

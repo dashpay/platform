@@ -122,7 +122,7 @@ where
                 if primary_comparison == Ordering::Equal {
                     quorum_b
                         .quorum_hash()
-                        .cmp(&quorum_a.quorum_hash())
+                        .cmp(quorum_a.quorum_hash())
                         .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
                 } else {
                     primary_comparison

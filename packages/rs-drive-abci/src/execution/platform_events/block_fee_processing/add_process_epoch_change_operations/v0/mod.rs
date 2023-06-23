@@ -121,7 +121,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         self.drive
             .add_delete_pending_epoch_refunds_except_specified_operations(
                 &mut inner_batch,
-                &block_fees.refunds_per_epoch(),
+                block_fees.refunds_per_epoch(),
                 Some(transaction),
             )?;
 

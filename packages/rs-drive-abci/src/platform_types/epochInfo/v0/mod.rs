@@ -135,7 +135,7 @@ impl EpochInfoV0 {
     ) -> Result<EpochInfoV0, Error> {
         let previous_block_time = match previous_block_time_ms {
             Some(block_time) => block_time,
-            None => return Ok(EpochInfoV0::default().into()),
+            None => return Ok(EpochInfoV0::default()),
         };
 
         let epoch_change_time = Decimal::from(EPOCH_CHANGE_TIME_MS_V0);
@@ -175,8 +175,7 @@ impl EpochInfoV0 {
             current_epoch_index,
             previous_epoch_index,
             is_epoch_change,
-        }
-        .into())
+        })
     }
 
     /// Takes genesis time and block info and sets current and previous epoch indexes as well as
