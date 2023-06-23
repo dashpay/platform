@@ -571,6 +571,10 @@ module.exports = {
 
         config.platform.dapi.envoy.docker.image = systemConfigs.base.platform
           .dapi.envoy.docker.image;
+
+        // Update ports
+        config.platform.dashmate.helper.api.port = systemConfigs.base.platform
+          .dashmate.helper.api.port;
       });
     return configFile;
   },
