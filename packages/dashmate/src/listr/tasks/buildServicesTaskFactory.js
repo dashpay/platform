@@ -34,7 +34,7 @@ function buildServicesTaskFactory(
             .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
         });
 
-        obs = await dockerCompose.build(config.toEnvs());
+        obs = await dockerCompose.build(generateEnvs(configFile, config));
 
         await new Promise((res, rej) => {
           obs
