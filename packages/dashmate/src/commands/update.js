@@ -31,30 +31,34 @@ class UpdateCommand extends ConfigBaseCommand {
       _.uniqBy(services, 'image')
         .map(async ({ serviceName, image, humanName }) => new Promise((resolve, reject) => {
           docker.pull(image, (err, stream) => {
-            let pulled = null;
+            if (err) {
+              reject(err);
+            } else {
+              let pulled = null;
 
-            stream.on('data', (data) => {
-              try {
-                const [status] = data
-                  .toString()
-                  .trim()
-                  .split('\r\n')
-                  .map((str) => JSON.parse(str))
-                  .filter((obj) => obj.status.startsWith('Status: '));
+              stream.on('data', (data) => {
+                try {
+                  const [status] = data
+                    .toString()
+                    .trim()
+                    .split('\r\n')
+                    .map((str) => JSON.parse(str))
+                    .filter((obj) => obj.status.startsWith('Status: '));
 
-                if (status?.status.includes('Image is up to date for')) {
-                  pulled = false;
-                } else if (status?.status.includes('Downloaded newer image for')) {
-                  pulled = true;
+                  if (status?.status.includes('Image is up to date for')) {
+                    pulled = false;
+                  } else if (status?.status.includes('Downloaded newer image for')) {
+                    pulled = true;
+                  }
+                } catch (e) {
+                  // eslint-disable-next-line no-empty
                 }
-              } catch (e) {
-                // eslint-disable-next-line no-empty
-              }
-            });
-            stream.on('error', reject);
-            stream.on('end', () => resolve({
-              serviceName, humanName, image, pulled,
-            }));
+              });
+              stream.on('error', reject);
+              stream.on('end', () => resolve({
+                serviceName, humanName, image, pulled,
+              }));
+            }
           });
         })),
     );
