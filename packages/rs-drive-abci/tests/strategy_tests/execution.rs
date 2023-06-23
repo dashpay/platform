@@ -13,7 +13,7 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
-    MasternodeListItem, QuorumInfoResult, QuorumType,
+    MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkInfo, SoftforkType,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -228,13 +228,18 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_fork_info()
         .returning(move |_| {
-            Ok(Some(Bip9SoftforkInfo {
-                status: Bip9SoftforkStatus::Active,
-                bit: None,
-                start_time: 0,
-                timeout: 0,
-                since: start_core_height, // block height 1
-                statistics: None,
+            Ok(Some(SoftforkInfo {
+                softfork_type: SoftforkType::Bip9,
+                active: true,
+                height: start_core_height, // block height 1
+                bip9: Some(Bip9SoftforkInfo {
+                    status: Bip9SoftforkStatus::Active,
+                    bit: None,
+                    start_time: 0,
+                    timeout: 0,
+                    since: start_core_height, // block height 1
+                    statistics: None,
+                }),
             }))
         });
 

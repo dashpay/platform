@@ -99,17 +99,18 @@ where
         let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
-        if fork_info.status != Bip9SoftforkStatus::Active {
+        if !fork_info.active {
             // fork is not good yet
             return Err(ExecutionError::InitializationForkNotActive(format!(
                 "fork is not yet known (currently {:?})",
-                fork_info.status
+                // Unwrap is fine here because v20 core is a bip9 softfork
+                fork_info.bip9.unwrap()
             ))
             .into());
         } else {
             tracing::debug!(?fork_info, "core fork v20 is active");
         };
-        let v20_fork = fork_info.since;
+        let v20_fork = fork_info.height;
 
         if let Some(requested) = requested {
             let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
@@ -126,7 +127,7 @@ where
             //
             // but it results in 1440 <=  1243 <= 1545
             //
-            // So, fork_info.since differs? is it non-deterministic?
+            // So, fork_info.height differs? is it non-deterministic?
             if requested <= best {
                 Ok(requested)
             } else {
