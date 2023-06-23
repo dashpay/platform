@@ -26,6 +26,7 @@ use crate::platform_types::commit;
 use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -124,7 +125,7 @@ where
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key;
+        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
 
         // In production this will always be true
         if self

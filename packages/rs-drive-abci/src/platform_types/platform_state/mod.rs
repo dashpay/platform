@@ -5,7 +5,8 @@ use crate::error::Error;
 use crate::platform_types::platform_state::v0::{
     PlatformInitializationState, PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
 };
-use crate::platform_types::validator_set::v0::ValidatorSet;
+use crate::platform_types::validator_set::v0::ValidatorSetV0;
+use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, QuorumType};
 use derive_more::From;

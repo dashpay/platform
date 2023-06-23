@@ -4,6 +4,8 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set;
+use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
+use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 use std::cmp::Ordering;
 
@@ -101,11 +103,11 @@ where
         let new_quorums = quorum_infos
             .into_iter()
             .map(|(key, info_result)| {
-                let quorum = validator_set::v0::ValidatorSet::try_from_quorum_info_result(
+                let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                     info_result,
                     block_platform_state,
-                )?;
-                Ok((key, quorum))
+                )?);
+                Ok((key, validator_set))
             })
             .collect::<Result<Vec<_>, Error>>()?;
         // Add new validator_sets entries
@@ -116,12 +118,12 @@ where
         block_platform_state
             .validator_sets_mut()
             .sort_by(|_, quorum_a, _, quorum_b| {
-                let primary_comparison = quorum_b.core_height.cmp(&quorum_a.core_height);
+                let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
                 if primary_comparison == Ordering::Equal {
                     quorum_b
-                        .quorum_hash
-                        .cmp(&quorum_a.quorum_hash)
-                        .then_with(|| quorum_b.core_height.cmp(&quorum_a.core_height))
+                        .quorum_hash()
+                        .cmp(&quorum_a.quorum_hash())
+                        .then_with(|| quorum_b.core_height().cmp(&quorum_a.core_height()))
                 } else {
                     primary_comparison
                 }

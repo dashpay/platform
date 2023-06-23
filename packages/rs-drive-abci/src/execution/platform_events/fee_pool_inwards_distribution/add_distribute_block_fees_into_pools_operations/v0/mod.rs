@@ -30,7 +30,7 @@
 use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
-use crate::execution::types::fees_in_pools::v0::FeesInPools;
+use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use drive::drive::batch::DriveOperation;
@@ -52,7 +52,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
-    ) -> Result<FeesInPools, Error> {
+    ) -> Result<FeesInPoolsV0, Error> {
         // update epochs pool processing fees
         let epoch_processing_fees = self
             .drive
@@ -86,7 +86,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             )?,
         ));
 
-        Ok(FeesInPools {
+        Ok(FeesInPoolsV0 {
             processing_fees: total_processing_fees,
             storage_fees: total_storage_fees,
         })

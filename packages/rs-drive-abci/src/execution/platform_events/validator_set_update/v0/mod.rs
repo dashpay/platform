@@ -8,6 +8,7 @@ use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
@@ -91,7 +92,7 @@ where
                                 method = "validator_set_update_v0",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
-                                new_validator_set.members.len()
+                                new_validator_set.members().len()
                             );
                             let validator_set_update = new_validator_set.into();
                             block_execution_context

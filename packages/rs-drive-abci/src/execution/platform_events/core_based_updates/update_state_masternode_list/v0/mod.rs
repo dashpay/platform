@@ -4,6 +4,8 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set;
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
+use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeType};
@@ -27,12 +29,12 @@ where
     ///
     fn remove_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
-        validator_sets: &mut IndexMap<QuorumHash, validator_set::v0::ValidatorSet>,
+        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
     ) {
         validator_sets
             .iter_mut()
             .for_each(|(_quorum_hash, validator_set)| {
-                validator_set.members.remove(pro_tx_hash);
+                validator_set.members_mut().remove(pro_tx_hash);
             });
     }
 
@@ -52,12 +54,12 @@ where
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         dmn_state_diff: &DMNStateDiff,
-        validator_sets: &mut IndexMap<QuorumHash, validator_set::v0::ValidatorSet>,
+        validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
     ) {
         validator_sets
             .iter_mut()
             .for_each(|(_quorum_hash, validator_set)| {
-                if let Some(validator) = validator_set.members.get_mut(pro_tx_hash) {
+                if let Some(validator) = validator_set.members_mut().get_mut(pro_tx_hash) {
                     if let Some(maybe_ban_height) = dmn_state_diff.pose_ban_height {
                         // the ban_height was changed
                         validator.is_banned = maybe_ban_height.is_some();
