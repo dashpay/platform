@@ -9,7 +9,10 @@ use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
 
-use crate::execution::types::block_execution_context;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -23,16 +26,16 @@ where
     /// Pool withdrawal documents into transactions
     pub fn pool_withdrawals_into_transactions_queue_v0(
         &self,
-        block_execution_context: &block_execution_context::v0::BlockExecutionContext,
+        block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_state_info.block_time_ms,
-            height: block_execution_context.block_state_info.height,
+            time_ms: block_execution_context.block_state_info().block_time_ms(),
+            height: block_execution_context.block_state_info().height(),
             core_height: block_execution_context
-                .block_state_info
-                .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index)?,
+                .block_state_info()
+                .core_chain_locked_height(),
+            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
@@ -140,10 +143,10 @@ mod tests {
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
-    use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
-    use crate::execution::types::block_state_info::v0::BlockStateInfo;
-    use crate::platform_types::epoch::v0::EpochInfo;
-    use crate::platform_types::platform_state::v0::PlatformState;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::platform_types::epochInfo::v0::EpochInfoV0;
+    use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -158,12 +161,9 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        platform
-            .block_execution_context
-            .write()
-            .unwrap()
-            .replace(BlockExecutionContext {
-                block_state_info: BlockStateInfo {
+        platform.block_execution_context.write().unwrap().replace(
+            BlockExecutionContextV0 {
+                block_state_info: BlockStateInfoV0 {
                     height: 1,
                     round: 0,
                     block_time_ms: 1,
@@ -175,15 +175,17 @@ mod tests {
                     core_chain_locked_height: 96,
                     block_hash: None,
                     app_hash: None,
-                },
-                epoch_info: EpochInfo {
+                }
+                .into(),
+                epoch_info: EpochInfoV0 {
                     current_epoch_index: 1,
                     previous_epoch_index: None,
                     is_epoch_change: false,
-                },
+                }
+                .into(),
                 hpmn_count: 100,
                 withdrawal_transactions: Default::default(),
-                block_platform_state: PlatformState {
+                block_platform_state: PlatformStateV0 {
                     last_committed_block_info: None,
                     current_protocol_version_in_consensus: 0,
                     next_epoch_protocol_version: 0,
@@ -194,9 +196,12 @@ mod tests {
                     full_masternode_list: Default::default(),
                     hpmn_masternode_list: Default::default(),
                     initialization_information: None,
-                },
+                }
+                .into(),
                 proposer_results: None,
-            });
+            }
+            .into(),
+        );
 
         let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
             .expect("to load system data contract");

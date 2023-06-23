@@ -13,7 +13,7 @@ impl<C> Platform<C> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
     /// this will change backing state, but does not change drive cache
-    pub fn check_for_desired_protocol_upgrade(
+    pub fn check_for_desired_protocol_upgrade_v0(
         &self,
         total_hpmns: u32,
         current_protocol_version_in_consensus: ProtocolVersion,

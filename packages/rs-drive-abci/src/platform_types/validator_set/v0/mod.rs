@@ -1,11 +1,11 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::platform_types::platform_state::v0::PlatformState;
-use crate::platform_types::validator::v0::Validator;
+use crate::platform_types::validator::v0::ValidatorV0;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 
+use crate::platform_types::platform_state::PlatformState;
 use dashcore_rpc::json::QuorumInfoResult;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use serde::{Deserialize, Serialize};
@@ -17,24 +17,24 @@ use tenderdash_abci::proto::{abci, crypto};
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub struct ValidatorSet {
+pub struct ValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
     /// Active height
     pub core_height: u32,
     /// The list of masternodes
-    pub members: BTreeMap<ProTxHash, Validator>,
+    pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
     pub threshold_public_key: BlsPublicKey,
 }
 
-impl ValidatorSet {
+impl ValidatorSetV0 {
     /// For changes between two validator sets, we take the new (rhs) element if is different
     /// for every validator
     #[allow(dead_code)]
     pub(crate) fn update_difference(
         &self,
-        rhs: &ValidatorSet,
+        rhs: &ValidatorSetV0,
     ) -> Result<ValidatorSetUpdate, Error> {
         if self.quorum_hash != rhs.quorum_hash {
             return Err(Error::Execution(ExecutionError::CorruptedCachedState(
@@ -66,7 +66,7 @@ impl ValidatorSet {
                     },
                     |new_validator_state| {
                         if new_validator_state != old_validator_state {
-                            let Validator {
+                            let ValidatorV0 {
                                 pro_tx_hash,
                                 public_key,
                                 node_ip,
@@ -98,7 +98,7 @@ impl ValidatorSet {
                                 }))
                             }
                         } else {
-                            let Validator {
+                            let ValidatorV0 {
                                 pro_tx_hash,
                                 public_key,
                                 node_ip,
@@ -145,11 +145,21 @@ impl ValidatorSet {
     }
 }
 
+/// Reverse bytes
+///
+/// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
+/// We need to decide on a consistent approach to endianness and follow it.
+fn reverse(data: &[u8]) -> Vec<u8> {
+    // data.reverse();
+
+    data.to_vec()
+}
+
 /// In this case we are changing to this validator set from another validator set and there are no
 /// changes
-impl From<ValidatorSet> for ValidatorSetUpdate {
-    fn from(value: ValidatorSet) -> Self {
-        let ValidatorSet {
+impl From<ValidatorSetV0> for ValidatorSetUpdate {
+    fn from(value: ValidatorSetV0) -> Self {
+        let ValidatorSetV0 {
             quorum_hash,
             members: validator_set,
             threshold_public_key,
@@ -159,7 +169,7 @@ impl From<ValidatorSet> for ValidatorSetUpdate {
             validator_updates: validator_set
                 .into_values()
                 .filter_map(|validator| {
-                    let Validator {
+                    let ValidatorV0 {
                         pro_tx_hash,
                         public_key,
                         node_ip,
@@ -196,19 +206,9 @@ impl From<ValidatorSet> for ValidatorSetUpdate {
     }
 }
 
-/// Reverse bytes
-///
-/// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
-/// We need to decide on a consistent approach to endianness and follow it.
-fn reverse(data: &[u8]) -> Vec<u8> {
-    // data.reverse();
-
-    data.to_vec()
-}
-
-impl From<&ValidatorSet> for ValidatorSetUpdate {
-    fn from(value: &ValidatorSet) -> Self {
-        let ValidatorSet {
+impl From<&ValidatorSetV0> for ValidatorSetUpdate {
+    fn from(value: &ValidatorSetV0) -> Self {
+        let ValidatorSetV0 {
             quorum_hash,
             members: validator_set,
             threshold_public_key,
@@ -218,7 +218,7 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
             validator_updates: validator_set
                 .iter()
                 .filter_map(|(_, validator)| {
-                    let Validator {
+                    let ValidatorV0 {
                         pro_tx_hash,
                         public_key,
                         node_ip,
@@ -255,7 +255,7 @@ impl From<&ValidatorSet> for ValidatorSetUpdate {
     }
 }
 
-impl ValidatorSet {
+impl ValidatorSetV0 {
     /// Try to create a quorum from info from the Masternode list (given with state),
     /// and for information return for quorum members
     pub fn try_from_quorum_info_result(
@@ -288,23 +288,95 @@ impl ValidatorSet {
                     None
                 };
 
-                let validator = Validator::new_validator_if_masternode_in_state(
+                let validator = ValidatorV0::new_validator_if_masternode_in_state(
                     quorum_member.pro_tx_hash,
                     public_key,
                     state,
                 )?;
                 Some(Ok((quorum_member.pro_tx_hash, validator)))
             })
-            .collect::<Result<BTreeMap<ProTxHash, Validator>, Error>>()?;
+            .collect::<Result<BTreeMap<ProTxHash, ValidatorV0>, Error>>()?;
 
         let threshold_public_key = BlsPublicKey::from_bytes(quorum_public_key.as_slice())
             .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
 
-        Ok(ValidatorSet {
+        Ok(ValidatorSetV0 {
             quorum_hash,
             core_height: height,
             members: validator_set,
             threshold_public_key,
         })
+    }
+}
+
+/// Trait providing getter methods for `ValidatorSetV0` struct
+pub trait ValidatorSetV0Getters {
+    /// Returns the quorum hash of the validator set.
+    fn quorum_hash(&self) -> &QuorumHash;
+    /// Returns the active height of the validator set.
+    fn core_height(&self) -> u32;
+    /// Returns the members of the validator set.
+    fn members(&self) -> &BTreeMap<ProTxHash, ValidatorV0>;
+    /// Returns the members of the validator set.
+    fn members_mut(&mut self) -> &mut BTreeMap<ProTxHash, ValidatorV0>;
+    /// Returns the members of the validator set.
+    fn members_owned(self) -> BTreeMap<ProTxHash, ValidatorV0>;
+    /// Returns the threshold public key of the validator set.
+    fn threshold_public_key(&self) -> &BlsPublicKey;
+}
+
+/// Trait providing setter methods for `ValidatorSetV0` struct
+pub trait ValidatorSetV0Setters {
+    /// Sets the quorum hash of the validator set.
+    fn set_quorum_hash(&mut self, quorum_hash: QuorumHash);
+    /// Sets the active height of the validator set.
+    fn set_core_height(&mut self, core_height: u32);
+    /// Sets the members of the validator set.
+    fn set_members(&mut self, members: BTreeMap<ProTxHash, ValidatorV0>);
+    /// Sets the threshold public key of the validator set.
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey);
+}
+
+impl ValidatorSetV0Getters for ValidatorSetV0 {
+    fn quorum_hash(&self) -> &QuorumHash {
+        &self.quorum_hash
+    }
+
+    fn core_height(&self) -> u32 {
+        self.core_height
+    }
+
+    fn members(&self) -> &BTreeMap<ProTxHash, ValidatorV0> {
+        &self.members
+    }
+
+    fn members_mut(&mut self) -> &mut BTreeMap<ProTxHash, ValidatorV0> {
+        &mut self.members
+    }
+
+    fn members_owned(self) -> BTreeMap<ProTxHash, ValidatorV0> {
+        self.members
+    }
+
+    fn threshold_public_key(&self) -> &BlsPublicKey {
+        &self.threshold_public_key
+    }
+}
+
+impl ValidatorSetV0Setters for ValidatorSetV0 {
+    fn set_quorum_hash(&mut self, quorum_hash: QuorumHash) {
+        self.quorum_hash = quorum_hash;
+    }
+
+    fn set_core_height(&mut self, core_height: u32) {
+        self.core_height = core_height;
+    }
+
+    fn set_members(&mut self, members: BTreeMap<ProTxHash, ValidatorV0>) {
+        self.members = members;
+    }
+
+    fn set_threshold_public_key(&mut self, threshold_public_key: BlsPublicKey) {
+        self.threshold_public_key = threshold_public_key;
     }
 }

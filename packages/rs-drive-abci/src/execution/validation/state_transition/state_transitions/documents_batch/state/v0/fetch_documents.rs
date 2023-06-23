@@ -7,6 +7,7 @@ use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocume
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
 
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};

@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
@@ -31,8 +31,8 @@ where
     /// there is a problem updating the masternode list, quorum information, or the state.
     pub(crate) fn update_core_info_v0(
         &self,
-        platform_state: Option<&platform_state::v0::PlatformState>,
-        block_platform_state: &mut platform_state::v0::PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,

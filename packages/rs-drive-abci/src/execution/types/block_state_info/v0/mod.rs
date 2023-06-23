@@ -35,8 +35,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 
 /// Block info
-#[derive(Debug)]
-pub struct BlockStateInfo {
+#[derive(Debug, Clone)]
+pub struct BlockStateInfoV0 {
     /// Block height
     pub height: u64,
     /// Block round
@@ -55,22 +55,13 @@ pub struct BlockStateInfo {
     pub app_hash: Option<[u8; 32]>,
 }
 
-impl BlockStateInfo {
-    /// Gets a block info from the block state info
-    pub fn to_block_info(&self, epoch: Epoch) -> BlockInfo {
-        BlockInfo {
-            time_ms: self.block_time_ms,
-            height: self.height,
-            core_height: self.core_chain_locked_height,
-            epoch,
-        }
-    }
+impl BlockStateInfoV0 {
     /// Generate block state info based on Prepare Proposal request
     pub fn from_block_proposal(
         proposal: &BlockProposal,
         previous_block_time_ms: Option<u64>,
-    ) -> BlockStateInfo {
-        BlockStateInfo {
+    ) -> BlockStateInfoV0 {
+        BlockStateInfoV0 {
             height: proposal.height,
             round: proposal.round,
             block_time_ms: proposal.block_time_ms,
@@ -81,9 +72,51 @@ impl BlockStateInfo {
             app_hash: None,
         }
     }
+}
+
+/// Methods created on version 0 of block state info
+pub trait BlockStateInfoV0Methods {
+    /// Gets a block info from the block state info
+    fn to_block_info(&self, epoch: Epoch) -> BlockInfo;
+    /// Does this match a height and round?
+    fn next_block_to(
+        &self,
+        previous_height: u64,
+        previous_core_block_height: u32,
+    ) -> Result<bool, Error>;
 
     /// Does this match a height and round?
-    pub fn next_block_to(
+    fn matches_current_block<I: TryInto<[u8; 32]>>(
+        &self,
+        height: u64,
+        round: u32,
+        block_hash: I,
+    ) -> Result<bool, Error>;
+
+    /// Does this match a height and round?
+    fn matches_expected_block_info<I: TryInto<[u8; 32]>>(
+        &self,
+        height: u64,
+        round: u32,
+        core_block_height: u32,
+        proposer_pro_tx_hash: [u8; 32],
+        commit_hash: I,
+    ) -> Result<bool, Error>;
+}
+
+impl BlockStateInfoV0Methods for BlockStateInfoV0 {
+    /// Gets a block info from the block state info
+    fn to_block_info(&self, epoch: Epoch) -> BlockInfo {
+        BlockInfo {
+            time_ms: self.block_time_ms,
+            height: self.height,
+            core_height: self.core_chain_locked_height,
+            epoch,
+        }
+    }
+
+    /// Does this match a height and round?
+    fn next_block_to(
         &self,
         previous_height: u64,
         previous_core_block_height: u32,
@@ -93,7 +126,7 @@ impl BlockStateInfo {
     }
 
     /// Does this match a height and round?
-    pub fn matches_current_block<I: TryInto<[u8; 32]>>(
+    fn matches_current_block<I: TryInto<[u8; 32]>>(
         &self,
         height: u64,
         round: u32,
@@ -112,7 +145,7 @@ impl BlockStateInfo {
     }
 
     /// Does this match a height and round?
-    pub fn matches_expected_block_info<I: TryInto<[u8; 32]>>(
+    fn matches_expected_block_info<I: TryInto<[u8; 32]>>(
         &self,
         height: u64,
         round: u32,
@@ -141,5 +174,127 @@ impl BlockStateInfo {
             && self.proposer_pro_tx_hash == proposer_pro_tx_hash
             && self.block_hash.is_some()
             && self.block_hash.unwrap() == received_hash)
+    }
+}
+
+/// A trait for getting the properties of the `BlockStateInfoV0`.
+pub trait BlockStateInfoV0Getters {
+    /// Gets the block height.
+    fn height(&self) -> u64;
+
+    /// Gets the block round.
+    fn round(&self) -> u32;
+
+    /// Gets the block time in ms.
+    fn block_time_ms(&self) -> u64;
+
+    /// Gets the previous block time in ms.
+    fn previous_block_time_ms(&self) -> Option<u64>;
+
+    /// Gets the block proposer's proTxHash.
+    fn proposer_pro_tx_hash(&self) -> [u8; 32];
+
+    /// Gets the core chain locked height.
+    fn core_chain_locked_height(&self) -> u32;
+
+    /// Gets the block hash.
+    fn block_hash(&self) -> Option<[u8; 32]>;
+
+    /// Gets the application hash.
+    fn app_hash(&self) -> Option<[u8; 32]>;
+}
+
+/// A trait for setting the properties of the `BlockStateInfoV0`.
+pub trait BlockStateInfoV0Setters {
+    /// Sets the block height.
+    fn set_height(&mut self, height: u64);
+
+    /// Sets the block round.
+    fn set_round(&mut self, round: u32);
+
+    /// Sets the block time in ms.
+    fn set_block_time_ms(&mut self, block_time_ms: u64);
+
+    /// Sets the previous block time in ms.
+    fn set_previous_block_time_ms(&mut self, previous_block_time_ms: Option<u64>);
+
+    /// Sets the block proposer's proTxHash.
+    fn set_proposer_pro_tx_hash(&mut self, proposer_pro_tx_hash: [u8; 32]);
+
+    /// Sets the core chain locked height.
+    fn set_core_chain_locked_height(&mut self, core_chain_locked_height: u32);
+
+    /// Sets the block hash.
+    fn set_block_hash(&mut self, block_hash: Option<[u8; 32]>);
+
+    /// Sets the application hash.
+    fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>);
+}
+
+impl BlockStateInfoV0Getters for BlockStateInfoV0 {
+    fn height(&self) -> u64 {
+        self.height
+    }
+
+    fn round(&self) -> u32 {
+        self.round
+    }
+
+    fn block_time_ms(&self) -> u64 {
+        self.block_time_ms
+    }
+
+    fn previous_block_time_ms(&self) -> Option<u64> {
+        self.previous_block_time_ms
+    }
+
+    fn proposer_pro_tx_hash(&self) -> [u8; 32] {
+        self.proposer_pro_tx_hash
+    }
+
+    fn core_chain_locked_height(&self) -> u32 {
+        self.core_chain_locked_height
+    }
+
+    fn block_hash(&self) -> Option<[u8; 32]> {
+        self.block_hash
+    }
+
+    fn app_hash(&self) -> Option<[u8; 32]> {
+        self.app_hash
+    }
+}
+
+impl BlockStateInfoV0Setters for BlockStateInfoV0 {
+    fn set_height(&mut self, height: u64) {
+        self.height = height;
+    }
+
+    fn set_round(&mut self, round: u32) {
+        self.round = round;
+    }
+
+    fn set_block_time_ms(&mut self, block_time_ms: u64) {
+        self.block_time_ms = block_time_ms;
+    }
+
+    fn set_previous_block_time_ms(&mut self, previous_block_time_ms: Option<u64>) {
+        self.previous_block_time_ms = previous_block_time_ms;
+    }
+
+    fn set_proposer_pro_tx_hash(&mut self, proposer_pro_tx_hash: [u8; 32]) {
+        self.proposer_pro_tx_hash = proposer_pro_tx_hash;
+    }
+
+    fn set_core_chain_locked_height(&mut self, core_chain_locked_height: u32) {
+        self.core_chain_locked_height = core_chain_locked_height;
+    }
+
+    fn set_block_hash(&mut self, block_hash: Option<[u8; 32]>) {
+        self.block_hash = block_hash;
+    }
+
+    fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>) {
+        self.app_hash = app_hash;
     }
 }

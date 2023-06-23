@@ -28,8 +28,9 @@
 //
 
 use crate::error::Error;
-use crate::execution::types::block_fees;
-use crate::execution::types::fees_in_pools::v0::FeesInPools;
+use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
+use crate::execution::types::block_fees::BlockFees;
+use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use drive::drive::batch::DriveOperation;
@@ -47,11 +48,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     pub fn add_distribute_block_fees_into_pools_operations_v0(
         &self,
         current_epoch: &Epoch,
-        block_fees: &block_fees::v0::BlockFees,
+        block_fees: &BlockFees,
         cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
-    ) -> Result<FeesInPools, Error> {
+    ) -> Result<FeesInPoolsV0, Error> {
         // update epochs pool processing fees
         let epoch_processing_fees = self
             .drive
@@ -62,7 +63,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 _ => Err(e),
             })?;
 
-        let total_processing_fees = epoch_processing_fees + block_fees.processing_fee;
+        let total_processing_fees = epoch_processing_fees + block_fees.processing_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
             current_epoch.update_processing_fee_pool_operation(total_processing_fees)?,
@@ -76,15 +77,16 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             Some(storage_fees) => storage_fees,
         };
 
-        let total_storage_fees = storage_distribution_credits_in_fee_pool + block_fees.storage_fee;
+        let total_storage_fees =
+            storage_distribution_credits_in_fee_pool + block_fees.storage_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
             update_storage_fee_distribution_pool_operation(
-                storage_distribution_credits_in_fee_pool + block_fees.storage_fee,
+                storage_distribution_credits_in_fee_pool + block_fees.storage_fee(),
             )?,
         ));
 
-        Ok(FeesInPools {
+        Ok(FeesInPoolsV0 {
             processing_fees: total_processing_fees,
             storage_fees: total_storage_fees,
         })
@@ -98,6 +100,8 @@ mod tests {
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
+    use crate::execution::types::block_fees;
+    use crate::execution::types::block_fees::v0::BlockFeesV0Methods;
     use drive::drive::batch::GroveDbOpBatch;
 
     #[test]
@@ -120,10 +124,13 @@ mod tests {
         let processing_fees = 1000000;
         let storage_fees = 2000000;
 
+        let block_fees =
+            block_fees::v0::BlockFeesV0::from_fees(storage_fees, processing_fees).into();
+
         platform
             .add_distribute_block_fees_into_pools_operations_v0(
                 &current_epoch_tree,
-                &block_fees::v0::BlockFees::from_fees(storage_fees, processing_fees),
+                &block_fees,
                 None,
                 Some(&transaction),
                 &mut batch,
@@ -173,10 +180,13 @@ mod tests {
         let processing_fees = 1000000;
         let storage_fees = 2000000;
 
+        let block_fees =
+            block_fees::v0::BlockFeesV0::from_fees(storage_fees, processing_fees).into();
+
         platform
             .add_distribute_block_fees_into_pools_operations_v0(
                 &current_epoch_tree,
-                &block_fees::v0::BlockFees::from_fees(storage_fees, processing_fees),
+                &block_fees,
                 None,
                 Some(&transaction),
                 &mut batch,

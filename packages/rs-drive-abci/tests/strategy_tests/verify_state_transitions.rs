@@ -11,6 +11,7 @@ use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
 
 pub(crate) fn verify_state_transitions_were_executed(
@@ -79,9 +80,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 )
                 .expect("expected to verify full identity");
                 assert_eq!(
-                    &root_hash, expected_root_hash,
+                    &root_hash,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
                 assert_eq!(
                     &contract.expect("expected a contract"),
@@ -116,9 +118,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 )
                 .expect("expected to verify full identity");
                 assert_eq!(
-                    &root_hash, expected_root_hash,
+                    &root_hash,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
                 assert_eq!(
                     &contract.expect("expected a contract"),
@@ -189,9 +192,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                         .expect("expected to verify a document");
 
                     assert_eq!(
-                        &root_hash, expected_root_hash,
+                        &root_hash,
+                        expected_root_hash,
                         "state last block info {:?}",
-                        platform.state.last_committed_block_info
+                        platform.state.last_committed_block_info()
                     );
 
                     match document_transition_action {
@@ -255,9 +259,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 )
                 .expect("expected to verify full identity");
                 assert_eq!(
-                    &root_hash, expected_root_hash,
+                    &root_hash,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
                 assert_eq!(
                     identity
@@ -305,9 +310,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .expect("expected to verify balance identity");
                 let balance = balance.expect("expected a balance");
                 assert_eq!(
-                    &root_hash, expected_root_hash,
+                    &root_hash,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
 
                 //while this isn't 100% sure to be true (in the case of debt,
@@ -357,9 +363,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .expect("expected to verify balance identity");
                 let _balance = balance.expect("expected a balance");
                 assert_eq!(
-                    &root_hash, expected_root_hash,
+                    &root_hash,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
 
                 //todo: we need to do more here
@@ -393,9 +400,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .expect("expected to verify identity keys");
                 let identity = identity.expect("expected an identity");
                 assert_eq!(
-                    &root_hash, expected_root_hash,
+                    &root_hash,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
                 // we need to verify that the partial identity has all keys we added
                 let has_all_keys = identity_update_transition
@@ -449,9 +457,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .expect("expected to verify balance identity");
 
                 assert_eq!(
-                    &root_hash_identity, expected_root_hash,
+                    &root_hash_identity,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
 
                 let (root_hash_recipient, balance_recipient) =
@@ -463,9 +472,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .expect("expected to verify balance recipient");
 
                 assert_eq!(
-                    &root_hash_recipient, expected_root_hash,
+                    &root_hash_recipient,
+                    expected_root_hash,
                     "state last block info {:?}",
-                    platform.state.last_committed_block_info
+                    platform.state.last_committed_block_info()
                 );
 
                 let balance_recipient = balance_recipient.expect("expected a balance");

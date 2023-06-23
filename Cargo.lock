@@ -1197,6 +1197,7 @@ dependencies = [
  "dapi-grpc",
  "dashcore-rpc",
  "delegate",
+ "derive_more",
  "dotenvy",
  "dpp",
  "drive",

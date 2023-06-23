@@ -1,13 +1,9 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::rpc::core::CoreRPCLike;
 use drive::grovedb::Transaction;
 
-impl<C> Platform<C>
-where
-    C: CoreRPCLike,
-{
+impl<C> Platform<C> {
     /// Retrieves the genesis time for the specified block height and block time.
     ///
     /// # Arguments

@@ -63,6 +63,7 @@ metrics = { version = "0.21" }
 metrics-exporter-prometheus = { version = "0.12" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
+derive_more = "0.99.17"
 
 [dev-dependencies]
 base64 = "0.20.0"

@@ -6,6 +6,7 @@ use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
 
+use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
 use drive::grovedb::Transaction;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
@@ -46,6 +47,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             },
         ));
 
+        let unpaid_epoch = unpaid_epoch.into();
+
         let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations_v0(
             &unpaid_epoch,
             core_block_rewards,
@@ -55,12 +58,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let mut inner_batch = GroveDbOpBatch::new();
 
-        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
+        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
         unpaid_epoch_tree.add_mark_as_paid_operations(&mut inner_batch);
 
         inner_batch.push(update_unpaid_epoch_index_operation(
-            unpaid_epoch.next_unpaid_epoch_index,
+            unpaid_epoch.next_unpaid_epoch_index(),
         ));
 
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
@@ -73,7 +76,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         Ok(Some(proposer_payouts::v0::ProposersPayouts {
             proposers_paid_count,
-            paid_epoch_index: unpaid_epoch.epoch_index,
+            paid_epoch_index: unpaid_epoch.epoch_index(),
         }))
     }
 }

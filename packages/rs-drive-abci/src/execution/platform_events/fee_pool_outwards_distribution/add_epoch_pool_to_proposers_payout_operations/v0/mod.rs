@@ -1,6 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::unpaid_epoch;
+
+use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods};
+use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -19,13 +21,13 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Returns the number of proposers to be paid out.
     pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn add_epoch_pool_to_proposers_payout_operations_v0(
         &self,
-        unpaid_epoch: &unpaid_epoch::v0::UnpaidEpoch,
+        unpaid_epoch: &UnpaidEpoch,
         core_block_rewards: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
     ) -> Result<u16, Error> {
         let mut drive_operations = vec![];
-        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
+        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
         let storage_and_processing_fees = self
             .drive
@@ -149,7 +151,7 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::execution::types::unpaid_epoch::v0::UnpaidEpoch;
+        use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0;
         use crate::test::helpers::{
             fee_pools::create_test_masternode_share_identities_and_documents,
             setup::TestPlatformBuilder,
@@ -226,7 +228,7 @@ mod tests {
 
             let mut batch = vec![];
 
-            let unpaid_epoch = UnpaidEpoch {
+            let unpaid_epoch = UnpaidEpochV0 {
                 epoch_index: 0,
                 start_block_height: 1,
                 next_epoch_start_block_height: 11,
@@ -237,7 +239,7 @@ mod tests {
 
             let proposers_paid_count = platform
                 .add_epoch_pool_to_proposers_payout_operations_v0(
-                    &unpaid_epoch,
+                    &unpaid_epoch.into(),
                     0,
                     &transaction,
                     &mut batch,

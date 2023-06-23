@@ -13,10 +13,9 @@ use dashcore_rpc::dashcore::hashes::hex::FromHex;
 
 use dashcore_rpc::dashcore::BlockHash;
 
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization_traits::PlatformDeserializable;
-
-use crate::execution::types::block_execution_context;
-use crate::platform_types::platform_state::v0::PlatformState;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
@@ -33,7 +32,7 @@ pub struct Platform<C> {
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
-    pub block_execution_context: RwLock<Option<block_execution_context::v0::BlockExecutionContext>>,
+    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }

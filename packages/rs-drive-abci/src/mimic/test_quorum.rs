@@ -1,5 +1,5 @@
-use crate::platform_types::validator::v0::Validator;
-use crate::platform_types::validator_set::v0::ValidatorSet;
+use crate::platform_types::validator::v0::ValidatorV0;
+use crate::platform_types::validator_set::v0::ValidatorSetV0;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
@@ -34,7 +34,7 @@ pub struct ValidatorInQuorum {
     pub is_banned: bool,
 }
 
-impl From<&ValidatorInQuorum> for Validator {
+impl From<&ValidatorInQuorum> for ValidatorV0 {
     fn from(value: &ValidatorInQuorum) -> Self {
         let ValidatorInQuorum {
             pro_tx_hash,
@@ -47,7 +47,7 @@ impl From<&ValidatorInQuorum> for Validator {
             is_banned,
             ..
         } = value;
-        Validator {
+        ValidatorV0 {
             pro_tx_hash: *pro_tx_hash,
             public_key: Some(public_key.clone()),
             node_ip: node_ip.to_string(),
@@ -60,7 +60,7 @@ impl From<&ValidatorInQuorum> for Validator {
     }
 }
 
-impl From<ValidatorInQuorum> for Validator {
+impl From<ValidatorInQuorum> for ValidatorV0 {
     fn from(value: ValidatorInQuorum) -> Self {
         let ValidatorInQuorum {
             pro_tx_hash,
@@ -73,7 +73,7 @@ impl From<ValidatorInQuorum> for Validator {
             is_banned,
             ..
         } = value;
-        Validator {
+        ValidatorV0 {
             pro_tx_hash,
             public_key: Some(public_key),
             node_ip,
@@ -178,7 +178,7 @@ impl TestQuorumInfo {
     }
 }
 
-impl From<&TestQuorumInfo> for ValidatorSet {
+impl From<&TestQuorumInfo> for ValidatorSetV0 {
     fn from(value: &TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             core_height,
@@ -189,7 +189,7 @@ impl From<&TestQuorumInfo> for ValidatorSet {
             ..
         } = value;
 
-        ValidatorSet {
+        ValidatorSetV0 {
             core_height: *core_height,
             quorum_hash: *quorum_hash,
             members: validator_set
@@ -201,7 +201,7 @@ impl From<&TestQuorumInfo> for ValidatorSet {
     }
 }
 
-impl From<TestQuorumInfo> for ValidatorSet {
+impl From<TestQuorumInfo> for ValidatorSetV0 {
     fn from(value: TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             core_height,
@@ -212,7 +212,7 @@ impl From<TestQuorumInfo> for ValidatorSet {
             ..
         } = value;
 
-        ValidatorSet {
+        ValidatorSetV0 {
             quorum_hash,
             core_height,
             members: validator_set
