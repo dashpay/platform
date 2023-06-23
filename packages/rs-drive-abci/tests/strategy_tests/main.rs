@@ -76,6 +76,7 @@ mod tests {
     use dpp::data_contract::extra::common::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use drive_abci::config::PlatformTestConfig;
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
@@ -296,7 +297,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -549,7 +550,7 @@ mod tests {
                 .state
                 .read()
                 .unwrap()
-                .last_committed_block_info
+                .last_committed_block_info()
                 .as_ref()
                 .unwrap()
                 .basic_info()
@@ -620,7 +621,7 @@ mod tests {
         let platform = abci_app.platform;
         let platform_state = platform.state.read().unwrap();
 
-        assert!(platform_state.hpmn_masternode_list.len() > 100);
+        assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
 
     #[test]
@@ -686,7 +687,7 @@ mod tests {
         let platform = abci_app.platform;
         let platform_state = platform.state.read().unwrap();
 
-        assert_ne!(platform_state.hpmn_masternode_list.len(), 100);
+        assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
 
     #[test]
@@ -2419,7 +2420,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()

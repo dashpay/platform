@@ -1,7 +1,8 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::extended_block_info::BlockInfo;
@@ -30,15 +31,15 @@ where
     ///   there is a problem fetching the masternode list difference or updating the state.
     pub(in crate::execution::platform_events::core_based_updates) fn update_masternode_list_v0(
         &self,
-        platform_state: Option<&platform_state::v0::PlatformState>,
-        block_platform_state: &mut platform_state::v0::PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         if let Some(last_commited_block_info) =
-            block_platform_state.last_committed_block_info.as_ref()
+            block_platform_state.last_committed_block_info().as_ref()
         {
             if core_block_height == last_commited_block_info.basic_info().core_height {
                 tracing::debug!(
@@ -55,7 +56,7 @@ where
             core_block_height,
             block_platform_state.core_height()
         );
-        if block_platform_state.last_committed_block_info.is_some() || is_init_chain {
+        if block_platform_state.last_committed_block_info().is_some() || is_init_chain {
             let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
                 removed_masternodes,

@@ -26,7 +26,6 @@ export async function createIdentityCreateTransition(
 
   const identityIndex = await account.getUnusedIdentityIndex();
 
-  // @ts-ignore
   const { privateKey: identityMasterPrivateKey } = account.identities
     .getIdentityHDKeyByIndex(identityIndex, 0);
   const identityMasterPublicKey = identityMasterPrivateKey.toPublicKey();
@@ -36,7 +35,6 @@ export async function createIdentityCreateTransition(
   const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
   // Create Identity
-  // @ts-ignore
   const identity = dpp.identity.create(
     assetLockProof, [{
       id: 0,

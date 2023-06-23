@@ -4,6 +4,7 @@ use crate::execution::validation::data_trigger::dashpay_data_triggers::property_
 use crate::execution::validation::data_trigger::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -131,6 +132,7 @@ mod test {
     use crate::execution::validation::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
     use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::extended_block_info::{BlockInfo, ExtendedBlockInfo};
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
@@ -207,7 +209,7 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfoV0 {
+        state_write_guard.set_last_committed_block_info(Some(ExtendedBlockInfoV0 {
             basic_info: BlockInfo {
                 time_ms: 500000,
                 height: 100,
@@ -218,7 +220,7 @@ mod test {
             quorum_hash: [0u8; 32],
             signature: [0u8; 96],
             round: 0,
-        }.into());
+        }.into()));
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_write_guard,
@@ -286,7 +288,7 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfoV0 {
+        state_write_guard.set_last_committed_block_info(Some(ExtendedBlockInfo {
             basic_info: BlockInfo {
                 time_ms: 500000,
                 height: 100,
@@ -297,7 +299,7 @@ mod test {
             quorum_hash: [0u8; 32],
             signature: [0u8; 96],
             round: 0,
-        }.into());
+        }.into()));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,

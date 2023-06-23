@@ -2,14 +2,17 @@ const MasternodeSyncAssetEnum = require('../../../src/status/enums/masternodeSyn
 const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
 const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
 const determineStatus = require('../../../src/status/determineStatus');
+const getConfigMock = require('../../../src/test/mock/getConfigMock');
 
 describe('determineStatus', () => {
   describe('#docker', () => {
     let dockerComposeMock;
     let config;
+    let configFile;
 
     beforeEach(async function it() {
-      config = { toEnvs: this.sinon.stub() };
+      config = getConfigMock(this.sinon);
+      configFile = { getProjectId: this.sinon.stub() };
       dockerComposeMock = { inspectService: this.sinon.stub() };
     });
 
@@ -18,7 +21,7 @@ describe('determineStatus', () => {
 
       dockerComposeMock.inspectService.resolves({ State: { Status: mockDockerStatus } });
 
-      const status = await determineStatus.docker(dockerComposeMock, config, 'sample_service');
+      const status = await determineStatus.docker(dockerComposeMock, configFile, config, 'sample_service');
 
       expect(status).to.equal(mockDockerStatus);
     });
@@ -63,7 +66,7 @@ describe('determineStatus', () => {
 
         dockerComposeMock.inspectService.resolves({ State: { Status: mockDockerStatus } });
 
-        const status = await determineStatus.docker(dockerComposeMock, config, 'sample_service');
+        const status = await determineStatus.docker(dockerComposeMock, configFile, config, 'sample_service');
 
         expect(status).to.equal(mockDockerStatus);
       });

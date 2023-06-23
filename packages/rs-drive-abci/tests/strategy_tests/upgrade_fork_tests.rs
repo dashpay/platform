@@ -9,6 +9,7 @@ mod tests {
         UpgradingInfo,
     };
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
@@ -87,7 +88,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -100,7 +101,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&16), Some(&416)));
@@ -117,7 +118,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -161,7 +162,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -174,11 +175,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
@@ -192,7 +193,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -225,7 +226,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -238,11 +239,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
@@ -322,7 +323,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -335,11 +336,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 1
             );
             let counter = drive_cache
@@ -357,7 +358,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -397,7 +398,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -410,11 +411,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 2
             );
             // the counter is for the current voting during that window
@@ -427,7 +428,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -456,7 +457,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -469,11 +470,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 2
             );
         }
@@ -550,7 +551,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -563,7 +564,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
         }
@@ -575,7 +576,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -615,7 +616,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -628,11 +629,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 2
             );
             assert_eq!((counter.get(&1), counter.get(&2)), (Some(&18), Some(&111)));
@@ -672,7 +673,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -716,7 +717,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -729,11 +730,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 1
             );
         }
@@ -742,7 +743,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -777,7 +778,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -790,11 +791,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 1
             );
         }
@@ -871,7 +872,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -884,11 +885,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 2
             );
             assert_eq!(
@@ -930,7 +931,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()
@@ -963,7 +964,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
                     .basic_info()
@@ -976,11 +977,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 3
             );
             assert_eq!(

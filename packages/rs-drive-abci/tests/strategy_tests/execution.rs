@@ -21,8 +21,9 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
-use drive_abci::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
+use drive_abci::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
 use drive_abci::platform_types::platform::Platform;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use rand::prelude::{SliceRandom, StdRng};
@@ -548,7 +549,7 @@ pub(crate) fn start_chain_for_strategy(
         .state
         .read()
         .unwrap()
-        .current_validator_set_quorum_hash;
+        .current_validator_set_quorum_hash();
 
     continue_chain_for_strategy(
         abci_application,
@@ -621,14 +622,14 @@ pub(crate) fn continue_chain_for_strategy(
     let mut validator_set_updates = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let epoch_info = EpochInfo::calculate(
+        let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
             platform
                 .state
                 .read()
                 .expect("lock is poisoned")
-                .last_committed_block_info
+                .last_committed_block_info()
                 .as_ref()
                 .map(|block_info| block_info.basic_info.time_ms),
         )
@@ -785,7 +786,7 @@ pub(crate) fn continue_chain_for_strategy(
             .state
             .read()
             .expect("lock is poisoned")
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
             .basic_info()

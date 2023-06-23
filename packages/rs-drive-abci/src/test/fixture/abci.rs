@@ -31,7 +31,7 @@
 //!
 
 use crate::platform_types::required_identity_public_key_set::v0::RequiredIdentityPublicKeysSet;
-use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeys;
+use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
 use drive::dpp::identity::KeyType::ECDSA_SECP256K1;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -55,8 +55,8 @@ pub fn static_init_chain_request() -> RequestInitChain {
 }
 
 /// Creates static system identity public keys fixture
-pub fn static_system_identity_public_keys() -> SystemIdentityPublicKeys {
-    SystemIdentityPublicKeys {
+pub fn static_system_identity_public_keys_v0() -> SystemIdentityPublicKeysV0 {
+    SystemIdentityPublicKeysV0 {
         masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
             master: vec![
                 3, 51, 164, 44, 98, 142, 140, 147, 206, 3, 134, 133, 111, 143, 34, 57, 200, 75,
@@ -111,13 +111,13 @@ pub fn static_system_identity_public_keys() -> SystemIdentityPublicKeys {
 }
 
 /// Creates random system identity public keys fixture
-pub fn random_system_identity_public_keys(seed: Option<u64>) -> SystemIdentityPublicKeys {
+pub fn random_system_identity_public_keys(seed: Option<u64>) -> SystemIdentityPublicKeysV0 {
     let mut rng = match seed {
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
 
-    SystemIdentityPublicKeys {
+    SystemIdentityPublicKeysV0 {
         masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
             master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
             high: ECDSA_SECP256K1.random_public_key_data(&mut rng),

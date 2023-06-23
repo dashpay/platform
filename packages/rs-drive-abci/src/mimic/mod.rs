@@ -257,7 +257,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 .as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "block execution context must be set in block begin handler for mimic block execution",
-                )))?;
+                )))?.v0()?;
 
         let extensions = block_execution_context
             .withdrawal_transactions

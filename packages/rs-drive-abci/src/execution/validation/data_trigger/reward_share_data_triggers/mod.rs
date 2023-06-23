@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::data_trigger::create_error;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -63,7 +64,7 @@ pub fn create_masternode_reward_shares_data_trigger(
         .map_err(ProtocolError::ValueError)?;
 
     if !is_dry_run {
-        let valid_masternodes_list = &context.platform.state.hpmn_masternode_list;
+        let valid_masternodes_list = &context.platform.state.hpmn_masternode_list();
 
         let owner_id_in_sml = valid_masternodes_list
             .get(context.owner_id.as_slice())
@@ -191,7 +192,7 @@ mod test {
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
-    use crate::platform_types::platform_state::v0::PlatformState;
+    use crate::platform_types::platform_state::v0::PlatformStateV0;
     use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -205,7 +206,7 @@ mod test {
         document_create_transition: DocumentCreateTransitionAction,
     }
 
-    fn setup_test(platform_state: &mut PlatformState) -> TestData {
+    fn setup_test(platform_state: &mut PlatformStateV0) -> TestData {
         let top_level_identifier_hex =
             "c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562";
         let top_level_identifier =
@@ -304,7 +305,7 @@ mod test {
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test(&mut state_write_guard);
+        } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -406,7 +407,7 @@ mod test {
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test(&mut state_write_guard);
+        } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -453,7 +454,7 @@ mod test {
 
             data_contract,
             ..
-        } = setup_test(&mut state_write_guard);
+        } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -493,7 +494,7 @@ mod test {
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test(&mut state_write_guard);
+        } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -540,7 +541,7 @@ mod test {
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test(&mut state_write_guard);
+        } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -636,7 +637,7 @@ mod test {
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test(&mut state_write_guard);
+        } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,

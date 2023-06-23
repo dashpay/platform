@@ -1,5 +1,5 @@
-import {PrivateKey, Network,} from "../types";
-import {HDPrivateKey, HDPublicKey} from "@dashevo/dashcore-lib";
+import {PrivateKey, Network} from "../types";
+import {HDPrivateKey, HDPublicKey, Address} from "@dashevo/dashcore-lib";
 import {Transaction} from "@dashevo/dashcore-lib/typings/transaction/Transaction";
 
 export declare namespace DerivableKeyChain {
@@ -27,7 +27,7 @@ export declare class DerivableKeyChain {
     privateKey?: PrivateKey;
 
     getForPath(path: string, opts: any): any;
-    getForAddress(address): any;
+    getForAddress(address: Address): any;
 
     getDIP15ExtendedKey(userUniqueId: string, contactUniqueId: string, index?: number, accountIndex?: number, type?: HDKeyTypesParam): HDKeyTypes;
     getFirstUnusedAddress(): firstUnusedAddress;

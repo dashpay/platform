@@ -26,6 +26,7 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::drive::identity::IdentityDriveQuery;
 use drive::drive::identity::IdentityProveRequestType;
 
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
@@ -102,7 +103,7 @@ impl<C> Platform<C> {
             height: state.height(),
             core_chain_locked_height: state.core_height(),
             time_ms: state.last_block_time_ms().unwrap_or_default(),
-            protocol_version: state.current_protocol_version_in_consensus,
+            protocol_version: state.current_protocol_version_in_consensus(),
         };
         match query_path {
             "/identity" => {

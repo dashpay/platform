@@ -1,6 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0OwnedGetters;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use drive::grovedb::Transaction;
@@ -44,17 +46,17 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
-        *state_cache = block_execution_context.block_platform_state;
+        *state_cache = block_execution_context.block_platform_state_owned();
 
         if let Some(next_validator_set_quorum_hash) =
-            state_cache.next_validator_set_quorum_hash.take()
+            state_cache.take_next_validator_set_quorum_hash()
         {
-            state_cache.current_validator_set_quorum_hash = next_validator_set_quorum_hash;
+            state_cache.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
         }
 
-        state_cache.last_committed_block_info = Some(extended_block_info);
+        state_cache.set_last_committed_block_info(Some(extended_block_info));
 
-        state_cache.initialization_information = None;
+        state_cache.set_initialization_information(None);
 
         // Persist ephemeral data
         self.store_ephemeral_state_v0(&state_cache, transaction)?;

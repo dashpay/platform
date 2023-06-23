@@ -1,9 +1,8 @@
 import {Block, BlockHeader, Transaction} from "@dashevo/dashcore-lib";
-
 export declare interface Transport {
-    announce(eventName, args)
+    announce(eventName: string, args: any[]): void
 
-    disconnect()
+    disconnect(): void
 
     getBestBlock(): Promise<Block>
 
@@ -13,21 +12,21 @@ export declare interface Transport {
 
     getBestBlockHeight(): Promise<number>
 
-    getBlockByHash(hash): Promise<Block>
+    getBlockByHash(hash: string): Promise<Block>
 
-    getBlockByHeight(height): Promise<Block>
+    getBlockByHeight(height: number): Promise<Block>
 
-    getBlockHeaderByHash(hash): Promise<BlockHeader>
+    getBlockHeaderByHash(hash: string): Promise<BlockHeader>
 
-    getBlockHeaderByHeight(height): Promise<BlockHeader>
+    getBlockHeaderByHeight(height: number): Promise<BlockHeader>
 
     getIdentitiesByPublicKeyHashes(publicKeyHashes: Buffer[]): Promise<Buffer[]>
 
     getStatus(): Promise<object>
 
-    getTransaction(txid): Promise<Transaction>
+    getTransaction(txid: string): Promise<Transaction>
 
-    sendTransaction(serializedTransaction): Promise<string>
+    sendTransaction(serializedTransaction: string): Promise<string>
 
-    subscribeToAddressesTransactions()
+    subscribeToAddressesTransactions(): Promise<void>
 }

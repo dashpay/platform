@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
@@ -18,7 +19,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating structure
     let result = state_transition.validate_structure(
         platform.drive,
-        platform.state.current_protocol_version_in_consensus,
+        platform.state.current_protocol_version_in_consensus(),
         transaction,
     )?;
     if !result.is_valid() {
@@ -28,7 +29,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating signatures
     let result = state_transition.validate_identity_and_signatures(
         platform.drive,
-        platform.state.current_protocol_version_in_consensus,
+        platform.state.current_protocol_version_in_consensus(),
         transaction,
     )?;
     if !result.is_valid() {

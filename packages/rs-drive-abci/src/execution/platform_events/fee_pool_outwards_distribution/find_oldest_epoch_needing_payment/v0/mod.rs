@@ -9,13 +9,14 @@ use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C> {
     /// Finds and returns the oldest epoch that hasn't been paid out yet.
+    /// The unpaid epoch potentially returned is always version 0
     pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn find_oldest_epoch_needing_payment_v0(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: TransactionArg,
-    ) -> Result<Option<unpaid_epoch::v0::UnpaidEpoch>, Error> {
+    ) -> Result<Option<unpaid_epoch::v0::UnpaidEpochV0>, Error> {
         // Since we are paying for passed epochs there is nothing to do on genesis epoch
         if current_epoch_index == GENESIS_EPOCH_INDEX {
             return Ok(None);
@@ -93,7 +94,7 @@ impl<C> Platform<C> {
 
         // Use cached current epoch start block height only if we pay for the previous epoch
 
-        Ok(Some(unpaid_epoch::v0::UnpaidEpoch {
+        Ok(Some(unpaid_epoch::v0::UnpaidEpochV0 {
             epoch_index: unpaid_epoch_index,
             next_unpaid_epoch_index: next_unpaid_epoch_info.epoch_index,
             start_block_height,
@@ -109,6 +110,7 @@ mod tests {
     use super::*;
 
     mod find_oldest_epoch_needing_payment {
+        use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;

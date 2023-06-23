@@ -1,16 +1,20 @@
 const { CronJob } = require('cron');
+const generateEnvs = require('../util/generateEnvs');
+const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
 
 /**
  *
  * @param {getCertificate} getCertificate
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {DockerCompose} dockerCompose
+ * @param {ConfigFile} configFile
  * @return {scheduleRenewZeroSslCertificate}
  */
 function scheduleRenewZeroSslCertificateFactory(
   getCertificate,
   obtainZeroSSLCertificateTask,
   dockerCompose,
+  configFile,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -19,31 +23,31 @@ function scheduleRenewZeroSslCertificateFactory(
    */
   async function scheduleRenewZeroSslCertificate(config) {
     const certificate = await getCertificate(
-      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey'),
-      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id'),
+      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', false),
+      config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.id', false),
     );
 
     if (!certificate) {
-      // eslint-disable-next-line no-console
-      console.log('No ZeroSSL certificate found.');
-
-      return;
+      throw new Error('Invalid ZeroSSL certificate ID: certificate not found');
     }
 
-    let expiresAt = new Date(certificate.expires);
-    expiresAt.setDate(expiresAt.getDate() - 7);
-
-    if (expiresAt.getTime() < Date.now()) {
+    let expiresAt;
+    if (certificate.isExpiredInDays(EXPIRATION_LIMIT_DAYS)) {
+      // Obtain new certificate right away
       expiresAt = new Date(Date.now() + 3000);
+    } else {
+      // Schedule a new check close to expiration period
+      expiresAt = new Date(certificate.expires);
+      expiresAt.setDate(expiresAt.getDate() - EXPIRATION_LIMIT_DAYS);
     }
 
     const job = new CronJob(
       expiresAt, async () => {
         await obtainZeroSSLCertificateTask(config);
         // restart envoy
-        const serviceInfo = await dockerCompose.inspectService(config.toEnvs(), 'dapi_envoy');
+        const serviceInfo = await dockerCompose.inspectService(generateEnvs(configFile, config), 'dapi_envoy');
 
-        await dockerCompose.execCommand(config.toEnvs(), serviceInfo.Id, 'kill -SIGHUP 1');
+        await dockerCompose.execCommand(generateEnvs(configFile, config), serviceInfo.Id, 'kill -SIGHUP 1');
 
         return job.stop();
       }, async () => {

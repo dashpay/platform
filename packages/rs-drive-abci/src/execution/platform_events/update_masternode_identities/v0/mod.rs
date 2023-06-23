@@ -5,6 +5,8 @@ use crate::rpc::core::CoreRPCLike;
 use crate::platform_types::platform_state::v0::PlatformState;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::extended_block_info::BlockInfo;
@@ -208,7 +210,7 @@ where
         };
 
         let old_masternode = platform_state
-            .full_masternode_list
+            .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCachedState(
@@ -302,7 +304,7 @@ where
         let needs_change_platform_node_id = state_diff.platform_node_id.is_some();
 
         let old_masternode = platform_state
-            .full_masternode_list
+            .full_masternode_list()
             .get(pro_tx_hash)
             .ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCachedState(

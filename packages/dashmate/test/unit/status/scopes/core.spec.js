@@ -5,6 +5,7 @@ const getCoreScopeFactory = require('../../../../src/status/scopes/core');
 const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
 const PortStateEnum = require('../../../../src/status/enums/portState');
+const getConfigMock = require('../../../../src/test/mock/getConfigMock');
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
@@ -22,6 +23,7 @@ describe('getCoreScopeFactory', () => {
     let rpcService;
 
     let config;
+    let configFile;
     let getCoreScope;
 
     beforeEach(async function it() {
@@ -38,7 +40,9 @@ describe('getCoreScopeFactory', () => {
       mockInsightProvider = this.sinon.stub(providers, 'insight');
       mockGetConnectionHost = this.sinon.stub();
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+      configFile = { getProjectId: this.sinon.stub() };
+
+      config = getConfigMock(this.sinon);
 
       config.get.withArgs('network').returns('testnet');
       config.get.withArgs('core.rpc.port').returns('8080');
@@ -49,8 +53,12 @@ describe('getCoreScopeFactory', () => {
       rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
       p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
-      getCoreScope = getCoreScopeFactory(mockDockerCompose,
-        mockCreateRpcClient, mockGetConnectionHost);
+      getCoreScope = getCoreScopeFactory(
+        mockDockerCompose,
+        mockCreateRpcClient,
+        mockGetConnectionHost,
+        configFile,
+      );
     });
 
     it('should just work', async function it() {

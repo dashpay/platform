@@ -4,7 +4,7 @@ use crate::execution::types::execution_result::ExecutionResult::{
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
-use crate::platform_types::platform_state;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
@@ -43,7 +43,7 @@ where
     pub(crate) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-        block_platform_state: &platform_state::v0::PlatformState,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {
