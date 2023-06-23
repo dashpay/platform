@@ -224,15 +224,12 @@ function getPlatformScopeFactory(dockerCompose,
           // eslint-disable-next-line no-console
           console.error('Platform status is not available until masternode state is \'READY\'');
         }
-        return scope;
       }
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.error('Could not get MNSync from core', e);
       }
-
-      return scope;
     }
 
     const [tenderdash, drive] = await Promise.all([
