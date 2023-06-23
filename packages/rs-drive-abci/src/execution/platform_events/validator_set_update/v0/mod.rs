@@ -29,13 +29,19 @@ where
             );
             perform_rotation = true;
         }
-        // we also need to perform a rotation if the validator set is being removed
-        if block_execution_context
+
+        if let Some(current_quorum) = block_execution_context
             .block_platform_state
             .validator_sets
             .get(&platform_state.current_validator_set_quorum_hash)
-            .is_none()
         {
+            // We need to perform a rotation if the quorum health is low
+            if current_quorum.is_low_health() {
+                perform_rotation = true;
+            }
+        }
+        // we also need to perform a rotation if the validator set is being removed
+        else {
             tracing::debug!(
                 method = "validator_set_update_v0",
                 "rotation: new quorums not containing current quorum current {:?}, {}",
@@ -48,8 +54,6 @@ where
             );
             perform_rotation = true;
         }
-
-        //todo: perform a rotation if quorum health is low
 
         if perform_rotation {
             // get the index of the previous quorum
@@ -134,5 +138,13 @@ where
                 Ok(None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    pub fn should_perform_rotation_when_low_health() {
+        todo!()
     }
 }

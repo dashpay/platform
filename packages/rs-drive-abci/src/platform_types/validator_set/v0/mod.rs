@@ -14,6 +14,9 @@ use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
 
+// If 10% of validators are banned, we should rotate the validator set. 10% is an arbitrary number.
+const VALIDATOR_SET_QUORUM_HEALTH_THRESHOLD: f64 = 0.1;
+
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -306,5 +309,16 @@ impl ValidatorSet {
             members: validator_set,
             threshold_public_key,
         })
+    }
+
+    /// Figure out if the validator set is healthy. This is done by checking if the number of banned
+    /// validators is above a certain threshold. If it is, the validator set is considered unhealthy.
+    /// If the validator set is unhealthy, we need to rotate to the next validator set to prevent
+    /// the network from a possible stall
+    pub fn is_low_health(&self) -> bool {
+        let validators_total = self.members.len();
+        let banned_validators_count = self.members.values().filter(|validator| validator.is_banned).count();
+
+        banned_validators_count as f64 / validators_total as f64 > VALIDATOR_SET_QUORUM_HEALTH_THRESHOLD
     }
 }
