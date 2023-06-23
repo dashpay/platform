@@ -1,3 +1,10 @@
+### [0.24.11](https://github.com/dashpay/platform/compare/v0.24.10...v0.24.11) (2023-06-23)
+
+
+### Bug Fixes
+
+* **drive:** cannot read properties of undefined (reading 'toJSON') ([#1196](https://github.com/dashpay/platform/issues/1196))
+
 ### [0.24.10](https://github.com/dashpay/platform/compare/v0.24.9...v0.24.10) (2023-06-23)
 
 
