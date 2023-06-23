@@ -8,7 +8,9 @@ use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
-use crate::platform_types::platform_state::v0::PlatformInitializationState;
+use crate::platform_types::platform_state::v0::{
+    PlatformInitializationState, PlatformStateV0Methods,
+};
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
@@ -47,21 +49,23 @@ where
             transaction,
         )?;
 
-        let validator_set =
-            state_cache
-                .validator_sets
-                .first()
-                .ok_or(ExecutionError::InitializationError(
-                    "we should have at least one quorum",
-                ))?;
-        let quorum_hash = validator_set.0;
-        let validator_set = ValidatorSetUpdate::from(validator_set.1);
+        let (quorum_hash, validator_set) =
+            {
+                let validator_set_inner = state_cache.validator_sets().first().ok_or(
+                    ExecutionError::InitializationError("we should have at least one quorum"),
+                )?;
 
-        state_cache.current_validator_set_quorum_hash = *quorum_hash;
+                (
+                    *validator_set_inner.0,
+                    ValidatorSetUpdate::from(validator_set_inner.1),
+                )
+            };
 
-        state_cache.initialization_information = Some(PlatformInitializationState {
+        state_cache.set_current_validator_set_quorum_hash(quorum_hash);
+
+        state_cache.set_initialization_information(Some(PlatformInitializationState {
             core_initialization_height: core_height,
-        });
+        }));
 
         let app_hash = self
             .drive

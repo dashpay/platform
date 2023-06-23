@@ -13,12 +13,17 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+};
+use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::{block_execution_context, block_state_info};
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epoch::v0::EpochInfo;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -51,6 +56,7 @@ where
     pub(super) fn run_block_proposal_v0(
         &self,
         block_proposal: block_proposal::v0::BlockProposal,
+        epoch_info: EpochInfo,
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
@@ -63,7 +69,6 @@ where
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
-        let _quorum_hash = state.current_validator_set_quorum_hash;
 
         let mut block_platform_state = state.clone();
 
@@ -84,23 +89,13 @@ where
 
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
-            consensus_versions: _,
-            block_hash: _,
-            height,
-            round: _,
             core_chain_locked_height,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
-            block_time_ms,
             raw_state_transitions,
+            ..
         } = block_proposal;
-        // todo: verify that we support the consensus versions
-        // We start by getting the epoch we are in
-        let genesis_time_ms = self.get_genesis_time_v0(height, block_time_ms, transaction)?;
-
-        let epoch_info =
-            EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
 
         let block_info = block_state_info.to_block_info(
             Epoch::new(epoch_info.current_epoch_index)
@@ -129,7 +124,7 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let mut block_execution_context = block_execution_context::v0::BlockExecutionContext {
+        let mut block_execution_context = block_execution_context::v0::BlockExecutionContextV0 {
             block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
@@ -156,28 +151,32 @@ where
             // Set current protocol version to the version from upcoming epoch
             block_execution_context
                 .block_platform_state
-                .current_protocol_version_in_consensus = block_execution_context
-                .block_platform_state
-                .next_epoch_protocol_version;
+                .set_current_protocol_version_in_consensus(
+                    block_execution_context
+                        .block_platform_state
+                        .next_epoch_protocol_version(),
+                );
 
             // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade_v0(
                 block_execution_context.hpmn_count,
                 block_execution_context
                     .block_platform_state
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 transaction,
             )?;
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_execution_context
                     .block_platform_state
-                    .next_epoch_protocol_version = new_protocol_version;
+                    .set_next_epoch_protocol_version(new_protocol_version);
             } else {
                 block_execution_context
                     .block_platform_state
-                    .next_epoch_protocol_version = block_execution_context
-                    .block_platform_state
-                    .current_protocol_version_in_consensus;
+                    .set_next_epoch_protocol_version(
+                        block_execution_context
+                            .block_platform_state
+                            .current_protocol_version_in_consensus(),
+                    );
             }
         }
 
@@ -217,13 +216,15 @@ where
             transaction,
         )?;
 
+        let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
+
         self.pool_withdrawals_into_transactions_queue_v0(&block_execution_context, transaction)?;
 
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
         let _processed_block_fees = self.process_block_fees_v0(
-            &block_execution_context.block_state_info,
+            &block_execution_context.block_state_info(),
             &epoch_info,
             block_fees.into(),
             transaction,
@@ -236,7 +237,7 @@ where
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
-        block_execution_context.block_state_info.app_hash = Some(root_hash);
+        block_execution_context.block_state_info_mut().app_hash = Some(root_hash);
 
         let state = self.state.read().unwrap();
         let validator_set_update =

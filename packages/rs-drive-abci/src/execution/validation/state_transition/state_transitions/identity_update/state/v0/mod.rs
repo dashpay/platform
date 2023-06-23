@@ -20,6 +20,7 @@ use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::v0::validate_identity_public_key_ids_exist_in_state_v0;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub(crate) trait StateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(

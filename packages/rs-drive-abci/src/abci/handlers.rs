@@ -60,9 +60,14 @@ use super::AbciError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use dpp::serialization_traits::PlatformSerializable;
 
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+    BlockExecutionContextV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use crate::platform_types::platform_state::v0;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use serde_json::Map;
 
@@ -112,7 +117,7 @@ where
             );
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
-            *platform_state_write_guard = v0::PlatformState::default_with_protocol_versions(
+            *platform_state_write_guard = PlatformState::default_with_protocol_versions(
                 protocol_version_in_consensus,
                 protocol_version_in_consensus,
             );
@@ -241,7 +246,7 @@ where
         let block_execution_context = block_execution_context_guard
             .as_mut()
             .expect("expected that a block execution context was set");
-        block_execution_context.proposer_results = Some(response.clone());
+        block_execution_context.set_proposer_results(Some(response.clone()));
 
         Ok(response)
     }
@@ -259,15 +264,15 @@ where
         if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
             // We are already in a block
             // This only makes sense if we were the proposer unless we are at a future round
-            if block_execution_context.block_state_info.round != (request.round as u32) {
+            if block_execution_context.block_state_info().round != (request.round as u32) {
                 // We were not the proposer, and we should process something new
                 drop_block_execution_context = true;
             } else if let Some(current_block_hash) =
-                block_execution_context.block_state_info.block_hash
+                block_execution_context.block_state_info().block_hash
             {
                 // There is also the possibility that this block already came in, but tenderdash crashed
                 // Now tenderdash is sending it again
-                if let Some(proposal_info) = block_execution_context.proposer_results.as_ref() {
+                if let Some(proposal_info) = block_execution_context.proposer_results() {
                     // We were the proposer as well, so we have the result in cache
                     return Ok(ResponseProcessProposal {
                         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
@@ -290,13 +295,28 @@ where
                     )))?;
                 }
             } else {
-                let Some(proposal_info) = block_execution_context.proposer_results.as_ref() else {
-                    return Err(Error::Abci(AbciError::BadRequest(
-                        "received a process proposal request twice".to_string(),
-                    )))?;
+                let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
+                    let Some(proposal_info) = block_execution_context.proposer_results() else {
+                        return Err(Error::Abci(AbciError::BadRequest(
+                            "received a process proposal request twice".to_string(),
+                        )))?;
+                    };
+
+                    // Cloning all required properties from proposal_info and then dropping it
+                    let app_hash = proposal_info.app_hash.clone();
+                    let tx_results = proposal_info.tx_results.clone();
+                    let consensus_param_updates = proposal_info.consensus_param_updates.clone();
+                    let validator_set_update = proposal_info.validator_set_update.clone();
+                    (
+                        app_hash,
+                        tx_results,
+                        consensus_param_updates,
+                        validator_set_update,
+                    )
                 };
+
                 // We need to set the block hash
-                block_execution_context.block_state_info.block_hash =
+                block_execution_context.block_state_info_mut().block_hash =
                     Some(request.hash.clone().try_into().map_err(|_| {
                         Error::Abci(AbciError::BadRequestDataSize(
                             "block hash is not 32 bytes in process proposal".to_string(),
@@ -304,10 +324,10 @@ where
                     })?);
                 return Ok(ResponseProcessProposal {
                     status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-                    app_hash: proposal_info.app_hash.clone(),
-                    tx_results: proposal_info.tx_results.clone(),
-                    consensus_param_updates: proposal_info.consensus_param_updates.clone(),
-                    validator_set_update: proposal_info.validator_set_update.clone(),
+                    app_hash,
+                    tx_results,
+                    consensus_param_updates,
+                    validator_set_update,
                 });
             }
         }
@@ -389,7 +409,7 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
-        let block_state_info = &block_execution_context.block_state_info;
+        let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
             height as u64,
@@ -405,7 +425,7 @@ where
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
-                .withdrawal_transactions
+                .withdrawal_transactions()
                 .keys()
                 .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
@@ -441,7 +461,7 @@ where
                     "block execution context must be set in block begin handler for verify vote extension",
                 )))?;
 
-        let block_state_info = &block_execution_context.block_state_info;
+        let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
             height as u64,
@@ -458,7 +478,7 @@ where
 
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
-            .withdrawal_transactions
+            .withdrawal_transactions()
             .keys()
             .map(|tx_id| ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,

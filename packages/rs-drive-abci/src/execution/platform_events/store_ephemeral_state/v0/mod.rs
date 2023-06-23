@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::platform_types::platform_state::v0::PlatformState;
+use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization_traits::PlatformSerializable;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;

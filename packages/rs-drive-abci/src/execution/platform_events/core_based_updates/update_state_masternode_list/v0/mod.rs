@@ -1,7 +1,9 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::{platform_state, validator_set};
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::validator_set;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff, MasternodeType};
@@ -77,7 +79,7 @@ where
 
     pub(in crate::execution) fn update_state_masternode_list_v0(
         &self,
-        state: &mut platform_state::v0::PlatformState,
+        state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome, Error>
@@ -115,21 +117,25 @@ where
         });
 
         if start_from_scratch {
-            state.hpmn_masternode_list.clear();
-            state.full_masternode_list.clear();
+            state.hpmn_masternode_list_mut().clear();
+            state.full_masternode_list_mut().clear();
         }
 
-        state.hpmn_masternode_list.extend(added_hpmns.clone());
+        state.hpmn_masternode_list_mut().extend(added_hpmns.clone());
 
         let added_masternodes = added_mns
             .iter()
             .map(|masternode| (masternode.pro_tx_hash, masternode.clone()));
 
-        state.full_masternode_list.extend(added_masternodes);
+        state.full_masternode_list_mut().extend(added_masternodes);
 
         updated_mns.iter().for_each(|(pro_tx_hash, state_diff)| {
-            if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
-                if let Some(hpmn_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash) {
+            if let Some(masternode_list_item) =
+                state.full_masternode_list_mut().get_mut(pro_tx_hash)
+            {
+                masternode_list_item.state.apply_diff(state_diff.clone());
+                if let Some(hpmn_list_item) = state.hpmn_masternode_list_mut().get_mut(pro_tx_hash)
+                {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
                     // these 3 fields are the only fields that are useful for validators. If they change we need to update
                     // validator sets
@@ -141,27 +147,26 @@ where
                         Self::update_masternode_in_validator_sets(
                             pro_tx_hash,
                             state_diff,
-                            &mut state.validator_sets,
+                            state.validator_sets_mut(),
                         );
                     }
                 }
-                masternode_list_item.state.apply_diff(state_diff.clone());
             }
         });
 
         removed_mns.iter().for_each(|pro_tx_hash| {
-            Self::remove_masternode_in_validator_sets(pro_tx_hash, &mut state.validator_sets);
+            Self::remove_masternode_in_validator_sets(pro_tx_hash, state.validator_sets_mut());
         });
 
         let deleted_masternodes = removed_mns.iter().copied().collect::<BTreeSet<ProTxHash>>();
 
         state
-            .hpmn_masternode_list
+            .hpmn_masternode_list_mut()
             .retain(|key, _| !deleted_masternodes.contains(key));
         let mut removed_masternodes = BTreeMap::new();
 
         for key in deleted_masternodes {
-            if let Some(value) = state.full_masternode_list.remove(&key) {
+            if let Some(value) = state.full_masternode_list_mut().remove(&key) {
                 removed_masternodes.insert(key, value);
             }
         }

@@ -42,6 +42,7 @@ use dpp::{
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub(crate) fn validate_document_batch_transition_state(
     bypass_validation: bool,

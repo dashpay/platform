@@ -1,8 +1,9 @@
-use crate::platform_types::platform_state::v0::PlatformState;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
 
+use crate::platform_types::platform_state::PlatformState;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +35,7 @@ impl Validator {
         public_key: Option<BlsPublicKey>,
         state: &PlatformState,
     ) -> Option<Self> {
-        let MasternodeListItem { state, .. } = state.hpmn_masternode_list.get(&pro_tx_hash)?;
+        let MasternodeListItem { state, .. } = state.hpmn_masternode_list().get(&pro_tx_hash)?;
 
         let DMNState {
             service,

@@ -4,6 +4,7 @@ use crate::execution::validation::data_trigger::dashpay_data_triggers::property_
 use crate::execution::validation::data_trigger::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;

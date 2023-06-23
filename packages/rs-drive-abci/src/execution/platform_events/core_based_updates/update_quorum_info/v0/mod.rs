@@ -1,7 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set;
 use crate::rpc::core::CoreRPCLike;
 use std::cmp::Ordering;
@@ -23,7 +24,7 @@ where
     ///   on success, or an `Error` on failure.
     pub(in crate::execution::platform_events::core_based_updates) fn update_quorum_info_v0(
         &self,
-        block_platform_state: &mut platform_state::v0::PlatformState,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<(), Error> {
@@ -56,7 +57,7 @@ where
         tracing::debug!(
             method = "update_quorum_info_v0",
             "old {:?}",
-            block_platform_state.validator_sets
+            block_platform_state.validator_sets()
         );
 
         tracing::debug!(
@@ -67,7 +68,7 @@ where
 
         // Remove validator_sets entries that are no longer valid for the core block height
         block_platform_state
-            .validator_sets
+            .validator_sets_mut()
             .retain(|key, _| quorum_info.contains_key(key));
 
         // Fetch quorum info results and their keys from the RPC
@@ -75,7 +76,7 @@ where
             .iter()
             .filter(|(key, _)| {
                 !block_platform_state
-                    .validator_sets
+                    .validator_sets()
                     .contains_key(key.as_ref())
             })
             .map(|(key, _)| {
@@ -109,11 +110,11 @@ where
             .collect::<Result<Vec<_>, Error>>()?;
         // Add new validator_sets entries
         block_platform_state
-            .validator_sets
+            .validator_sets_mut()
             .extend(new_quorums.into_iter());
 
         block_platform_state
-            .validator_sets
+            .validator_sets_mut()
             .sort_by(|_, quorum_a, _, quorum_b| {
                 let primary_comparison = quorum_b.core_height.cmp(&quorum_a.core_height);
                 if primary_comparison == Ordering::Equal {
@@ -129,10 +130,10 @@ where
         tracing::debug!(
             method = "update_quorum_info_v0",
             "new {:?}",
-            block_platform_state.validator_sets
+            block_platform_state.validator_sets()
         );
 
-        block_platform_state.quorums_extended_info = quorum_list.quorums_by_type;
+        block_platform_state.set_quorums_extended_info(quorum_list.quorums_by_type);
         Ok(())
     }
 }

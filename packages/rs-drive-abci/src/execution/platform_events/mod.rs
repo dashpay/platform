@@ -10,6 +10,7 @@ pub(in crate::execution) mod create_genesis_state;
 pub(in crate::execution) mod fee_pool_inwards_distribution;
 /// Fee pool outwards distribution towards proposers
 pub(in crate::execution) mod fee_pool_outwards_distribution;
+mod gather_epoch_info;
 /// Getting the genesis time from drive
 pub(in crate::execution) mod get_genesis_time;
 /// Functions related to IdentityCreditWithdrawalTransaction

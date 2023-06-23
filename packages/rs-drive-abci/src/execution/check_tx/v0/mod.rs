@@ -5,6 +5,7 @@ use crate::execution::types::execution_result::ExecutionResult;
 use crate::execution::types::execution_result::ExecutionResult::ConsensusExecutionError;
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
@@ -83,7 +84,7 @@ where
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
-        if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
+        if let Some(block_info) = state_read_guard.last_committed_block_info().as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
                 self.validate_fees_of_event_v0(execution_event, &block_info.basic_info, None)

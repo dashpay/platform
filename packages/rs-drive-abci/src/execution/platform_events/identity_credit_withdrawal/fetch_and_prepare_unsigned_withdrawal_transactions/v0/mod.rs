@@ -32,7 +32,7 @@ where
     pub fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        block_execution_context: &block_execution_context::v0::BlockExecutionContext,
+        block_execution_context: &block_execution_context::v0::BlockExecutionContextV0,
         transaction: &Transaction,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let block_info = BlockInfo {

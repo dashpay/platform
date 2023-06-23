@@ -24,7 +24,7 @@ where
     pub fn update_broadcasted_withdrawal_transaction_statuses_v0(
         &self,
         last_synced_core_height: u32,
-        block_execution_context: &block_execution_context::v0::BlockExecutionContext,
+        block_execution_context: &block_execution_context::v0::BlockExecutionContextV0,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
@@ -171,10 +171,10 @@ mod tests {
 
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
 
-    use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_state_info::v0::BlockStateInfo;
     use crate::platform_types::epoch::v0::EpochInfo;
-    use crate::platform_types::platform_state::v0::PlatformState;
+    use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::core_script::CoreScript;
@@ -240,7 +240,7 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        let block_execution_context = BlockExecutionContext {
+        let block_execution_context = BlockExecutionContextV0 {
             block_state_info: BlockStateInfo {
                 height: 1,
                 round: 0,
@@ -261,7 +261,7 @@ mod tests {
             },
             hpmn_count: 100,
             withdrawal_transactions: Default::default(),
-            block_platform_state: PlatformState {
+            block_platform_state: PlatformStateV0 {
                 last_committed_block_info: None,
                 current_protocol_version_in_consensus: 0,
                 next_epoch_protocol_version: 0,
