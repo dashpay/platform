@@ -67,6 +67,7 @@ class ConfigFileJsonRepository {
     return new ConfigFile(
       configs,
       packageJson.version,
+      migratedConfigFileData.projectId,
       migratedConfigFileData.defaultConfigName,
       migratedConfigFileData.defaultGroupName,
     );

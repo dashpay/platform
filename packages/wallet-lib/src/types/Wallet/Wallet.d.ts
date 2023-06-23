@@ -15,7 +15,6 @@ export declare class Wallet {
     walletId: string;
     accounts: [undefined];
     storage: Storage;
-    store: Storage.store;
 
     constructor(opts:Wallet.IWalletOptions)
 
@@ -52,6 +51,10 @@ declare interface DAPIClientOptions {
     baseBanTime?: number;
 }
 
+declare interface StorageOptions {
+    purgeOnError?: boolean,
+    autoSave?: boolean
+}
 
 export declare namespace Wallet {
     interface IWalletOptions {
@@ -73,6 +76,8 @@ export declare namespace Wallet {
         unsafeOptions?: IWalletUnsafeOptions;
         waitForInstantLockTimeout?: number;
         waitForTxMetadataTimeout?: number;
+        adapter?: any;
+        storage?: StorageOptions;
     }
 
     interface IWalletUnsafeOptions {
