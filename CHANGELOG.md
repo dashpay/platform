@@ -1,3 +1,10 @@
+### [0.24.10](https://github.com/dashpay/platform/compare/v0.24.9...v0.24.10) (2023-06-23)
+
+
+### Miscellaneous Chores
+
+* **drive:** disable masternode identities update logic ([#1192](https://github.com/dashpay/platform/issues/1192))
+
 ### [0.24.9](https://github.com/dashpay/platform/compare/v0.24.8...v0.24.9) (2023-06-22)
 
 
