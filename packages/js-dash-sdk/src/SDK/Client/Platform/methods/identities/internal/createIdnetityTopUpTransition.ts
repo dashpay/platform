@@ -25,7 +25,6 @@ export async function createIdentityTopUpTransition(
 
   const { dpp } = platform;
 
-  // @ts-ignore
   const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
     identityId, assetLockProof,
   );

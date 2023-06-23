@@ -1,5 +1,5 @@
-// @ts-ignore
 import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
+import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
@@ -231,7 +231,16 @@ export class Platform {
     }
   }
 
-  static async initializeDppModule() {
+  // Explicitly provide DPPModule as return type.
+  // If we don't do it, typescript behaves weird and in compiled Platform.d.ts
+  // this code looks like this.
+  //
+  // ```
+  // static initializeDppModule(): Promise<typeof import("@dashevo/wasm-dppdist/dpp")>;
+  // ```
+  //
+  // Slash is missing before `dist` and TS compilation in consumers is breaking
+  static async initializeDppModule(): Promise<DPPModule> {
     return loadWasmDpp();
   }
 }

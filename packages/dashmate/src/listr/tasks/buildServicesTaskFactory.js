@@ -1,12 +1,15 @@
 const { Listr } = require('listr2');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  *
  * @param {DockerCompose} dockerCompose
+ * @param {ConfigFile} configFile
  * @return {buildServicesTask}
  */
 function buildServicesTaskFactory(
   dockerCompose,
+  configFile,
 ) {
   /**
    * @typedef {buildServicesTask}
@@ -20,7 +23,7 @@ function buildServicesTaskFactory(
         // prebuild dependencies
 
         const envs = {
-          ...config.toEnvs(),
+          ...generateEnvs(configFile, config),
           COMPOSE_FILE: 'docker-compose.platform.deps.yml',
         };
 

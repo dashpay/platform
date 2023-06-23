@@ -2,10 +2,7 @@
   "compilerOptions": {
     "target": "es5",
     "module": "commonjs",
-    "lib": [
-      "es6"
-    ],
-    "outDir": "./build",
+    "lib": ["es6", "dom"],
     "rootDir": ".",
     "skipLibCheck": true,
     "strict": true,
@@ -14,9 +11,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "allowJs": true,
-    "sourceMap": true,
-    "declaration": true,
-    "declarationDir": "./dist"
   },
   "include": [
     "src/**/*"

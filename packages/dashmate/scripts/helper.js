@@ -35,8 +35,9 @@ const createDIContainer = require('../src/createDIContainer');
   });
 
   const provider = config.get('platform.dapi.envoy.ssl.provider');
+  const isEnabled = config.get('platform.dapi.envoy.ssl.enabled');
 
-  if (provider === 'zerossl') {
+  if (isEnabled && provider === 'zerossl') {
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
     await scheduleRenewZeroSslCertificate(config);
   } else {
