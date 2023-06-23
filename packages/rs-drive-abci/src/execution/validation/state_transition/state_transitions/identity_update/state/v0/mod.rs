@@ -14,8 +14,8 @@ use dpp::identity::state_transition::identity_update_transition::IdentityUpdateT
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
-use dpp::ProtocolError;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
+use dpp::ProtocolError;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;

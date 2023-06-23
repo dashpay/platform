@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::BlockInfo;
 
 use drive::dpp::contracts::withdrawals_contract;
 

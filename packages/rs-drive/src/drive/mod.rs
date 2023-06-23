@@ -132,9 +132,9 @@ use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::query::GroveError;
 #[cfg(feature = "full")]
-use dpp::block::extended_block_info::BlockInfo;
-#[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
+#[cfg(feature = "full")]
+use dpp::block::extended_block_info::BlockInfo;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]

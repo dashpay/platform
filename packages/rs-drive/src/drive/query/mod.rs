@@ -48,8 +48,8 @@ use dpp::document::Document;
 
 use dpp::ProtocolError;
 
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::BlockInfo;
 
 #[derive(Debug, Default)]
 /// The outcome of a query

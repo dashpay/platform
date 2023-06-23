@@ -13,8 +13,6 @@ pub(crate) trait StateTransitionStructureValidationV0 {
 
 impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-
-
         //todo: re-enable version validation
         // // Validate protocol version
         // let protocol_version_validator = ProtocolVersionValidator::default();

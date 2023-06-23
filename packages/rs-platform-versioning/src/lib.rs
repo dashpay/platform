@@ -197,10 +197,11 @@ fn parse_path(attrs: &[Attribute]) -> proc_macro2::TokenStream {
             match attr.parse_meta() {
                 Ok(Meta::NameValue(nv)) => {
                     if let Lit::Str(lit) = nv.lit {
-                        let path: proc_macro2::TokenStream = lit.parse().expect("Failed to parse path");
+                        let path: proc_macro2::TokenStream =
+                            lit.parse().expect("Failed to parse path");
                         return path;
                     }
-                },
+                }
                 _ => panic!("expected platform_version_path attribute to be a string"),
             }
         }
@@ -221,7 +222,10 @@ fn generate_version_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStr
         .collect()
 }
 
-fn generate_verify_arms(variant_idents: &[&Ident], path: &proc_macro2::TokenStream) -> Vec<proc_macro2::TokenStream> {
+fn generate_verify_arms(
+    variant_idents: &[&Ident],
+    path: &proc_macro2::TokenStream,
+) -> Vec<proc_macro2::TokenStream> {
     variant_idents
         .iter()
         .map(|ident| {

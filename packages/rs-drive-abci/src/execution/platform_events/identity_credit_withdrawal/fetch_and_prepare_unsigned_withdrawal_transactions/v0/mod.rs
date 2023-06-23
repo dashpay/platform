@@ -4,8 +4,8 @@ use dashcore_rpc::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
     hashes::Hash, QuorumHash,
 };
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::document::Document;
 
 use drive::dpp::contracts::withdrawals_contract;

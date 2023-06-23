@@ -15,8 +15,8 @@ use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
     MasternodeListItem, QuorumInfoResult, QuorumType,
 };
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::BlockInfo;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;

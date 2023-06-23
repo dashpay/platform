@@ -35,8 +35,8 @@
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey};
 use grovedb::TransactionArg;
