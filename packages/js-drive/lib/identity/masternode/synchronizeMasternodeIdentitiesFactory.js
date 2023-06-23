@@ -1,7 +1,4 @@
-const Address = require('@dashevo/dashcore-lib/lib/address');
-const Script = require('@dashevo/dashcore-lib/lib/script');
 const { Identifier } = require('@dashevo/wasm-dpp');
-const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
  *
