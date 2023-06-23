@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.7",
+  "version": "0.24.11",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -49,7 +49,7 @@
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
-    "@dashevo/dashcore-lib": "~0.20.8",
+    "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/docker-compose": "^0.24.2",
@@ -87,7 +87,7 @@
     "public-ip": "^4.0.4",
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
-    "semver": "^7.3.2",
+    "semver": "^7.5.3",
     "table": "^5.4.6",
     "wrap-ansi": "^7.0.0"
   },
