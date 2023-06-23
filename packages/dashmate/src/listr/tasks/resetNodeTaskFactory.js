@@ -1,5 +1,9 @@
 const { Listr } = require('listr2');
+const fs = require('node:fs');
+const path = require('node:path');
 const wait = require('../../util/wait');
+const generateEnvs = require('../../util/generateEnvs');
+const { HOME_DIR_PATH } = require('../../constants');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -35,7 +39,7 @@ function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async () => {
-          if (await dockerCompose.isServiceRunning(config.toEnvs())) {
+          if (await dockerCompose.isServiceRunning(generateEnvs(configFile, config))) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -43,14 +47,14 @@ function resetNodeTaskFactory(
       {
         title: 'Remove all services and associated data',
         enabled: (ctx) => !ctx.isPlatformOnlyReset,
-        task: async () => dockerCompose.down(config.toEnvs()),
+        task: async () => dockerCompose.down(generateEnvs(configFile, config)),
       },
       {
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
           const nonPlatformServices = ['core', 'sentinel'];
-          const envs = config.toEnvs();
+          const envs = generateEnvs(configFile, config);
 
           // Remove containers
           const serviceNames = (await dockerCompose
@@ -61,13 +65,13 @@ function resetNodeTaskFactory(
             ))
             .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 
-          await dockerCompose.rm(config.toEnvs(), serviceNames);
+          await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
 
           // Remove volumes
           const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
-            config.toEnvs({ platformOnly: true }),
+            generateEnvs(configFile, config, { platformOnly: true }),
           );
 
           await Promise.all(
@@ -88,7 +92,7 @@ function resetNodeTaskFactory(
                       await wait(1000);
 
                       // Remove containers
-                      await dockerCompose.rm(config.toEnvs(), serviceNames);
+                      await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
 
                       isRetry = true;
 
@@ -133,6 +137,24 @@ function resetNodeTaskFactory(
             // Delete config if no base config
             configFile.removeConfig(config.getName());
           }
+
+          // Remove service configs
+          let serviceConfigsPath = path.join(HOME_DIR_PATH, baseConfigName);
+
+          if (ctx.isPlatformOnlyReset) {
+            serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
+          }
+
+          fs.rmSync(serviceConfigsPath, {
+            recursive: true,
+            force: true,
+          });
+
+          // Remove SSL files
+          fs.rmSync(path.join(HOME_DIR_PATH, 'ssl', baseConfigName), {
+            recursive: true,
+            force: true,
+          });
         },
       },
     ]);
