@@ -36,7 +36,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-use crate::platform_types::epochInfo::EpochInfo;
+
 use dpp::block::epoch::Epoch;
 use dpp::ProtocolError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;

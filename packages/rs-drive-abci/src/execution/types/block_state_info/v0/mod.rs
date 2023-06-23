@@ -35,7 +35,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 
 /// Block info
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockStateInfoV0 {
     /// Block height
     pub height: u64,

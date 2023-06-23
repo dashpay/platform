@@ -42,14 +42,14 @@ use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Getters};
+use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::block_state_info::v0::{
-    BlockStateInfoV0, BlockStateInfoV0Getters, BlockStateInfoV0Methods,
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
 };
 use crate::execution::types::block_state_info::BlockStateInfo;
-use crate::execution::types::{block_fees, block_state_info, processed_block_fees_outcome};
-use crate::platform_types::epochInfo::v0::{EpochInfoV0, EpochInfoV0Getters};
+use crate::execution::types::processed_block_fees_outcome;
+use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::platform_types::epochInfo::EpochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
@@ -212,7 +212,7 @@ mod tests {
         use super::*;
         use crate::execution::types::block_fees::v0::BlockFeesV0;
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-        use crate::platform_types::epochInfo::v0::EPOCH_CHANGE_TIME_MS_V0;
+        use crate::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
         /// Process and validate block fees
@@ -255,7 +255,7 @@ mod tests {
 
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_v0(
-                    &block_info.into(),
+                    &block_info.clone().into(),
                     &epoch_info,
                     block_fees.clone(),
                     transaction,

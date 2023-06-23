@@ -110,6 +110,7 @@ mod tests {
     use super::*;
 
     mod find_oldest_epoch_needing_payment {
+        use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;

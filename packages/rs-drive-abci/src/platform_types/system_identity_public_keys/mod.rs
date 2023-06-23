@@ -1,4 +1,3 @@
-use crate::abci::config::Keys;
 use crate::platform_types::required_identity_public_key_set::v0::RequiredIdentityPublicKeysSet;
 use crate::platform_types::system_identity_public_keys::v0::{
     SystemIdentityPublicKeysV0, SystemIdentityPublicKeysV0Getters,

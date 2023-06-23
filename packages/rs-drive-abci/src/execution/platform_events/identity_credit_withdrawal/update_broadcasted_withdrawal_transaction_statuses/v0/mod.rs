@@ -7,7 +7,6 @@ use drive::dpp::contracts::withdrawals_contract;
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
 
-use crate::execution::types::block_execution_context;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;

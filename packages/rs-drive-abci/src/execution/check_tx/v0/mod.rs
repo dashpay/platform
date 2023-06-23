@@ -101,6 +101,7 @@ where
 mod tests {
     use crate::config::PlatformConfig;
     use crate::execution::types::execution_result::ExecutionResult::SuccessfulPaidExecution;
+    use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
@@ -219,8 +220,11 @@ mod tests {
 
         let genesis_time = 0;
 
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
         platform
-            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -254,8 +258,11 @@ mod tests {
 
         let genesis_time = 0;
 
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
         platform
-            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -294,8 +301,11 @@ mod tests {
 
         let genesis_time = 0;
 
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
         platform
-            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -318,8 +328,11 @@ mod tests {
 
         let genesis_time = 0;
 
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
         platform
-            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -369,8 +382,11 @@ mod tests {
 
         let genesis_time = 0;
 
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
         platform
-            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -448,8 +464,11 @@ mod tests {
 
         let genesis_time = 0;
 
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
         platform
-            .create_genesis_state_v0(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
             .expect("expected to create genesis state");
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);

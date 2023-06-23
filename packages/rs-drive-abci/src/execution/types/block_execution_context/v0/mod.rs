@@ -27,9 +27,8 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::execution::types::block_state_info;
 use crate::execution::types::block_state_info::BlockStateInfo;
-use crate::platform_types::epochInfo;
+
 use crate::platform_types::epochInfo::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use dashcore_rpc::dashcore::Txid;

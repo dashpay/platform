@@ -37,10 +37,7 @@ use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
-use crate::platform_types::system_identity_public_keys;
-use crate::platform_types::system_identity_public_keys::v0::{
-    SystemIdentityPublicKeysV0, SystemIdentityPublicKeysV0Getters,
-};
+use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;

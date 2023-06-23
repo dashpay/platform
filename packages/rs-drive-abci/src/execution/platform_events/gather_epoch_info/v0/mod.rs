@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::block_state_info;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
+
 use crate::platform_types::block_proposal;
 use crate::platform_types::epochInfo::v0::EpochInfoV0;
 use crate::platform_types::platform::Platform;

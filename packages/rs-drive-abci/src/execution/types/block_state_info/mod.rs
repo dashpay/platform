@@ -3,9 +3,9 @@ pub mod v0;
 
 use crate::error::Error;
 use crate::execution::types::block_state_info::v0::{
-    BlockStateInfoV0, BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
 };
-use crate::platform_types::block_proposal::v0::BlockProposal;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
