@@ -3,7 +3,6 @@
     "target": "es5",
     "module": "commonjs",
     "lib": ["es6", "dom"],
-    "rootDir": ".",
     "skipLibCheck": true,
     "strict": true,
     "allowUmdGlobalAccess": true,
