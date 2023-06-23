@@ -40,13 +40,18 @@ use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;
 
 use crate::error::Error;
-use crate::execution::types::block_state_info::v0::BlockStateInfo;
+use crate::execution::types::block_state_info::v0::{BlockStateInfoV0, BlockStateInfoV0Getters};
 use crate::execution::types::{block_fees, storage_fee_distribution_outcome};
-use crate::platform_types::epoch;
+use crate::platform_types::epochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
+use crate::execution::types::block_fees::BlockFees;
+use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Getters};
+use crate::execution::types::block_state_info::BlockStateInfo;
+use crate::platform_types::epochInfo::EpochInfo;
+use crate::platform_types::epochInfo::v0::{EpochInfoV0, EpochInfoV0Getters};
 
 /// From the Dash Improvement Proposal:
 
@@ -70,8 +75,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     pub(in crate::execution::platform_events::block_fee_processing) fn add_process_epoch_change_operations_v0(
         &self,
         block_info: &BlockStateInfo,
-        epoch_info: &epoch::v0::EpochInfo,
-        block_fees: &block_fees::v0::BlockFees,
+        epoch_info: &EpochInfo,
+        block_fees: &BlockFees,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
     ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>
@@ -80,22 +85,22 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         // init next thousandth empty epochs since last initiated
         let last_initiated_epoch_index = epoch_info
-            .previous_epoch_index
+            .previous_epoch_index()
             .map_or(GENESIS_EPOCH_INDEX, |i| i + 1);
 
-        for epoch_index in last_initiated_epoch_index..=epoch_info.current_epoch_index {
+        for epoch_index in last_initiated_epoch_index..=epoch_info.current_epoch_index() {
             let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS)?;
             next_thousandth_epoch.add_init_empty_without_storage_operations(&mut inner_batch);
         }
 
         // init current epoch pool for processing
-        let current_epoch = Epoch::new(epoch_info.current_epoch_index)?;
+        let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
         current_epoch.add_init_current_operations(
             DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
-            block_info.height,
-            block_info.core_chain_locked_height,
-            block_info.block_time_ms,
+            block_info.height(),
+            block_info.core_chain_locked_height(),
+            block_info.block_time_ms(),
             &mut inner_batch,
         );
 
@@ -116,7 +121,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         self.drive
             .add_delete_pending_epoch_refunds_except_specified_operations(
                 &mut inner_batch,
-                &block_fees.refunds_per_epoch,
+                &block_fees.refunds_per_epoch(),
                 Some(transaction),
             )?;
 
@@ -137,8 +142,8 @@ mod tests {
 
     mod helpers {
         use super::*;
-        use crate::execution::types::block_fees::v0::BlockFees;
-        use crate::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
+        use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Methods};
+        use crate::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
         use dpp::block::block_info::BlockInfo;
         use drive::fee::epoch::CreditsPerEpoch;
 
@@ -152,12 +157,12 @@ mod tests {
             previous_block_time_ms: Option<u64>,
             should_distribute: bool,
             transaction: &Transaction,
-        ) -> BlockStateInfo {
+        ) -> BlockStateInfoV0 {
             let current_epoch = Epoch::new(epoch_index).expect("expected valid epoch index");
 
             // Add some storage fees to distribute next time
             if should_distribute {
-                let block_fees = BlockFees::from_fees(1000000000, 1000);
+                let block_fees = BlockFeesV0::from_fees(1000000000, 1000).into();
 
                 let mut batch = vec![];
 
@@ -184,7 +189,7 @@ mod tests {
 
             let block_time_ms = genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0;
 
-            let block_info = BlockStateInfo {
+            let block_info = BlockStateInfoV0 {
                 height: block_height,
                 round: 0,
                 block_time_ms,
@@ -196,20 +201,20 @@ mod tests {
             };
 
             let epoch_info =
-                EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
-                    .expect("should calculate epoch info");
+                EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
+                    .expect("should calculate epoch info").into();
 
-            let block_fees = BlockFees {
+            let block_fees = BlockFeesV0 {
                 storage_fee: 1000000000,
                 processing_fee: 10000,
                 refunds_per_epoch: CreditsPerEpoch::from_iter([(0, 10000)]),
-            };
+            }.into();
 
             let mut batch = vec![];
 
             let storage_fee_distribution_outcome = platform
                 .add_process_epoch_change_operations_v0(
-                    &block_info,
+                    &block_info.into(),
                     &epoch_info,
                     &block_fees,
                     transaction,

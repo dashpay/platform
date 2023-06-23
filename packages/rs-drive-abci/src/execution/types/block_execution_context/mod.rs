@@ -6,13 +6,13 @@ use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0OwnedGetters, BlockExecutionContextV0Setters,
 };
-use crate::execution::types::block_state_info::v0::BlockStateInfo;
-use crate::platform_types::epoch::v0::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use derive_more::From;
 use dpp::dashcore::Txid;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
+use crate::execution::types::block_state_info::BlockStateInfo;
+use crate::platform_types::epochInfo::EpochInfo;
 
 /// The versioned block execution context
 #[derive(Debug, From)]

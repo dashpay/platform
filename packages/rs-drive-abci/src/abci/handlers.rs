@@ -70,6 +70,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use serde_json::Map;
+use crate::execution::types::block_state_info::v0::{BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters};
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -264,11 +265,11 @@ where
         if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
             // We are already in a block
             // This only makes sense if we were the proposer unless we are at a future round
-            if block_execution_context.block_state_info().round != (request.round as u32) {
+            if block_execution_context.block_state_info().round() != (request.round as u32) {
                 // We were not the proposer, and we should process something new
                 drop_block_execution_context = true;
             } else if let Some(current_block_hash) =
-                block_execution_context.block_state_info().block_hash
+                block_execution_context.block_state_info().block_hash()
             {
                 // There is also the possibility that this block already came in, but tenderdash crashed
                 // Now tenderdash is sending it again
@@ -316,12 +317,12 @@ where
                 };
 
                 // We need to set the block hash
-                block_execution_context.block_state_info_mut().block_hash =
+                block_execution_context.block_state_info_mut().set_block_hash(
                     Some(request.hash.clone().try_into().map_err(|_| {
                         Error::Abci(AbciError::BadRequestDataSize(
                             "block hash is not 32 bytes in process proposal".to_string(),
                         ))
-                    })?);
+                    })?));
                 return Ok(ResponseProcessProposal {
                     status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                     app_hash,
@@ -419,7 +420,7 @@ where
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into())
         } else {
@@ -471,7 +472,7 @@ where
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round,block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into());
         }

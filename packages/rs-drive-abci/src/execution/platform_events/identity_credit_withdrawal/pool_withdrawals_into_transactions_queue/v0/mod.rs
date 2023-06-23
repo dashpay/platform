@@ -16,6 +16,8 @@ use crate::{
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 
 impl<C> Platform<C>
 where
@@ -28,12 +30,12 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_state_info().block_time_ms,
-            height: block_execution_context.block_state_info().height,
+            time_ms: block_execution_context.block_state_info().block_time_ms(),
+            height: block_execution_context.block_state_info().height(),
             core_height: block_execution_context
                 .block_state_info()
-                .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index)?,
+                .core_chain_locked_height(),
+            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
@@ -142,8 +144,8 @@ mod tests {
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
-    use crate::execution::types::block_state_info::v0::BlockStateInfo;
-    use crate::platform_types::epoch::v0::EpochInfo;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::platform_types::epochInfo::v0::EpochInfoV0;
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
@@ -161,7 +163,7 @@ mod tests {
 
         platform.block_execution_context.write().unwrap().replace(
             BlockExecutionContextV0 {
-                block_state_info: BlockStateInfo {
+                block_state_info: BlockStateInfoV0 {
                     height: 1,
                     round: 0,
                     block_time_ms: 1,
@@ -173,12 +175,12 @@ mod tests {
                     core_chain_locked_height: 96,
                     block_hash: None,
                     app_hash: None,
-                },
-                epoch_info: EpochInfo {
+                }.into(),
+                epoch_info: EpochInfoV0 {
                     current_epoch_index: 1,
                     previous_epoch_index: None,
                     is_epoch_change: false,
-                },
+                }.into(),
                 hpmn_count: 100,
                 withdrawal_transactions: Default::default(),
                 block_platform_state: PlatformStateV0 {

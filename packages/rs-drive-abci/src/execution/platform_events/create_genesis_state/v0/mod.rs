@@ -49,6 +49,8 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, Owne
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
+use crate::platform_types::system_identity_public_keys::v0::{SystemIdentityPublicKeysV0, SystemIdentityPublicKeysV0Getters};
 
 const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
@@ -64,7 +66,7 @@ impl<C> Platform<C> {
     pub fn create_genesis_state_v0(
         &self,
         genesis_time: TimestampMillis,
-        system_identity_public_keys: system_identity_public_keys::v0::SystemIdentityPublicKeys,
+        system_identity_public_keys: SystemIdentityPublicKeys,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
         self.drive
@@ -82,35 +84,35 @@ impl<C> Platform<C> {
                 SystemDataContract::DPNS,
                 (
                     dpns_contract.clone(),
-                    system_identity_public_keys.dpns_contract_owner,
+                    system_identity_public_keys.dpns_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Withdrawals,
                 (
                     load_system_data_contract(SystemDataContract::Withdrawals)?,
-                    system_identity_public_keys.withdrawals_contract_owner,
+                    system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::FeatureFlags,
                 (
                     load_system_data_contract(SystemDataContract::FeatureFlags)?,
-                    system_identity_public_keys.feature_flags_contract_owner,
+                    system_identity_public_keys.feature_flags_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Dashpay,
                 (
                     load_system_data_contract(SystemDataContract::Dashpay)?,
-                    system_identity_public_keys.dashpay_contract_owner,
+                    system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
                     load_system_data_contract(SystemDataContract::MasternodeRewards)?,
-                    system_identity_public_keys.masternode_reward_shares_contract_owner,
+                    system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
         ]);
@@ -125,7 +127,7 @@ impl<C> Platform<C> {
                         security_level: SecurityLevel::MASTER,
                         key_type: KeyType::ECDSA_SECP256K1,
                         read_only: false,
-                        data: identity_public_keys_set.master.into(),
+                        data: identity_public_keys_set.master.clone().into(),
                         disabled_at: None,
                     },
                 ),
@@ -137,7 +139,7 @@ impl<C> Platform<C> {
                         security_level: SecurityLevel::HIGH,
                         key_type: KeyType::ECDSA_SECP256K1,
                         read_only: false,
-                        data: identity_public_keys_set.high.into(),
+                        data: identity_public_keys_set.high.clone().into(),
                         disabled_at: None,
                     },
                 ),

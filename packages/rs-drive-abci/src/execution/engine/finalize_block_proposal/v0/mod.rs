@@ -14,12 +14,14 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::{BlockStateInfoV0Getters, BlockStateInfoV0Methods};
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 
 use crate::platform_types::commit;
+use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -102,10 +104,10 @@ where
                 round,
                 hash.to_hex(),
                 block_header.core_chain_locked_height,
-                block_state_info.height,
-                block_state_info.round,
-                block_state_info.block_hash.map(|a| a.to_hex()).unwrap_or("None".to_string()),
-                block_state_info.core_chain_locked_height
+                block_state_info.height(),
+                block_state_info.round(),
+                block_state_info.block_hash().map(|a| a.to_hex()).unwrap_or("None".to_string()),
+                block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
         }
@@ -165,11 +167,11 @@ where
         // Next let's check that the hash received is the same as the hash we expect
 
         if height == self.config.abci.genesis_height {
-            self.drive.set_genesis_time(block_state_info.block_time_ms);
+            self.drive.set_genesis_time(block_state_info.block_time_ms());
         }
 
         let mut to_commit_block_info: BlockInfo = block_state_info.to_block_info(
-            Epoch::new(epoch_info.current_epoch_index)
+            Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch info should be in range"),
         );
 

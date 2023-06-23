@@ -38,7 +38,7 @@ pub mod commit;
 /// Contracts module
 pub mod contracts;
 /// Epoch
-pub mod epoch;
+pub mod epochInfo;
 /// Masternode
 pub mod masternode;
 /// Main platform structs, not versioned

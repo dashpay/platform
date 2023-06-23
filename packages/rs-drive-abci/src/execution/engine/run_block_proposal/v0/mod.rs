@@ -13,15 +13,16 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-};
+use crate::execution::types::block_execution_context::v0::{BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters, BlockExecutionContextV0Setters};
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::{block_execution_context, block_state_info};
+use crate::execution::types::block_fees::v0::BlockFeesV0;
+use crate::execution::types::block_state_info::v0::{BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters};
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal;
-use crate::platform_types::epoch::v0::EpochInfo;
+use crate::platform_types::epochInfo::EpochInfo;
+use crate::platform_types::epochInfo::v0::{EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -73,7 +74,7 @@ where
         let mut block_platform_state = state.clone();
 
         // Init block execution context
-        let block_state_info = block_state_info::v0::BlockStateInfo::from_block_proposal(
+        let block_state_info = block_state_info::v0::BlockStateInfoV0::from_block_proposal(
             &block_proposal,
             last_block_time_ms,
         );
@@ -98,7 +99,7 @@ where
         } = block_proposal;
 
         let block_info = block_state_info.to_block_info(
-            Epoch::new(epoch_info.current_epoch_index)
+            Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch index should be in range"),
         );
 
@@ -125,7 +126,7 @@ where
             })?; // This is a system error
 
         let mut block_execution_context = block_execution_context::v0::BlockExecutionContextV0 {
-            block_state_info,
+            block_state_info: block_state_info.into(),
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
             withdrawal_transactions: BTreeMap::new(),
@@ -182,7 +183,9 @@ where
 
         let last_synced_core_height = block_execution_context
             .block_state_info
-            .core_chain_locked_height;
+            .core_chain_locked_height();
+
+        let mut block_execution_context : BlockExecutionContext = block_execution_context.into();
 
         self.update_broadcasted_withdrawal_transaction_statuses_v0(
             last_synced_core_height,
@@ -199,7 +202,7 @@ where
             )?;
 
         // Set the withdrawal transactions that were done in the previous block
-        block_execution_context.withdrawal_transactions = unsigned_withdrawal_transaction_bytes
+        block_execution_context.set_withdrawal_transactions(unsigned_withdrawal_transaction_bytes
             .into_iter()
             .map(|withdrawal_transaction| {
                 (
@@ -207,11 +210,11 @@ where
                     withdrawal_transaction,
                 )
             })
-            .collect();
+            .collect());
 
         let (block_fees, tx_results) = self.process_raw_state_transitions_v0(
             raw_state_transitions,
-            &block_execution_context.block_platform_state,
+            &block_execution_context.block_platform_state(),
             &block_info,
             transaction,
         )?;
@@ -222,11 +225,13 @@ where
 
         // while we have the state transitions executed, we now need to process the block fees
 
+        let block_fees_v0 : BlockFeesV0 = block_fees.into();
+
         // Process fees
         let _processed_block_fees = self.process_block_fees_v0(
             block_execution_context.block_state_info(),
             &epoch_info,
-            block_fees.into(),
+            block_fees_v0.into(),
             transaction,
         )?;
 
@@ -237,7 +242,7 @@ where
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
-        block_execution_context.block_state_info_mut().app_hash = Some(root_hash);
+        block_execution_context.block_state_info_mut().set_app_hash(Some(root_hash));
 
         let state = self.state.read().unwrap();
         let validator_set_update =

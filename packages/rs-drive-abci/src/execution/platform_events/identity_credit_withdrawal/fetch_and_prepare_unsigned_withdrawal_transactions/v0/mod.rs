@@ -21,6 +21,10 @@ use crate::{
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 
@@ -32,16 +36,16 @@ where
     pub fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        block_execution_context: &block_execution_context::v0::BlockExecutionContextV0,
+        block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_state_info.block_time_ms,
-            height: block_execution_context.block_state_info.height,
+            time_ms: block_execution_context.block_state_info().block_time_ms(),
+            height: block_execution_context.block_state_info().height(),
             core_height: block_execution_context
-                .block_state_info
-                .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index)?,
+                .block_state_info()
+                .core_chain_locked_height(),
+            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
@@ -78,8 +82,8 @@ where
                 .map(|(_, untied_transaction_bytes)| {
                     let request_info = AssetUnlockRequestInfo {
                         request_height: block_execution_context
-                            .block_state_info
-                            .core_chain_locked_height,
+                            .block_state_info()
+                            .core_chain_locked_height(),
                         quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
                     };
 

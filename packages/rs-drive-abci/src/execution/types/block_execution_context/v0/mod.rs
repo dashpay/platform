@@ -28,21 +28,21 @@
 //
 
 use crate::execution::types::block_state_info;
-use crate::execution::types::block_state_info::v0::BlockStateInfo;
-use crate::platform_types::epoch;
-use crate::platform_types::epoch::v0::EpochInfo;
+use crate::platform_types::epochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use dashcore_rpc::dashcore::Txid;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
+use crate::execution::types::block_state_info::BlockStateInfo;
+use crate::platform_types::epochInfo::EpochInfo;
 
 /// V0 of the Block execution context
 #[derive(Debug)]
 pub struct BlockExecutionContextV0 {
     /// Block info
-    pub block_state_info: block_state_info::v0::BlockStateInfo,
+    pub block_state_info: BlockStateInfo,
     /// Epoch info
-    pub epoch_info: epoch::v0::EpochInfo,
+    pub epoch_info: EpochInfo,
     /// Total hpmn count
     pub hpmn_count: u32,
     /// Current withdrawal transactions hash -> Transaction
@@ -55,10 +55,10 @@ pub struct BlockExecutionContextV0 {
 /// A trait defining getter methods for interacting with a BlockExecutionContextV0.
 pub trait BlockExecutionContextV0Getters {
     /// Returns the block_state_info field.
-    fn block_state_info(&self) -> &block_state_info::v0::BlockStateInfo;
+    fn block_state_info(&self) -> &BlockStateInfo;
 
     /// Returns a reference of the epoch_info field.
-    fn epoch_info(&self) -> &epoch::v0::EpochInfo;
+    fn epoch_info(&self) -> &EpochInfo;
 
     /// Returns the hpmn_count field.
     fn hpmn_count(&self) -> u32;
@@ -76,10 +76,10 @@ pub trait BlockExecutionContextV0Getters {
 /// A trait defining setter methods for interacting with a BlockExecutionContextV0.
 pub trait BlockExecutionContextV0Setters {
     /// Sets the block_state_info field.
-    fn set_block_state_info(&mut self, info: block_state_info::v0::BlockStateInfo);
+    fn set_block_state_info(&mut self, info: BlockStateInfo);
 
     /// Sets the epoch_info field.
-    fn set_epoch_info(&mut self, info: epoch::v0::EpochInfo);
+    fn set_epoch_info(&mut self, info: EpochInfo);
 
     /// Sets the hpmn_count field.
     fn set_hpmn_count(&mut self, count: u32);
@@ -97,10 +97,10 @@ pub trait BlockExecutionContextV0Setters {
 /// A trait defining methods for interacting with a BlockExecutionContextV0.
 pub trait BlockExecutionContextV0MutableGetters {
     /// Returns a mutable reference to the block_state_info field.
-    fn block_state_info_mut(&mut self) -> &mut block_state_info::v0::BlockStateInfo;
+    fn block_state_info_mut(&mut self) -> &mut BlockStateInfo;
 
     /// Returns a mutable reference to the epoch_info field.
-    fn epoch_info_mut(&mut self) -> &mut epoch::v0::EpochInfo;
+    fn epoch_info_mut(&mut self) -> &mut EpochInfo;
 
     /// Returns a mutable reference to the withdrawal_transactions field.
     fn withdrawal_transactions_mut(&mut self) -> &mut BTreeMap<Txid, Vec<u8>>;
@@ -115,10 +115,10 @@ pub trait BlockExecutionContextV0MutableGetters {
 /// A trait defining methods for interacting with a BlockExecutionContextV0.
 pub trait BlockExecutionContextV0OwnedGetters {
     /// Consumes the BlockExecutionContextV0 and returns the block_state_info field.
-    fn block_state_info_owned(self) -> block_state_info::v0::BlockStateInfo;
+    fn block_state_info_owned(self) -> BlockStateInfo;
 
     /// Consumes the BlockExecutionContextV0 and returns the epoch_info field.
-    fn epoch_info_owned(self) -> epoch::v0::EpochInfo;
+    fn epoch_info_owned(self) -> EpochInfo;
 
     /// Consumes the BlockExecutionContextV0 and returns the withdrawal_transactions field.
     fn withdrawal_transactions_owned(self) -> BTreeMap<Txid, Vec<u8>>;
@@ -132,12 +132,12 @@ pub trait BlockExecutionContextV0OwnedGetters {
 
 impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
     /// Returns a reference to the block_state_info field.
-    fn block_state_info(&self) -> &block_state_info::v0::BlockStateInfo {
+    fn block_state_info(&self) -> &BlockStateInfo {
         &self.block_state_info
     }
 
     /// Returns a reference to the epoch_info field.
-    fn epoch_info(&self) -> &epoch::v0::EpochInfo {
+    fn epoch_info(&self) -> &EpochInfo {
         &self.epoch_info
     }
 
@@ -164,11 +164,11 @@ impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
 
 impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
     /// Sets the block_state_info field.
-    fn set_block_state_info(&mut self, info: block_state_info::v0::BlockStateInfo) {
+    fn set_block_state_info(&mut self, info: BlockStateInfo) {
         self.block_state_info = info;
     }
     /// Sets the epoch_info field.
-    fn set_epoch_info(&mut self, info: epoch::v0::EpochInfo) {
+    fn set_epoch_info(&mut self, info: EpochInfo) {
         self.epoch_info = info;
     }
     /// Sets the hpmn_count field.
@@ -191,12 +191,12 @@ impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
 
 impl BlockExecutionContextV0MutableGetters for BlockExecutionContextV0 {
     /// Returns a mutable reference to the block_state_info field.
-    fn block_state_info_mut(&mut self) -> &mut block_state_info::v0::BlockStateInfo {
+    fn block_state_info_mut(&mut self) -> &mut BlockStateInfo {
         &mut self.block_state_info
     }
 
     /// Returns a mutable reference to the epoch_info field.
-    fn epoch_info_mut(&mut self) -> &mut epoch::v0::EpochInfo {
+    fn epoch_info_mut(&mut self) -> &mut EpochInfo {
         &mut self.epoch_info
     }
 
