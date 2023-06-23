@@ -249,7 +249,7 @@ module.exports = {
       },
       api: {
         enable: false,
-        port: 9000,
+        port: 9100,
       },
     },
   },
