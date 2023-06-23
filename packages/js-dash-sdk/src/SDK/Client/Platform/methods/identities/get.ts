@@ -1,4 +1,3 @@
-// @ts-ignore
 import { Identifier, Metadata } from '@dashevo/wasm-dpp';
 import { GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
 import { Platform } from '../../Platform';

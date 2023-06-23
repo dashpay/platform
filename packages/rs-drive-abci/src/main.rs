@@ -4,7 +4,7 @@
 
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
-use drive_abci::core::wait_for_core_to_sync;
+use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
@@ -87,7 +87,7 @@ pub fn main() -> Result<(), String> {
             // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
             // We need to make sure that Core is ready before we start Drive ABCI app
             // Tenderdash won't start too until ABCI port is open.
-            wait_for_core_to_sync(&core_rpc).unwrap();
+            wait_for_core_to_sync_v0(&core_rpc).unwrap();
 
             drive_abci::abci::start(&config, core_rpc).unwrap();
             Ok(())

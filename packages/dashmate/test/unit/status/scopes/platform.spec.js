@@ -8,6 +8,8 @@ const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const providers = require('../../../../src/status/providers');
 const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 const PortStateEnum = require('../../../../src/status/enums/portState');
+const getConfigMock = require('../../../../src/test/mock/getConfigMock');
+const generateEnvs = require('../../../../src/util/generateEnvs');
 
 describe('getPlatformScopeFactory', () => {
   describe('#getPlatformScope', () => {
@@ -20,6 +22,7 @@ describe('getPlatformScopeFactory', () => {
     let mockGetConnectionHost;
 
     let config;
+    let configFile;
     let httpPort;
     let httpService;
     let p2pPort;
@@ -45,18 +48,9 @@ describe('getPlatformScopeFactory', () => {
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockFetch = this.sinon.stub(fetch, 'Promise');
       mockGetConnectionHost = this.sinon.stub();
+      configFile = { getProjectId: this.sinon.stub() };
 
-      config = {
-        get: this.sinon.stub(),
-        toEnvs: this.sinon.stub(),
-      };
-
-      config.get.withArgs('platform.dapi.envoy.http.port').returns('8100');
-      config.get.withArgs('externalIp').returns('127.0.0.1');
-      config.get.withArgs('platform.drive.tenderdash.p2p.port').returns('8101');
-      config.get.withArgs('platform.dapi.envoy.http.port').returns('8102');
-      config.get.withArgs('platform.drive.tenderdash.rpc.port').returns('8103');
-      config.get.withArgs('platform.enable').returns(true);
+      config = getConfigMock(this.sinon);
 
       httpPort = config.get('platform.dapi.envoy.http.port');
       httpService = `${config.get('externalIp')}:${httpPort}`;
@@ -64,8 +58,12 @@ describe('getPlatformScopeFactory', () => {
       p2pService = `${config.get('externalIp')}:${p2pPort}`;
       rpcPort = config.get('platform.drive.tenderdash.rpc.port');
       rpcService = `127.0.0.1:${rpcPort}`;
-      getPlatformScope = getPlatformScopeFactory(mockDockerCompose,
-        mockCreateRpcClient, mockGetConnectionHost);
+      getPlatformScope = getPlatformScopeFactory(
+        mockDockerCompose,
+        mockCreateRpcClient,
+        mockGetConnectionHost,
+        configFile,
+      );
     });
 
     it('should just work', async () => {
@@ -178,7 +176,7 @@ describe('getPlatformScopeFactory', () => {
 
     it('should return empty scope if core is not synced', async () => {
       mockDockerCompose.isServiceRunning
-        .withArgs(config.toEnvs(), 'drive_tenderdash')
+        .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
@@ -225,11 +223,11 @@ describe('getPlatformScopeFactory', () => {
     it('should return drive info if tenderdash is failed', async () => {
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
       mockDockerCompose.isServiceRunning
-        .withArgs(config.toEnvs(), 'drive_tenderdash')
+        .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
-      mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
-      mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_abci')
         .returns(DockerStatusEnum.running);
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
@@ -273,11 +271,11 @@ describe('getPlatformScopeFactory', () => {
     it('should still return scope with tenderdash if drive is failed', async () => {
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
       mockDockerCompose.isServiceRunning
-        .withArgs(config.toEnvs(), 'drive_tenderdash')
+        .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
-      mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_tenderdash')
         .returns(DockerStatusEnum.running);
-      mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_abci')
         .throws();
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
@@ -343,7 +341,7 @@ describe('getPlatformScopeFactory', () => {
     it('should have error service status in case FetchError to tenderdash', async () => {
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
       mockDockerCompose.isServiceRunning
-        .withArgs(config.toEnvs(), 'drive_tenderdash')
+        .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);

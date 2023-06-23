@@ -16,6 +16,7 @@ pub mod query;
 /// Serialization errors module
 pub mod serialization;
 
+// @append_only
 /// Errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

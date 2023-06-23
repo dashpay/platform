@@ -2324,7 +2324,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/bench-suite/",\
           "packageDependencies": [\
             ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
@@ -2360,7 +2360,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -2404,7 +2404,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2493,7 +2493,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["chai", "npm:4.3.4"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2518,10 +2518,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashcore-lib", [\
-        ["npm:0.20.6", {\
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.20.6-dfe918f9a6-730145e130.zip/node_modules/@dashevo/dashcore-lib/",\
+        ["npm:0.20.9", {\
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.20.9-2b8a961230-a92adaf441.zip/node_modules/@dashevo/dashcore-lib/",\
           "packageDependencies": [\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/x11-hash-js", "npm:1.0.2"],\
             ["@types/node", "npm:12.20.37"],\
@@ -2532,6 +2532,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["inherits", "npm:2.0.1"],\
             ["lodash", "npm:4.17.21"],\
             ["ripemd160", "npm:2.0.2"],\
+            ["tsd", "npm:0.28.1"],\
             ["unorm", "npm:1.6.0"]\
           ],\
           "linkType": "HARD"\
@@ -2626,7 +2627,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2796,7 +2797,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2890,9 +2891,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+            ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
             ["assert", "npm:2.0.0"],\
             ["browserify-zlib", "npm:0.2.0"],\
             ["buffer", "npm:6.0.3"],\
@@ -2929,6 +2931,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["stream-browserify", "npm:3.0.0"],\
             ["stream-http", "npm:3.2.0"],\
             ["string_decoder", "npm:1.3.0"],\
+            ["tsd", "npm:0.28.1"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
             ["wasm-x11-hash", "npm:0.0.2"],\
@@ -2949,7 +2952,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wasm-re2", "npm:1.0.2"],\
@@ -8113,7 +8116,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -8130,6 +8133,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/sinon-chai", "npm:3.2.5"],\
             ["@typescript-eslint/eslint-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.55.0"],\
             ["@typescript-eslint/parser", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.55.0"],\
+            ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
             ["assert", "npm:2.0.0"],\
             ["browserify-zlib", "npm:0.2.0"],\
             ["bs58", "npm:4.0.1"],\
@@ -8171,6 +8175,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ts-mocha", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:9.0.2"],\
             ["ts-mock-imports", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:1.3.8"],\
             ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.4.0"],\
+            ["tsd", "npm:0.28.1"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
@@ -8187,7 +8192,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.6"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/docker-compose", "npm:0.24.2"],\
@@ -8203,6 +8208,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
+            ["babel-eslint", "virtual:27dae49067a60fa65fec6e1c3adad1497d0dda3f71eda711624109131ff3b7d1061a20f55e89b5a0a219da1f7a0a1a0a76bc414d36870315bd60acf5bdcb7f55#npm:10.1.0"],\
             ["begoo", "npm:2.0.2"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\

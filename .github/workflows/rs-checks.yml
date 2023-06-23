@@ -60,6 +60,51 @@ jobs:
 
       - run: cargo check --package=${{ inputs.package }}
 
+  check_structure_changes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout base commit
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Get all changed Rust files
+        id: files
+        run: |
+          gh pr view https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --json files --jq "[.files[].path] | map(select(test(\"packages/${{ inputs.package }}/.*.rs$\")))" > files.json
+          echo "::set-output name=files::$(cat files.json)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save structures
+        id: base_structures
+        run: |
+          mkdir base_structures
+          for file in $(jq -r '.[]' <<< "${{ steps.files.outputs.files }}"); do
+            if [[ $file == *.rs ]]; then
+              awk '/@append_only/,/}/' $file > "base_structures/$(basename $file).base"
+            fi
+          done
+          echo "::set-output name=base_dir::$(pwd)/base_structures"
+
+      - name: Checkout PR commit
+        uses: actions/checkout@v2
+
+      - name: Check structure changes
+        run: |
+          for file in $(jq -r '.[]' <<< "${{ steps.files.outputs.files }}"); do
+            if [[ $file == *.rs ]]; then
+              awk '/@append_only/,/}/' $file > "$(basename $file).pr"
+              if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).base" "$(basename $file).pr" | grep "^-" | grep -v "@append_only" | grep -v "^-" | grep -v "^///" | grep -v "^//" | grep -v "^-$"; then
+                echo "No deletions detected in @append_only structures in $file. Test passed."
+              else
+                echo "Deletions detected in @append_only structures in $file. Test failed."
+                exit 1
+              fi
+            fi
+          done
+
   test:
     name: Tests
     runs-on: self-hosted
