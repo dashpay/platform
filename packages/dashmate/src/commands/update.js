@@ -1,5 +1,6 @@
 const _ = require('lodash');
 const { Flags } = require('@oclif/core');
+const chalk = require('chalk');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
@@ -59,13 +60,17 @@ class UpdateCommand extends ConfigBaseCommand {
     );
 
     printObject(updated
-      .reduce((acc, { serviceName, humanName, pulled }) => {
-        if (format === OUTPUT_FORMATS.PLAIN) {
-          return { ...acc, [humanName]: pulled };
-        }
-
-        return ({ ...acc, [serviceName]: pulled });
-      }, {}), format);
+      .reduce((acc, {
+        serviceName, humanName: title, pulled, image,
+      }) => ([
+        ...acc,
+        format === OUTPUT_FORMATS.PLAIN
+          ? [title, image, pulled ? chalk.yellow('updated') : chalk.green('up to date')]
+          : {
+            serviceName, title, pulled, image,
+          },
+      ]),
+      []), format, false);
   }
 }
 
