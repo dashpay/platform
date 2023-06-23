@@ -117,7 +117,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["conventional-changelog", "npm:3.1.24"],\
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
             ["node-gyp", "npm:9.3.1"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tempfile", "npm:3.0.0"],\
             ["ultra-runner", "npm:3.10.5"]\
           ],\
@@ -222,7 +222,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["gensync", "npm:1.0.0-beta.2"],\
             ["json5", "npm:2.2.0"],\
-            ["semver", "npm:6.3.0"],\
+            ["semver", "npm:7.5.3"],\
             ["source-map", "npm:0.5.7"]\
           ],\
           "linkType": "HARD"\
@@ -278,7 +278,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/helper-validator-option", "npm:7.14.5"],\
             ["@types/babel__core", null],\
             ["browserslist", "npm:4.18.1"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "packagePeers": [\
             "@babel/core",\
@@ -360,7 +360,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["lodash.debounce", "npm:4.0.8"],\
             ["resolve", "patch:resolve@npm%3A1.22.0#~builtin<compat/resolve>::version=1.22.0&hash=c3c19d"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "packagePeers": [\
             "@babel/core",\
@@ -2182,7 +2182,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["babel-plugin-polyfill-corejs3", "virtual:aa7011b53d1c3eceb38fb992363d77c734b2c7f63c2d81a38e3a7b4bd4a3780a5014de57825893df2df03b784ea10967abd6c822373be63240233d5575188ca3#npm:0.4.0"],\
             ["babel-plugin-polyfill-regenerator", "virtual:aa7011b53d1c3eceb38fb992363d77c734b2c7f63c2d81a38e3a7b4bd4a3780a5014de57825893df2df03b784ea10967abd6c822373be63240233d5575188ca3#npm:0.3.0"],\
             ["core-js-compat", "npm:3.19.1"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "packagePeers": [\
             "@babel/core",\
@@ -2324,7 +2324,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/bench-suite/",\
           "packageDependencies": [\
             ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
@@ -2360,7 +2360,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -2386,7 +2386,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["mocha", "npm:9.2.2"],\
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
             ["nyc", "npm:15.1.0"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["swagger-jsdoc", "npm:3.7.0"],\
@@ -2404,7 +2404,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2493,7 +2493,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["chai", "npm:4.3.4"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2518,10 +2518,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashcore-lib", [\
-        ["https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf", {\
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-https-e59ebd9b03-ccced8645b.zip/node_modules/@dashevo/dashcore-lib/",\
+        ["npm:0.20.9", {\
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.20.9-2b8a961230-a92adaf441.zip/node_modules/@dashevo/dashcore-lib/",\
           "packageDependencies": [\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/x11-hash-js", "npm:1.0.2"],\
             ["@types/node", "npm:12.20.37"],\
@@ -2627,7 +2627,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2723,7 +2723,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["mocha", "npm:9.2.2"],\
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
             ["nyc", "npm:15.1.0"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"]\
           ],\
@@ -2766,7 +2766,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["got", "npm:11.8.6"],\
             ["lodash", "npm:4.17.21"],\
             ["normalize-package-data", "npm:3.0.3"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tslib", "npm:2.4.1"],\
             ["yeoman-environment", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:3.13.0"],\
             ["yeoman-generator", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:5.6.1"],\
@@ -2784,7 +2784,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["conventional-changelog", "npm:3.1.24"],\
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
             ["node-gyp", "npm:9.3.1"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tempfile", "npm:3.0.0"],\
             ["ultra-runner", "npm:3.10.5"]\
           ],\
@@ -2797,7 +2797,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
@@ -2838,7 +2838,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["os-browserify", "npm:0.3.0"],\
             ["path-browserify", "npm:1.0.1"],\
             ["process", "npm:0.11.10"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["stream-browserify", "npm:3.0.0"],\
@@ -2878,7 +2878,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["glob", "npm:7.2.0"],\
             ["long", "npm:4.0.0"],\
             ["minimist", "npm:1.2.6"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["uglify-js", "npm:3.14.4"]\
           ],\
           "linkType": "HARD"\
@@ -2891,9 +2891,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+            ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
             ["assert", "npm:2.0.0"],\
             ["browserify-zlib", "npm:0.2.0"],\
             ["buffer", "npm:6.0.3"],\
@@ -2930,6 +2931,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["stream-browserify", "npm:3.0.0"],\
             ["stream-http", "npm:3.2.0"],\
             ["string_decoder", "npm:1.3.0"],\
+            ["tsd", "npm:0.28.1"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
             ["wasm-x11-hash", "npm:0.0.2"],\
@@ -2950,7 +2952,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.16.4"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wasm-re2", "npm:1.0.2"],\
@@ -3425,7 +3427,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["read-package-json-fast", "npm:2.0.3"],\
             ["readdir-scoped-modules", "npm:1.1.0"],\
             ["rimraf", "npm:3.0.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["ssri", "npm:8.0.1"],\
             ["treeverse", "npm:1.0.4"],\
             ["walk-up-path", "npm:1.0.0"]\
@@ -3439,7 +3441,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@npmcli/fs", "npm:1.0.0"],\
             ["@gar/promisify", "npm:1.1.2"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }],\
@@ -3448,7 +3450,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@npmcli/fs", "npm:2.1.2"],\
             ["@gar/promisify", "npm:1.1.3"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -3464,7 +3466,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["npm-pick-manifest", "npm:6.1.1"],\
             ["promise-inflight", "virtual:4e2088ed0df52533102f445d7e7aeba6560b7effa0cabbc7cc20dd1e36a86dd838cc541de4414688f4ce3ec77b0ad5298cea6de581350d934ceb35c3e0fe3462#npm:1.0.1"],\
             ["promise-retry", "npm:2.0.1"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["which", "npm:2.0.2"]\
           ],\
           "linkType": "HARD"\
@@ -3502,7 +3504,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["cacache", "npm:15.3.0"],\
             ["json-parse-even-better-errors", "npm:2.3.1"],\
             ["pacote", "npm:12.0.3"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -3617,7 +3619,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["natural-orderby", "npm:2.0.3"],\
             ["object-treeify", "npm:1.1.33"],\
             ["password-prompt", "npm:1.1.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["string-width", "npm:4.2.3"],\
             ["strip-ansi", "npm:6.0.1"],\
             ["supports-color", "npm:8.1.1"],\
@@ -3652,7 +3654,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["natural-orderby", "npm:2.0.3"],\
             ["object-treeify", "npm:1.1.33"],\
             ["password-prompt", "npm:1.1.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["string-width", "npm:4.2.3"],\
             ["strip-ansi", "npm:6.0.1"],\
             ["supports-color", "npm:8.1.1"],\
@@ -3707,7 +3709,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["fs-extra", "npm:9.1.0"],\
             ["http-call", "npm:5.3.0"],\
             ["lodash", "npm:4.17.21"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -4650,7 +4652,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["grapheme-splitter", "npm:1.0.4"],\
             ["ignore", "npm:5.2.0"],\
             ["natural-compare-lite", "npm:1.4.0"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tsutils", "virtual:0e22d802b65219681b64a9f99af596d56d444fb6f03cdf776b56a06fb9ddeefe4b0a611780f0b0eea0b47a1f1fba5a366d19cd6561bbc1e55271f08c190cd76f#npm:3.21.0"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"]\
           ],\
@@ -4763,7 +4765,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["globby", "npm:11.1.0"],\
             ["is-glob", "npm:4.0.3"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tsutils", "virtual:0e22d802b65219681b64a9f99af596d56d444fb6f03cdf776b56a06fb9ddeefe4b0a611780f0b0eea0b47a1f1fba5a366d19cd6561bbc1e55271f08c190cd76f#npm:3.21.0"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"]\
           ],\
@@ -4783,7 +4785,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["globby", "npm:11.1.0"],\
             ["is-glob", "npm:4.0.3"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tsutils", "virtual:ad07d3460ae416a99f304e6734121d5396603792c47f7c9a1b9c5c798d407da37779ac7289222241db922614d91f9d569b0f43bc10c027fcc720138b2f32e9fc#npm:3.21.0"],\
             ["typescript", null]\
           ],\
@@ -4815,7 +4817,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@typescript-eslint/typescript-estree", "virtual:67e332304c8830574d5d9be2a388885a47a9962cf1d2441a6ada47207b10c98d9a1a1914d73816338b986563032864745d812b3a7df145ee8f3bb51baa4027e5#npm:5.55.0"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-scope", "npm:5.1.1"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "packagePeers": [\
             "@types/eslint",\
@@ -5323,7 +5325,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash", "npm:4.17.21"],\
             ["micromatch", "npm:4.0.4"],\
             ["p-limit", "npm:2.3.0"],\
-            ["semver", "npm:7.5.0"],\
+            ["semver", "npm:7.5.3"],\
             ["strip-ansi", "npm:6.0.1"],\
             ["tar", "npm:6.1.13"],\
             ["tinylogic", "npm:2.0.0"],\
@@ -6244,7 +6246,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/helper-define-polyfill-provider", "virtual:ef89d8c000df9e14e09ca866bb81153d80fba90e9d2193815b4078b792631c08caaf98362eca8cf9a3c29249b6d2c9e7d7b24629716c4bb0b5ab719ccefcb2b2#npm:0.3.0"],\
             ["@types/babel__core", null],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "packagePeers": [\
             "@babel/core",\
@@ -7868,7 +7870,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["json-stringify-safe", "npm:5.0.1"],\
             ["lodash", "npm:4.17.21"],\
             ["meow", "npm:8.1.2"],\
-            ["semver", "npm:6.3.0"],\
+            ["semver", "npm:7.5.3"],\
             ["split", "npm:1.0.1"],\
             ["through2", "npm:4.0.2"]\
           ],\
@@ -7942,7 +7944,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["core-js-compat", "npm:3.19.1"],\
             ["browserslist", "npm:4.18.1"],\
-            ["semver", "npm:7.0.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -8042,7 +8044,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["cross-spawn", "npm:6.0.5"],\
             ["nice-try", "npm:1.0.5"],\
             ["path-key", "npm:2.0.1"],\
-            ["semver", "npm:5.7.1"],\
+            ["semver", "npm:7.5.3"],\
             ["shebang-command", "npm:1.2.0"],\
             ["which", "npm:1.3.1"]\
           ],\
@@ -8114,7 +8116,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
@@ -8131,6 +8133,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/sinon-chai", "npm:3.2.5"],\
             ["@typescript-eslint/eslint-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.55.0"],\
             ["@typescript-eslint/parser", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.55.0"],\
+            ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
             ["assert", "npm:2.0.0"],\
             ["browserify-zlib", "npm:0.2.0"],\
             ["bs58", "npm:4.0.1"],\
@@ -8172,6 +8175,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ts-mocha", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:9.0.2"],\
             ["ts-mock-imports", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:1.3.8"],\
             ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.4.0"],\
+            ["tsd", "npm:0.28.1"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
             ["url", "npm:0.11.0"],\
             ["util", "npm:0.12.4"],\
@@ -8188,7 +8192,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "https://github.com/dashevo/dashcore-lib.git#commit=c18028acceca74004846919eaa2b9134707441bf"],\
+            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/docker-compose", "npm:0.24.2"],\
@@ -8204,6 +8208,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
             ["awilix", "npm:4.3.4"],\
+            ["babel-eslint", "virtual:27dae49067a60fa65fec6e1c3adad1497d0dda3f71eda711624109131ff3b7d1061a20f55e89b5a0a219da1f7a0a1a0a76bc414d36870315bd60acf5bdcb7f55#npm:10.1.0"],\
             ["begoo", "npm:2.0.2"],\
             ["chai", "npm:4.3.4"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
@@ -8236,7 +8241,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["public-ip", "npm:4.0.4"],\
             ["qs", "npm:6.11.0"],\
             ["rxjs", "npm:6.6.7"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["table", "npm:5.4.6"],\
@@ -9331,7 +9336,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["optionator", "npm:0.9.1"],\
             ["progress", "npm:2.0.3"],\
             ["regexpp", "npm:3.2.0"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["strip-ansi", "npm:6.0.1"],\
             ["strip-json-comments", "npm:3.1.1"],\
             ["table", "npm:6.7.3"],\
@@ -9387,7 +9392,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-plugin-import", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:2.25.3"],\
             ["object.assign", "npm:4.1.4"],\
             ["object.entries", "npm:1.1.6"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "packagePeers": [\
             "@types/eslint-plugin-import",\
@@ -9634,7 +9639,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["jsdoctypeparser", "npm:6.1.0"],\
             ["lodash", "npm:4.17.21"],\
             ["regextras", "npm:0.7.1"],\
-            ["semver", "npm:6.3.0"],\
+            ["semver", "npm:7.5.3"],\
             ["spdx-expression-parse", "npm:3.0.1"]\
           ],\
           "packagePeers": [\
@@ -10527,7 +10532,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["git-semver-tags", "npm:4.1.1"],\
             ["meow", "npm:8.1.2"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -11903,7 +11908,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@istanbuljs/schema", "npm:0.1.3"],\
             ["istanbul-lib-coverage", "npm:3.2.0"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -13134,7 +13139,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["make-dir", "npm:2.1.0"],\
             ["pify", "npm:4.0.1"],\
-            ["semver", "npm:5.7.1"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }],\
@@ -13142,7 +13147,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/make-dir-npm-3.1.0-d1d7505142-484200020a.zip/node_modules/make-dir/",\
           "packageDependencies": [\
             ["make-dir", "npm:3.1.0"],\
-            ["semver", "npm:6.3.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -14073,7 +14078,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["nopt", "npm:5.0.0"],\
             ["npmlog", "npm:4.1.2"],\
             ["rimraf", "npm:3.0.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tar", "npm:6.1.11"],\
             ["which", "npm:2.0.2"]\
           ],\
@@ -14090,7 +14095,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["nopt", "npm:5.0.0"],\
             ["npmlog", "npm:6.0.1"],\
             ["rimraf", "npm:3.0.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tar", "npm:6.1.11"],\
             ["which", "npm:2.0.2"]\
           ],\
@@ -14107,7 +14112,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["nopt", "npm:6.0.0"],\
             ["npmlog", "npm:6.0.1"],\
             ["rimraf", "npm:3.0.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["tar", "npm:6.1.11"],\
             ["which", "npm:2.0.2"]\
           ],\
@@ -14175,7 +14180,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ignore-by-default", "npm:1.0.1"],\
             ["minimatch", "npm:3.1.2"],\
             ["pstree.remy", "npm:1.1.8"],\
-            ["semver", "npm:5.7.1"],\
+            ["semver", "npm:7.5.3"],\
             ["simple-update-notifier", "npm:1.0.7"],\
             ["supports-color", "npm:5.5.0"],\
             ["touch", "npm:3.1.0"],\
@@ -14226,7 +14231,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["normalize-package-data", "npm:2.5.0"],\
             ["hosted-git-info", "npm:2.8.9"],\
             ["resolve", "patch:resolve@npm%3A1.22.0#~builtin<compat/resolve>::version=1.22.0&hash=c3c19d"],\
-            ["semver", "npm:5.7.1"],\
+            ["semver", "npm:7.5.3"],\
             ["validate-npm-package-license", "npm:3.0.4"]\
           ],\
           "linkType": "HARD"\
@@ -14237,7 +14242,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["normalize-package-data", "npm:3.0.3"],\
             ["hosted-git-info", "npm:4.0.2"],\
             ["is-core-module", "npm:2.8.1"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["validate-npm-package-license", "npm:3.0.4"]\
           ],\
           "linkType": "HARD"\
@@ -14283,7 +14288,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/npm-install-checks-npm-4.0.0-4dabe69bc2-8308ff48e6.zip/node_modules/npm-install-checks/",\
           "packageDependencies": [\
             ["npm-install-checks", "npm:4.0.0"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -14303,7 +14308,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["npm-package-arg", "npm:8.1.5"],\
             ["hosted-git-info", "npm:4.0.2"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["validate-npm-package-name", "npm:3.0.0"]\
           ],\
           "linkType": "HARD"\
@@ -14330,7 +14335,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["npm-install-checks", "npm:4.0.0"],\
             ["npm-normalize-package-bin", "npm:1.0.1"],\
             ["npm-package-arg", "npm:8.1.5"],\
-            ["semver", "npm:7.3.8"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -16202,39 +16207,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["semver", [\
-        ["npm:5.7.1", {\
-          "packageLocation": "./.yarn/cache/semver-npm-5.7.1-40bcea106b-57fd0acfd0.zip/node_modules/semver/",\
+        ["npm:7.5.3", {\
+          "packageLocation": "./.yarn/cache/semver-npm-7.5.3-275095dbf3-9d58db1652.zip/node_modules/semver/",\
           "packageDependencies": [\
-            ["semver", "npm:5.7.1"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:6.3.0", {\
-          "packageLocation": "./.yarn/cache/semver-npm-6.3.0-b3eace8bfd-1b26ecf6db.zip/node_modules/semver/",\
-          "packageDependencies": [\
-            ["semver", "npm:6.3.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:7.0.0", {\
-          "packageLocation": "./.yarn/cache/semver-npm-7.0.0-218e8c00ca-272c11bf8d.zip/node_modules/semver/",\
-          "packageDependencies": [\
-            ["semver", "npm:7.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:7.3.8", {\
-          "packageLocation": "./.yarn/cache/semver-npm-7.3.8-25a996cb4f-ba9c7cbbf2.zip/node_modules/semver/",\
-          "packageDependencies": [\
-            ["semver", "npm:7.3.8"],\
-            ["lru-cache", "npm:6.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:7.5.0", {\
-          "packageLocation": "./.yarn/cache/semver-npm-7.5.0-160502ad5d-2d26693775.zip/node_modules/semver/",\
-          "packageDependencies": [\
-            ["semver", "npm:7.5.0"],\
+            ["semver", "npm:7.5.3"],\
             ["lru-cache", "npm:6.0.0"]\
           ],\
           "linkType": "HARD"\
@@ -16462,7 +16438,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/simple-update-notifier-npm-1.0.7-c27b0a20ac-aaadc1f158.zip/node_modules/simple-update-notifier/",\
           "packageDependencies": [\
             ["simple-update-notifier", "npm:1.0.7"],\
-            ["semver", "npm:7.0.0"]\
+            ["semver", "npm:7.5.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -17821,7 +17797,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["enhanced-resolve", "npm:4.5.0"],\
             ["loader-utils", "npm:2.0.2"],\
             ["micromatch", "npm:4.0.4"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
             ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.76.1"]\
           ],\
@@ -17843,7 +17819,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["enhanced-resolve", "npm:4.5.0"],\
             ["loader-utils", "npm:2.0.2"],\
             ["micromatch", "npm:4.0.4"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["typescript", "patch:typescript@npm%3A3.9.10#~builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"],\
             ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.76.1"]\
           ],\
@@ -19653,7 +19629,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["pacote", "npm:12.0.3"],\
             ["preferred-pm", "npm:3.0.3"],\
             ["pretty-bytes", "npm:5.6.0"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["slash", "npm:3.0.0"],\
             ["strip-ansi", "npm:6.0.1"],\
             ["text-table", "npm:0.2.0"],\
@@ -19689,7 +19665,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["minimist", "npm:1.2.6"],\
             ["read-pkg-up", "npm:7.0.1"],\
             ["run-async", "npm:2.4.1"],\
-            ["semver", "npm:7.3.8"],\
+            ["semver", "npm:7.5.3"],\
             ["shelljs", "npm:0.8.5"],\
             ["sort-keys", "npm:4.2.0"],\
             ["text-table", "npm:0.2.0"],\

@@ -27,7 +27,7 @@ module.exports = {
     ...commonRules,
   },
   overrides: [
-    // TypeScript
+    // TypeScript general rules
     {
       files: [
         '**/*.ts',
@@ -37,7 +37,7 @@ module.exports = {
         'airbnb-typescript/base',
       ],
       parserOptions: {
-        project: './tsconfig.json',
+        project: ['./tsconfig.json'],
       },
       rules: {
         '@typescript-eslint/return-await': 'warn',
@@ -57,6 +57,18 @@ module.exports = {
         '@typescript-eslint/no-unused-expressions': 0,
         // Ignore require('dev-dependency') errors for tests and mocks
         'import/no-extraneous-dependencies': 0,
+      },
+      parserOptions: {
+        project: ['./tsconfig.mocha.json'],
+      },
+    },
+    // Typings tests
+    {
+      files: [
+        'test-d/**/*.ts',
+      ],
+      parserOptions: {
+        project: ['./tsconfig.tsd.json'],
       },
     },
     // JS tests

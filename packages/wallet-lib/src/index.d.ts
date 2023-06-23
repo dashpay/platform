@@ -7,10 +7,13 @@ import { Identities } from "./types/Identities/Identities";
 import { ChainStore } from "./types/ChainStore/ChainStore";
 import { DerivableKeyChain } from "./types/DerivableKeyChain/DerivableKeyChain";
 import { KeyChainStore } from "./types/KeyChainStore/KeyChainStore";
-import CONSTANTS from "./CONSTANTS";
-import EVENTS from "./EVENTS";
-import utils from "./utils";
-import plugins from "./plugins";
+
+// @ts-ignore
+import * as CONSTANTS from "./CONSTANTS";
+// @ts-ignore
+import * as EVENTS from "./EVENTS";
+import * as utils from "./utils";
+import * as plugins from "./plugins";
 
 export {
   Account,

@@ -6,6 +6,7 @@ const {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
+  PRESET_MAINNET,
 } = require('../../../constants');
 
 const systemConfigs = require('../../../../configs/system');
@@ -26,8 +27,6 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
- * @param {saveCertificateTask} saveCertificateTask
- * @param {listCertificates} listCertificates
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
@@ -39,8 +38,6 @@ function setupRegularPresetTaskFactory(
   renderServiceTemplates,
   writeServiceConfigs,
   obtainZeroSSLCertificateTask,
-  saveCertificateTask,
-  listCertificates,
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,
@@ -82,7 +79,7 @@ function setupRegularPresetTaskFactory(
 
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
-          ctx.config.set('platform.enable', ctx.isHP);
+          ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
 
           ctx.config.set('core.rpc.user', generateRandomString(8));

@@ -3,7 +3,7 @@ const webpackBaseConfig = require('./webpack.base.config');
 
 const webConfig = {
   ...webpackBaseConfig,
-  entry: './build/src/index.js',
+  entry: './build/index.js',
   devtool: 'source-map',
   mode: 'production',
   target: 'web',
