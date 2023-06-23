@@ -1,11 +1,11 @@
 use crate::error::Error;
 use crate::execution::types::block_state_info;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epochInfo::v0::EpochInfoV0;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::Transaction;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Methods;
 
 impl<C> Platform<C> {
     /// Creates epoch info from the platform state and the block proposal

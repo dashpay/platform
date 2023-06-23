@@ -14,7 +14,9 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
-use crate::execution::types::block_state_info::v0::{BlockStateInfoV0Getters, BlockStateInfoV0Methods};
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
+};
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
@@ -167,7 +169,8 @@ where
         // Next let's check that the hash received is the same as the hash we expect
 
         if height == self.config.abci.genesis_height {
-            self.drive.set_genesis_time(block_state_info.block_time_ms());
+            self.drive
+                .set_genesis_time(block_state_info.block_time_ms());
         }
 
         let mut to_commit_block_info: BlockInfo = block_state_info.to_block_info(

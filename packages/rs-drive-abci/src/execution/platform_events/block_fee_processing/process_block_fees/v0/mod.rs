@@ -42,15 +42,17 @@ use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Getters};
+use crate::execution::types::block_fees::BlockFees;
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0, BlockStateInfoV0Getters, BlockStateInfoV0Methods,
+};
+use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::{block_fees, block_state_info, processed_block_fees_outcome};
 use crate::platform_types::epochInfo::v0::{EpochInfoV0, EpochInfoV0Getters};
+use crate::platform_types::epochInfo::EpochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
-use crate::execution::types::block_fees::BlockFees;
-use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Getters};
-use crate::execution::types::block_state_info::BlockStateInfo;
-use crate::execution::types::block_state_info::v0::{BlockStateInfoV0, BlockStateInfoV0Getters, BlockStateInfoV0Methods};
-use crate::platform_types::epochInfo::EpochInfo;
 
 /// From the Dash Improvement Proposal:
 
@@ -241,16 +243,23 @@ mod tests {
 
             let epoch_info =
                 EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
-                    .expect("should calculate epoch info").into();
+                    .expect("should calculate epoch info")
+                    .into();
 
-            let block_fees : BlockFees = BlockFeesV0 {
+            let block_fees: BlockFees = BlockFeesV0 {
                 storage_fee: 100000,
                 processing_fee: 10000,
                 refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
-            }.into();
+            }
+            .into();
 
             let storage_fee_distribution_outcome = platform
-                .process_block_fees_v0(&block_info.into(), &epoch_info, block_fees.clone(), transaction)
+                .process_block_fees_v0(
+                    &block_info.into(),
+                    &epoch_info,
+                    block_fees.clone(),
+                    transaction,
+                )
                 .expect("should process block fees");
 
             // Should process epoch change

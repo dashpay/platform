@@ -28,6 +28,8 @@
 //
 
 use crate::error::Error;
+use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
+use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPools;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
@@ -37,8 +39,6 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
-use crate::execution::types::block_fees::BlockFees;
-use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to an op batch which update total storage fees
@@ -77,7 +77,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             Some(storage_fees) => storage_fees,
         };
 
-        let total_storage_fees = storage_distribution_credits_in_fee_pool + block_fees.storage_fee();
+        let total_storage_fees =
+            storage_distribution_credits_in_fee_pool + block_fees.storage_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
             update_storage_fee_distribution_pool_operation(
@@ -99,9 +100,9 @@ mod tests {
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
-    use drive::drive::batch::GroveDbOpBatch;
     use crate::execution::types::block_fees;
     use crate::execution::types::block_fees::v0::BlockFeesV0Methods;
+    use drive::drive::batch::GroveDbOpBatch;
 
     #[test]
     fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
@@ -123,7 +124,8 @@ mod tests {
         let processing_fees = 1000000;
         let storage_fees = 2000000;
 
-        let block_fees = block_fees::v0::BlockFeesV0::from_fees(storage_fees, processing_fees).into();
+        let block_fees =
+            block_fees::v0::BlockFeesV0::from_fees(storage_fees, processing_fees).into();
 
         platform
             .add_distribute_block_fees_into_pools_operations_v0(
@@ -178,7 +180,8 @@ mod tests {
         let processing_fees = 1000000;
         let storage_fees = 2000000;
 
-        let block_fees = block_fees::v0::BlockFeesV0::from_fees(storage_fees, processing_fees).into();
+        let block_fees =
+            block_fees::v0::BlockFeesV0::from_fees(storage_fees, processing_fees).into();
 
         platform
             .add_distribute_block_fees_into_pools_operations_v0(

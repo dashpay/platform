@@ -11,8 +11,8 @@ use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_par
 use crate::platform_types::platform_state::v0::{
     PlatformInitializationState, PlatformStateV0Methods,
 };
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
 where
@@ -33,7 +33,8 @@ where
 
         let genesis_time = request.genesis_time;
 
-        let system_identity_public_keys_v0 : SystemIdentityPublicKeysV0 = self.config.abci.keys.clone().into();
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            self.config.abci.keys.clone().into();
 
         self.create_genesis_state_v0(
             genesis_time,

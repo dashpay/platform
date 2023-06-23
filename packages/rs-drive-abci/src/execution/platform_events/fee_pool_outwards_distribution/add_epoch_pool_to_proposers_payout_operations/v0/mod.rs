@@ -1,6 +1,10 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
+use crate::execution::types::unpaid_epoch::v0::{
+    UnpaidEpochV0, UnpaidEpochV0Getters, UnpaidEpochV0Methods,
+};
+use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -11,8 +15,6 @@ use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
 use drive::fee::credits::Credits;
 use drive::grovedb::Transaction;
-use crate::execution::types::unpaid_epoch::UnpaidEpoch;
-use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0, UnpaidEpochV0Getters, UnpaidEpochV0Methods};
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool

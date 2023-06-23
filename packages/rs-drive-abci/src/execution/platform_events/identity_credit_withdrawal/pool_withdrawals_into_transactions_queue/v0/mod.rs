@@ -11,13 +11,13 @@ use drive::grovedb::Transaction;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
 };
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 
 impl<C> Platform<C>
 where
@@ -175,12 +175,14 @@ mod tests {
                     core_chain_locked_height: 96,
                     block_hash: None,
                     app_hash: None,
-                }.into(),
+                }
+                .into(),
                 epoch_info: EpochInfoV0 {
                     current_epoch_index: 1,
                     previous_epoch_index: None,
                     is_epoch_change: false,
-                }.into(),
+                }
+                .into(),
                 hpmn_count: 100,
                 withdrawal_transactions: Default::default(),
                 block_platform_state: PlatformStateV0 {

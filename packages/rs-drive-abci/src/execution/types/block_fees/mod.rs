@@ -1,10 +1,12 @@
 pub mod v0;
 
-use serde::{Deserialize, Serialize};
+use crate::execution::types::block_fees::v0::{
+    BlockFeesV0, BlockFeesV0Getters, BlockFeesV0Methods, BlockFeesV0Setters,
+};
 use derive_more::From;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
-use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Getters, BlockFeesV0Methods, BlockFeesV0Setters};
+use serde::{Deserialize, Serialize};
 
 /// The versioned block fees
 #[derive(Serialize, Deserialize, Clone, Debug, From)]
@@ -16,31 +18,31 @@ pub enum BlockFees {
 impl BlockFeesV0Getters for BlockFees {
     fn processing_fee(&self) -> u64 {
         match self {
-            BlockFees::V0(v0) => v0.processing_fee()
+            BlockFees::V0(v0) => v0.processing_fee(),
         }
     }
 
     fn storage_fee(&self) -> u64 {
         match self {
-            BlockFees::V0(v0) => v0.storage_fee()
+            BlockFees::V0(v0) => v0.storage_fee(),
         }
     }
 
     fn refunds_per_epoch(&self) -> &CreditsPerEpoch {
         match self {
-            BlockFees::V0(v0) => v0.refunds_per_epoch()
+            BlockFees::V0(v0) => v0.refunds_per_epoch(),
         }
     }
 
     fn refunds_per_epoch_owned(self) -> CreditsPerEpoch {
         match self {
-            BlockFees::V0(v0) => v0.refunds_per_epoch_owned()
+            BlockFees::V0(v0) => v0.refunds_per_epoch_owned(),
         }
     }
 
     fn refunds_per_epoch_mut(&mut self) -> &mut CreditsPerEpoch {
         match self {
-            BlockFees::V0(v0) => v0.refunds_per_epoch_mut()
+            BlockFees::V0(v0) => v0.refunds_per_epoch_mut(),
         }
     }
 }

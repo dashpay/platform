@@ -36,12 +36,12 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+use crate::platform_types::epochInfo::EpochInfo;
 use dpp::block::epoch::Epoch;
 use dpp::ProtocolError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use crate::platform_types::epochInfo::EpochInfo;
 
 /// Lifetime of an epoch in milliseconds.
 pub const EPOCH_CHANGE_TIME_MS_V0: u64 = 1576800000;
@@ -61,6 +61,7 @@ pub struct EpochInfoV0 {
     pub is_epoch_change: bool,
 }
 
+/// Epoch info methods
 pub trait EpochInfoV0Methods {
     /// Returns true if it's an epoch change but not the Epoch 0 on genesis
     fn is_epoch_change_but_not_genesis(&self) -> bool;
@@ -127,7 +128,7 @@ impl EpochInfoV0Methods for EpochInfoV0 {
 
 impl EpochInfoV0 {
     /// Converts some values to decimal types and calculates some relevant epoch info values.
-    fn calculate(
+    pub fn calculate(
         genesis_time_ms: u64,
         block_time_ms: u64,
         previous_block_time_ms: Option<u64>,
@@ -174,7 +175,8 @@ impl EpochInfoV0 {
             current_epoch_index,
             previous_epoch_index,
             is_epoch_change,
-        }.into())
+        }
+        .into())
     }
 
     /// Takes genesis time and block info and sets current and previous epoch indexes as well as
@@ -213,7 +215,9 @@ impl TryFrom<&EpochInfoV0> for Epoch {
 #[cfg(test)]
 mod test {
     mod calculate {
-        use crate::platform_types::epochInfo::v0::{EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods};
+        use crate::platform_types::epochInfo::v0::{
+            EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods,
+        };
 
         #[test]
         fn test_epoch_change_to_0_epoch() {

@@ -1,14 +1,16 @@
+use crate::execution::types::unpaid_epoch::v0::{
+    UnpaidEpochV0Getters, UnpaidEpochV0Methods, UnpaidEpochV0Setters,
+};
+use derive_more::From;
 use dpp::block::epoch::EpochIndex;
 use drive::error::Error;
-use derive_more::From;
-use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods, UnpaidEpochV0Setters};
 
 pub mod v0;
 
 /// UnpaidEpoch contains info about an epoch containing fees that have not been paid out yet.
 #[derive(Debug, From)]
 pub enum UnpaidEpoch {
-    V0(v0::UnpaidEpochV0)
+    V0(v0::UnpaidEpochV0),
 }
 
 impl UnpaidEpochV0Methods for UnpaidEpoch {
@@ -78,7 +80,9 @@ impl UnpaidEpochV0Setters for UnpaidEpoch {
 
     fn set_next_epoch_start_block_height(&mut self, next_epoch_start_block_height: u64) {
         match self {
-            UnpaidEpoch::V0(v0) => v0.set_next_epoch_start_block_height(next_epoch_start_block_height),
+            UnpaidEpoch::V0(v0) => {
+                v0.set_next_epoch_start_block_height(next_epoch_start_block_height)
+            }
         }
     }
 
@@ -90,7 +94,9 @@ impl UnpaidEpochV0Setters for UnpaidEpoch {
 
     fn set_next_epoch_start_block_core_height(&mut self, next_epoch_start_block_core_height: u32) {
         match self {
-            UnpaidEpoch::V0(v0) => v0.set_next_epoch_start_block_core_height(next_epoch_start_block_core_height),
+            UnpaidEpoch::V0(v0) => {
+                v0.set_next_epoch_start_block_core_height(next_epoch_start_block_core_height)
+            }
         }
     }
 }

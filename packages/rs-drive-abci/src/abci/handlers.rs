@@ -64,13 +64,15 @@ use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0Setters,
 };
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use serde_json::Map;
-use crate::execution::types::block_state_info::v0::{BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters};
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -317,8 +319,9 @@ where
                 };
 
                 // We need to set the block hash
-                block_execution_context.block_state_info_mut().set_block_hash(
-                    Some(request.hash.clone().try_into().map_err(|_| {
+                block_execution_context
+                    .block_state_info_mut()
+                    .set_block_hash(Some(request.hash.clone().try_into().map_err(|_| {
                         Error::Abci(AbciError::BadRequestDataSize(
                             "block hash is not 32 bytes in process proposal".to_string(),
                         ))

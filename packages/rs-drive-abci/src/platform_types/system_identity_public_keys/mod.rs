@@ -1,8 +1,11 @@
-use crate::platform_types::system_identity_public_keys::v0::{SystemIdentityPublicKeysV0, SystemIdentityPublicKeysV0Getters, SystemIdentityPublicKeysV0Setters};
-use serde::{Deserialize, Serialize};
-use derive_more::From;
 use crate::abci::config::Keys;
 use crate::platform_types::required_identity_public_key_set::v0::RequiredIdentityPublicKeysSet;
+use crate::platform_types::system_identity_public_keys::v0::{
+    SystemIdentityPublicKeysV0, SystemIdentityPublicKeysV0Getters,
+    SystemIdentityPublicKeysV0Setters,
+};
+use derive_more::From;
+use serde::{Deserialize, Serialize};
 
 /// Version 0
 pub mod v0;
@@ -10,7 +13,8 @@ pub mod v0;
 /// System identity public keys
 #[derive(Serialize, Deserialize, Clone, Debug, From)]
 pub enum SystemIdentityPublicKeys {
-    V0(SystemIdentityPublicKeysV0)
+    /// Version 0
+    V0(SystemIdentityPublicKeysV0),
 }
 
 impl SystemIdentityPublicKeysV0Getters for SystemIdentityPublicKeys {

@@ -74,6 +74,7 @@ impl BlockStateInfoV0 {
     }
 }
 
+/// Methods created on version 0 of block state info
 pub trait BlockStateInfoV0Methods {
     /// Gets a block info from the block state info
     fn to_block_info(&self, epoch: Epoch) -> BlockInfo;
@@ -175,7 +176,6 @@ impl BlockStateInfoV0Methods for BlockStateInfoV0 {
             && self.block_hash.unwrap() == received_hash)
     }
 }
-
 
 /// A trait for getting the properties of the `BlockStateInfoV0`.
 pub trait BlockStateInfoV0Getters {

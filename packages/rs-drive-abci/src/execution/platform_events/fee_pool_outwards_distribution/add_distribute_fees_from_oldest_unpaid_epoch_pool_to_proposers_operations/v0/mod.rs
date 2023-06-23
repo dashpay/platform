@@ -6,8 +6,8 @@ use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
 
-use drive::grovedb::Transaction;
 use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
+use drive::grovedb::Transaction;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the op batch which distribute fees
@@ -47,7 +47,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             },
         ));
 
-        let unpaid_epoch= unpaid_epoch.into();
+        let unpaid_epoch = unpaid_epoch.into();
 
         let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations_v0(
             &unpaid_epoch,

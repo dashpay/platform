@@ -4,11 +4,13 @@
 //! information about the current epoch.
 //!
 
-use crate::platform_types::epochInfo::v0::{EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods, EpochInfoV0Setters};
-use serde::{Deserialize, Serialize};
+use crate::platform_types::epochInfo::v0::{
+    EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods, EpochInfoV0Setters,
+};
 use derive_more::From;
 use dpp::block::epoch::Epoch;
 use dpp::ProtocolError;
+use serde::{Deserialize, Serialize};
 
 pub mod v0;
 
@@ -17,7 +19,7 @@ pub mod v0;
 #[serde(rename_all = "camelCase")]
 pub enum EpochInfo {
     /// Version 0
-    V0(EpochInfoV0)
+    V0(EpochInfoV0),
 }
 
 impl EpochInfoV0Methods for EpochInfo {

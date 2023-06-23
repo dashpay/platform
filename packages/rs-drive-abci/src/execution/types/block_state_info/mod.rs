@@ -1,12 +1,14 @@
 /// Version 0
 pub mod v0;
 
+use crate::error::Error;
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0, BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
+};
+use crate::platform_types::block_proposal::v0::BlockProposal;
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use crate::error::Error;
-use crate::execution::types::block_state_info::v0::{BlockStateInfoV0, BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters};
-use crate::platform_types::block_proposal::v0::BlockProposal;
 
 /// The versioned block state info
 #[derive(Debug, From)]
@@ -152,9 +154,13 @@ impl BlockStateInfoV0Methods for BlockStateInfo {
         commit_hash: I,
     ) -> Result<bool, Error> {
         match self {
-            BlockStateInfo::V0(v0) => {
-                v0.matches_expected_block_info(height, round, core_block_height, proposer_pro_tx_hash, commit_hash)
-            }
+            BlockStateInfo::V0(v0) => v0.matches_expected_block_info(
+                height,
+                round,
+                core_block_height,
+                proposer_pro_tx_hash,
+                commit_hash,
+            ),
         }
     }
 }
