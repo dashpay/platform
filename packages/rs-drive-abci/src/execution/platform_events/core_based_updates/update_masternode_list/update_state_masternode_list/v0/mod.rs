@@ -79,7 +79,7 @@ where
             });
     }
 
-    pub(in crate::execution) fn update_state_masternode_list_v0(
+    pub(crate) fn update_state_masternode_list_v0(
         &self,
         state: &mut PlatformState,
         core_block_height: u32,

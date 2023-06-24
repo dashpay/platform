@@ -20,6 +20,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
+use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 /// Platform state
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]

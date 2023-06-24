@@ -74,7 +74,7 @@ pub fn setup_drive_with_initial_state_structure() -> Drive {
         ..Default::default()
     }));
     drive
-        .create_initial_state_structure(None)
+        .create_initial_state_structure_0(None)
         .expect("should create root tree successfully");
 
     drive

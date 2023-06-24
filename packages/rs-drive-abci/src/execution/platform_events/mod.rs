@@ -29,3 +29,5 @@ pub(in crate::execution) mod update_state_cache;
 pub(in crate::execution) mod validator_set_update;
 /// Platform withdrawals
 pub(in crate::execution) mod withdrawals;
+/// Initial core height
+pub(in crate::execution) mod initial_core_height;

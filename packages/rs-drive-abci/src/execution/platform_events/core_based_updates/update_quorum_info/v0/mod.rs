@@ -8,6 +8,7 @@ use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Get
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 use std::cmp::Ordering;
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -24,11 +25,12 @@ where
     ///
     /// * `Result<SimpleConsensusValidationResult, ExecutionError>` - A `SimpleConsensusValidationResult`
     ///   on success, or an `Error` on failure.
-    pub(in crate::execution::platform_events::core_based_updates) fn update_quorum_info_v0(
+    pub(super) fn update_quorum_info_v0(
         &self,
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if !start_from_scratch && core_block_height == block_platform_state.core_height() {
             tracing::debug!(

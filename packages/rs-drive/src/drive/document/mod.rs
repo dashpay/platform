@@ -243,7 +243,7 @@ pub(crate) mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure_0(None)
             .expect("expected to create root tree successfully");
 
         let dashpay_path = if mutable_contact_requests {

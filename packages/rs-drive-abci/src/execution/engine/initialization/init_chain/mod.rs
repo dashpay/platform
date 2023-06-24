@@ -1,0 +1,36 @@
+mod v0;
+
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
+
+use crate::rpc::core::CoreRPCLike;
+
+use drive::grovedb::Transaction;
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
+use dpp::version::{FeatureVersion, PlatformVersion};
+use crate::error::execution::ExecutionError;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+
+impl<C> Platform<C>
+    where
+        C: CoreRPCLike,
+{
+    /// Initialize the chain
+    pub fn init_chain(
+        &self,
+        request: RequestInitChain,
+        transaction: &Transaction,
+    ) -> Result<ResponseInitChain, Error> {
+        let state = self.state.read().expect("expected to get state");
+        let current_protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(current_protocol_version)?;
+        match platform_version.drive_abci.methods.engine.init_chain { 
+            0 => self.init_chain_v0(request, transaction, platform_version),
+            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "init_chain".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })
+        }
+    }
+}

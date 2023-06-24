@@ -40,12 +40,13 @@ use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
+use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 
 use super::identity::add_initial_withdrawal_state_structure_operations;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub fn create_initial_state_structure(&self, transaction: TransactionArg) -> Result<(), Error> {
+    pub fn create_initial_state_structure_0(&self, transaction: TransactionArg) -> Result<(), Error> {
         // We can not use batching to insert the root tree structure
 
         let mut drive_operations = vec![];
@@ -186,7 +187,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("should open Drive successfully");
 
         drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure_0(None)
             .expect("expected to create structure");
         let mut query = Query::new();
         query.insert_all();
@@ -216,7 +217,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("should open Drive successfully");
 
         drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure_0(None)
             .expect("expected to create structure");
 
         // Merk Level 0

@@ -291,7 +291,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction))
+            .create_initial_state_structure_0(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
@@ -404,7 +404,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction))
+            .create_initial_state_structure_0(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
@@ -514,7 +514,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction))
+            .create_initial_state_structure_0(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
@@ -649,7 +649,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction))
+            .create_initial_state_structure_0(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -765,7 +765,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction))
+            .create_initial_state_structure_0(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -982,7 +982,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction))
+            .create_initial_state_structure_0(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(

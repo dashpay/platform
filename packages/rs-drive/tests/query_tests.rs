@@ -4720,7 +4720,7 @@ fn test_query_a_b_c_d_e_contract() {
     let drive: Drive = Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
 
     drive
-        .create_initial_state_structure(None)
+        .create_initial_state_structure_0(None)
         .expect("expected to create root tree successfully");
 
     // Create a contract

@@ -42,3 +42,6 @@ pub use grovedb;
 /// Test helpers
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
+/// Query module
+#[cfg(any(feature = "full", feature = "verify"))]
+pub mod version;

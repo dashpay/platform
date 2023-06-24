@@ -8,6 +8,7 @@ mod protocol_version;
 pub use protocol_version::*;
 mod protocol_version_validator;
 mod v0;
+mod drive_versions;
 
 pub const LATEST_VERSION: u32 = 1;
 

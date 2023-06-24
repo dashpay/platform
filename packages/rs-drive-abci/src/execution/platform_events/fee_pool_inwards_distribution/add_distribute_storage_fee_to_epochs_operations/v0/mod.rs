@@ -219,7 +219,7 @@ mod tests {
             assert_eq!(outcome.refunded_epochs_count, refunds.len() as u16);
 
             // collect all the storage fee values of the 1000 epochs pools
-            let storage_fees = get_storage_credits_for_distribution_for_epochs_in_range(
+            let storage_fees = drive.get_storage_credits_for_distribution_for_epochs_in_range(
                 &platform.drive,
                 GENESIS_EPOCH_INDEX..current_epoch_index + PERPETUAL_STORAGE_EPOCHS,
                 Some(&transaction),

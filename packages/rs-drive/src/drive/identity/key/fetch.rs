@@ -926,7 +926,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&transaction))
+            .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(5, Some(12345));
@@ -954,7 +954,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&transaction))
+            .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(5, Some(12345));
@@ -989,7 +989,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&transaction))
+            .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(5, Some(12345));
@@ -1024,7 +1024,7 @@ mod tests {
         let transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&transaction))
+            .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(5, Some(12345));

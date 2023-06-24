@@ -104,7 +104,7 @@ impl TempPlatform<MockCoreRPCLike> {
     pub fn set_initial_state_structure(self) -> Self {
         self.platform
             .drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure_0(None)
             .expect("should create root tree successfully");
 
         self

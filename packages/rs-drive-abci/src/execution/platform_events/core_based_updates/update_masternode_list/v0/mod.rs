@@ -6,6 +6,8 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -29,7 +31,7 @@ where
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
     ///   there is a problem fetching the masternode list difference or updating the state.
-    pub(in crate::execution::platform_events::core_based_updates) fn update_masternode_list_v0(
+    pub(super) fn update_masternode_list_v0(
         &self,
         platform_state: Option<&PlatformState>,
         block_platform_state: &mut PlatformState,
@@ -37,6 +39,7 @@ where
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if let Some(last_commited_block_info) =
             block_platform_state.last_committed_block_info().as_ref()
@@ -66,12 +69,13 @@ where
                 is_init_chain,
             )?;
 
-            self.update_masternode_identities_v0(
+            self.update_masternode_identities(
                 masternode_list_diff,
                 &removed_masternodes,
                 block_info,
                 platform_state,
                 transaction,
+                platform_version,
             )?;
 
             if !removed_masternodes.is_empty() {

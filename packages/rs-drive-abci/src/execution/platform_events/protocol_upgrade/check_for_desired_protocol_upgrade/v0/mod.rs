@@ -71,7 +71,7 @@ impl<C> Platform<C> {
         } else {
             // we need to drop all version information
             self.drive
-                .clear_version_information(Some(transaction))
+                .clear_version_information_v0(Some(transaction))
                 .map_err(Error::Drive)?;
 
             Ok(None)

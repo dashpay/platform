@@ -133,7 +133,7 @@ mod tests {
 
         platform
             .drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure_0(None)
             .expect("expected to create state structure");
         let identity = Identity {
             protocol_version: 1,
@@ -175,7 +175,7 @@ mod tests {
 
         platform
             .drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure_0(None)
             .expect("expected to create state structure");
 
         let transaction = platform.drive.grove.start_transaction();

@@ -5,6 +5,7 @@ use crate::ProtocolError;
 use std::collections::BTreeMap;
 
 pub type FeatureVersion = u16;
+pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FeatureVersionBounds {
@@ -55,10 +56,35 @@ pub struct AbciStructureVersion {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DriveStructureVersion {
-    pub document_indexes: FeatureVersionBounds,
-    pub identity_indexes: FeatureVersionBounds,
-    pub pools: FeatureVersionBounds,
+pub struct DriveAbciVersion {
+    pub methods: DriveAbciMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciMethodVersions {
+    pub engine: DriveAbciEngineMethodVersions,
+    pub initialization: DriveAbciInitializationMethodVersions,
+    pub core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciEngineMethodVersions {
+    pub init_chain: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciCoreBasedUpdatesMethodVersions {
+    pub update_core_info: FeatureVersion,
+    pub update_masternode_list: FeatureVersion,
+    pub update_quorum_info: FeatureVersion,
+    pub update_state_masternode_list: FeatureVersion,
+    pub update_masternode_identities: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciInitializationMethodVersions {
+    pub initial_core_height: FeatureVersion,
+    pub create_genesis_state: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -86,7 +112,8 @@ pub struct PlatformVersion {
     pub costs: FeatureVersionBounds,
     pub state_transition_signing: StateTransitionSigningVersion,
     pub state_transitions: StateTransitionVersion,
-    pub drive_structure: DriveStructureVersion,
+    pub drive: DriveVersion,
+    pub drive_abci: DriveAbciVersion,
     pub abci_structure: AbciStructureVersion,
     pub platform_architecture: PlatformArchitectureVersion,
 }

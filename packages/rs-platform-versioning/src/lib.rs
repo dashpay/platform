@@ -1,9 +1,8 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, DeriveInput, Data, Ident, Attribute, Meta, Lit};
 use quote::quote;
-
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Ident, Lit, Meta};
 
 #[proc_macro_derive(PlatformSerdeVersioned)]
 pub fn derive_platform_versions(input: TokenStream) -> TokenStream {

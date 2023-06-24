@@ -27,19 +27,21 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
     /// Update of the masternode identities
-    pub fn update_masternode_identities_v0(
+    pub(super) fn update_masternode_identities_v0(
         &self,
         masternode_diff: MasternodeListDiff,
         removed_masternodes: &BTreeMap<ProTxHash, MasternodeListItem>,
         block_info: &BlockInfo,
         platform_state: Option<&PlatformState>,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let MasternodeListDiff {
             mut added_mns,

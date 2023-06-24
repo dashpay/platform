@@ -50,6 +50,7 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, Owne
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use dpp::version::PlatformVersion;
 
 const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
@@ -67,9 +68,11 @@ impl<C> Platform<C> {
         genesis_time: TimestampMillis,
         system_identity_public_keys: SystemIdentityPublicKeys,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        //versioned call
         self.drive
-            .create_initial_state_structure(transaction)
+            .create_initial_state_structure(transaction, platform_version)
             .map_err(Error::Drive)?;
 
         let mut operations = vec![];

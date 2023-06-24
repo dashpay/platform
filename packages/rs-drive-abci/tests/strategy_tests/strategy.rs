@@ -21,7 +21,9 @@ use dpp::document::document_transition::{
 use dpp::document::{Document, DocumentsBatchTransition};
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0, StateTransitionType};
+use dpp::state_transition::{
+    StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
+};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::LATEST_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
