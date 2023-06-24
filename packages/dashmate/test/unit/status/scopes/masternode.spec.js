@@ -37,8 +37,6 @@ describe('getMasternodeScopeFactory', () => {
     });
 
     it('should just work', async () => {
-      config.toEnvs.returns({});
-
       mockRpcClient.mnsync.returns({
         result: {
           AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
@@ -136,8 +134,6 @@ describe('getMasternodeScopeFactory', () => {
     });
 
     it('should not request masternode info if syncing', async () => {
-      config.toEnvs.returns({});
-
       mockRpcClient.mnsync.returns({
         result: {
           AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
