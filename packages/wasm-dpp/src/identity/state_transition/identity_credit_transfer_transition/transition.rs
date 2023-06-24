@@ -15,7 +15,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransitionLike;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]

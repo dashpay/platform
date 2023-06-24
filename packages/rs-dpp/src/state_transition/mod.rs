@@ -4,18 +4,12 @@ use serde::{Deserialize, Serialize};
 pub use abstract_state_transition::{
     state_transition_helpers, StateTransitionConvert, StateTransitionLike,
 };
-pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
+pub use abstract_state_transition_identity_signed::StateTransitionIdentitySignedV0;
 use platform_value::{BinaryData, Value};
 pub use state_transition_types::*;
 
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 // TODO unify the import paths ::object::state_transition::*
 use crate::document::DocumentsBatchTransition;
-use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::prelude::Identifier;
 use crate::serialization_traits::PlatformSerializable;
 use bincode::{config, Decode, Encode};
@@ -40,6 +34,7 @@ pub mod apply_state_transition;
 mod serialization;
 mod state_transition_action;
 mod state_transitions;
+mod signing;
 
 pub use state_transitions::*;
 
@@ -47,6 +42,14 @@ use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::util::hash;
 use crate::version::FeatureVersion;
 pub use state_transition_action::StateTransitionAction;
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {
@@ -152,10 +155,12 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, to_cbor_buffer, true)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
         call_method!(self, to_json, skip_signature)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_object(
         &self,
         skip_signature: bool,
@@ -175,6 +180,7 @@ impl StateTransitionConvert for StateTransition {
         panic!("Static call is not supported")
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         call_method!(self, to_cleaned_object, skip_signature)
     }

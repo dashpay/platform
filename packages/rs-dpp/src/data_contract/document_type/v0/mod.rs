@@ -17,6 +17,7 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
+use crate::state_transition::documents_batch_transition::document_transition::INITIAL_REVISION;
 
 pub mod document_factory;
 pub mod random_document;

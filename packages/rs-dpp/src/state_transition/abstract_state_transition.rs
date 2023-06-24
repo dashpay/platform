@@ -198,7 +198,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
     fn signature_property_paths() -> Vec<&'static str>;
     fn identifiers_property_paths() -> Vec<&'static str>;
     fn binary_property_paths() -> Vec<&'static str>;
-
+    #[cfg(feature = "platform-value")]
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -209,7 +209,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         };
         state_transition_helpers::to_object(self, skip_signature_paths)
     }
-
+    #[cfg(feature = "platform-value")]
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_canonical_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -223,7 +223,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         object.as_map_mut_ref().unwrap().sort_by_keys();
         Ok(object)
     }
-
+    #[cfg(feature = "platform-value")]
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -238,6 +238,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         Ok(object)
     }
 
+    #[cfg(feature = "json-object")]
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
@@ -267,7 +268,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
             Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
         }
     }
-
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         self.to_object(skip_signature)
     }

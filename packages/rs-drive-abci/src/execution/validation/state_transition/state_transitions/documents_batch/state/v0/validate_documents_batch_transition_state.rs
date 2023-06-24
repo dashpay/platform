@@ -34,7 +34,7 @@ use dpp::{
     prelude::{Identifier, TimestampMillis},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionIdentitySigned,
+        StateTransitionIdentitySignedV0,
     },
     validation::ConsensusValidationResult,
     ProtocolError,

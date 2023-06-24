@@ -22,7 +22,7 @@ use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
     version::LATEST_VERSION,
@@ -438,7 +438,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for IdentityUpdateTransition {
+impl StateTransitionIdentitySignedV0 for IdentityUpdateTransition {
     fn get_owner_id(&self) -> &Identifier {
         &self.identity_id
     }

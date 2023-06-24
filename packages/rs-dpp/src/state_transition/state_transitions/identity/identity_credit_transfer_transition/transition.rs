@@ -4,7 +4,7 @@ use crate::platform_serialization::PlatformSignable;
 use crate::prelude::Identifier;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionType,
+    StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType,
 };
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
@@ -181,7 +181,7 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
+impl StateTransitionIdentitySignedV0 for IdentityCreditTransferTransition {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.identity_id

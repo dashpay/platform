@@ -10,25 +10,19 @@ use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementTyp
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
-        StateTransitionType,
-    },
-    Convertible, ProtocolError,
-};
+use crate::{data_contract::DataContract, identity::KeyID, prelude::Identifier, state_transition::{
+    StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
+    StateTransitionType,
+}, Convertible, ProtocolError, NonConsensusError};
 
 use super::property_names::*;
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use crate::identity::PartialIdentity;
+use crate::identity::signer::Signer;
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
-pub mod validation;
-
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::DataContractCreate;
 use crate::version::FeatureVersion;
@@ -88,9 +82,9 @@ impl DataContractCreateTransitionV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<DataContractCreateTransition, ProtocolError> {
         data_contract.owner_id = identity.id;
-        data_contract.id = generate_data_contract_id(identity.id, entropy);
+        data_contract.id = DataContract::generate_data_contract_id_v0(identity.id, entropy);
         let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract,
             entropy: Default::default(),
@@ -207,7 +201,7 @@ impl From<&DataContractCreateTransitionV0> for StateTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for DataContractCreateTransitionV0 {
+impl StateTransitionIdentitySignedV0 for DataContractCreateTransitionV0 {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.data_contract.owner_id

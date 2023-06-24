@@ -17,7 +17,7 @@ use crate::{
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
         state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionIdentitySigned,
+        StateTransitionIdentitySignedV0,
     },
     BlsModule, ProtocolError,
 };
@@ -34,7 +34,7 @@ lazy_static! {
 
 pub async fn validate_state_transition_identity_signature(
     state_repository: Arc<impl StateRepositoryLike>,
-    state_transition: &mut impl StateTransitionIdentitySigned,
+    state_transition: &mut impl StateTransitionIdentitySignedV0,
     bls: &impl BlsModule,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
@@ -244,7 +244,7 @@ mod test {
         }
     }
 
-    impl StateTransitionIdentitySigned for ExampleStateTransition {
+    impl StateTransitionIdentitySignedV0 for ExampleStateTransition {
         fn get_owner_id(&self) -> &Identifier {
             &self.owner_id
         }

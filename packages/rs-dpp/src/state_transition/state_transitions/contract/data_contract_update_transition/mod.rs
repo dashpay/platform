@@ -8,7 +8,7 @@ use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
 use crate::state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionType,
+    StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType,
 };
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
@@ -22,6 +22,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fmt;
+use platform_versioning::PlatformVersioned;
 
 mod action;
 pub mod apply_data_contract_update_transition_factory;
@@ -261,7 +262,7 @@ impl StateTransitionLike for DataContractUpdateTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for DataContractUpdateTransition {
+impl StateTransitionIdentitySignedV0 for DataContractUpdateTransition {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.data_contract().owner_id

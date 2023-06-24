@@ -13,7 +13,7 @@ use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
     ProtocolError,
@@ -130,7 +130,7 @@ impl IdentityCreditWithdrawalTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
+impl StateTransitionIdentitySignedV0 for IdentityCreditWithdrawalTransition {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.identity_id

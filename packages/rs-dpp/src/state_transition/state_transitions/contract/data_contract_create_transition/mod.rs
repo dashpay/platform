@@ -13,10 +13,8 @@ use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::identity::KeyID;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::{PlatformSerializable, Signable};
-use crate::state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionType,
-};
-use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION, PlatformVersion};
+use crate::state_transition::{StateTransition, StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType};
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{Convertible, ProtocolError};
 pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
@@ -33,6 +31,7 @@ use std::convert::TryInto;
 use std::fmt;
 pub use v0::*;
 pub use v0_action::*;
+use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
 
 pub mod property_names {
     pub const STATE_TRANSITION_PROTOCOL_VERSION: &str = "version";
@@ -192,6 +191,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
         vec![SIGNATURE, ENTROPY]
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
@@ -211,11 +211,13 @@ impl StateTransitionConvert for DataContractCreateTransition {
         Ok(object)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object(skip_signature)
             .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
@@ -277,7 +279,7 @@ impl StateTransitionLike for DataContractCreateTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for DataContractCreateTransition {
+impl StateTransitionIdentitySignedV0 for DataContractCreateTransition {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.data_contract().owner_id

@@ -31,6 +31,7 @@ pub struct StateTransitionVersion {
     pub identity_update_state_transition: FeatureVersionBounds,
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
+    pub identity_credit_transfer_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
     pub documents_batch_state_transition: FeatureVersionBounds,
@@ -38,6 +39,14 @@ pub struct StateTransitionVersion {
     pub document_create_state_transition: DocumentFeatureVersionBounds,
     pub document_replace_state_transition: DocumentFeatureVersionBounds,
     pub document_delete_state_transition: DocumentFeatureVersionBounds,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StateTransitionSigningVersion {
+    pub sign_external: FeatureVersion,
+    pub sign: FeatureVersion,
+    pub verify_public_key_is_enabled: FeatureVersion,
+    pub verify_public_key_level_and_purpose: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -75,6 +84,7 @@ pub struct PlatformVersion {
     pub identity: FeatureVersionBounds,
     pub proofs: FeatureVersionBounds,
     pub costs: FeatureVersionBounds,
+    pub state_transition_signing: StateTransitionSigningVersion,
     pub state_transitions: StateTransitionVersion,
     pub drive_structure: DriveStructureVersion,
     pub abci_structure: AbciStructureVersion,

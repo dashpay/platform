@@ -6,7 +6,7 @@ use dpp::consensus::signature::{
 
 use dpp::identity::PartialIdentity;
 
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::StateTransitionIdentitySignedV0;
 use dpp::validation::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::{
@@ -36,7 +36,7 @@ lazy_static! {
 
 pub(crate) fn validate_state_transition_identity_signature_v0(
     drive: &Drive,
-    state_transition: &impl StateTransitionIdentitySigned,
+    state_transition: &impl StateTransitionIdentitySignedV0,
     request_revision: bool,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {

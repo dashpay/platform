@@ -30,7 +30,7 @@ use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
 };
@@ -284,7 +284,7 @@ impl DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for DocumentsBatchTransition {
+impl StateTransitionIdentitySignedV0 for DocumentsBatchTransition {
     fn get_owner_id(&self) -> &Identifier {
         &self.owner_id
     }

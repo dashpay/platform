@@ -1,8 +1,9 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
+use syn::{parse_macro_input, DeriveInput, Data, Ident, Attribute, Meta, Lit};
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Ident};
+
 
 #[proc_macro_derive(PlatformSerdeVersioned)]
 pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
@@ -193,17 +194,9 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
 
 fn parse_path(attrs: &[Attribute]) -> proc_macro2::TokenStream {
     for attr in attrs {
-        if attr.path.is_ident("platform_version_path") {
-            match attr.parse_meta() {
-                Ok(Meta::NameValue(nv)) => {
-                    if let Lit::Str(lit) = nv.lit {
-                        let path: proc_macro2::TokenStream =
-                            lit.parse().expect("Failed to parse path");
-                        return path;
-                    }
-                }
-                _ => panic!("expected platform_version_path attribute to be a string"),
-            }
+        if attr.path().is_ident("platform_version_path") {
+            let path: syn::Path = attr.parse_args().expect("Failed to parse path");
+            return quote! { #path };
         }
     }
     panic!("platform_version_path attribute not found");

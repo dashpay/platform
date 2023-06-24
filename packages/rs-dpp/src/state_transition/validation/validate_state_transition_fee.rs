@@ -15,7 +15,7 @@ use crate::{
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
     },
     state_repository::StateRepositoryLike,
-    state_transition::{StateTransition, StateTransitionIdentitySigned},
+    state_transition::{StateTransition, StateTransitionIdentitySignedV0},
     validation::SimpleConsensusValidationResult,
     ProtocolError,
 };
@@ -198,7 +198,7 @@ where
 
     async fn get_identity_owner_balance(
         &self,
-        st: &impl StateTransitionIdentitySigned,
+        st: &impl StateTransitionIdentitySignedV0,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<u64, ProtocolError> {
         let identity_id = st.get_owner_id();

@@ -15,10 +15,13 @@ use crate::{
     util::hash::ripemd160_sha256,
     BlsModule,
 };
+use crate::state_transition::signing::sign_external::StateTransitionIdentitySignExternalV0;
+use crate::state_transition::StateTransitionLike;
+use crate::version::{FeatureVersion, PlatformVersion};
 
 use super::StateTransitionLike;
 
-pub trait StateTransitionIdentitySigned
+pub trait StateTransitionIdentitySignedV0 : StateTransitionIdentitySignExternalV0
 where
     Self: StateTransitionLike,
 {
@@ -30,12 +33,14 @@ where
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
+        protocol_version: u32
     ) -> Result<(), ProtocolError> {
-        self.verify_public_key_level_and_purpose(identity_public_key)?;
-        self.verify_public_key_is_enabled(identity_public_key)?;
-        let data = self.signable_bytes()?;
-        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
-        self.set_signature_public_key_id(identity_public_key.id);
+        match
+        PlatformVersion::get(protocol_version)?.state_transition_signing.sign_external { 0 => {
+            self.sign_external_0(identity_public_key, signer)
+        }
+            _ => {}
+        }
         Ok(())
     }
 
@@ -217,7 +222,7 @@ mod test {
     };
     use platform_value::string_encoding::Encoding;
 
-    use super::StateTransitionIdentitySigned;
+    use super::StateTransitionIdentitySignedV0;
     use super::*;
     use crate::serialization_traits::PlatformDeserializable;
     use crate::serialization_traits::PlatformSerializable;
@@ -295,7 +300,7 @@ mod test {
         }
     }
 
-    impl StateTransitionIdentitySigned for ExampleStateTransition {
+    impl StateTransitionIdentitySignedV0 for ExampleStateTransition {
         fn get_owner_id(&self) -> &Identifier {
             &self.owner_id
         }

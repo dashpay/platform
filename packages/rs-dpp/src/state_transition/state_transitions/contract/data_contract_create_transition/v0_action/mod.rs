@@ -1,6 +1,6 @@
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::data_contract::DataContract;
 use serde::{Deserialize, Serialize};
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

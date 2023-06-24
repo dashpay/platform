@@ -14,7 +14,7 @@ use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
     platform_value,
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
     },
     ProtocolError,
 };

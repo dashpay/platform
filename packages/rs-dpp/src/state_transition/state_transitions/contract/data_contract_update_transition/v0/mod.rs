@@ -1,3 +1,6 @@
+mod convert;
+mod identity_signed;
+
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
@@ -13,11 +16,10 @@ use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
-use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{data_contract::DataContract, identity::KeyID, prelude::Identifier, state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+    StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
     StateTransitionType,
 }, Convertible, ProtocolError, NonConsensusError};
 use crate::identity::PartialIdentity;
@@ -25,8 +27,6 @@ use crate::identity::signer::Signer;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 use super::property_names::*;
-
-pub mod validation;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -204,21 +204,6 @@ impl From<&DataContractUpdateTransitionV0> for StateTransition {
     }
 }
 
-impl StateTransitionIdentitySigned for DataContractUpdateTransitionV0 {
-    /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
-        &self.data_contract.owner_id
-    }
-
-    fn get_signature_public_key_id(&self) -> Option<KeyID> {
-        Some(self.signature_public_key_id)
-    }
-
-    fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-        self.signature_public_key_id = key_id
-    }
-}
-
 impl StateTransitionLike for DataContractUpdateTransitionV0 {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
@@ -243,59 +228,5 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-}
-
-impl StateTransitionConvert for DataContractUpdateTransitionV0 {
-    fn signature_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
-    }
-
-    fn identifiers_property_paths() -> Vec<&'static str> {
-        vec![]
-    }
-
-    fn binary_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE]
-    }
-
-    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object(skip_signature)
-            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
-    }
-
-    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut object: Value = platform_value::to_value(self)?;
-        if skip_signature {
-            Self::signature_property_paths()
-                .into_iter()
-                .try_for_each(|path| {
-                    object
-                        .remove_values_matching_path(path)
-                        .map_err(ProtocolError::ValueError)
-                        .map(|_| ())
-                })?;
-        }
-        object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;
-        Ok(object)
-    }
-
-    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut object: Value = platform_value::to_value(self)?;
-        if skip_signature {
-            Self::signature_property_paths()
-                .into_iter()
-                .try_for_each(|path| {
-                    object
-                        .remove_values_matching_path(path)
-                        .map_err(ProtocolError::ValueError)
-                        .map(|_| ())
-                })?;
-        }
-        object.insert(
-            String::from(DATA_CONTRACT),
-            self.data_contract.to_cleaned_object()?,
-        )?;
-        Ok(object)
     }
 }

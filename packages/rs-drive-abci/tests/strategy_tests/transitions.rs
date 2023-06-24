@@ -14,7 +14,7 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0, StateTransitionType};
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
 use dpp::NativeBlsModule;

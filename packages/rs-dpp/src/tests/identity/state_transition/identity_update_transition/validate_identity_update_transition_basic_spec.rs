@@ -14,7 +14,7 @@ use crate::{
         KeyType, Purpose, SecurityLevel,
     },
     prelude::IdentityPublicKey,
-    state_transition::{StateTransitionConvert, StateTransitionIdentitySigned},
+    state_transition::{StateTransitionConvert, StateTransitionIdentitySignedV0},
     tests::{
         fixtures::{
             get_identity_update_transition_fixture, get_protocol_version_validator_fixture,
