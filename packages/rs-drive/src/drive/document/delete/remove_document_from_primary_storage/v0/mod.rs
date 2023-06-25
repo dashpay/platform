@@ -87,7 +87,8 @@ impl Drive {
                 contract_documents_primary_key_path,
                 document_type,
                 estimated_costs_only_with_layer_info,
-            );
+                drive_version,
+            )?;
         }
         Ok(())
     }

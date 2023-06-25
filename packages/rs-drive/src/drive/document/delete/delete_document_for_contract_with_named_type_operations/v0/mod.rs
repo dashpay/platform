@@ -2,8 +2,6 @@
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use dpp::data_contract::document_type::{DocumentType, IndexLevel};
@@ -12,25 +10,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::contract::Contract;
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
-    CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
-};
-use crate::drive::document::{
-    contract_document_type_path_vec, contract_documents_primary_key_path, document_reference_size,
-    unique_event_id,
-};
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentOwnedInfo,
-};
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use dpp::block::extended_block_info::BlockInfo;
-use dpp::document::Document;
 
-use crate::drive::grove_operations::BatchDeleteApplyType::{
-    StatefulBatchDelete, StatelessBatchDelete,
-};
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
@@ -54,7 +34,6 @@ impl Drive {
         document_id: [u8; 32],
         contract: &Contract,
         document_type_name: &str,
-        owner_id: Option<[u8; 32]>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -67,7 +46,6 @@ impl Drive {
             document_id,
             contract,
             document_type,
-            owner_id,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,

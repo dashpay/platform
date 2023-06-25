@@ -47,11 +47,6 @@ pub use delete_document_for_contract_id::*;
 mod delete_document_for_contract_apply_and_add_to_operations;
 pub use delete_document_for_contract_apply_and_add_to_operations::*;
 
-// Module: add_estimation_costs_for_remove_document_to_primary_storage
-// This module contains functionality to add estimated costs for removing a document to primary storage
-mod add_estimation_costs_for_remove_document_to_primary_storage;
-pub use add_estimation_costs_for_remove_document_to_primary_storage::*;
-
 // Module: remove_document_from_primary_storage
 // This module contains functionality to remove a document from primary storage
 mod remove_document_from_primary_storage;
@@ -86,6 +81,9 @@ pub use delete_document_for_contract_with_named_type_operations::*;
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
 pub use delete_document_for_contract_operations::*;
+
+mod internal;
+use internal::*;
 
 
 use grovedb::batch::key_info::KeyInfo::KnownKey;

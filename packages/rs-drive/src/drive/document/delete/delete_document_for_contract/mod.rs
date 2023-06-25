@@ -40,7 +40,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.document.delete_methods {
+        match drive_version.methods.document.delete.delete_document_for_contract {
             0 => self.delete_document_for_contract_v0(
                 document_id,
                 contract,

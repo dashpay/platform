@@ -12,6 +12,7 @@ pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,
     pub credit_pools: DriveCreditPoolMethodVersions,
     pub protocol_upgrade: DriveProtocolUpgradeVersions,
+    pub document: DocumentMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -20,6 +21,38 @@ pub struct DriveGroveMethodVersions {
     pub batch: DriveGroveBatchMethodVersions,
     pub apply: DriveGroveApplyMethodVersions,
     pub costs: DriveGroveCostMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DocumentMethodVersions {
+    pub delete: DocumentDeleteMethodVersions,
+    pub insert: DocumentInsertMethodVersions,
+    pub update: DocumentUpdateMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DocumentInsertMethodVersions {
+    
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DocumentUpdateMethodVersions {
+
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DocumentDeleteMethodVersions {
+    pub add_estimation_costs_for_remove_document_to_primary_storage: FeatureVersion,
+    pub delete_document_for_contract: FeatureVersion,
+    pub delete_document_for_contract_id: FeatureVersion,
+    pub delete_document_for_contract_apply_and_add_to_operations: FeatureVersion,
+    pub remove_document_from_primary_storage: FeatureVersion,
+    pub remove_reference_for_index_level_for_contract_operations: FeatureVersion,
+    pub remove_indices_for_index_level_for_contract_operations: FeatureVersion,
+    pub remove_indices_for_top_index_level_for_contract_operations: FeatureVersion,
+    pub delete_document_for_contract_id_with_named_type_operations: FeatureVersion,
+    pub delete_document_for_contract_with_named_type_operations: FeatureVersion,
+    pub delete_document_for_contract_operations: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
