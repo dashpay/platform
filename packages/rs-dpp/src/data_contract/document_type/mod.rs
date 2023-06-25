@@ -9,7 +9,6 @@ use std::borrow::Cow;
 pub use {
     array_field::v0::ArrayFieldTypeV0,
     document_field::v0::{DocumentFieldTypeV0, DocumentFieldV0},
-    document_type::{DocumentType, IndexLevel},
     index::v0::{IndexV0, IndexPropertyV0},
 };
 

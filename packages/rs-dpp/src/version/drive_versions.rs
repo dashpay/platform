@@ -19,6 +19,7 @@ pub struct DriveGroveMethodVersions {
     pub basic: DriveGroveBasicMethodVersions,
     pub batch: DriveGroveBatchMethodVersions,
     pub apply: DriveGroveApplyMethodVersions,
+    pub costs: DriveGroveCostMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -63,6 +64,10 @@ pub struct DriveGroveApplyMethodVersions {
     pub grove_apply_batch_with_add_costs: FeatureVersion,
     pub grove_apply_partial_batch: FeatureVersion,
     pub grove_apply_partial_batch_with_add_costs: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveGroveCostMethodVersions {
     pub grove_batch_operations_costs: FeatureVersion,
 }
 

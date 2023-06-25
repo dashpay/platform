@@ -38,7 +38,7 @@ pub struct DocumentOperationsForContractDocumentType<'a> {
     /// Contract
     pub contract: &'a DataContract,
     /// Document type
-    pub document_type: &'a DocumentType,
+    pub document_type: &'a DocumentType<'a>,
 }
 
 /// Operations on Documents
@@ -131,7 +131,7 @@ pub enum DocumentOperationType<'a> {
         /// The contract
         contract: &'a DataContract,
         /// The name of the document type
-        document_type: &'a DocumentType,
+        document_type: &'a DocumentType<'a>,
         /// The owner id, if none is specified will try to recover from serialized document
         owner_id: Option<[u8; 32]>,
     },

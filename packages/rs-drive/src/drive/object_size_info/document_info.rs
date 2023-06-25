@@ -1,0 +1,211 @@
+use std::borrow::Cow;
+use grovedb::batch::key_info::KeyInfo;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::document::Document;
+use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
+use crate::drive::flags::StorageFlags;
+use crate::drive::object_size_info::{DriveKeyInfo, KeyValueInfo};
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeySize};
+use crate::drive::object_size_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::error::fee::FeeError;
+
+/// Document info
+#[derive(Clone, Debug)]
+pub enum DocumentInfo<'a> {
+    /// The document without it's serialized form
+    DocumentOwnedInfo((Document, Option<Cow<'a, StorageFlags>>)),
+    /// The borrowed document without it's serialized form
+    DocumentRefInfo((&'a Document, Option<Cow<'a, StorageFlags>>)),
+    /// The borrowed document and it's serialized form
+    DocumentRefAndSerialization((&'a Document, &'a [u8], Option<Cow<'a, StorageFlags>>)),
+    /// The document and it's serialized form
+    DocumentAndSerialization((Document, Vec<u8>, Option<Cow<'a, StorageFlags>>)),
+    /// An element size
+    DocumentEstimatedAverageSize(u32),
+}
+
+impl<'a> DocumentInfo<'a> {
+    /// Returns true if self is a document with serialization.
+    pub fn is_document_and_serialization(&self) -> bool {
+        matches!(self, DocumentInfo::DocumentRefAndSerialization(..))
+    }
+
+    /// Returns true if self is a document size.
+    pub fn is_document_size(&self) -> bool {
+        matches!(self, DocumentInfo::DocumentEstimatedAverageSize(_))
+    }
+
+    /// Gets the borrowed document
+    pub fn get_borrowed_document(&self) -> Option<&Document> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document),
+            DocumentInfo::DocumentOwnedInfo((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => Some(document),
+            DocumentInfo::DocumentEstimatedAverageSize(_) => None,
+        }
+    }
+
+    /// Makes the document ID the key.
+    pub fn id_key_value_info(&self) -> KeyValueInfo {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => KeyRefRequest(document.id.as_slice()),
+            DocumentInfo::DocumentOwnedInfo((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
+                KeyRefRequest(document.id.as_slice())
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(document_max_size) => {
+                KeyValueMaxSize((32, *document_max_size))
+            }
+        }
+    }
+
+    /// Gets the raw path for the given document type
+    pub fn get_estimated_size_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: &DocumentType,
+    ) -> Result<u16, Error> {
+        match key_path {
+            "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
+            _ => {
+                let document_field_type =
+                    document_type.flattened_properties.get(key_path).ok_or({
+                        Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
+                            "incorrect key path for document type for estimated sizes",
+                        ))
+                    })?;
+                let estimated_size = document_field_type
+                    .document_type
+                    .middle_byte_size_ceil()
+                    .ok_or({
+                        Error::Drive(DriveError::CorruptedCodeExecution(
+                            "document type must have a max size",
+                        ))
+                    })?;
+                Ok(estimated_size)
+            }
+        }
+    }
+
+    /// Gets the raw path for the given document type
+    pub fn get_raw_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+    ) -> Result<Option<DriveKeyInfo>, Error> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => {
+                let raw_value =
+                    document.get_raw_for_document_type(key_path, document_type, owner_id)?;
+                match raw_value {
+                    None => Ok(None),
+                    Some(value) => Ok(Some(Key(value))),
+                }
+            }
+            DocumentInfo::DocumentOwnedInfo((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
+                let raw_value =
+                    document.get_raw_for_document_type(key_path, document_type, owner_id)?;
+                match raw_value {
+                    None => Ok(None),
+                    Some(value) => Ok(Some(Key(value))),
+                }
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => {
+                let (index_level, base_event) = size_info_with_base_event.ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
+                ))?;
+                match key_path {
+                    "$ownerId" | "$id" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                        unique_id: document_type
+                            .unique_id_for_document_field(index_level, base_event)
+                            .to_vec(),
+                        max_size: DEFAULT_HASH_SIZE_U8,
+                    }))),
+                    _ => {
+                        let document_field_type =
+                            document_type.flattened_properties.get(key_path).ok_or({
+                                Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
+                                    "incorrect key path for document type",
+                                ))
+                            })?;
+
+                        let estimated_middle_size = document_field_type
+                            .document_type
+                            .middle_byte_size_ceil()
+                            .ok_or({
+                                Error::Drive(DriveError::CorruptedCodeExecution(
+                                    "document type must have a max size",
+                                ))
+                            })?;
+                        if estimated_middle_size > u8::MAX as u16 {
+                            // this is too big for a key
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "estimated middle size is too big for a key",
+                            )));
+                        }
+                        Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                            unique_id: document_type
+                                .unique_id_for_document_field(index_level, base_event)
+                                .to_vec(),
+                            max_size: estimated_middle_size as u8,
+                        })))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Gets the borrowed document
+    pub fn get_borrowed_document_and_storage_flags(
+        &self,
+    ) -> Option<(&Document, Option<&StorageFlags>)> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, storage_flags))
+            | DocumentInfo::DocumentRefInfo((document, storage_flags)) => {
+                Some((document, storage_flags.as_ref().map(|flags| flags.as_ref())))
+            }
+            DocumentInfo::DocumentOwnedInfo((document, storage_flags))
+            | DocumentInfo::DocumentAndSerialization((document, _, storage_flags)) => {
+                Some((document, storage_flags.as_ref().map(|flags| flags.as_ref())))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => None,
+        }
+    }
+
+    /// Gets storage flags
+    pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
+            | DocumentInfo::DocumentRefInfo((_, storage_flags))
+            | DocumentInfo::DocumentOwnedInfo((_, storage_flags))
+            | DocumentInfo::DocumentAndSerialization((_, _, storage_flags)) => {
+                storage_flags.as_ref().map(|flags| flags.as_ref())
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => {
+                StorageFlags::optional_default_as_ref()
+            }
+        }
+    }
+
+    /// Gets storage flags
+    pub fn get_document_id_as_slice(&self) -> Option<&[u8]> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id.as_slice()),
+            DocumentInfo::DocumentOwnedInfo((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
+                Some(document.id.as_slice())
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => None,
+        }
+    }
+}

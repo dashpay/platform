@@ -1,18 +1,21 @@
+
 use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 use grovedb::{PathQuery, TransactionArg};
+use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Given public key hashes, fetches full identities as proofs.
-    pub fn prove_multiple(
+    pub(super) fn prove_multiple_v0(
         &self,
         identity_queries: &Vec<IdentityDriveQuery>,
         contract_ids: &[[u8; 32]],
         document_queries: &Vec<SingleDocumentDriveQuery>,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut path_queries = vec![];
         let mut count = 0;
@@ -57,6 +60,6 @@ impl Drive {
             _ => true,
         };
         let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
-        self.grove_get_proved_path_query(&path_query, verbose, transaction, &mut vec![])
+        self.grove_get_proved_path_query(&path_query, verbose, transaction, &mut vec![], drive_version)
     }
 }

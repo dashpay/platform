@@ -1,4 +1,6 @@
+use grovedb::query_result_type::PathKey;
 use grovedb::TransactionArg;
+use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
@@ -20,6 +22,7 @@ impl Drive {
         transaction: TransactionArg,
         check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         //todo: clean up the duplication
         match path_key_info {
@@ -63,6 +66,7 @@ impl Drive {
                             apply_type.to_direct_query_type(),
                             transaction,
                             drive_operations,
+                            drive_version,
                         )?;
                         if !has_raw {
                             drive_operations.push(drive_operation);
@@ -78,6 +82,7 @@ impl Drive {
                         apply_type.to_direct_query_type(),
                         transaction,
                         drive_operations,
+                        drive_version,
                     )?;
                     if !has_raw {
                         drive_operations.push(drive_operation);
@@ -128,6 +133,7 @@ impl Drive {
                             apply_type.to_direct_query_type(),
                             transaction,
                             drive_operations,
+                            drive_version,
                         )?;
                         if !has_raw {
                             drive_operations.push(drive_operation);
@@ -143,6 +149,7 @@ impl Drive {
                         apply_type.to_direct_query_type(),
                         transaction,
                         drive_operations,
+                        drive_version,
                     )?;
                     if !has_raw {
                         drive_operations.push(drive_operation);
@@ -191,6 +198,7 @@ impl Drive {
                             apply_type.to_direct_query_type(),
                             transaction,
                             drive_operations,
+                            drive_version,
                         )?;
                         if !has_raw {
                             drive_operations.push(drive_operation);
@@ -206,6 +214,7 @@ impl Drive {
                         apply_type.to_direct_query_type(),
                         transaction,
                         drive_operations,
+                        drive_version,
                     )?;
                     if !has_raw {
                         drive_operations.push(drive_operation);
@@ -254,6 +263,7 @@ impl Drive {
                             apply_type.to_direct_query_type(),
                             transaction,
                             drive_operations,
+                            drive_version,
                         )?;
                         if !has_raw {
                             drive_operations.push(drive_operation);
@@ -269,6 +279,7 @@ impl Drive {
                         apply_type.to_direct_query_type(),
                         transaction,
                         drive_operations,
+                        drive_version,
                     )?;
                     if !has_raw {
                         drive_operations.push(drive_operation);
