@@ -20,6 +20,7 @@ class StartCommand extends ConfigBaseCommand {
     args,
     {
       'wait-for-readiness': waitForReadiness,
+      force: isForce,
       verbose: isVerbose,
       platform: platformOnly,
     },
@@ -54,6 +55,7 @@ class StartCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        isForce,
         platformOnly: platformOnly === true,
       });
     } catch (e) {
@@ -66,6 +68,11 @@ StartCommand.description = 'Start node';
 
 StartCommand.flags = {
   ...ConfigBaseCommand.flags,
+  force: Flags.boolean({
+    char: 'f',
+    description: 'force stop even if any service is running',
+    default: false,
+  }),
   'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
   platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
 };

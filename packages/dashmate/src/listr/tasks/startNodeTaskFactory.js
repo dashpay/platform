@@ -63,6 +63,7 @@ function startNodeTaskFactory(
     return new Listr([
       {
         title: 'Check node is not started',
+        enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
           if (await dockerCompose.isServiceRunning(
             generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
