@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.8",
+  "version": "0.24.11",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -43,7 +43,7 @@
     "add-stream": "^1.0.0",
     "conventional-changelog": "^3.1.24",
     "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
-    "semver": "^7.3.2",
+    "semver": "^7.5.3",
     "tempfile": "^3.0.0",
     "ultra-runner": "^3.10.5"
   },
@@ -79,7 +79,8 @@
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0",
     "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz",
-    "socket.io-parser": "^4.2.3"
+    "socket.io-parser": "^4.2.3",
+    "semver": "^7.5.3"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"

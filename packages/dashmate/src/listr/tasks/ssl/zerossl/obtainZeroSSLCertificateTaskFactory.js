@@ -236,23 +236,33 @@ function obtainZeroSSLCertificateTaskFactory(
         title: 'Download certificate file',
         skip: (ctx) => ctx.isBundleFilePresent,
         task: async (ctx, task) => {
-          await wait(5000);
+          for (let retry = 0; retry <= 50; retry += 1) {
+            await wait(5000);
 
-          try {
-            ctx.certificateFile = await downloadCertificate(
-              ctx.certificate.id,
-              apiKey,
-            );
-          } catch (e) {
-            if (e.code !== 2832) {
-              throw e;
+            try {
+              ctx.certificateFile = await downloadCertificate(
+                ctx.certificate.id,
+                apiKey,
+              );
+
+              // eslint-disable-next-line no-param-reassign
+              task.output = 'Successfully downloaded';
+
+              break;
+            } catch (e) {
+              if (e.code !== 2832) {
+                throw e;
+              }
+
+              // eslint-disable-next-line no-param-reassign
+              task.output = 'Certificate is not ready yet. Waiting...';
             }
+          }
 
-            // eslint-disable-next-line no-param-reassign
-            task.output = 'Certificate is not ready yet. Waiting for 5 seconds...';
+          if (!ctx.certificateFile) {
+            throw new Error('Certificate is not ready yet. Please try again later');
           }
         },
-        retry: 50,
       },
       {
         title: 'Save certificate private key file',
