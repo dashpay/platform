@@ -6,6 +6,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
 
 impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
     fn into_high_level_drive_operations<'a>(

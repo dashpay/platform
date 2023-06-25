@@ -7,6 +7,7 @@ use dpp::block::epoch::Epoch;
 use dpp::identity::IdentityPublicKey;
 
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 
 impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
     fn into_high_level_drive_operations<'a>(

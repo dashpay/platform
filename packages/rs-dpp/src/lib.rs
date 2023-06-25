@@ -44,6 +44,7 @@ pub mod block;
 pub mod serialization_traits;
 pub mod signing;
 pub mod system_data_contracts;
+pub mod balances;
 
 pub use async_trait;
 pub use bls::*;

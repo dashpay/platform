@@ -5,6 +5,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use std::borrow::Cow;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 
 impl DriveHighLevelOperationConverter for DataContractUpdateTransitionAction {
     fn into_high_level_drive_operations<'a>(

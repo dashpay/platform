@@ -1,0 +1,40 @@
+use dpp::data_contract::DataContract;
+use dpp::data_contract::document_type::DocumentType;
+use dpp::document::Document;
+use crate::drive::batch::drive_op_batch::{DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo};
+use crate::drive::batch::{DocumentOperationType, DriveOperation};
+use crate::drive::Drive;
+
+impl Drive {
+    /// Add update multiple documents operations
+    pub(super) fn add_update_multiple_documents_operations_v0<'a>(
+        documents: &'a [Document],
+        data_contract: &'a DataContract,
+        document_type: &'a DocumentType<'a>,
+        drive_operation_types: &mut Vec<DriveOperation<'a>>,
+    ) {
+        let operations: Vec<DocumentOperation> = documents
+            .iter()
+            .map(|document| {
+                DocumentOperation::UpdateOperation(UpdateOperationInfo {
+                    document,
+                    serialized_document: None,
+                    owner_id: None,
+                    storage_flags: None,
+                })
+            })
+            .collect();
+
+        if !operations.is_empty() {
+            drive_operation_types.push(DriveOperation::DocumentOperation(
+                DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
+                    document_operations: DocumentOperationsForContractDocumentType {
+                        operations,
+                        contract: data_contract,
+                        document_type,
+                    },
+                },
+            ));
+        }
+    }
+}

@@ -43,8 +43,6 @@ use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
 
-#[cfg(any(feature = "full", feature = "verify"))]
-pub mod credits;
 #[cfg(feature = "full")]
 pub mod default_costs;
 #[cfg(any(feature = "full", feature = "verify"))]

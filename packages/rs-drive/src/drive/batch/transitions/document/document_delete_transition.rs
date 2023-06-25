@@ -11,6 +11,7 @@ use dpp::document::document_transition::{
 };
 use dpp::identifier::Identifier;
 use std::borrow::Cow;
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentBaseTransitionAction, DocumentDeleteTransitionAction};
 
 impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction {
     fn into_high_level_document_drive_operations<'a>(

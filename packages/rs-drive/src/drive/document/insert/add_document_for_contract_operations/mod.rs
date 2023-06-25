@@ -16,7 +16,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
-    pub(super) fn add_document_for_contract_operations(
+    pub(crate) fn add_document_for_contract_operations(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,

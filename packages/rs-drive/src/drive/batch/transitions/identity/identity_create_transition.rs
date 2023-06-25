@@ -7,6 +7,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::prelude::Identity;
+use dpp::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
     fn into_high_level_drive_operations<'a>(

@@ -4,6 +4,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::prelude::Identifier;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
     fn into_high_level_document_drive_operations<'a>(

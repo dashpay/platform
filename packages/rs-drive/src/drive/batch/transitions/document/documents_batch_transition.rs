@@ -4,6 +4,7 @@ use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::document::state_transition::documents_batch_transition::DocumentsBatchTransitionAction;
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransitionAction;
 
 impl DriveHighLevelOperationConverter for DocumentsBatchTransitionAction {
     fn into_high_level_drive_operations<'a>(

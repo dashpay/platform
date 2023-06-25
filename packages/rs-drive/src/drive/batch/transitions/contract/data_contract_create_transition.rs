@@ -3,8 +3,8 @@ use crate::drive::batch::DriveOperation::ContractOperation;
 use crate::drive::batch::{ContractOperationType, DriveOperation};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use std::borrow::Cow;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 
 impl DriveHighLevelOperationConverter for DataContractCreateTransitionAction {
     fn into_high_level_drive_operations<'a>(

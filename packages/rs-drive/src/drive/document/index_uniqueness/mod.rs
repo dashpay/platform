@@ -41,12 +41,7 @@ use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::data_contract::data_contract::DataContractV0;
-use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
-};
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
@@ -54,10 +49,12 @@ use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::data_contract::DataContract;
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction};
 
 struct UniquenessOfDataRequestV0<'a> {
     contract: &'a ContractV0,
-    document_type: &'a DocumentTypeV0,
+    document_type: &'a DocumentType<'a>,
     owner_id: &'a Identifier,
     document_id: &'a Identifier,
     allow_original: bool,
@@ -71,7 +68,7 @@ impl Drive {
     pub fn validate_document_uniqueness(
         &self,
         contract: &ContractV0,
-        document_type: &DocumentTypeV0,
+        document_type: &DocumentType,
         document: &Document,
         owner_id: &Identifier,
         allow_original: bool,
@@ -93,8 +90,8 @@ impl Drive {
     /// Validate that a document create transition action would be unique in the state
     pub fn validate_document_create_transition_action_uniqueness(
         &self,
-        contract: &DataContractV0,
-        document_type: &DocumentTypeV0,
+        contract: &DataContract,
+        document_type: &DocumentType,
         document_create_transition: &DocumentCreateTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,
@@ -115,8 +112,8 @@ impl Drive {
     /// Validate that a document replace transition action would be unique in the state
     pub fn validate_document_replace_transition_action_uniqueness(
         &self,
-        contract: &DataContractV0,
-        document_type: &DocumentTypeV0,
+        contract: &DataContract,
+        document_type: &DocumentType,
         document_replace_transition: &DocumentReplaceTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,

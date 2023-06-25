@@ -12,7 +12,9 @@ pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,
     pub credit_pools: DriveCreditPoolMethodVersions,
     pub protocol_upgrade: DriveProtocolUpgradeVersions,
-    pub document: DocumentMethodVersions,
+    pub balances: DriveBalancesMethodVersions,
+    pub document: DriveDocumentMethodVersions,
+    pub contract: DriveContractMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -24,14 +26,49 @@ pub struct DriveGroveMethodVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DocumentMethodVersions {
-    pub delete: DocumentDeleteMethodVersions,
-    pub insert: DocumentInsertMethodVersions,
-    pub update: DocumentUpdateMethodVersions,
+pub struct DriveBalancesMethodVersions {
+    pub add_to_system_credits: FeatureVersion,
+    pub add_to_system_credits_operations: FeatureVersion,
+    pub remove_from_system_credits: FeatureVersion,
+    pub remove_from_system_credits_operations: FeatureVersion,
+    pub calculate_total_credits_balance: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DocumentInsertMethodVersions {
+pub struct DriveDocumentMethodVersions {
+    pub delete: DriveDocumentDeleteMethodVersions,
+    pub insert: DriveDocumentInsertMethodVersions,
+    pub update: DriveDocumentUpdateMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveContractMethodVersions {
+    pub prove: DriveContractProveMethodVersions,
+    pub costs: DriveContractCostsMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveContractProveMethodVersions {
+    pub prove_contract: FeatureVersion,
+    pub prove_contract_history: FeatureVersion,
+    pub prove_contracts: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveContractQueryMethodVersions {
+    pub fetch_contract_query: FeatureVersion,
+    pub fetch_contract_with_history_latest_query: FeatureVersion,
+    pub fetch_contracts_query: FeatureVersion,
+    pub fetch_contract_history_query: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveContractCostsMethodVersions {
+    pub add_estimation_costs_for_contract_insertion: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveDocumentInsertMethodVersions {
     pub add_document: FeatureVersion,
     pub add_document_for_contract: FeatureVersion,
     pub add_document_for_contract_apply_and_add_to_operations: FeatureVersion,
@@ -45,7 +82,7 @@ pub struct DocumentInsertMethodVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DocumentUpdateMethodVersions {
+pub struct DriveDocumentUpdateMethodVersions {
     pub add_update_multiple_documents_operations: FeatureVersion,
     pub update_document_for_contract: FeatureVersion,
     pub update_document_for_contract_apply_and_add_to_operations: FeatureVersion,
@@ -56,7 +93,7 @@ pub struct DocumentUpdateMethodVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DocumentDeleteMethodVersions {
+pub struct DriveDocumentDeleteMethodVersions {
     pub add_estimation_costs_for_remove_document_to_primary_storage: FeatureVersion,
     pub delete_document_for_contract: FeatureVersion,
     pub delete_document_for_contract_id: FeatureVersion,

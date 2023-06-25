@@ -13,6 +13,7 @@ use dpp::document::document_transition::{
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentBaseTransitionAction, DocumentCreateTransitionAction};
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_document_drive_operations<'a>(

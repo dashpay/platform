@@ -280,7 +280,7 @@ pub struct DriveQuery<'a> {
     /// Contract
     pub contract: &'a Contract,
     /// Document type
-    pub document_type: DocumentType<'a>,
+    pub document_type: &'a DocumentType<'a>,
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset
