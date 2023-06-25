@@ -754,6 +754,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use tempfile::TempDir;
+    use dpp::block::block_info::BlockInfo;
 
     use super::*;
     use crate::drive::config::DriveConfig;
@@ -1198,16 +1199,19 @@ mod tests {
             },
         });
 
-        let contract = cbor_serializer::serializable_value_to_cbor(
+        let contract_cbor = cbor_serializer::serializable_value_to_cbor(
             &contract,
             Some(defaults::PROTOCOL_VERSION),
         )
         .expect("expected to serialize to cbor");
 
+        // first we need to deserialize the contract
+        let contract =
+            DataContract::from_cbor_with_id(contract_cbor, None)?;
+
         drive
-            .apply_contract_cbor(
-                contract.clone(),
-                None,
+            .apply_contract(
+                &contract,
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1294,7 +1298,7 @@ mod tests {
         // Delete document
 
         drive
-            .delete_document_for_contract_cbor(
+            .delete_document_for_contract(
                 document_id,
                 &contract,
                 "indexedDocument",
