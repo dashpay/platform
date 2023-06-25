@@ -35,13 +35,6 @@ pub struct DriveBalancesMethodVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DriveDocumentMethodVersions {
-    pub delete: DriveDocumentDeleteMethodVersions,
-    pub insert: DriveDocumentInsertMethodVersions,
-    pub update: DriveDocumentUpdateMethodVersions,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
 pub struct DriveContractMethodVersions {
     pub prove: DriveContractProveMethodVersions,
     pub costs: DriveContractCostsMethodVersions,
@@ -65,6 +58,14 @@ pub struct DriveContractQueryMethodVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveContractCostsMethodVersions {
     pub add_estimation_costs_for_contract_insertion: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveDocumentMethodVersions {
+    pub delete: DriveDocumentDeleteMethodVersions,
+    pub insert: DriveDocumentInsertMethodVersions,
+    pub update: DriveDocumentUpdateMethodVersions,
+    pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -105,6 +106,14 @@ pub struct DriveDocumentDeleteMethodVersions {
     pub delete_document_for_contract_id_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_operations: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveDocumentIndexUniquenessMethodVersions {
+    pub validate_document_uniqueness: FeatureVersion,
+    pub validate_document_create_transition_action_uniqueness: FeatureVersion,
+    pub validate_document_replace_transition_action_uniqueness: FeatureVersion,
+    pub validate_uniqueness_of_data: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
