@@ -16,14 +16,14 @@ use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
-use dpp::version::PlatformVersion;
+use dpp::version::drive_versions::DriveVersion;
 use crate::drive::protocol_upgrade::{desired_version_for_validators_path, desired_version_for_validators_path_vec, versions_counter_path, versions_counter_path_vec};
 
 
 impl Drive {
     /// Clear all version information from the backing store, this is done on epoch change in
     /// execution logic
-    pub(super) fn clear_version_information_v0(&self, transaction: TransactionArg, platform_version: &PlatformVersion) -> Result<(), Error> {
+    pub(super) fn clear_version_information_v0(&self, transaction: TransactionArg, drive_version: &DriveVersion,) -> Result<(), Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         self.clear_version_information_operations_v0(transaction, &mut batch_operations, platform_version)?;
         let grove_db_operations =
@@ -45,7 +45,7 @@ impl Drive {
         &self,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let path_query = PathQuery::new_unsized(
             versions_counter_path_vec(),

@@ -16,7 +16,7 @@ use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
-use dpp::version::PlatformVersion;
+use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Clear all version information from the backing store, this is done on epoch change in
