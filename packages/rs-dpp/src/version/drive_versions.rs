@@ -32,12 +32,27 @@ pub struct DocumentMethodVersions {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DocumentInsertMethodVersions {
-    
+    pub add_document: FeatureVersion,
+    pub add_document_for_contract: FeatureVersion,
+    pub add_document_for_contract_apply_and_add_to_operations: FeatureVersion,
+    pub add_document_for_contract_operations: FeatureVersion,
+    pub add_document_to_primary_storage: FeatureVersion,
+    pub add_indices_for_index_level_for_contract_operations: FeatureVersion,
+    pub add_indices_for_top_index_level_for_contract_operations: FeatureVersion,
+    pub add_reference_for_index_level_for_contract_operations: FeatureVersion,
+    pub add_serialized_document_for_contract: FeatureVersion,
+    pub add_serialized_document_for_contract_id: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DocumentUpdateMethodVersions {
-
+    pub add_update_multiple_documents_operations: FeatureVersion,
+    pub update_document_for_contract: FeatureVersion,
+    pub update_document_for_contract_apply_and_add_to_operations: FeatureVersion,
+    pub update_document_for_contract_id: FeatureVersion,
+    pub update_document_for_contract_operations: FeatureVersion,
+    pub update_document_with_serialization_for_contract: FeatureVersion,
+    pub update_serialized_document_for_contract: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

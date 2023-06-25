@@ -32,6 +32,41 @@
 //! This modules implements functions in Drive relevant to updating Documents.
 //!
 
+// Module: add_update_multiple_documents_operations
+// This module contains functionality for adding operations to update multiple documents
+mod add_update_multiple_documents_operations;
+pub use add_update_multiple_documents_operations::*;
+
+// Module: update_document_for_contract
+// This module contains functionality for updating a document for a given contract
+mod update_document_for_contract;
+pub use update_document_for_contract::*;
+
+// Module: update_document_for_contract_apply_and_add_to_operations
+// This module contains functionality for applying and adding update operations for a contract document
+mod update_document_for_contract_apply_and_add_to_operations;
+pub use update_document_for_contract_apply_and_add_to_operations::*;
+
+// Module: update_document_for_contract_id
+// This module contains functionality for updating a document associated with a given contract id
+mod update_document_for_contract_id;
+pub use update_document_for_contract_id::*;
+
+// Module: update_document_for_contract_operations
+// This module contains functionality for updating a document for contract operations
+mod update_document_for_contract_operations;
+pub use update_document_for_contract_operations::*;
+
+// Module: update_document_with_serialization_for_contract
+// This module contains functionality for updating a document (with serialization) for a contract
+mod update_document_with_serialization_for_contract;
+pub use update_document_with_serialization_for_contract::*;
+
+// Module: update_serialized_document_for_contract
+// This module contains functionality for updating a serialized document for a contract
+mod update_serialized_document_for_contract;
+pub use update_serialized_document_for_contract::*;
+
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 

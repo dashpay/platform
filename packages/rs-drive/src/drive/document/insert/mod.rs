@@ -32,6 +32,56 @@
 //! This module implements functions in Drive relevant to inserting documents.
 //!
 
+// Module: add_document
+// This module contains functionality for adding a document
+mod add_document;
+pub use add_document::*;
+
+// Module: add_document_for_contract
+// This module contains functionality for adding a document for a given contract
+mod add_document_for_contract;
+pub use add_document_for_contract::*;
+
+// Module: add_document_for_contract_apply_and_add_to_operations
+// This module contains functionality for applying and adding operations for a contract document
+mod add_document_for_contract_apply_and_add_to_operations;
+pub use add_document_for_contract_apply_and_add_to_operations::*;
+
+// Module: add_document_for_contract_operations
+// This module contains functionality for adding a document for contract operations
+mod add_document_for_contract_operations;
+pub use add_document_for_contract_operations::*;
+
+// Module: add_document_to_primary_storage
+// This module contains functionality for adding a document to primary storage
+mod add_document_to_primary_storage;
+pub use add_document_to_primary_storage::*;
+
+// Module: add_indices_for_index_level_for_contract_operations
+// This module contains functionality for adding indices for an index level for contract operations
+mod add_indices_for_index_level_for_contract_operations;
+pub use add_indices_for_index_level_for_contract_operations::*;
+
+// Module: add_indices_for_top_index_level_for_contract_operations
+// This module contains functionality for adding indices for the top index level for contract operations
+mod add_indices_for_top_index_level_for_contract_operations;
+pub use add_indices_for_top_index_level_for_contract_operations::*;
+
+// Module: add_reference_for_index_level_for_contract_operations
+// This module contains functionality for adding a reference for an index level for contract operations
+mod add_reference_for_index_level_for_contract_operations;
+pub use add_reference_for_index_level_for_contract_operations::*;
+
+// Module: add_serialized_document_for_contract
+// This module contains functionality for adding a serialized document for a contract
+mod add_serialized_document_for_contract;
+pub use add_serialized_document_for_contract::*;
+
+// Module: add_serialized_document_for_contract_id
+// This module contains functionality for adding a serialized document for a contract by id
+mod add_serialized_document_for_contract_id;
+pub use add_serialized_document_for_contract_id::*;
+
 use dpp::data_contract::document_type::IndexLevel;
 
 use grovedb::batch::key_info::KeyInfo;
@@ -431,51 +481,6 @@ impl Drive {
         Ok(())
     }
 
-    /// Adds a document using bincode serialization
-    pub fn add_document(
-        &self,
-        owned_document_info: OwnedDocumentInfo,
-        data_contract_id: Identifier,
-        document_type_name: &str,
-        override_document: bool,
-        block_info: &BlockInfo,
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-
-        let contract_fetch_info = self
-            .get_contract_with_fetch_info_and_add_to_operations(
-                data_contract_id.into_buffer(),
-                Some(&block_info.epoch),
-                true,
-                transaction,
-                &mut drive_operations,
-            )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
-
-        let contract = &contract_fetch_info.contract;
-
-        let document_type = contract.document_type_for_name(document_type_name)?;
-
-        let document_and_contract_info = DocumentAndContractInfo {
-            owned_document_info,
-            contract,
-            document_type,
-        };
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.add_document_for_contract_apply_and_add_to_operations(
-            document_and_contract_info,
-            override_document,
-            block_info,
-            true,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
-        Ok(fees)
-    }
 
     /// Deserializes a document and a contract and adds the document to the contract.
     pub fn add_cbor_serialized_document_for_serialized_contract(
@@ -606,28 +611,6 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Adds a document to a contract.
-    pub fn add_document_for_contract(
-        &self,
-        document_and_contract_info: DocumentAndContractInfo,
-        override_document: bool,
-        block_info: BlockInfo,
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.add_document_for_contract_apply_and_add_to_operations(
-            document_and_contract_info,
-            override_document,
-            &block_info,
-            true,
-            apply,
-            transaction,
-            &mut drive_operations,
-        )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
-        Ok(fees)
-    }
 
     /// Performs the operations to add a document to a contract.
     pub(crate) fn add_document_for_contract_apply_and_add_to_operations(
