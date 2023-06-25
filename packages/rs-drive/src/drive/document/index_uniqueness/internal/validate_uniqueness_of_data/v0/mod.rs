@@ -14,20 +14,9 @@ use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::data_contract::DataContract;
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction};
 use dpp::version::drive_versions::DriveVersion;
-
-struct UniquenessOfDataRequestV0<'a> {
-    contract: &'a ContractV0,
-    document_type: &'a DocumentType<'a>,
-    owner_id: &'a Identifier,
-    document_id: &'a Identifier,
-    allow_original: bool,
-    created_at: &'a Option<TimestampMillis>,
-    updated_at: &'a Option<TimestampMillis>,
-    data: &'a BTreeMap<String, Value>,
-}
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
 
 impl Drive {
     /// Internal method validating uniqueness

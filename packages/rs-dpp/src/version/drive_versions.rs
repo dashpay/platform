@@ -15,6 +15,7 @@ pub struct DriveMethodVersions {
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
     pub contract: DriveContractMethodVersions,
+    pub system: DriveSystemMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -58,6 +59,19 @@ pub struct DriveContractQueryMethodVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveContractCostsMethodVersions {
     pub add_estimation_costs_for_contract_insertion: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveSystemMethodVersions {
+    pub protocol_version: DriveSystemProtocolVersionMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveSystemProtocolVersionMethodVersions {
+    pub fetch_current_protocol_version: FeatureVersion,
+    pub set_current_protocol_version_operations: FeatureVersion,
+    pub fetch_next_protocol_version: FeatureVersion,
+    pub set_next_protocol_version_operations: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

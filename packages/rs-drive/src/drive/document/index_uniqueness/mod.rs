@@ -34,6 +34,7 @@
 //!
 
 mod internal;
+use internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
 mod validate_document_create_transition_action_uniqueness;
 pub use validate_document_create_transition_action_uniqueness::*;
 mod validate_document_replace_transition_action_uniqueness;

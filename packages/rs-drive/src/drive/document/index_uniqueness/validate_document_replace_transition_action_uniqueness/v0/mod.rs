@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 use dpp::data_contract::DataContract;
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction};
 use dpp::version::drive_versions::DriveVersion;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
 
 
 impl Drive {
@@ -30,7 +31,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let request = UniquenessOfDataRequest {
+        let request = UniquenessOfDataRequestV0 {
             contract,
             document_type,
             owner_id,
