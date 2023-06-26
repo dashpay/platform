@@ -42,7 +42,7 @@ module.exports = lodashMerge({}, baseConfig, {
         },
         pprof: {
           enabled: true,
-        }
+        },
       },
       abci: {
         validatorSet: {
