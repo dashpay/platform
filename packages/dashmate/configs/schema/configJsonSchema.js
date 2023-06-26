@@ -369,7 +369,7 @@ module.exports = {
                               minLength: 32,
                             },
                           },
-                          required: ['apiKey'],
+                          required: ['apiKey', 'id'],
                           additionalProperties: false,
                         },
                       },

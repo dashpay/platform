@@ -5,7 +5,7 @@ export declare interface WalletStoreState {
 }
 
 type walletId = string;
-type exportedState = any;
+type ExportedState = any;
 
 export declare class WalletStore {
   constructor(walletId: walletId);
@@ -14,12 +14,12 @@ export declare class WalletStore {
   state: WalletStoreState;
 
   createPathState(path: string): void;
-  exportState(): exportedState;
+  exportState(): ExportedState;
   getIdentityIdByIndex(identityIndex: number): string;
   getIndexedIdentityIds(identityIndex: number): Array<string>;
   getPathState(path: string): any;
 
-  importState(exportedState): void;
+  importState(exportedState: ExportedState): void;
   insertIdentityIdAtIndex(identityId: string, identityIndex: number): void;
 }
 

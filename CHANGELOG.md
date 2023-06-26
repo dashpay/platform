@@ -1,3 +1,93 @@
+### [0.24.10](https://github.com/dashpay/platform/compare/v0.24.9...v0.24.10) (2023-06-23)
+
+
+### Miscellaneous Chores
+
+* **drive:** disable masternode identities update logic ([#1192](https://github.com/dashpay/platform/issues/1192))
+
+### [0.24.9](https://github.com/dashpay/platform/compare/v0.24.8...v0.24.9) (2023-06-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** SSL certificates and other configuration files will be deleted with the hard reset command (#1188)
+
+### Features
+
+* **dashmate:** hard reset deletes related files ([#1188](https://github.com/dashpay/platform/issues/1188))
+
+
+### Bug Fixes
+
+* **dashmate:** download certificate retry logic ([#1187](https://github.com/dashpay/platform/issues/1187))
+* merkle root from the diff doesn't match calculated merkle root ([#1189](https://github.com/dashpay/platform/issues/1189))
+
+
+### Continuous Integration
+
+* fix cancel runs for already merged PRs ([#1185](https://github.com/dashpay/platform/issues/1185))
+
+### [0.24.8](https://github.com/dashpay/platform/compare/v0.24.7...v0.24.8) (2023-06-21)
+
+
+### Features
+
+* **dashmate:** re-use ZeroSSL private key ([#1180](https://github.com/dashpay/platform/issues/1180))
+
+
+### Continuous Integration
+
+* cancel runs for already merged PRs ([#1179](https://github.com/dashpay/platform/issues/1179))
+
+### [0.24.7](https://github.com/dashpay/platform/compare/v0.24.6...v0.24.7) (2023-06-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** handle already configured certificate in obtain command (#1176)
+
+### Features
+
+* **dashmate:** handle already configured certificate in obtain command ([#1176](https://github.com/dashpay/platform/issues/1176))
+
+### [0.24.6](https://github.com/dashpay/platform/compare/v0.24.5...v0.24.6) (2023-06-19)
+
+
+### Features
+
+* **dashmate:** add homedir to compose project name ([#1141](https://github.com/dashpay/platform/issues/1141))
+
+
+### Bug Fixes
+
+* **dashmate:** config/core/rpc/allowIps must be array ([#881](https://github.com/dashpay/platform/issues/881))
+* **sdk:** identifier expects buffer with "in" operator in where query ([#1168](https://github.com/dashpay/platform/issues/1168))
+* **sdk:** missing and invalid types ([#1156](https://github.com/dashpay/platform/issues/1156))
+* **wallet-lib:** instant locks not arriving to HD wallets ([#1126](https://github.com/dashpay/platform/issues/1126))
+
+
+### Miscellaneous Chores
+
+* bump up dashd version for mainnet in dashmate ([#1132](https://github.com/dashpay/platform/issues/1132))
+* update socket io parser ([#1127](https://github.com/dashpay/platform/issues/1127))
+
+### [0.24.5](https://github.com/dashpay/platform/compare/v0.24.4...v0.24.5) (2023-05-22)
+
+
+### Features
+
+* **dashmate:** descriptions for all possible ZeroSSL errors ([#1107](https://github.com/dashpay/platform/issues/1107))
+
+
+### Bug Fixes
+
+* **dashmate:** platform should not be enabled on mainnet ([#1112](https://github.com/dashpay/platform/issues/1112))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** better port labels for mainnet evolution node setup  ([#1106](https://github.com/dashpay/platform/issues/1106))
+
 ### [0.24.4](https://github.com/dashpay/platform/compare/v0.24.3...v0.24.4) (2023-05-18)
 
 

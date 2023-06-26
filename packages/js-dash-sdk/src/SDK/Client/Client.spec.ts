@@ -15,9 +15,7 @@ import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdenti
 import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
 import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
 
-// @ts-ignore
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
-// @ts-ignore
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const GetDataContractResponse = require('@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse');
 
