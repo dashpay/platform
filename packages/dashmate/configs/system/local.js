@@ -40,6 +40,9 @@ module.exports = lodashMerge({}, baseConfig, {
         rpc: {
           port: 46657,
         },
+        pprof: {
+          enabled: true,
+        }
       },
       abci: {
         validatorSet: {

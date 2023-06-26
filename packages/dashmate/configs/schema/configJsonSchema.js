@@ -511,6 +511,19 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
+                pprof: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  required: ['enabled', 'port'],
+                  additionalProperties: false,
+                },
                 node: {
                   type: 'object',
                   properties: {

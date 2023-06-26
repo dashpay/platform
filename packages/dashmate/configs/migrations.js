@@ -574,4 +574,11 @@ module.exports = {
       });
     return configFile;
   },
+  '0.24.12': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.platform.drive.tenderdash.pprof = systemConfigs.base.platform.drive.tenderdash.pprof;
+      });
+    return configFile;
+  },
 };
