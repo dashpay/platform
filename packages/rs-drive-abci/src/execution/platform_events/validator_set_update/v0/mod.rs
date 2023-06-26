@@ -143,8 +143,140 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeMap;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
+    use crate::execution::types::block_state_info::v0::BlockStateInfo;
+    use crate::platform_types::platform_state::v0::PlatformState;
+    use crate::platform_types::validator_set::v0::ValidatorSet;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::bls_signatures::PublicKey as BlsPublicKey;
+    use dpp::dashcore::bls_sig_utils::BLSPublicKey;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{ProTxHash, QuorumHash};
+    use std::ops::Deref;
+    use crate::platform_types::validator;
+    use crate::platform_types::validator::v0::Validator;
+
+    fn generate_validator() -> Validator {
+        Validator {
+            pro_tx_hash: Default::default(),
+            public_key: None,
+            node_ip: "".to_string(),
+            node_id: Default::default(),
+            core_port: 0,
+            platform_http_port: 0,
+            platform_p2p_port: 0,
+            is_banned: false,
+        }
+    }
+
+    fn generate_healthy_validator_set() -> BTreeMap<ProTxHash, Validator> {
+        BTreeMap::from_iter((1..=10).map(|_| {
+            let validator = generate_validator();
+            (validator.pro_tx_hash, validator)
+        }))
+    }
+
+    fn generate_unhealthy_validator_set() -> BTreeMap<ProTxHash, Validator> {
+        let mut set = BTreeMap::from_iter((1..=9).map(|_| {
+            let validator = generate_validator();
+            (validator.pro_tx_hash, validator)
+        }));
+
+        let mut unhealthy_validator = generate_validator();
+        unhealthy_validator.is_banned = true;
+        set.insert(unhealthy_validator.pro_tx_hash, unhealthy_validator);
+        set
+    }
+
     #[test]
     pub fn should_perform_rotation_when_low_health() {
-        todo!()
+        let test_platform = TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let mut platform_state = test_platform.platform.state.read().unwrap().clone();
+
+        let current_quorum_hash = platform_state.current_validator_set_quorum_hash;
+        let next_quorum_hash = QuorumHash::from_slice(&[1u8; 32]).unwrap();
+
+        let current_quorum = ValidatorSet {
+            quorum_hash: current_quorum_hash.clone(),
+            core_height: 10,
+            members: generate_healthy_validator_set(),
+            threshold_public_key: BlsPublicKey::generate(),
+        };
+
+        let next_quorum = ValidatorSet {
+            quorum_hash: next_quorum_hash.clone(),
+            core_height: 11,
+            members: generate_healthy_validator_set(),
+            threshold_public_key: BlsPublicKey::generate(),
+        };
+
+        platform_state
+            .validator_sets
+            .insert(current_quorum_hash, current_quorum);
+        platform_state
+            .validator_sets
+            .insert(next_quorum_hash, next_quorum);
+        println!("validator sets: {:?}", platform_state.validator_sets);
+        println!(
+            "current validator set hash: {:?}",
+            platform_state.current_validator_set_quorum_hash
+        );
+
+        let current_validator_set = platform_state
+            .current_validator_set()
+            .expect("Current validator set to exist")
+            .deref()
+            .clone();
+
+        println!("current validator set: {:?}", current_validator_set);
+
+        let mut execution_context = BlockExecutionContext {
+            block_state_info: BlockStateInfo {
+                height: 10,
+                round: 0,
+                block_time_ms: 0,
+                previous_block_time_ms: None,
+                proposer_pro_tx_hash: [0; 32],
+                core_chain_locked_height: 12,
+                block_hash: None,
+                app_hash: None,
+            },
+            epoch_info: Default::default(),
+            hpmn_count: 0,
+            withdrawal_transactions: Default::default(),
+            block_platform_state: platform_state.clone(),
+            proposer_results: None,
+        };
+
+        let res = test_platform
+            .platform
+            .validator_set_update_v0(&platform_state, &mut execution_context)
+            .expect("To execute validator set update");
+
+        // Current quorum is healthy, no need to rotate
+        assert!(matches!(res, None));
+
+        // Now replacing the current validator set with an unhealthy one
+        let unhealthy_validator_set = ValidatorSet {
+            quorum_hash: current_quorum_hash.clone(),
+            core_height: 10,
+            members: generate_unhealthy_validator_set(),
+            threshold_public_key: BlsPublicKey::generate(),
+        };
+        // Checking that it is indeed unhealthy
+        assert!(unhealthy_validator_set.is_low_health());
+        // Replace the current validator set with the unhealthy one
+        execution_context.block_platform_state.validator_sets.insert(current_quorum_hash, unhealthy_validator_set);
+
+        let res = test_platform
+            .platform
+            .validator_set_update_v0(&platform_state, &mut execution_context)
+            .expect("To execute validator set update");
+
+        let update = res.expect("To have an update");
+        // Check that we are indeed rotating to the next quorum
+        assert_eq!(update.quorum_hash.to_vec(), next_quorum_hash.to_vec());
     }
 }
