@@ -26,7 +26,7 @@ impl<C> Platform<C>
     /// * `requested` core height is before v20 fork
     /// * `requested` core height is after current best chain lock
     ///
-    pub(in crate::execution::engine::initialization) fn initial_core_height(&self, requested: Option<u32>, platform_version: &PlatformVersion) -> Result<u32, Error> {
+    pub(in crate::execution) fn initial_core_height(&self, requested: Option<u32>, platform_version: &PlatformVersion) -> Result<u32, Error> {
         match platform_version.drive_abci.methods.initialization.initial_core_height {
             0 => self.initial_core_height_v0(requested),
             version => Error::Execution(ExecutionError::UnknownVersionMismatch {

@@ -128,6 +128,7 @@ where
                 proposer_pro_tx_hash,
                 proposed_app_version as u32,
                 Some(transaction),
+                &platform_version.drive
             )
             .map_err(|e| {
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
@@ -167,7 +168,7 @@ where
                 );
 
             // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade_v0(
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
                 block_execution_context.hpmn_count,
                 block_execution_context
                     .block_platform_state

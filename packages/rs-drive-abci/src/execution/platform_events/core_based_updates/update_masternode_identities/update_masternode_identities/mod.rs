@@ -12,7 +12,6 @@ use crate::rpc::core::CoreRPCLike;
 
 mod v0;
 
-
 impl<C> Platform<C>
     where
         C: CoreRPCLike,
@@ -27,7 +26,7 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.core_based_updates.update_masternode_identities {
+        match platform_version.drive_abci.methods.core_based_updates.masternode_updates.update_masternode_identities {
             0 => self.update_masternode_identities_v0(masternode_diff, removed_masternodes, block_info, platform_state, transaction, platform_version),
             version => Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_masternode_identities".to_string(),

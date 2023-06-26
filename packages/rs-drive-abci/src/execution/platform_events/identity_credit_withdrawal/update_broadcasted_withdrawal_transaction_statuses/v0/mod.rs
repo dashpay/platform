@@ -2,6 +2,7 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::version::PlatformVersion;
 use drive::dpp::contracts::withdrawals_contract;
 
 use drive::drive::batch::DriveOperation;
@@ -29,6 +30,7 @@ where
         last_synced_core_height: u32,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_state_info().block_time_ms(),
@@ -62,6 +64,7 @@ where
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             Some(transaction),
+            &platform_version.drive,
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -149,13 +152,15 @@ where
                     ))
                 })?,
             &mut drive_operations,
-        );
+            &platform_version.drive,
+        )?;
 
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             &block_info,
             Some(transaction),
+            &platform_version.drive,
         )?;
 
         Ok(())

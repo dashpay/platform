@@ -1,4 +1,5 @@
 mod v0;
+mod update_state_masternode_list;
 
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;

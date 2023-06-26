@@ -35,7 +35,7 @@ impl<C> Platform<C>
     /// * `requested` core height is before v20 fork
     /// * `requested` core height is after current best chain lock
     ///
-    pub(super) fn initial_core_height_v0(&self, requested: Option<u32>) -> Result<u32, Error> {
+    pub(in crate::execution::platform_events) fn initial_core_height_v0(&self, requested: Option<u32>) -> Result<u32, Error> {
         let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
