@@ -57,8 +57,12 @@ function convertIdentifierProperties(
   const isPropertyIdentifier = property && property.contentMediaType === Identifier.MEDIA_TYPE;
   const isSystemIdentifier = ['$id', '$ownerId'].includes(propertyName);
 
-  if (isSystemIdentifier || (isPropertyIdentifier && typeof propertyValue === 'string')) {
-    convertedPropertyValue = Identifier.from(propertyValue);
+  if (isSystemIdentifier || isPropertyIdentifier) {
+    if (Array.isArray(propertyValue)) {
+      convertedPropertyValue = propertyValue.map((id) => Identifier.from(id));
+    } else if (typeof propertyValue === 'string') {
+      convertedPropertyValue = Identifier.from(propertyValue);
+    }
   }
 
   return [propertyName, operator, convertedPropertyValue];
@@ -126,6 +130,8 @@ export async function get(this: Platform, typeLocator: string, opts: QueryOption
       opts,
     );
   } catch (e) {
+    // TODO: NotFoundError is returing only in case if contract or document type is not found?
+    //  If contract or document type is invalid we should throw an error
     if (e instanceof NotFoundError) {
       this.logger.debug(`[Documents#get] Obtained 0 documents for "${typeLocator}"`);
       return [];

@@ -1,7 +1,7 @@
 const Dash = require('dash');
 const { expect } = require('chai');
 
-const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+const { signStateTransition } = require('dash/build/SDK/Client/Platform/signStateTransition');
 
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
