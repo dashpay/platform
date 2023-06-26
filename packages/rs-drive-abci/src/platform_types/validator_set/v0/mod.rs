@@ -317,8 +317,13 @@ impl ValidatorSet {
     /// the network from a possible stall
     pub fn is_low_health(&self) -> bool {
         let validators_total = self.members.len();
-        let banned_validators_count = self.members.values().filter(|validator| validator.is_banned).count();
+        let banned_validators_count = self
+            .members
+            .values()
+            .filter(|validator| validator.is_banned)
+            .count();
 
-        banned_validators_count as f64 / validators_total as f64 > VALIDATOR_SET_QUORUM_HEALTH_THRESHOLD
+        banned_validators_count as f64 / validators_total as f64
+            > VALIDATOR_SET_QUORUM_HEALTH_THRESHOLD
     }
 }

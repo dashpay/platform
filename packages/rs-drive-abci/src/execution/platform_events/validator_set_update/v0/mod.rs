@@ -143,18 +143,18 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
     use crate::execution::types::block_state_info::v0::BlockStateInfo;
-    
+    use std::collections::BTreeMap;
+
     use crate::platform_types::validator_set::v0::ValidatorSet;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::bls_signatures::PublicKey as BlsPublicKey;
-    
+
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{ProTxHash, QuorumHash};
     use std::ops::Deref;
-    
+
     use crate::platform_types::validator::v0::Validator;
 
     fn generate_validator() -> Validator {
@@ -268,7 +268,10 @@ mod test {
         // Checking that it is indeed unhealthy
         assert!(unhealthy_validator_set.is_low_health());
         // Replace the current validator set with the unhealthy one
-        execution_context.block_platform_state.validator_sets.insert(current_quorum_hash, unhealthy_validator_set);
+        execution_context
+            .block_platform_state
+            .validator_sets
+            .insert(current_quorum_hash, unhealthy_validator_set);
 
         let res = test_platform
             .platform
