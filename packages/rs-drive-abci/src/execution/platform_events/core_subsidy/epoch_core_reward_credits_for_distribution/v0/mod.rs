@@ -7,6 +7,7 @@ use dpp::block::epoch::EpochIndex;
 use drive::fee::credits::Credits;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use dpp::state_transition::fee::Credits;
 
 lazy_static! {
     /// The Core reward halving distribution table for 100 years
@@ -23,7 +24,7 @@ lazy_static! {
 
 impl<C> Platform<C> {
     /// Gets the amount of core reward fees to be distributed for the Epoch.
-    pub fn epoch_core_reward_credits_for_distribution_v0(
+    pub(super) fn epoch_core_reward_credits_for_distribution_v0(
         epoch_start_block_core_height: u32,
         next_epoch_start_block_core_height: u32,
     ) -> Result<Credits, Error> {

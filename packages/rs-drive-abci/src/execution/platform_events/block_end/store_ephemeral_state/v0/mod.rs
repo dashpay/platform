@@ -24,7 +24,7 @@ where
     ///
     /// * `Result<(), Error>` - Returns an empty `Result` if the data is successfully stored, otherwise returns an `Error`.
     ///
-    pub fn store_ephemeral_state_v0(
+    pub(super) fn store_ephemeral_state_v0(
         &self,
         platform_state: &PlatformState,
         transaction: &Transaction,

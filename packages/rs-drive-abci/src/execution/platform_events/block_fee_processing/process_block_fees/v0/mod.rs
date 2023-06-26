@@ -36,6 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::grovedb::Transaction;
@@ -72,24 +73,26 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// and distributing the block fees from the previous block and applies the batch.
     ///
     /// Returns `ProcessedBlockFeesOutcome`.
-    pub fn process_block_fees_v0(
+    pub(super) fn process_block_fees_v0(
         &self,
         block_info: &BlockStateInfo,
         epoch_info: &EpochInfo,
         block_fees: BlockFees,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
         let mut batch = vec![];
 
         let storage_fee_distribution_outcome = if epoch_info.is_epoch_change() {
-            self.add_process_epoch_change_operations_v0(
+            self.add_process_epoch_change_operations(
                 block_info,
                 epoch_info,
                 &block_fees,
                 transaction,
                 &mut batch,
+                platform_version,
             )?
         } else {
             None
@@ -109,6 +112,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 &block_info.proposer_pro_tx_hash(),
                 cached_previous_block_count,
                 Some(transaction),
+                platform_version,
             )?,
         ));
 
@@ -127,15 +131,16 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             };
 
         let payouts = self
-            .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0(
+            .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                 epoch_info.current_epoch_index(),
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,
                 transaction,
                 &mut batch,
+                platform_version,
             )?;
 
-        let fees_in_pools = self.add_distribute_block_fees_into_pools_operations_v0(
+        let fees_in_pools = self.add_distribute_block_fees_into_pools_operations(
             &current_epoch,
             &block_fees,
             // Add leftovers after storage fee pool distribution to the current block storage fees
@@ -151,18 +156,20 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 .fetch_and_add_pending_epoch_refunds_to_collection(
                     block_fees.refunds_per_epoch_owned(),
                     Some(transaction),
+                    &platform_version.drive,
                 )?
         } else {
             block_fees.refunds_per_epoch_owned()
         };
 
-        add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds)?;
+        add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds, platform_version)?;
 
         self.drive.apply_drive_operations(
             batch,
             true,
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
+            &platform_version.drive,
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {
@@ -176,7 +183,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             // Verify sum trees
             let credits_verified = self
                 .drive
-                .calculate_total_credits_balance(Some(transaction))
+                .calculate_total_credits_balance(Some(transaction), &platform_version.drive)
                 .map_err(Error::Drive)?;
 
             if !credits_verified.ok()? {

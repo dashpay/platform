@@ -15,7 +15,7 @@ impl<C> Platform<C> {
     /// # Returns
     ///
     /// * `Result<u64, Error>` - The genesis time as a `u64` value on success, or an `Error` on failure.
-    pub(crate) fn get_genesis_time_v0(
+    pub(super) fn get_genesis_time_v0(
         &self,
         block_height: u64,
         block_time_ms: u64,

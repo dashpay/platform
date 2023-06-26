@@ -1,38 +1,11 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
+use dpp::state_transition::fee::Credits;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
@@ -40,23 +13,24 @@ use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
 use drive::{error, grovedb};
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> {
     /// Adds operations to an op batch which update total storage fees
     /// for the epoch considering fees from a new block.
     ///
     /// Returns `FeesInPools`
-    pub fn add_distribute_block_fees_into_pools_operations_v0(
+    pub(super) fn add_distribute_block_fees_into_pools_operations_v0(
         &self,
         current_epoch: &Epoch,
         block_fees: &BlockFees,
         cached_aggregated_storage_fees: Option<Credits>,
         transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<FeesInPoolsV0, Error> {
         // update epochs pool processing fees
         let epoch_processing_fees = self
             .drive
-            .get_epoch_processing_credits_for_distribution(current_epoch, transaction)
+            .get_epoch_processing_credits_for_distribution(current_epoch, transaction, &platform_version.drive)
             .or_else(|e| match e {
                 // Handle epoch change when storage fees are not set yet
                 error::Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => Ok(0u64),
@@ -66,14 +40,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
-            current_epoch.update_processing_fee_pool_operation(total_processing_fees)?,
+            current_epoch.update_processing_fee_pool_operation(total_processing_fees, platform_version)?,
         ));
 
         // update storage fee pool
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
             None => self
                 .drive
-                .get_storage_fees_from_distribution_pool(transaction)?,
+                .get_storage_fees_from_distribution_pool(transaction, &platform_version.drive)?,
             Some(storage_fees) => storage_fees,
         };
 

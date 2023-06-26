@@ -9,7 +9,7 @@ use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
     /// Creates epoch info from the platform state and the block proposal
-    pub fn gather_epoch_info_v0(
+    pub(super) fn gather_epoch_info_v0(
         &self,
         block_proposal: &block_proposal::v0::BlockProposal,
         transaction: &Transaction,
@@ -31,7 +31,7 @@ impl<C> Platform<C> {
             block_time_ms,
             ..
         } = &block_proposal;
-        let genesis_time_ms = self.get_genesis_time_v0(*height, *block_time_ms, transaction)?;
+        let genesis_time_ms = self.get_genesis_time(*height, *block_time_ms, transaction)?;
 
         EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)
     }

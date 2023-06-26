@@ -11,6 +11,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -18,7 +19,7 @@ where
 {
     /// We need to validate against the platform state for rotation and not the block execution
     /// context state
-    pub(in crate::execution) fn validator_set_update_v0(
+    pub(super) fn validator_set_update_v0(
         &self,
         platform_state: &PlatformState,
         block_execution_context: &mut BlockExecutionContext,

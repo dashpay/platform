@@ -9,6 +9,7 @@ use dashcore_rpc::dashcore::{
 };
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::version::PlatformVersion;
 use drive::dpp::contracts::withdrawals_contract;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_duffs;
@@ -26,11 +27,12 @@ where
     C: CoreRPCLike,
 {
     /// Build list of Core transactions from withdrawal documents
-    pub fn build_withdrawal_transactions_from_documents_v0(
+    pub(super) fn build_withdrawal_transactions_from_documents_v0(
         &self,
         documents: &[Document],
         drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
         let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIdAndBytes> = HashMap::new();
 
@@ -39,6 +41,7 @@ where
             .fetch_and_remove_latest_withdrawal_transaction_index_operations(
                 drive_operation_types,
                 transaction,
+                &platform_version.drive
             )?;
 
         for (i, document) in documents.iter().enumerate() {

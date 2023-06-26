@@ -1,6 +1,7 @@
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use crate::error::Error;
+use crate::error::execution::ExecutionError;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -42,7 +43,7 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.protocol_upgrade.broadcasted_withdrawal.update_broadcasted_withdrawal_transaction_statuses {
+        match platform_version.drive_abci.methods.identity_credit_withdrawal.update_broadcasted_withdrawal_transaction_statuses {
             0 => self.update_broadcasted_withdrawal_transaction_statuses_v0(last_synced_core_height, block_execution_context, transaction, &self.platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_broadcasted_withdrawal_transaction_statuses".to_string(),

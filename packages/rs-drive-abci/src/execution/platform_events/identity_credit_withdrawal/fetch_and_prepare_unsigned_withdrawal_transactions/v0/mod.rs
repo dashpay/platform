@@ -7,6 +7,7 @@ use dashcore_rpc::dashcore::{
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::document::Document;
+use dpp::version::PlatformVersion;
 
 use drive::dpp::contracts::withdrawals_contract;
 
@@ -32,11 +33,12 @@ where
     C: CoreRPCLike,
 {
     /// Prepares a list of an unsigned withdrawal transaction bytes
-    pub fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
+    pub(super) fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_state_info().block_time_ms(),
@@ -54,6 +56,7 @@ where
             None,
             true,
             Some(transaction),
+            &platform_version.drive,
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -67,6 +70,7 @@ where
             WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
             Some(transaction),
             &mut drive_operations,
+            &platform_version.drive,
         )?;
 
         if untied_withdrawal_transactions.is_empty() {
@@ -106,6 +110,7 @@ where
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,
                         Some(transaction),
+                        &platform_version.drive,
                     )?;
 
                     document.set_bytes(
@@ -146,13 +151,15 @@ where
                     ))
                 })?,
             &mut drive_operations,
-        );
+            &platform_version.drive,
+        )?;
 
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             &block_info,
             Some(transaction),
+            &platform_version.drive
         )?;
 
         Ok(unsigned_withdrawal_transactions)

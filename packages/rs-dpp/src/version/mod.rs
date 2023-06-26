@@ -9,6 +9,7 @@ pub use protocol_version::*;
 mod protocol_version_validator;
 mod v0;
 pub mod drive_versions;
+pub mod drive_abci_versions;
 
 pub const LATEST_VERSION: u32 = 1;
 

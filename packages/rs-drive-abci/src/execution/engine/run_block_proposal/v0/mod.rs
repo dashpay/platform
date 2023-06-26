@@ -196,18 +196,20 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
-        self.update_broadcasted_withdrawal_transaction_statuses_v0(
+        self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
             &block_execution_context,
             transaction,
+            platform_version,
         )?;
 
         // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self
-            .fetch_and_prepare_unsigned_withdrawal_transactions_v0(
+            .fetch_and_prepare_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
                 &block_execution_context,
                 transaction,
+                platform_version,
             )?;
 
         // Set the withdrawal transactions that were done in the previous block
@@ -223,27 +225,29 @@ where
                 .collect(),
         );
 
-        let (block_fees, tx_results) = self.process_raw_state_transitions_v0(
+        let (block_fees, tx_results) = self.process_raw_state_transitions(
             raw_state_transitions,
             block_execution_context.block_platform_state(),
             &block_info,
             transaction,
+            platform_version,
         )?;
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
-        self.pool_withdrawals_into_transactions_queue_v0(&block_execution_context, transaction)?;
+        self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction, platform_version)?;
 
         // while we have the state transitions executed, we now need to process the block fees
 
         let block_fees_v0: BlockFeesV0 = block_fees.into();
 
         // Process fees
-        let _processed_block_fees = self.process_block_fees_v0(
+        let _processed_block_fees = self.process_block_fees(
             block_execution_context.block_state_info(),
             &epoch_info,
             block_fees_v0.into(),
             transaction,
+            platform_version,
         )?;
 
         let root_hash = self
@@ -259,7 +263,7 @@ where
 
         let state = self.state.read().unwrap();
         let validator_set_update =
-            self.validator_set_update_v0(&state, &mut block_execution_context)?;
+            self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
 
         self.block_execution_context
             .write()

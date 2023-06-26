@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
+use dpp::version::PlatformVersion;
 use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
@@ -10,19 +11,20 @@ use drive::grovedb::TransactionArg;
 impl<C> Platform<C> {
     /// Finds and returns the oldest epoch that hasn't been paid out yet.
     /// The unpaid epoch potentially returned is always version 0
-    pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn find_oldest_epoch_needing_payment_v0(
+    pub(super) fn find_oldest_epoch_needing_payment_v0(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion
     ) -> Result<Option<unpaid_epoch::v0::UnpaidEpochV0>, Error> {
         // Since we are paying for passed epochs there is nothing to do on genesis epoch
         if current_epoch_index == GENESIS_EPOCH_INDEX {
             return Ok(None);
         }
 
-        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index(transaction)?;
+        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index(transaction, &platform_version.drive)?;
 
         // We pay for previous epochs only
         if unpaid_epoch_index == current_epoch_index {
@@ -33,11 +35,11 @@ impl<C> Platform<C> {
 
         let start_block_height = self
             .drive
-            .get_epoch_start_block_height(&unpaid_epoch, transaction)?;
+            .get_epoch_start_block_height(&unpaid_epoch, transaction, &platform_version.drive)?;
 
         let start_block_core_height = self
             .drive
-            .get_epoch_start_block_core_height(&unpaid_epoch, transaction)?;
+            .get_epoch_start_block_core_height(&unpaid_epoch, transaction, &platform_version.drive)?;
 
         let next_unpaid_epoch_info = if unpaid_epoch.index == current_epoch_index - 1 {
             // Use cached or committed block height for previous epoch
@@ -46,7 +48,7 @@ impl<C> Platform<C> {
                 None => {
                     let current_epoch = Epoch::new(current_epoch_index)?;
                     self.drive
-                        .get_epoch_start_block_height(&current_epoch, transaction)?
+                        .get_epoch_start_block_height(&current_epoch, transaction, &platform_version.drive)?
                 }
             };
 
@@ -55,7 +57,7 @@ impl<C> Platform<C> {
                 None => {
                     let current_epoch = Epoch::new(current_epoch_index)?;
                     self.drive
-                        .get_epoch_start_block_core_height(&current_epoch, transaction)?
+                        .get_epoch_start_block_core_height(&current_epoch, transaction, &platform_version.drive)?
                 }
             };
             StartBlockInfo {
@@ -69,6 +71,7 @@ impl<C> Platform<C> {
                 unpaid_epoch.index,
                 current_epoch_index,
                 transaction,
+                &platform_version.drive,
             )? {
                 // Only possible on epoch change of current epoch, when we have start_block_height batched but not committed yet
                 None => {

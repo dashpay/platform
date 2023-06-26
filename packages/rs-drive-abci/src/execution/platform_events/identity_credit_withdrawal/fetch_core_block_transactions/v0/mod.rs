@@ -1,4 +1,5 @@
 use serde_json::Value as JsonValue;
+use dpp::version::PlatformVersion;
 
 use crate::{
     error::{execution::ExecutionError, Error},
@@ -11,7 +12,7 @@ where
     C: CoreRPCLike,
 {
     /// Fetch Core transactions by range of Core heights
-    pub fn fetch_core_block_transactions_v0(
+    pub(super) fn fetch_core_block_transactions_v0(
         &self,
         last_synced_core_height: u32,
         core_chain_locked_height: u32,

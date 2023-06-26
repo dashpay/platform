@@ -8,30 +8,33 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;
+use dpp::state_transition::fee::Credits;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
 use drive::fee::credits::Credits;
 use drive::grovedb::Transaction;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> {
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
     /// Returns the number of proposers to be paid out.
-    pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn add_epoch_pool_to_proposers_payout_operations_v0(
+    pub(super) fn add_epoch_pool_to_proposers_payout_operations_v0(
         &self,
         unpaid_epoch: &UnpaidEpoch,
         core_block_rewards: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
         let storage_and_processing_fees = self
             .drive
-            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction))
+            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction), &platform_version)
             .map_err(Error::Drive)?;
 
         let total_payouts = storage_and_processing_fees
@@ -47,7 +50,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let proposers = self
             .drive
-            .get_epoch_proposers(&unpaid_epoch_tree, None, Some(transaction))
+            .get_epoch_proposers(&unpaid_epoch_tree, None, Some(transaction), &platform_version.drive)
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
@@ -65,7 +68,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             let mut masternode_payout_leftover = total_masternode_payout;
 
             let documents = self
-                .fetch_reward_shares_list_for_masternode_v0(&proposer_tx_hash, Some(transaction))?;
+                .fetch_reward_shares_list_for_masternode(&proposer_tx_hash, Some(transaction), platform_version)?;
 
             for document in documents {
                 let pay_to_id = document
@@ -135,6 +138,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             drive_operations,
             &BlockInfo::default(),
             Some(transaction),
+            &platform_version.drive
         )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));

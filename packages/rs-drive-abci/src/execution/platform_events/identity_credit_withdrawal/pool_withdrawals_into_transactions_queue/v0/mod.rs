@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 
 use drive::dpp::contracts::withdrawals_contract;
 
@@ -24,10 +25,11 @@ where
     C: CoreRPCLike,
 {
     /// Pool withdrawal documents into transactions
-    pub fn pool_withdrawals_into_transactions_queue_v0(
+    pub(super) fn pool_withdrawals_into_transactions_queue_v0(
         &self,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_state_info().block_time_ms(),
@@ -45,6 +47,7 @@ where
             None,
             true,
             Some(transaction),
+            &platform_version.drive,
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -54,6 +57,7 @@ where
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             Some(transaction),
+            &platform_version.drive,
         )?;
 
         if documents.is_empty() {
@@ -62,10 +66,11 @@ where
 
         let mut drive_operations = vec![];
 
-        let withdrawal_transactions = self.build_withdrawal_transactions_from_documents_v0(
+        let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
             &documents,
             &mut drive_operations,
             Some(transaction),
+            platform_version,
         )?;
 
         for document in documents.iter_mut() {
@@ -113,7 +118,8 @@ where
                     ))
                 })?,
             &mut drive_operations,
-        );
+            &platform_version.drive,
+        )?;
 
         let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
             withdrawal_transactions.values().cloned().collect();
@@ -121,6 +127,7 @@ where
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
             &mut drive_operations,
+            &platform_version.drive,
         );
 
         self.drive.apply_drive_operations(
@@ -128,6 +135,7 @@ where
             true,
             &block_info,
             Some(transaction),
+            &platform_version.drive,
         )?;
 
         Ok(())

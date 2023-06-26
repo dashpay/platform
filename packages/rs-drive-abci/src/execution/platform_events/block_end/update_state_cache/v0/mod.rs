@@ -5,6 +5,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -33,10 +34,11 @@ where
     /// This function may return an `Error` variant if there is a problem with updating the state cache
     /// and quorums or storing the ephemeral data.
     ///
-    pub fn update_state_cache_v0(
+    pub(super) fn update_state_cache_v0(
         &self,
         extended_block_info: ExtendedBlockInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut block_execution_context = self.block_execution_context.write().unwrap();
 
@@ -59,7 +61,7 @@ where
         state_cache.set_initialization_information(None);
 
         // Persist ephemeral data
-        self.store_ephemeral_state_v0(&state_cache, transaction)?;
+        self.store_ephemeral_state(&state_cache, transaction, platform_version)?;
 
         Ok(())
     }

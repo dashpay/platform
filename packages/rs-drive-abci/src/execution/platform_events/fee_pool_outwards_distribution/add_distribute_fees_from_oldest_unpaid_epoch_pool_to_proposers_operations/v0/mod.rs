@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
@@ -9,24 +10,26 @@ use drive::fee_pools::update_unpaid_epoch_index_operation;
 use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Getters;
 use drive::grovedb::Transaction;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> {
     /// Adds operations to the op batch which distribute fees
     /// from the oldest unpaid epoch pool to proposers.
     ///
     /// Returns `ProposersPayouts` if there are any.
-    pub fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0(
+    pub(super) fn add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<proposer_payouts::v0::ProposersPayouts>, Error> {
-        let unpaid_epoch = self.find_oldest_epoch_needing_payment_v0(
+        let unpaid_epoch = self.find_oldest_epoch_needing_payment(
             current_epoch_index,
             cached_current_epoch_start_block_height,
             cached_current_epoch_start_block_core_height,
             Some(transaction),
+            platform_version,
         )?;
 
         let Some(unpaid_epoch) = unpaid_epoch else {
@@ -34,9 +37,10 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         };
 
         // Calculate core block reward for the unpaid epoch
-        let core_block_rewards = Self::epoch_core_reward_credits_for_distribution_v0(
+        let core_block_rewards = Self::epoch_core_reward_credits_for_distribution(
             unpaid_epoch.start_block_core_height,
             unpaid_epoch.next_epoch_start_block_core_height,
+            platform_version,
         )?;
 
         // We must add to the system credits the epoch core block rewards
@@ -49,11 +53,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let unpaid_epoch = unpaid_epoch.into();
 
-        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations_v0(
+        let proposers_paid_count = self.add_epoch_pool_to_proposers_payout_operations(
             &unpaid_epoch,
             core_block_rewards,
             transaction,
             batch,
+            platform_version
         )?;
 
         let mut inner_batch = GroveDbOpBatch::new();

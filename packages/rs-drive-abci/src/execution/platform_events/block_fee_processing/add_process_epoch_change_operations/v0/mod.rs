@@ -36,6 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;
 
@@ -72,13 +73,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// during the previous epoch.
     ///
     /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
-    pub(in crate::execution::platform_events::block_fee_processing) fn add_process_epoch_change_operations_v0(
+    pub(super) fn add_process_epoch_change_operations_v0(
         &self,
         block_info: &BlockStateInfo,
         epoch_info: &EpochInfo,
         block_fees: &BlockFees,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>
     {
         let mut inner_batch = GroveDbOpBatch::new();
@@ -102,6 +104,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             block_info.core_chain_locked_height(),
             block_info.block_time_ms(),
             &mut inner_batch,
+            platform_version,
         );
 
         // Nothing to distribute on genesis epoch start
@@ -116,6 +119,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 current_epoch.index,
                 Some(transaction),
                 &mut inner_batch,
+                platform_version,
             )?;
 
         self.drive
@@ -123,6 +127,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 &mut inner_batch,
                 block_fees.refunds_per_epoch(),
                 Some(transaction),
+                &platform_version.drive
             )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));

@@ -1,38 +1,4 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
-//! Fee Distribution to Epoch Pools.
-//!
-//! This module defines and implements in the Platform trait functions to add up and distribute
-//! storage fees from the distribution pool to the epoch pools.
-//!
-
+use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
@@ -43,19 +9,20 @@ use drive::fee::epoch::distribution::{
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> {
     /// Adds operations to the GroveDB op batch which distribute storage fees
     /// from the distribution pool and subtract pending refunds
     /// Returns distribution leftovers
-    pub fn add_distribute_storage_fee_to_epochs_operations(
+    pub(super) fn add_distribute_storage_fee_to_epochs_operations_v0(
         &self,
         current_epoch_index: EpochIndex,
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
+        platform_version: &PlatformVersion,
     ) -> Result<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome, Error> {
         let storage_distribution_fees = self
             .drive
-            .get_storage_fees_from_distribution_pool(transaction)?;
+            .get_storage_fees_from_distribution_pool(transaction, &platform_version.drive)?;
 
         let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
@@ -64,13 +31,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &mut credits_per_epochs,
             storage_distribution_fees,
             current_epoch_index,
+            platform_version,
         )?;
 
         // Deduct pending refunds since epoch where data was removed skipping previous
         // (already paid or pay-in-progress) epochs. We want people to pay for the current epoch
         // Leftovers are ignored since they already deducted from Identity's refund amount
 
-        let refunds = self.drive.fetch_pending_epoch_refunds(transaction)?;
+        let refunds = self.drive.fetch_pending_epoch_refunds(transaction, &platform_version.drive)?;
         let refunded_epochs_count = refunds.len() as u16;
 
         for (epoch_index, credits) in refunds {
@@ -79,6 +47,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 credits,
                 epoch_index,
                 current_epoch_index,
+                platform_version,
             )?;
         }
 
@@ -87,6 +56,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 batch,
                 credits_per_epochs,
                 transaction,
+                &platform_version.drive,
             )?;
 
         Ok(

@@ -25,7 +25,7 @@ where
     C: CoreRPCLike,
 {
     /// Update statuses for broadcasted withdrawals
-    pub fn update_broadcasted_withdrawal_transaction_statuses_v0(
+    pub(super) fn update_broadcasted_withdrawal_transaction_statuses_v0(
         &self,
         last_synced_core_height: u32,
         block_execution_context: &BlockExecutionContext,
@@ -48,17 +48,19 @@ where
             None,
             true,
             Some(transaction),
+            &platform_version.drive
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
             ));
         };
 
-        let core_transactions = self.fetch_core_block_transactions_v0(
+        let core_transactions = self.fetch_core_block_transactions(
             last_synced_core_height,
             block_execution_context
                 .block_state_info()
                 .core_chain_locked_height(),
+            platform_version,
         )?;
 
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
