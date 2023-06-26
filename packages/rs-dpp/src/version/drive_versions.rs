@@ -193,6 +193,9 @@ pub struct DriveCreditPoolMethodVersions {
 pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
     pub change_to_new_version_and_clear_version_information: FeatureVersion,
+    pub fetch_versions_with_counter: FeatureVersion,
+    pub remove_validators_proposed_app_versions: FeatureVersion,
+    pub update_validator_proposed_app_version: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

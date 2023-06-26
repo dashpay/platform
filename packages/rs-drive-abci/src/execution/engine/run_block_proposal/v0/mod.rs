@@ -8,6 +8,7 @@ use drive::error::Error::GroveDB;
 
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
+use dpp::version::PlatformVersion;
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
@@ -64,6 +65,7 @@ where
         block_proposal: block_proposal::v0::BlockProposal,
         epoch_info: EpochInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
         // Start by getting information from the state
@@ -109,13 +111,14 @@ where
         );
 
         // Update the masternode list and create masternode identities and also update the active quorums
-        self.update_core_info_v0(
+        self.update_core_info(
             Some(&state),
             &mut block_platform_state,
             core_chain_locked_height,
             false,
             &block_info,
             transaction,
+            platform_version,
         )?;
         drop(state);
 
