@@ -7,6 +7,8 @@ use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::version::PlatformVersion;
 use drive::fee::result::FeeResult;
 use drive::grovedb::TransactionArg;
 
@@ -36,6 +38,7 @@ where
         event: &ExecutionEvent,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
@@ -49,7 +52,13 @@ where
                 let previous_balance_with_top_up = previous_balance + added_balance;
                 let estimated_fee_result = self
                     .drive
-                    .apply_drive_operations(operations.clone(), false, block_info, transaction)
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        &platform_version.drive,
+                    )
                     .map_err(Error::Drive)?;
 
                 // TODO: Should take into account refunds as well
@@ -79,7 +88,13 @@ where
                 ))?;
                 let estimated_fee_result = self
                     .drive
-                    .apply_drive_operations(operations.clone(), false, block_info, transaction)
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        &platform_version.drive,
+                    )
                     .map_err(Error::Drive)?;
 
                 // TODO: Should take into account refunds as well

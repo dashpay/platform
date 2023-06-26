@@ -4,6 +4,7 @@ use dpp::errors::consensus::codes::ErrorWithCode;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
+use dpp::state_transition::fee::fee_result::FeeResult;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
 use tenderdash_abci::proto::abci::ExecTxResult;

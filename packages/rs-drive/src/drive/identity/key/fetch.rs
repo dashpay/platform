@@ -20,9 +20,9 @@ use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
 #[cfg(feature = "full")]
-use crate::fee::default_costs::EpochCosts;
+use dpp::state_transition::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
-use crate::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
+use dpp::state_transition::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(any(feature = "full", feature = "verify"))]

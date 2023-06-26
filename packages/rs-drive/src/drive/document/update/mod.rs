@@ -177,8 +177,8 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
-    use crate::fee::default_costs::EpochCosts;
-    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::state_transition::fee::default_costs::EpochCosts;
+    use dpp::state_transition::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;

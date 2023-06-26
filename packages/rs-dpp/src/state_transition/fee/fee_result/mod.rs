@@ -35,27 +35,16 @@
 //! for removed data from the state.
 //!
 
-#[cfg(feature = "full")]
-use crate::error::fee::FeeError;
-#[cfg(feature = "full")]
-use crate::error::Error;
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::fee::credits::Credits;
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::fee::result::refunds::FeeRefunds;
-#[cfg(feature = "full")]
-use crate::fee::result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
-#[cfg(feature = "full")]
-use costs::storage_cost::removal::Identifier;
-#[cfg(feature = "full")]
 use std::cmp::Ordering;
-#[cfg(feature = "full")]
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
+use platform_value::Identifier;
+use crate::state_transition::fee::Credits;
+use crate::state_transition::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
+use crate::state_transition::fee::fee_result::refunds::FeeRefunds;
 
-#[cfg(any(feature = "full", feature = "verify"))]
 pub mod refunds;
 
-#[cfg(any(feature = "full", feature = "verify"))]
 /// Fee Result
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub struct FeeResult {
@@ -69,7 +58,7 @@ pub struct FeeResult {
     pub removed_bytes_from_system: u32,
 }
 
-#[cfg(feature = "full")]
+
 impl TryFrom<Vec<FeeResult>> for FeeResult {
     type Error = Error;
     fn try_from(value: Vec<FeeResult>) -> Result<Self, Self::Error> {
@@ -81,7 +70,6 @@ impl TryFrom<Vec<FeeResult>> for FeeResult {
     }
 }
 
-#[cfg(feature = "full")]
 impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
     type Error = Error;
     fn try_from(value: Vec<Option<FeeResult>>) -> Result<Self, Self::Error> {
@@ -97,7 +85,6 @@ impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
     }
 }
 
-#[cfg(feature = "full")]
 /// The balance change for an identity
 #[derive(Clone, Debug)]
 pub enum BalanceChange {
@@ -114,7 +101,6 @@ pub enum BalanceChange {
     NoBalanceChange,
 }
 
-#[cfg(feature = "full")]
 /// The fee expense for the identity from a fee result
 #[derive(Clone, Debug)]
 pub struct BalanceChangeForIdentity {
@@ -125,7 +111,6 @@ pub struct BalanceChangeForIdentity {
     change: BalanceChange,
 }
 
-#[cfg(feature = "full")]
 impl BalanceChangeForIdentity {
     /// Balance change
     pub fn change(&self) -> &BalanceChange {
@@ -187,7 +172,6 @@ impl BalanceChangeForIdentity {
     }
 }
 
-#[cfg(feature = "full")]
 impl FeeResult {
     /// Convenience method to create a fee result from processing credits
     pub fn new_from_processing_fee(credits: Credits) -> Self {

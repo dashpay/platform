@@ -47,8 +47,8 @@ use grovedb::{batch::GroveDbOp, Element, ElementFlags};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::default_costs::EpochCosts;
-use crate::fee::default_costs::KnownCostItem::{
+use dpp::state_transition::fee::default_costs::EpochCosts;
+use dpp::state_transition::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
     StorageSeekCost,
 };

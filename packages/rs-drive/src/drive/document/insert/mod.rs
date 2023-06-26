@@ -198,8 +198,8 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::Drive;
-    use crate::fee::default_costs::EpochCosts;
-    use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::state_transition::fee::default_costs::EpochCosts;
+    use dpp::state_transition::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::LowLevelDriveOperation;
     use dpp::block::epoch::Epoch;
 

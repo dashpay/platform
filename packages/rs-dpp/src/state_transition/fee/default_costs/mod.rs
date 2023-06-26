@@ -32,8 +32,8 @@
 //! Fee costs for Drive (GroveDB) operations
 //!
 
-use crate::fee::epoch::EpochIndex;
-use dpp::block::epoch::Epoch;
+use crate::block::epoch::EpochIndex;
+use crate::block::epoch::Epoch;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 

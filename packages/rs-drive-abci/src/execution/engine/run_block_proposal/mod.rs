@@ -40,7 +40,7 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        let epoch_info = self.gather_epoch_info_v0(&block_proposal, transaction)?;
+        let epoch_info = self.gather_epoch_info(&block_proposal, transaction)?;
 
         //todo: use protocol version to decide which block proposal to use
         self.run_block_proposal_v0(block_proposal, epoch_info.into(), transaction)

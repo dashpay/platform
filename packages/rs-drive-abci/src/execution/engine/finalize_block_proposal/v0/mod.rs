@@ -8,6 +8,7 @@ use dpp::validation::SimpleValidationResult;
 use drive::grovedb::Transaction;
 
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::AbciError;
@@ -70,6 +71,11 @@ where
         let block_state_info = block_execution_context.block_state_info();
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
+
+        let current_protocol_version_in_consensus =
+            block_platform_state.current_protocol_version_in_consensus();
+
+        let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
@@ -201,7 +207,7 @@ where
         }
         .into();
 
-        self.update_state_cache_v0(extended_block_info, transaction)?;
+        self.update_state_cache(extended_block_info, transaction, platform_version)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

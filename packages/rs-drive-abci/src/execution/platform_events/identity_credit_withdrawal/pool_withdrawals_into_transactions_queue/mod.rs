@@ -25,7 +25,7 @@ where
     /// # Returns
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if successful, otherwise returns an `Error`.
-    pub(super) fn pool_withdrawals_into_transactions_queue(
+    pub(in crate::execution) fn pool_withdrawals_into_transactions_queue(
         &self,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,

@@ -24,6 +24,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "use-serde",
 ], default-features = false, branch = "feat/addons" }
 env_logger = { version = "0.9" }
+enum-map = { version = "2.0.3", optional = true }
 futures = { version = "0.3" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }

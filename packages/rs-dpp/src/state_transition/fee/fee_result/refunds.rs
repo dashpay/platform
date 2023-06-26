@@ -32,55 +32,28 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
-#[cfg(feature = "full")]
+
+use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use platform_value::Identifier;
+use crate::block::epoch::{Epoch, EpochIndex};
+use crate::state_transition::fee::Credits;
+
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
 /// a dust refund limit is used
 const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 
-#[cfg(feature = "full")]
-use crate::error::fee::FeeError;
-#[cfg(feature = "full")]
-use crate::error::Error;
-#[cfg(feature = "full")]
-use crate::fee::credits::Credits;
-#[cfg(feature = "full")]
-use crate::fee::default_costs::EpochCosts;
-#[cfg(feature = "full")]
-use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-#[cfg(feature = "full")]
-use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::fee::epoch::CreditsPerEpoch;
-#[cfg(feature = "full")]
-use crate::fee::epoch::EpochIndex;
-#[cfg(feature = "full")]
-use crate::fee::get_overflow_error;
-#[cfg(any(feature = "full", feature = "verify"))]
-use costs::storage_cost::removal::Identifier;
-#[cfg(feature = "full")]
-use costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
-#[cfg(feature = "full")]
-use dpp::block::epoch::Epoch;
-#[cfg(feature = "full")]
-use dpp::{bincode, bincode::config};
-#[cfg(any(feature = "full", feature = "verify"))]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "full")]
-use std::collections::btree_map::{IntoIter, Iter};
-#[cfg(any(feature = "full", feature = "verify"))]
-use std::collections::BTreeMap;
 
-#[cfg(any(feature = "full", feature = "verify"))]
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
 
-#[cfg(any(feature = "full", feature = "verify"))]
+
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
-#[cfg(feature = "full")]
+
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
     pub fn from_storage_removal(
@@ -240,7 +213,7 @@ impl FeeRefunds {
     }
 }
 
-#[cfg(feature = "full")]
+
 impl IntoIterator for FeeRefunds {
     type Item = (Identifier, CreditsPerEpoch);
     type IntoIter = IntoIter<Identifier, CreditsPerEpoch>;
@@ -250,7 +223,7 @@ impl IntoIterator for FeeRefunds {
     }
 }
 
-#[cfg(feature = "full")]
+
 #[cfg(test)]
 mod tests {
     use super::*;

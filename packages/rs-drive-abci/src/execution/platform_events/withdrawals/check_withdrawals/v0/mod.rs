@@ -4,6 +4,7 @@ use crate::platform_types::withdrawal::withdrawal_txs;
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
+use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
@@ -30,7 +31,7 @@ where
     ///   and the signatures are valid (if provided), it returns a default `SimpleValidationResult`. Otherwise,
     ///   it returns a `SimpleValidationResult` with an error.
     ///
-    pub fn check_withdrawals_v0(
+    pub(super) fn check_withdrawals_v0(
         &self,
         received_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,
         our_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,
@@ -38,6 +39,7 @@ where
         round: u32,
         verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
         quorum_hash: Option<&[u8]>,
+        platform_version: &PlatformVersion,
     ) -> SimpleValidationResult<AbciError> {
         if received_withdrawals.ne(our_withdrawals) {
             return SimpleValidationResult::new_with_error(

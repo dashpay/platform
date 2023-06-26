@@ -1115,6 +1115,7 @@ dependencies = [
  "data-contracts",
  "derive_more",
  "ed25519-dalek",
+ "enum-map",
  "env_logger 0.9.3",
  "futures",
  "getrandom",
