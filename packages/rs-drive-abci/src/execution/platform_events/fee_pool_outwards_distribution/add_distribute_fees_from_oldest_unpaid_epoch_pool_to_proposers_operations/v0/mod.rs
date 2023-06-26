@@ -58,7 +58,7 @@ impl<C> Platform<C> {
             core_block_rewards,
             transaction,
             batch,
-            platform_version
+            platform_version,
         )?;
 
         let mut inner_batch = GroveDbOpBatch::new();

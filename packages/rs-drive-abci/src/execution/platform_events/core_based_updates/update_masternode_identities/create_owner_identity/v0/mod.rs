@@ -1,15 +1,18 @@
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
-use dpp::dashcore::hashes::Hash;
-use dpp::identity::Identity;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
+use dpp::dashcore::hashes::Hash;
+use dpp::identity::Identity;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-    pub(super) fn create_owner_identity_v0(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
+    pub(super) fn create_owner_identity_v0(
+        &self,
+        masternode: &MasternodeListItem,
+    ) -> Result<Identity, Error> {
         let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Self::create_basic_identity(owner_identifier);
         identity.add_public_keys([Self::get_owner_identity_key(

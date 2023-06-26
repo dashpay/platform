@@ -15,6 +15,7 @@ use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
@@ -27,11 +28,10 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Update of the masternode identities
     pub(super) fn update_masternode_identities_v0(
@@ -114,8 +114,13 @@ impl<C> Platform<C>
             }
         }
 
-        self.drive
-            .apply_drive_operations(drive_operations, true, block_info, Some(transaction), &platform_version.drive)?;
+        self.drive.apply_drive_operations(
+            drive_operations,
+            true,
+            block_info,
+            Some(transaction),
+            &platform_version.drive,
+        )?;
 
         let height = block_info.height;
         tracing::debug!(height, "Updated masternode identities");

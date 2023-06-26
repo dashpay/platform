@@ -9,6 +9,8 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::ExecTxResult;
@@ -40,12 +42,13 @@ where
     /// This function may return an `Error` variant if there is a problem with deserializing the raw
     /// state transitions, processing state transitions, or executing events.
     ///
-    pub(crate) fn process_raw_state_transitions_v0(
+    pub(super) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
         block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
         let mut aggregate_fee_result = FeeResult::default();
@@ -59,12 +62,16 @@ where
             .into_iter()
             .zip(raw_state_transitions.iter())
             .map(|(state_transition, raw_state_transition)| {
-                let state_transition_execution_event =
-                    process_state_transition(&platform_ref, state_transition, Some(transaction))?;
+                let state_transition_execution_event = process_state_transition(
+                    &platform_ref,
+                    state_transition,
+                    Some(transaction),
+                    platform_version,
+                )?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
-                    self.execute_event_v0(execution_event, block_info, transaction)?
+                    self.execute_event(execution_event, block_info, transaction, platform_version)?
                 } else {
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,

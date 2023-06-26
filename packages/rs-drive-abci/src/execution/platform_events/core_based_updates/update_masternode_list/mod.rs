@@ -1,6 +1,7 @@
-mod v0;
 mod update_state_masternode_list;
+mod v0;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
 use crate::platform_types::platform::Platform;
@@ -11,11 +12,10 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use crate::error::execution::ExecutionError;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Updates the masternode list in the platform state based on changes in the masternode list
     /// from Dash Core between two block heights.
@@ -44,13 +44,26 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.core_based_updates.update_masternode_list {
-            0 => self.update_masternode_list_v0(platform_state, block_platform_state, core_block_height, is_init_chain, block_info, transaction, platform_version),
+        match platform_version
+            .drive_abci
+            .methods
+            .core_based_updates
+            .update_masternode_list
+        {
+            0 => self.update_masternode_list_v0(
+                platform_state,
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_masternode_list".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })
+            }),
         }
     }
 }

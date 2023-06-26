@@ -1,11 +1,11 @@
 mod v0;
 
-use std::option::Option::None;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::grovedb::Transaction;
+use std::option::Option::None;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -49,8 +49,19 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
-        match platform_version.drive_abci.methods.block_fee_processing.process_block_fees {
-            0 => self.process_block_fees_v0(block_info, epoch_info, block_fees, transaction, platform_version),
+        match platform_version
+            .drive_abci
+            .methods
+            .block_fee_processing
+            .process_block_fees
+        {
+            0 => self.process_block_fees_v0(
+                block_info,
+                epoch_info,
+                block_fees,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "process_block_fees".to_string(),
                 known_versions: vec![0],

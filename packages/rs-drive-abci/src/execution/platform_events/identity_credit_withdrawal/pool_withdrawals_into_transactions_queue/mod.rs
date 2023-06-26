@@ -1,16 +1,16 @@
-use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
+use drive::grovedb::Transaction;
 
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Pool withdrawal documents into transactions. This function is a version handler that
     /// directs to specific version implementations of the `pool_withdrawals_into_transactions_queue` function.
@@ -31,7 +31,12 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.identity_credit_withdrawal.pool_withdrawals_into_transactions_queue {
+        match platform_version
+            .drive_abci
+            .methods
+            .identity_credit_withdrawal
+            .pool_withdrawals_into_transactions_queue
+        {
             0 => self.pool_withdrawals_into_transactions_queue_v0(
                 block_execution_context,
                 transaction,

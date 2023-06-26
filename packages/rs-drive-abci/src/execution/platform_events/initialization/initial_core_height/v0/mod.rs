@@ -12,12 +12,12 @@ use crate::platform_types::platform_state::v0::{
     PlatformInitializationState, PlatformStateV0Methods,
 };
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 use dpp::version::PlatformVersion;
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Determine initial core height.
     ///
@@ -35,7 +35,10 @@ impl<C> Platform<C>
     /// * `requested` core height is before v20 fork
     /// * `requested` core height is after current best chain lock
     ///
-    pub(in crate::execution::platform_events) fn initial_core_height_v0(&self, requested: Option<u32>) -> Result<u32, Error> {
+    pub(in crate::execution::platform_events) fn initial_core_height_v0(
+        &self,
+        requested: Option<u32>,
+    ) -> Result<u32, Error> {
         let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
@@ -45,7 +48,7 @@ impl<C> Platform<C>
                 "fork is not yet known (currently {:?})",
                 fork_info.status
             ))
-                .into());
+            .into());
         } else {
             tracing::debug!(?fork_info, "core fork v20 is active");
         };
@@ -75,7 +78,7 @@ impl<C> Platform<C>
                     best,
                     v20_fork,
                 }
-                    .into())
+                .into())
             }
         } else {
             tracing::trace!(v20_fork, "used fork height as initial core lock height");

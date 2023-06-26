@@ -1,11 +1,11 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::unpaid_epoch::UnpaidEpoch;
+use crate::platform_types::platform::Platform;
 use dpp::state_transition::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
-use crate::error::Error;
-use crate::error::execution::ExecutionError;
-use crate::execution::types::unpaid_epoch::UnpaidEpoch;
-use crate::platform_types::platform::Platform;
 
 mod v0;
 
@@ -36,7 +36,12 @@ impl<C> Platform<C> {
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
-        match platform_version.drive_abci.methods.fee_pool_outwards_distribution.add_epoch_pool_to_proposers_payout_operations {
+        match platform_version
+            .drive_abci
+            .methods
+            .fee_pool_outwards_distribution
+            .add_epoch_pool_to_proposers_payout_operations
+        {
             0 => self.add_epoch_pool_to_proposers_payout_operations_v0(
                 unpaid_epoch,
                 core_block_rewards,

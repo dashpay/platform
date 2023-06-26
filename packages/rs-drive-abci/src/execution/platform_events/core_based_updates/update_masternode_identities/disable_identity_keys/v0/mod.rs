@@ -1,3 +1,6 @@
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::Purpose::WITHDRAW;
@@ -5,15 +8,14 @@ use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::DisableIdentityKeys;
-use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType};
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
+};
 use drive::grovedb::Transaction;
-use crate::error::Error;
-use crate::platform_types::platform::Platform;
-use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     pub(super) fn disable_identity_keys_v0(
         &self,

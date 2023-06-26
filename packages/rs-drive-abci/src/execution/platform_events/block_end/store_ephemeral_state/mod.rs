@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
@@ -12,8 +12,8 @@ use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Stores ephemeral state data, including the block information and quorum hash in GroveDB.
     ///
@@ -37,7 +37,12 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.block_end.store_ephemeral_state {
+        match platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .store_ephemeral_state
+        {
             0 => self.store_ephemeral_state_v0(platform_state, transaction),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "store_ephemeral_state".to_string(),

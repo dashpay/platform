@@ -13,6 +13,7 @@ use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
@@ -20,7 +21,6 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
-use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 /// Platform state
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]

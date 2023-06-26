@@ -1,9 +1,9 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use crate::error::Error;
-use crate::error::execution::ExecutionError;
-use crate::platform_types::platform::Platform;
 
 mod v0;
 
@@ -20,7 +20,7 @@ impl<C> Platform<C> {
     ///
     /// # Returns
     ///
-    /// * `Result<Option<ProtocolVersion>, Error>` - Returns the new protocol version if an upgrade was needed, 
+    /// * `Result<Option<ProtocolVersion>, Error>` - Returns the new protocol version if an upgrade was needed,
     ///                                              or None if no upgrade is required.
     ///                                              In case of an error, the corresponding Error is returned.
     ///
@@ -35,11 +35,20 @@ impl<C> Platform<C> {
         &self,
         total_hpmns: u32,
         current_protocol_version_in_consensus: ProtocolVersion,
-        transaction: &Transaction
+        transaction: &Transaction,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let current_platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
-        match current_platform_version.drive_abci.methods.protocol_upgrade.check_for_desired_protocol_upgrade {
-            0 => self.check_for_desired_protocol_upgrade_v0(total_hpmns, current_protocol_version_in_consensus, transaction),
+        match current_platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .check_for_desired_protocol_upgrade
+        {
+            0 => self.check_for_desired_protocol_upgrade_v0(
+                total_hpmns,
+                current_protocol_version_in_consensus,
+                transaction,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_for_desired_protocol_upgrade".to_string(),
                 known_versions: vec![0],

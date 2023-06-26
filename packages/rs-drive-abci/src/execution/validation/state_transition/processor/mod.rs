@@ -6,6 +6,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 /// There are 3 stages in a state transition processing:
@@ -25,6 +26,7 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
     //Todo: feature type (next versioning pr)
     // We will need to check the protocol version and use feature type to determine the version of

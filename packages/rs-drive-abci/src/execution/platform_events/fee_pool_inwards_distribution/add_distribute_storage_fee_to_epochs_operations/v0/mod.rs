@@ -1,7 +1,7 @@
-use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::epoch::distribution::{
     distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
@@ -38,7 +38,9 @@ impl<C> Platform<C> {
         // (already paid or pay-in-progress) epochs. We want people to pay for the current epoch
         // Leftovers are ignored since they already deducted from Identity's refund amount
 
-        let refunds = self.drive.fetch_pending_epoch_refunds(transaction, &platform_version.drive)?;
+        let refunds = self
+            .drive
+            .fetch_pending_epoch_refunds(transaction, &platform_version.drive)?;
         let refunded_epochs_count = refunds.len() as u16;
 
         for (epoch_index, credits) in refunds {

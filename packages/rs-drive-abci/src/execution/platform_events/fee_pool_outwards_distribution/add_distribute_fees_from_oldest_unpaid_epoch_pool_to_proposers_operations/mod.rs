@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::proposer_payouts;
 use crate::execution::types::proposer_payouts::v0::ProposersPayoutsV0;
@@ -10,7 +11,6 @@ use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
 use drive::grovedb::Transaction;
-use crate::error::execution::ExecutionError;
 
 impl<C> Platform<C> {
     /// Distributes fees from the oldest unpaid epoch pool to proposers.
@@ -39,7 +39,12 @@ impl<C> Platform<C> {
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<proposer_payouts::ProposersPayouts>, Error> {
-        match platform_version.drive_abci.methods.fee_pool_outwards_distribution.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
+        match platform_version
+            .drive_abci
+            .methods
+            .fee_pool_outwards_distribution
+            .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations
+        {
             0 => self.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0(
                 current_epoch_index,
                 cached_current_epoch_start_block_height,
@@ -49,7 +54,8 @@ impl<C> Platform<C> {
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations".to_string(),
+                method: "add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

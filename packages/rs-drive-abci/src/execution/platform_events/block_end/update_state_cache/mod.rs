@@ -11,8 +11,8 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Updates the state cache at the end of finalize block. This is done by overriding the current
     /// platform state cache with the block execution state cache.
@@ -38,7 +38,12 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.block_end.update_state_cache {
+        match platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .update_state_cache
+        {
             0 => self.update_state_cache_v0(extended_block_info, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_state_cache".to_string(),

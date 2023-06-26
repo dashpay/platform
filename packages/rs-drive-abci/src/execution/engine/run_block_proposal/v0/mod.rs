@@ -6,9 +6,9 @@ use dpp::block::epoch::Epoch;
 use dpp::validation::ValidationResult;
 use drive::error::Error::GroveDB;
 
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
@@ -128,7 +128,7 @@ where
                 proposer_pro_tx_hash,
                 proposed_app_version as u32,
                 Some(transaction),
-                &platform_version.drive
+                &platform_version.drive,
             )
             .map_err(|e| {
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
@@ -235,7 +235,11 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context;
 
-        self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction, platform_version)?;
+        self.pool_withdrawals_into_transactions_queue(
+            &block_execution_context,
+            transaction,
+            platform_version,
+        )?;
 
         // while we have the state transitions executed, we now need to process the block fees
 

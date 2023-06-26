@@ -1,16 +1,16 @@
-use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
+use drive::grovedb::Transaction;
 
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Update statuses for broadcasted withdrawals
     ///
@@ -43,8 +43,18 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.identity_credit_withdrawal.update_broadcasted_withdrawal_transaction_statuses {
-            0 => self.update_broadcasted_withdrawal_transaction_statuses_v0(last_synced_core_height, block_execution_context, transaction, &self.platform_version),
+        match platform_version
+            .drive_abci
+            .methods
+            .identity_credit_withdrawal
+            .update_broadcasted_withdrawal_transaction_statuses
+        {
+            0 => self.update_broadcasted_withdrawal_transaction_statuses_v0(
+                last_synced_core_height,
+                block_execution_context,
+                transaction,
+                &self.platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_broadcasted_withdrawal_transaction_statuses".to_string(),
                 known_versions: vec![0],

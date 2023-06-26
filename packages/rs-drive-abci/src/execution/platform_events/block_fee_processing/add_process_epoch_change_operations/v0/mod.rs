@@ -127,7 +127,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 &mut inner_batch,
                 block_fees.refunds_per_epoch(),
                 Some(transaction),
-                &platform_version.drive
+                &platform_version.drive,
             )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(inner_batch));

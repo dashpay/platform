@@ -1,6 +1,6 @@
 mod v0;
 
-
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -8,11 +8,10 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use crate::error::execution::ExecutionError;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Updates the core information in the platform state based on the given core block height.
     ///
@@ -44,13 +43,26 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.core_based_updates.update_core_info {
-            0 => self.update_core_info_v0(platform_state, block_platform_state, core_block_height, is_init_chain, block_info, transaction, platform_version),
+        match platform_version
+            .drive_abci
+            .methods
+            .core_based_updates
+            .update_core_info
+        {
+            0 => self.update_core_info_v0(
+                platform_state,
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_core_info".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })
+            }),
         }
     }
 }

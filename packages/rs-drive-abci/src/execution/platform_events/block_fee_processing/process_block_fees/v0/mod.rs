@@ -162,7 +162,11 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             block_fees.refunds_per_epoch_owned()
         };
 
-        add_update_pending_epoch_refunds_operations(&mut batch, pending_epoch_refunds, platform_version)?;
+        add_update_pending_epoch_refunds_operations(
+            &mut batch,
+            pending_epoch_refunds,
+            platform_version,
+        )?;
 
         self.drive.apply_drive_operations(
             batch,

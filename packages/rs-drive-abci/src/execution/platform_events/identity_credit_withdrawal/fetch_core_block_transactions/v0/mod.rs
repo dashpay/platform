@@ -1,5 +1,5 @@
-use serde_json::Value as JsonValue;
 use dpp::version::PlatformVersion;
+use serde_json::Value as JsonValue;
 
 use crate::{
     error::{execution::ExecutionError, Error},

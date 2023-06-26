@@ -1,17 +1,17 @@
 mod v0;
 
-use dpp::version::PlatformVersion;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::execution::types::storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcomeV0;
 use crate::platform_types::platform::Platform;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::epoch::distribution::{
     distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
 };
 use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
-use crate::error::execution::ExecutionError;
 
 impl<C> Platform<C> {
     /// This function is a versioned method that adds operations to the GroveDB operation batch.
@@ -48,12 +48,17 @@ impl<C> Platform<C> {
         batch: &mut GroveDbOpBatch,
         platform_version: &PlatformVersion,
     ) -> Result<storage_fee_distribution_outcome::StorageFeeDistributionOutcome, Error> {
-        match platform_version.drive_abci.methods.fee_pool_inwards_distribution.add_distribute_storage_fee_to_epochs_operations {
+        match platform_version
+            .drive_abci
+            .methods
+            .fee_pool_inwards_distribution
+            .add_distribute_storage_fee_to_epochs_operations
+        {
             0 => self.add_distribute_storage_fee_to_epochs_operations_v0(
                 current_epoch_index,
                 transaction,
                 batch,
-                platform_version
+                platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "add_distribute_storage_fee_to_epochs_operations".to_string(),

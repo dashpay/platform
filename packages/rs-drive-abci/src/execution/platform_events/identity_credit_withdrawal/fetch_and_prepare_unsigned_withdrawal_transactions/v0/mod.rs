@@ -159,7 +159,7 @@ where
             true,
             &block_info,
             Some(transaction),
-            &platform_version.drive
+            &platform_version.drive,
         )?;
 
         Ok(unsigned_withdrawal_transactions)

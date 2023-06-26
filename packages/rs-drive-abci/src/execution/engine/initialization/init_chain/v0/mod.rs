@@ -12,12 +12,12 @@ use crate::platform_types::platform_state::v0::{
     PlatformInitializationState, PlatformStateV0Methods,
 };
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 use dpp::version::PlatformVersion;
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Initialize the chain
     pub(super) fn init_chain_v0(
@@ -31,7 +31,8 @@ impl<C> Platform<C>
                 request,
             )?;
         // We get core height early, as this also verifies v20 fork
-        let core_height = self.initial_core_height(request.initial_core_height, platform_version)?;
+        let core_height =
+            self.initial_core_height(request.initial_core_height, platform_version)?;
 
         let genesis_time = request.genesis_time;
 
@@ -89,5 +90,4 @@ impl<C> Platform<C>
             initial_core_height: core_height, // we send back the core height when the fork happens
         })
     }
-
 }

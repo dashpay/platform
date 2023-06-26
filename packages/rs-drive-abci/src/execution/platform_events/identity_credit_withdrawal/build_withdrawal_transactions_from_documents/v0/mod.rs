@@ -41,7 +41,7 @@ where
             .fetch_and_remove_latest_withdrawal_transaction_index_operations(
                 drive_operation_types,
                 transaction,
-                &platform_version.drive
+                &platform_version.drive,
             )?;
 
         for (i, document) in documents.iter().enumerate() {

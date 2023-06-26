@@ -1,7 +1,7 @@
-use dpp::version::PlatformVersion;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use dpp::version::PlatformVersion;
 
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::grovedb::Transaction;
@@ -71,7 +71,8 @@ impl<C> Platform<C> {
             Ok(Some(new_version))
         } else {
             // we need to drop all version information
-            let current_platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
+            let current_platform_version =
+                PlatformVersion::get(current_protocol_version_in_consensus)?;
             self.drive
                 .clear_version_information(Some(transaction), &current_platform_version.drive)
                 .map_err(Error::Drive)?;

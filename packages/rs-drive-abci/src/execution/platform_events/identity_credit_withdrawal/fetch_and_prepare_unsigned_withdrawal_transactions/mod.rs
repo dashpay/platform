@@ -1,16 +1,16 @@
-use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
+use drive::grovedb::Transaction;
 
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Prepares a list of an unsigned withdrawal transaction bytes. This function is a version handler that
     /// directs to specific version implementations of the `fetch_and_prepare_unsigned_withdrawal_transactions` function.
@@ -33,7 +33,12 @@ impl<C> Platform<C>
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        match platform_version.drive_abci.methods.identity_credit_withdrawal.fetch_and_prepare_unsigned_withdrawal_transactions {
+        match platform_version
+            .drive_abci
+            .methods
+            .identity_credit_withdrawal
+            .fetch_and_prepare_unsigned_withdrawal_transactions
+        {
             0 => self.fetch_and_prepare_unsigned_withdrawal_transactions_v0(
                 validator_set_quorum_hash,
                 block_execution_context,

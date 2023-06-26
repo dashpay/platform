@@ -1,14 +1,17 @@
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
-use dpp::identity::Identity;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
+use dpp::identity::Identity;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-    pub(super) fn create_operator_identity_v0(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
+    pub(super) fn create_operator_identity_v0(
+        &self,
+        masternode: &MasternodeListItem,
+    ) -> Result<Identity, Error> {
         let operator_identifier =
             Self::get_operator_identifier_from_masternode_list_item(masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);

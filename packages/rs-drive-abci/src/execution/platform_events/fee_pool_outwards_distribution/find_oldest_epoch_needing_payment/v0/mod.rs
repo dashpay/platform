@@ -17,14 +17,16 @@ impl<C> Platform<C> {
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: TransactionArg,
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Option<unpaid_epoch::v0::UnpaidEpochV0>, Error> {
         // Since we are paying for passed epochs there is nothing to do on genesis epoch
         if current_epoch_index == GENESIS_EPOCH_INDEX {
             return Ok(None);
         }
 
-        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index(transaction, &platform_version.drive)?;
+        let unpaid_epoch_index = self
+            .drive
+            .get_unpaid_epoch_index(transaction, &platform_version.drive)?;
 
         // We pay for previous epochs only
         if unpaid_epoch_index == current_epoch_index {
@@ -33,13 +35,17 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
 
-        let start_block_height = self
-            .drive
-            .get_epoch_start_block_height(&unpaid_epoch, transaction, &platform_version.drive)?;
+        let start_block_height = self.drive.get_epoch_start_block_height(
+            &unpaid_epoch,
+            transaction,
+            &platform_version.drive,
+        )?;
 
-        let start_block_core_height = self
-            .drive
-            .get_epoch_start_block_core_height(&unpaid_epoch, transaction, &platform_version.drive)?;
+        let start_block_core_height = self.drive.get_epoch_start_block_core_height(
+            &unpaid_epoch,
+            transaction,
+            &platform_version.drive,
+        )?;
 
         let next_unpaid_epoch_info = if unpaid_epoch.index == current_epoch_index - 1 {
             // Use cached or committed block height for previous epoch
@@ -47,8 +53,11 @@ impl<C> Platform<C> {
                 Some(start_block_height) => start_block_height,
                 None => {
                     let current_epoch = Epoch::new(current_epoch_index)?;
-                    self.drive
-                        .get_epoch_start_block_height(&current_epoch, transaction, &platform_version.drive)?
+                    self.drive.get_epoch_start_block_height(
+                        &current_epoch,
+                        transaction,
+                        &platform_version.drive,
+                    )?
                 }
             };
 
@@ -56,8 +65,11 @@ impl<C> Platform<C> {
                 Some(start_block_core_height) => start_block_core_height,
                 None => {
                     let current_epoch = Epoch::new(current_epoch_index)?;
-                    self.drive
-                        .get_epoch_start_block_core_height(&current_epoch, transaction, &platform_version.drive)?
+                    self.drive.get_epoch_start_block_core_height(
+                        &current_epoch,
+                        transaction,
+                        &platform_version.drive,
+                    )?
                 }
             };
             StartBlockInfo {

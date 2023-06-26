@@ -15,6 +15,7 @@ use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
@@ -27,11 +28,10 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     pub(super) fn update_operator_identity_v0(
         &self,
@@ -105,10 +105,10 @@ impl<C> Platform<C>
                     if needs_change_operator_payout_address {
                         if Some(key.data.as_slice())
                             == old_masternode
-                            .state
-                            .operator_payout_address
-                            .as_ref()
-                            .map(|bytes| bytes.as_slice())
+                                .state
+                                .operator_payout_address
+                                .as_ref()
+                                .map(|bytes| bytes.as_slice())
                         {
                             return Some(key_id);
                         } else if let Some(operator_payout_address) =
@@ -214,7 +214,7 @@ impl<C> Platform<C>
                     }
                     if old_masternode.state.platform_node_id.is_some()
                         && key.data.as_slice()
-                        == old_masternode.state.platform_node_id.as_ref().unwrap()
+                            == old_masternode.state.platform_node_id.as_ref().unwrap()
                     {
                         return Some(key_id);
                     }

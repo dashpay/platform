@@ -4,29 +4,28 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::json::{DMNStateDiff};
+use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
     AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
 };
 use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
-    KeyRequestType,
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Updates the owner's withdrawal address.
     ///
@@ -57,8 +56,20 @@ impl<C> Platform<C>
         drive_operations: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive_abci.methods.core_based_updates.masternode_updates.update_owner_withdrawal_address {
-            0 => self.update_owner_withdrawal_address_v0(masternode, block_info, transaction, drive_operations, platform_version),
+        match platform_version
+            .drive_abci
+            .methods
+            .core_based_updates
+            .masternode_updates
+            .update_owner_withdrawal_address
+        {
+            0 => self.update_owner_withdrawal_address_v0(
+                masternode,
+                block_info,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_owner_withdrawal_address".to_string(),
                 known_versions: vec![0],

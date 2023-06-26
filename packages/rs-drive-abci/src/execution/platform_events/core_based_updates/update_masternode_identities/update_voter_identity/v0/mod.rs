@@ -15,6 +15,7 @@ use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
@@ -27,11 +28,10 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// When a voter identity is updated the following events need to happen
     /// The old identity key is disabled (which might make the identity unusable)
@@ -69,9 +69,11 @@ impl<C> Platform<C>
             offset: None,
         };
 
-        let old_voter_identity_key_ids = self
-            .drive
-            .fetch_identity_keys::<KeyIDVec>(key_request, Some(transaction), &platform_version.drive)?;
+        let old_voter_identity_key_ids = self.drive.fetch_identity_keys::<KeyIDVec>(
+            key_request,
+            Some(transaction),
+            &platform_version.drive,
+        )?;
 
         if old_voter_identity_key_ids.is_empty() {
             return Err(Error::Execution(ExecutionError::DriveMissingData(
@@ -96,9 +98,11 @@ impl<C> Platform<C>
             limit: None,
             offset: None,
         };
-        let new_voter_identity_key_ids = self
-            .drive
-            .fetch_identity_keys::<KeyIDVec>(key_request, Some(transaction), &platform_version.drive)?;
+        let new_voter_identity_key_ids = self.drive.fetch_identity_keys::<KeyIDVec>(
+            key_request,
+            Some(transaction),
+            &platform_version.drive,
+        )?;
 
         // two possibilities
         if !new_voter_identity_key_ids.is_empty() {

@@ -1,18 +1,18 @@
 mod v0;
 
-use dpp::version::PlatformVersion;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::version::PlatformVersion;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
     /// Retrieves the genesis time for the specified block height and block time.
     ///
     /// The genesis time is the timestamp of the first block (the 'genesis block') of the blockchain.
-    /// This function uses versioning to allow changes in the implementation while maintaining 
-    /// backward compatibility. The genesis time is critical for validating the chronological order 
+    /// This function uses versioning to allow changes in the implementation while maintaining
+    /// backward compatibility. The genesis time is critical for validating the chronological order
     /// of the blockchain and also for timestamping transactions.
     ///
     /// # Arguments

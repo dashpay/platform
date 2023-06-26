@@ -1,14 +1,14 @@
-use dpp::version::PlatformVersion;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::version::PlatformVersion;
 
 mod v0;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Fetch Core transactions by range of Core heights. This function is a version handler that
     /// directs to specific version implementations of the `fetch_core_block_transactions` function.
@@ -29,7 +29,12 @@ impl<C> Platform<C>
         core_chain_locked_height: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<String>, Error> {
-        match platform_version.drive_abci.methods.identity_credit_withdrawal.fetch_core_block_transactions {
+        match platform_version
+            .drive_abci
+            .methods
+            .identity_credit_withdrawal
+            .fetch_core_block_transactions
+        {
             0 => self.fetch_core_block_transactions_v0(
                 last_synced_core_height,
                 core_chain_locked_height,

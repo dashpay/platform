@@ -1,21 +1,20 @@
-use std::collections::HashMap;
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::platform_types::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::TransactionArg;
-use crate::error::Error;
-use crate::error::execution::ExecutionError;
-use crate::platform_types::platform::Platform;
-use crate::rpc::core::CoreRPCLike;
+use std::collections::HashMap;
 
 mod v0;
 
-
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Builds a list of Core transactions from withdrawal documents. This function is a version handler that
     /// directs to specific version implementations of the `build_withdrawal_transactions_from_documents` function.
@@ -38,7 +37,12 @@ impl<C> Platform<C>
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
-        match platform_version.drive_abci.methods.identity_credit_withdrawal.build_withdrawal_transactions_from_documents {
+        match platform_version
+            .drive_abci
+            .methods
+            .identity_credit_withdrawal
+            .build_withdrawal_transactions_from_documents
+        {
             0 => self.build_withdrawal_transactions_from_documents_v0(
                 documents,
                 drive_operation_types,

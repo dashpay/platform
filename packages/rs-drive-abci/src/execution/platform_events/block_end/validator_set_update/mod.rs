@@ -12,12 +12,12 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
-use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use dpp::version::PlatformVersion;
+use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Checks for validator set rotations and performs rotations if necessary.
     ///
@@ -42,7 +42,12 @@ impl<C> Platform<C>
         block_execution_context: &mut BlockExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ValidatorSetUpdate>, Error> {
-        match platform_version.drive_abci.methods.block_end.validator_set_update {
+        match platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .validator_set_update
+        {
             0 => self.validator_set_update_v0(platform_state, block_execution_context),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "validator_set_update".to_string(),

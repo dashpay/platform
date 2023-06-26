@@ -1,10 +1,10 @@
 mod v0;
 
-use std::option::Option::None;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;
+use std::option::Option::None;
 
 use crate::error::Error;
 use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
@@ -13,13 +13,13 @@ use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
 
+use crate::error::execution::ExecutionError;
 use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::platform_types::epochInfo::EpochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
-use crate::error::execution::ExecutionError;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the GroveDB batch which initialize the current epoch
@@ -52,9 +52,22 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error> {
-        match platform_version.drive_abci.methods.block_fee_processing.add_process_epoch_change_operations {
-            0 => self.add_process_epoch_change_operations_v0(block_info, epoch_info, block_fees, transaction, batch, platform_version),
+    ) -> Result<Option<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome>, Error>
+    {
+        match platform_version
+            .drive_abci
+            .methods
+            .block_fee_processing
+            .add_process_epoch_change_operations
+        {
+            0 => self.add_process_epoch_change_operations_v0(
+                block_info,
+                epoch_info,
+                block_fees,
+                transaction,
+                batch,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "add_process_epoch_change_operations".to_string(),
                 known_versions: vec![0],

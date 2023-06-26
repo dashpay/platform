@@ -15,6 +15,7 @@ use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
@@ -27,11 +28,10 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     pub(super) fn update_owner_withdrawal_address_v0(
         &self,
@@ -60,7 +60,7 @@ impl<C> Platform<C>
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
                 key_request,
                 Some(transaction),
-                &platform_version.drive
+                &platform_version.drive,
             )?;
 
         if old_withdrawal_identity_keys.is_empty() {

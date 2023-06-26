@@ -33,7 +33,7 @@ pub enum ExecutionError {
 
     /// Platform expected some specific versions
     #[error("platform unknown version on {method}, known versions: {known_versions}, received: {received}")]
-    UnknownVersionMismatch{
+    UnknownVersionMismatch {
         /// method
         method: String,
         /// the allowed versions for this method

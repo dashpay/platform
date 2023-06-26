@@ -1,17 +1,17 @@
 mod v0;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::platform_events::core_subsidy::{
     CORE_GENESIS_BLOCK_SUBSIDY, CORE_SUBSIDY_HALVING_INTERVAL,
 };
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
+use dpp::state_transition::fee::Credits;
+use dpp::version::PlatformVersion;
 use drive::fee::credits::Credits;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use dpp::state_transition::fee::Credits;
-use dpp::version::PlatformVersion;
-use crate::error::execution::ExecutionError;
 
 impl<C> Platform<C> {
     /// Gets the amount of core reward fees to be distributed for the Epoch.
@@ -29,7 +29,12 @@ impl<C> Platform<C> {
         next_epoch_start_block_core_height: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
-        match platform_version.drive_abci.methods.core_subsidy.epoch_core_reward_credits_for_distribution {
+        match platform_version
+            .drive_abci
+            .methods
+            .core_subsidy
+            .epoch_core_reward_credits_for_distribution
+        {
             0 => Self::epoch_core_reward_credits_for_distribution_v0(
                 epoch_start_block_core_height,
                 next_epoch_start_block_core_height,

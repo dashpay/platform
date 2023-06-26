@@ -7,9 +7,9 @@ use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::ProtocolError;
 use dpp::state_transition::fee::Credits;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
@@ -34,7 +34,11 @@ impl<C> Platform<C> {
 
         let storage_and_processing_fees = self
             .drive
-            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction), &platform_version)
+            .get_epoch_total_credits_for_distribution(
+                &unpaid_epoch_tree,
+                Some(transaction),
+                &platform_version,
+            )
             .map_err(Error::Drive)?;
 
         let total_payouts = storage_and_processing_fees
@@ -50,7 +54,12 @@ impl<C> Platform<C> {
 
         let proposers = self
             .drive
-            .get_epoch_proposers(&unpaid_epoch_tree, None, Some(transaction), &platform_version.drive)
+            .get_epoch_proposers(
+                &unpaid_epoch_tree,
+                None,
+                Some(transaction),
+                &platform_version.drive,
+            )
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
@@ -67,8 +76,11 @@ impl<C> Platform<C> {
 
             let mut masternode_payout_leftover = total_masternode_payout;
 
-            let documents = self
-                .fetch_reward_shares_list_for_masternode(&proposer_tx_hash, Some(transaction), platform_version)?;
+            let documents = self.fetch_reward_shares_list_for_masternode(
+                &proposer_tx_hash,
+                Some(transaction),
+                platform_version,
+            )?;
 
             for document in documents {
                 let pay_to_id = document
@@ -138,7 +150,7 @@ impl<C> Platform<C> {
             drive_operations,
             &BlockInfo::default(),
             Some(transaction),
-            &platform_version.drive
+            &platform_version.drive,
         )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));

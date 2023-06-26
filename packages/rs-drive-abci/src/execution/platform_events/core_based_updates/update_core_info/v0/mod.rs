@@ -47,9 +47,14 @@ where
             is_init_chain,
             block_info,
             transaction,
-            platform_version
+            platform_version,
         )?;
 
-        self.update_quorum_info(block_platform_state, core_block_height, false, platform_version)
+        self.update_quorum_info(
+            block_platform_state,
+            core_block_height,
+            false,
+            platform_version,
+        )
     }
 }

@@ -30,7 +30,11 @@ impl<C> Platform<C> {
         // update epochs pool processing fees
         let epoch_processing_fees = self
             .drive
-            .get_epoch_processing_credits_for_distribution(current_epoch, transaction, &platform_version.drive)
+            .get_epoch_processing_credits_for_distribution(
+                current_epoch,
+                transaction,
+                &platform_version.drive,
+            )
             .or_else(|e| match e {
                 // Handle epoch change when storage fees are not set yet
                 error::Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => Ok(0u64),
@@ -40,7 +44,8 @@ impl<C> Platform<C> {
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
-            current_epoch.update_processing_fee_pool_operation(total_processing_fees, platform_version)?,
+            current_epoch
+                .update_processing_fee_pool_operation(total_processing_fees, platform_version)?,
         ));
 
         // update storage fee pool

@@ -35,7 +35,12 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<unpaid_epoch::v0::UnpaidEpochV0>, Error> {
-        match platform_version.drive_abci.methods.fee_pool_outwards_distribution.find_oldest_epoch_needing_payment {
+        match platform_version
+            .drive_abci
+            .methods
+            .fee_pool_outwards_distribution
+            .find_oldest_epoch_needing_payment
+        {
             0 => self.find_oldest_epoch_needing_payment_v0(
                 current_epoch_index,
                 cached_current_epoch_start_block_height,
