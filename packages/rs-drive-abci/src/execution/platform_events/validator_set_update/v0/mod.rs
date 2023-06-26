@@ -199,14 +199,14 @@ mod test {
         let next_quorum_hash = QuorumHash::from_slice(&[1u8; 32]).unwrap();
 
         let current_quorum = ValidatorSet {
-            quorum_hash: current_quorum_hash.clone(),
+            quorum_hash: current_quorum_hash,
             core_height: 10,
             members: generate_healthy_validator_set(),
             threshold_public_key: BlsPublicKey::generate(),
         };
 
         let next_quorum = ValidatorSet {
-            quorum_hash: next_quorum_hash.clone(),
+            quorum_hash: next_quorum_hash,
             core_height: 11,
             members: generate_healthy_validator_set(),
             threshold_public_key: BlsPublicKey::generate(),
@@ -260,7 +260,7 @@ mod test {
 
         // Now replacing the current validator set with an unhealthy one
         let unhealthy_validator_set = ValidatorSet {
-            quorum_hash: current_quorum_hash.clone(),
+            quorum_hash: current_quorum_hash,
             core_height: 10,
             members: generate_unhealthy_validator_set(),
             threshold_public_key: BlsPublicKey::generate(),
