@@ -146,15 +146,15 @@ mod test {
     use std::collections::BTreeMap;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContext;
     use crate::execution::types::block_state_info::v0::BlockStateInfo;
-    use crate::platform_types::platform_state::v0::PlatformState;
+    
     use crate::platform_types::validator_set::v0::ValidatorSet;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::bls_signatures::PublicKey as BlsPublicKey;
-    use dpp::dashcore::bls_sig_utils::BLSPublicKey;
+    
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{ProTxHash, QuorumHash};
     use std::ops::Deref;
-    use crate::platform_types::validator;
+    
     use crate::platform_types::validator::v0::Validator;
 
     fn generate_validator() -> Validator {
