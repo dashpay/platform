@@ -2,10 +2,9 @@ use crate::error::Error;
 use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
 use dpp::consensus::basic::BasicError;
 
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-
 use dpp::identity::KeyID;
 use dpp::platform_value::Identifier;
+use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 use dpp::validation::SimpleConsensusValidationResult;
 

@@ -3,6 +3,7 @@ use crate::version::FeatureVersion;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciVersion {
     pub methods: DriveAbciMethodVersions,
+    pub validation: DriveAbciValidationVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -20,6 +21,35 @@ pub struct DriveAbciMethodVersions {
     pub withdrawals: DriveAbciWithdrawalsMethodVersions,
     pub epoch: DriveAbciEpochMethodVersions,
     pub block_end: DriveAbciBlockEndMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciValidationVersions {
+    pub state_transitions: DriveAbciStateTransitionValidationVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciStateTransitionValidationVersion {
+    pub structure: FeatureVersion,
+    pub identity_signatures: FeatureVersion,
+    pub state: FeatureVersion,
+    pub transform_into_action: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciStateTransitionValidationVersions {
+    pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub documents_batch_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub document_base_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub document_create_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub document_replace_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub document_delete_state_transition: DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

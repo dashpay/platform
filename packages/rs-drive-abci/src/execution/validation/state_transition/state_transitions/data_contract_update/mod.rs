@@ -5,12 +5,15 @@ mod structure;
 use dpp::identity::PartialIdentity;
 
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
 use dpp::state_transition::StateTransitionAction;
+use dpp::version::PlatformVersion;
+use crate::error::execution::ExecutionError;
 
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -19,15 +22,23 @@ use crate::execution::validation::state_transition::data_contract_update::state:
 use crate::execution::validation::state_transition::data_contract_update::structure::v0::StateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
-        _platform: &PlatformRef<C>,
+        platform: &PlatformRef<C>,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        //todo: use protocol version to determine validation
-        self.transform_into_action_v0()
+        let platform_version = PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        match platform_version.drive_abci.validation.state_transitions.contract_update_state_transition.transform_into_action {
+            0 => self.transform_into_action_v0::<C>(),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: transform_into_action".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }))
+        }
     }
 }
 
@@ -35,20 +46,35 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        _protocol_version: u32,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        self.validate_structure_v0()
+        let platform_version = PlatformVersion::get(protocol_version)?;
+        match platform_version.drive_abci.validation.state_transitions.contract_update_state_transition.structure {
+            0 => self.validate_structure_v0(),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: validate_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }))
+        }
     }
 
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        _protocol_version: u32,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        //todo: use protocol version to determine validation
-        self.validate_identity_and_signatures_v0(drive, transaction)
+        let platform_version = PlatformVersion::get(protocol_version)?;
+        match platform_version.drive_abci.validation.state_transitions.contract_update_state_transition.identity_signatures {
+            0 => self.validate_identity_and_signatures_v0(drive, transaction),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: validate_identity_and_signatures".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }))
+        }
     }
 
     fn validate_state<C: CoreRPCLike>(
@@ -56,8 +82,15 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        //todo: use protocol version to determine validation
-        self.validate_state_v0(platform, tx)
+        let platform_version = PlatformVersion::get(protocol_version)?;
+        match platform_version.drive_abci.validation.state_transitions.contract_update_state_transition.state {
+            0 => self.validate_state_v0(platform, tx),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: validate_state".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }))
+        }
     }
 }
 
