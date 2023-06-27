@@ -575,9 +575,15 @@ module.exports = {
     return configFile;
   },
   '0.24.12': (configFile) => {
+    let i = 0;
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        config.platform.drive.tenderdash.pprof = systemConfigs.base.platform.drive.tenderdash.pprof;
+        if (config.group === 'local') {
+          config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform.drive.tenderdash.pprof + (i * 100));
+          i++;
+        } else {
+          config.platform.drive.tenderdash.pprof = systemConfigs.base.platform.drive.tenderdash.pprof;
+        }
       });
     return configFile;
   },
