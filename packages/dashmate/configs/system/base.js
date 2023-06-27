@@ -165,6 +165,10 @@ module.exports = {
         rpc: {
           port: 26657,
         },
+        pprof: {
+          enabled: false,
+          port: 6060,
+        },
         consensus: {
           createEmptyBlocks: true,
           createEmptyBlocksInterval: '3m',
