@@ -44,7 +44,7 @@ async function registerMasternodeWithDMT(ctx, task) {
       type: 'input',
       name: 'operatorPrivateKey',
       header: `  Dashmate needs to collect details on the operator key. The operator
-  key is a BLS private key, encoded in HEX format. Dashmate will record the
+  key is a BLS private key, encoded in hexadecimal format. Dashmate will record the
   private key in the masternode configuration.\n`,
       message: 'Enter masternode operator private key:',
       validate: validateBLSPrivateKey,
