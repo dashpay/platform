@@ -1221,6 +1221,8 @@ dependencies = [
  "tempfile",
  "tenderdash-abci",
  "thiserror",
+ "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "ureq",
@@ -3654,15 +3656,18 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#e7b27c3c7a4f447cc5dd8d3b36833a04e6dd18f5"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
 dependencies = [
  "bytes",
+ "futures",
  "hex",
  "lhash",
  "prost",
  "semver",
  "tenderdash-proto",
  "thiserror",
+ "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -3671,7 +3676,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#e7b27c3c7a4f447cc5dd8d3b36833a04e6dd18f5"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
 dependencies = [
  "bytes",
  "chrono",
@@ -3689,7 +3694,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#e7b27c3c7a4f447cc5dd8d3b36833a04e6dd18f5"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -3873,6 +3878,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.18",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "806fe8c2c87eccc8b3267cbae29ed3ab2d0bd37fca70ab622e46aaa9375ddb7d"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-sink",
+ "pin-project-lite",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
