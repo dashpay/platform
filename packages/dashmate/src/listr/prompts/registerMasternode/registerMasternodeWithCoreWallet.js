@@ -70,7 +70,7 @@ async function registerMasternodeWithCoreWallet(ctx, task) {
 
   let instructionsUrl = 'https://docs.dash.org/mn-setup-core-collateral';
   if (ctx.isHP) {
-    instructionsUrl = 'https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#option-2-holding-collateral-in-dash-core-wallet';
+    instructionsUrl = 'https://docs.dash.org/evonode-setup-core-collateral';
   }
 
   let confirmation;
