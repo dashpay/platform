@@ -583,10 +583,12 @@ module.exports = {
           .dashmate.helper.api.port;
 
         if (config.group === 'local') {
-          config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform.drive.tenderdash.pprof + (i * 100));
+          config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform
+            .drive.tenderdash.pprof + (i * 100));
           i++;
         } else {
-          config.platform.drive.tenderdash.pprof = systemConfigs.base.platform.drive.tenderdash.pprof;
+          config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
+            .drive.tenderdash.pprof;
         }
       });
     return configFile;
