@@ -7,22 +7,30 @@ package org.dash.platform.dapi.v0;
 import "google/protobuf/timestamp.proto";
 
 service Platform {
-  rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
-  rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
-  rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
-  rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-//  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
-  rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
+  rpc broadcastStateTransition(BroadcastStateTransitionRequest)
+      returns (BroadcastStateTransitionResponse);
+  rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
+  rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
+  rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  //  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns
+  //  (GetIdentitiesKeysResponse);
+  rpc getIdentityBalance(GetIdentityRequest)
+      returns (GetIdentityBalanceResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityRequest)
-          returns (GetIdentityBalanceAndRevisionResponse);
-  rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
-  rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
-  rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
-  rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
-  rpc getIdentityByPublicKeyHashes (GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse);
-  rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
-  rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
+      returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
+  rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDataContracts(GetDataContractsRequest)
+      returns (GetDataContractsResponse);
+  rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
+  rpc getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest)
+      returns (GetIdentitiesByPublicKeyHashesResponse);
+  rpc getIdentityByPublicKeyHashes(GetIdentityByPublicKeyHashesRequest)
+      returns (GetIdentityByPublicKeyHashesResponse);
+  rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
+      returns (WaitForStateTransitionResultResponse);
+  rpc getConsensusParams(GetConsensusParamsRequest)
+      returns (GetConsensusParamsResponse);
 }
 
 message Proof {
@@ -46,13 +54,9 @@ message StateTransitionBroadcastError {
   bytes data = 3;
 }
 
-message BroadcastStateTransitionRequest {
-  bytes state_transition = 1;
-}
+message BroadcastStateTransitionRequest { bytes state_transition = 1; }
 
-message BroadcastStateTransitionResponse {
-
-}
+message BroadcastStateTransitionResponse {}
 
 message GetIdentityRequest {
   bytes id = 1;
@@ -73,18 +77,14 @@ message GetIdentitiesRequest {
 }
 
 message GetIdentitiesResponse {
-  message IdentityValue {
-    bytes value = 1;
-  }
+  message IdentityValue { bytes value = 1; }
 
   message IdentityEntry {
     bytes key = 1;
     IdentityValue value = 2;
   }
 
-  message Identities {
-    repeated IdentityEntry identity_entries = 1;
-  }
+  message Identities { repeated IdentityEntry identity_entries = 1; }
 
   oneof result {
     Identities identities = 1;
@@ -122,16 +122,11 @@ message KeyRequestType {
   }
 }
 
-message AllKeys {
-}
+message AllKeys {}
 
-message SpecificKeys {
-  repeated uint32 key_ids = 1;
-}
+message SpecificKeys { repeated uint32 key_ids = 1; }
 
-message SearchKey {
-  map<uint32, SecurityLevelMap> purpose_map = 1;
-}
+message SearchKey { map<uint32, SecurityLevelMap> purpose_map = 1; }
 
 message SecurityLevelMap {
   enum KeyKindRequestType {
@@ -150,16 +145,13 @@ message GetIdentityKeysRequest {
 }
 
 message GetIdentityKeysResponse {
-  message Keys {
-    repeated bytes keys_bytes = 1;
-  }
+  message Keys { repeated bytes keys_bytes = 1; }
   oneof result {
     Keys keys = 1;
     Proof proof = 2;
   }
   ResponseMetadata metadata = 3;
 }
-
 
 message GetIdentitiesKeysRequest {
   repeated bytes identity_ids = 1;
@@ -169,26 +161,20 @@ message GetIdentitiesKeysRequest {
   bool prove = 5;
 
   message SecurityLevelMap {
-    enum KeyKindRequestType {
-      CURRENT_KEY_OF_KIND_REQUEST = 0;
-    }
+    enum KeyKindRequestType { CURRENT_KEY_OF_KIND_REQUEST = 0; }
     map<uint32, KeyKindRequestType> security_level_map = 1;
   }
 }
 
 message GetIdentitiesKeysResponse {
-  message PublicKey {
-    bytes value = 1;
-  }
+  message PublicKey { bytes value = 1; }
 
   message PublicKeyEntry {
     bytes key = 1;
     PublicKey value = 2;
   }
 
-  message PublicKeyEntries {
-    repeated PublicKeyEntry public_key_entries = 1;
-  }
+  message PublicKeyEntries { repeated PublicKeyEntry public_key_entries = 1; }
 
   oneof result {
     PublicKeyEntries public_keys = 1;
@@ -215,9 +201,7 @@ message GetProofsRequest {
     Type request_type = 2;
   }
 
-  message ContractRequest {
-    bytes contract_id = 1;
-  }
+  message ContractRequest { bytes contract_id = 1; }
 
   repeated IdentityRequest identities = 1;
   repeated ContractRequest contracts = 2;
@@ -248,9 +232,7 @@ message GetDataContractsRequest {
 }
 
 message GetDataContractsResponse {
-  message DataContractValue {
-    bytes value = 1;
-  }
+  message DataContractValue { bytes value = 1; }
 
   message DataContractEntry {
     bytes key = 1;
@@ -277,9 +259,7 @@ message GetDataContractHistoryRequest {
 }
 
 message GetDataContractHistoryResponse {
-  message DataContractValue {
-    bytes value = 1;
-  }
+  message DataContractValue { bytes value = 1; }
 
   message DataContractHistoryEntry {
     uint64 date = 1;
@@ -316,9 +296,7 @@ message GetDocumentsRequest {
 }
 
 message GetDocumentsResponse {
-  message Documents {
-    repeated bytes documents = 1;
-  }
+  message Documents { repeated bytes documents = 1; }
 
   oneof result {
     Documents documents = 1;
@@ -333,9 +311,7 @@ message GetIdentitiesByPublicKeyHashesRequest {
 }
 
 message GetIdentitiesByPublicKeyHashesResponse {
-  message Identities {
-    repeated bytes identities = 1;
-  }
+  message Identities { repeated bytes identities = 1; }
 
   oneof result {
     Identities identities = 1;
