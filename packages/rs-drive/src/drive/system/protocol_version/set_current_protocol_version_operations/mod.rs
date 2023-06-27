@@ -37,7 +37,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.system.protocol_version.set_current_protocol_version_operations {
+        match drive_version.methods.platform_system.protocol_version.set_current_protocol_version_operations {
             0 => self.set_current_protocol_version_operations_v0(protocol_version, transaction, drive_operations, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "set_current_protocol_version_operations".to_string(),

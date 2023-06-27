@@ -10,7 +10,7 @@ pub struct SystemContracts {
 }
 
 impl SystemContracts {
-    pub fn load_system_contracts() -> Result<Self, Error> {
+    pub fn load_genesis_system_contracts() -> Result<Self, Error> {
         Ok(SystemContracts {
             withdrawal_contract: load_system_data_contract(SystemDataContract::Withdrawals)?,
             masternode_rewards: load_system_data_contract(SystemDataContract::MasternodeRewards)?,

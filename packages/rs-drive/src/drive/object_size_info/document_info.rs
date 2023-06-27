@@ -26,19 +26,52 @@ pub enum DocumentInfo<'a> {
     DocumentEstimatedAverageSize(u32),
 }
 
-impl<'a> DocumentInfo<'a> {
+pub trait DocumentInfoV0Methods {
     /// Returns true if self is a document with serialization.
-    pub fn is_document_and_serialization(&self) -> bool {
+    fn is_document_and_serialization(&self) -> bool;
+    /// Returns true if self is a document size.
+    fn is_document_size(&self) -> bool;
+    /// Gets the borrowed document
+    fn get_borrowed_document(&self) -> Option<&Document>;
+    /// Makes the document ID the key.
+    fn id_key_value_info(&self) -> KeyValueInfo;
+    /// Gets the raw path for the given document type
+    fn get_estimated_size_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: &DocumentType,
+    ) -> Result<u16, Error>;
+    /// Gets the raw path for the given document type
+    fn get_raw_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+    ) -> Result<Option<DriveKeyInfo>, Error>;
+    /// Gets the borrowed document
+    fn get_borrowed_document_and_storage_flags(
+        &self,
+    ) -> Option<(&Document, Option<&StorageFlags>)>;
+    /// Gets storage flags
+    fn get_storage_flags_ref(&self) -> Option<&StorageFlags>;
+    /// Gets storage flags
+    fn get_document_id_as_slice(&self) -> Option<&[u8]>;
+}
+
+impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
+    /// Returns true if self is a document with serialization.
+    fn is_document_and_serialization(&self) -> bool {
         matches!(self, DocumentInfo::DocumentRefAndSerialization(..))
     }
 
     /// Returns true if self is a document size.
-    pub fn is_document_size(&self) -> bool {
+    fn is_document_size(&self) -> bool {
         matches!(self, DocumentInfo::DocumentEstimatedAverageSize(_))
     }
 
     /// Gets the borrowed document
-    pub fn get_borrowed_document(&self) -> Option<&Document> {
+    fn get_borrowed_document(&self) -> Option<&Document> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => Some(document),
@@ -49,7 +82,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Makes the document ID the key.
-    pub fn id_key_value_info(&self) -> KeyValueInfo {
+    fn id_key_value_info(&self) -> KeyValueInfo {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => KeyRefRequest(document.id.as_slice()),
@@ -64,7 +97,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets the raw path for the given document type
-    pub fn get_estimated_size_for_document_type(
+    fn get_estimated_size_for_document_type(
         &self,
         key_path: &str,
         document_type: &DocumentType,
@@ -93,7 +126,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets the raw path for the given document type
-    pub fn get_raw_for_document_type(
+    fn get_raw_for_document_type(
         &self,
         key_path: &str,
         document_type: &DocumentType,
@@ -165,7 +198,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets the borrowed document
-    pub fn get_borrowed_document_and_storage_flags(
+    fn get_borrowed_document_and_storage_flags(
         &self,
     ) -> Option<(&Document, Option<&StorageFlags>)> {
         match self {
@@ -182,7 +215,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets storage flags
-    pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
+    fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
             | DocumentInfo::DocumentRefInfo((_, storage_flags))
@@ -197,7 +230,7 @@ impl<'a> DocumentInfo<'a> {
     }
 
     /// Gets storage flags
-    pub fn get_document_id_as_slice(&self) -> Option<&[u8]> {
+    fn get_document_id_as_slice(&self) -> Option<&[u8]> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id.as_slice()),

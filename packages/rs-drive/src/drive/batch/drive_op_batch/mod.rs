@@ -32,6 +32,7 @@ mod document;
 mod identity;
 mod system;
 mod withdrawals;
+mod drive_methods;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
@@ -163,104 +164,6 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     }
 }
 
-impl Drive {
-    /// Convert a batch of drive operations to a batch of grove database operations.
-    ///
-    /// This function takes drive operations and converts them into grove database operations by
-    /// processing each operation in the `drive_batch_operations` vector, transforming them to low-level
-    /// drive operations and finally, into grove database operations. The resulting operations are
-    /// returned as a `GroveDbOpBatch`.
-    ///
-    /// # Arguments
-    ///
-    /// * `drive_batch_operations` - A vector of high-level drive operations to be converted.
-    /// * `block_info` - A reference to the block information associated with these operations.
-    /// * `transaction` - A transaction argument to be used during processing.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing a `GroveDbOpBatch` with transformed grove database operations,
-    /// or an error if any step in the conversion process fails.
-    pub fn convert_drive_operations_to_grove_operations(
-        &self,
-        drive_batch_operations: Vec<DriveOperation>,
-        block_info: &BlockInfo,
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<GroveDbOpBatch, Error> {
-        let ops = drive_batch_operations
-            .into_iter()
-            .map(|drive_op| {
-                let inner_drive_operations = drive_op.into_low_level_drive_operations(
-                    self,
-                    &mut None,
-                    block_info,
-                    transaction,
-                    drive_version,
-                )?;
-                Ok(LowLevelDriveOperation::grovedb_operations_consume(
-                    inner_drive_operations,
-                ))
-            })
-            .flatten_ok()
-            .collect::<Result<Vec<GroveDbOp>, Error>>()?;
-        Ok(GroveDbOpBatch::from_operations(ops))
-    }
-
-    /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
-    ///
-    /// # Arguments
-    ///
-    /// * `operations` - A vector of `DriveOperation`s to apply to the drive.
-    /// * `apply` - A boolean flag indicating whether to apply the changes or only estimate costs.
-    /// * `block_info` - A reference to information about the current block.
-    /// * `transaction` - Transaction arguments.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the `FeeResult` if the operations are successfully applied,
-    /// otherwise an `Error`.
-    ///
-    /// If `apply` is set to true, it applies the low-level drive operations and updates side info accordingly.
-    /// If not, it only estimates the costs and updates estimated costs with layer info.
-    pub fn apply_drive_operations(
-        &self,
-        operations: Vec<DriveOperation>,
-        apply: bool,
-        block_info: &BlockInfo,
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<FeeResult, Error> {
-        if operations.is_empty() {
-            return Ok(FeeResult::default());
-        }
-        let mut low_level_operations = vec![];
-        let mut estimated_costs_only_with_layer_info = if apply {
-            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
-        } else {
-            Some(HashMap::new())
-        };
-        for drive_op in operations {
-            low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
-                self,
-                &mut estimated_costs_only_with_layer_info,
-                block_info,
-                transaction,
-                drive_version,
-            )?);
-        }
-        let mut cost_operations = vec![];
-        self.apply_batch_low_level_drive_operations(
-            estimated_costs_only_with_layer_info,
-            transaction,
-            low_level_operations,
-            &mut cost_operations,
-            drive_version,
-        )?;
-        calculate_fee(None, Some(cost_operations), &block_info.epoch)
-    }
-}
-
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
@@ -277,6 +180,7 @@ mod tests {
     use rand::Rng;
     use serde_json::json;
     use tempfile::TempDir;
+    use dpp::block::block_info::BlockInfo;
 
     use crate::common::setup_contract;
 
@@ -301,6 +205,7 @@ mod tests {
     fn test_add_dashpay_documents() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive_version = DriveVersion::default();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -311,6 +216,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            0,
         )
         .expect("expected to get contract");
 
@@ -357,6 +263,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to insert contract and document");
 
@@ -414,6 +321,7 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
+        let drive_version = DriveVersion::default();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -424,6 +332,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            0,
         )
         .expect("expected to get contract");
 
@@ -487,6 +396,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -524,6 +434,7 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
+        let drive_version = DriveVersion::default();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -534,6 +445,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            0
         )
         .expect("expected to get contract");
 
@@ -602,6 +514,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -659,6 +572,7 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
+        let drive_version = DriveVersion::default();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -738,6 +652,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version
             )
             .expect("expected to be able to insert documents");
 
@@ -775,6 +690,7 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
+        let drive_version = DriveVersion::default();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -852,6 +768,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -909,6 +826,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to be able to update documents");
 
@@ -992,6 +910,7 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
+        let drive_version = DriveVersion::default();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -1069,6 +988,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -1122,6 +1042,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
+                &drive_version,
             )
             .expect("expected to be able to update documents");
 

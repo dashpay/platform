@@ -7,6 +7,12 @@ pub struct DriveVersion {
     pub grove_methods: DriveGroveMethodVersions,
 }
 
+impl DriveVersion {
+    pub fn latest() -> DriveVersion {
+        DriveVersion::default()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveMethodVersions {
     pub initialization: DriveInitializationMethodVersions,
@@ -15,8 +21,10 @@ pub struct DriveMethodVersions {
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
     pub contract: DriveContractMethodVersions,
-    pub system: DriveSystemMethodVersions,
+    pub identity: DriveIdentityMethodVersions,
+    pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
+    pub batch_operations: DriveBatchOperationsMethodVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -63,20 +71,25 @@ pub struct DriveContractCostsMethodVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DriveSystemMethodVersions {
+pub struct DrivePlatformSystemMethodVersions {
     pub protocol_version: DriveSystemProtocolVersionMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveOperationsMethodVersion {
     pub rollback_transaction: FeatureVersion,
-    pub open: FeatureVersion,
     pub drop_cache: FeatureVersion,
     pub commit_transaction: FeatureVersion,
     pub apply_partial_batch_low_level_drive_operations: FeatureVersion,
     pub apply_partial_batch_grovedb_operations: FeatureVersion,
     pub apply_batch_low_level_drive_operations: FeatureVersion,
     pub apply_batch_grovedb_operations: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveBatchOperationsMethodVersion {
+    pub convert_drive_operations_to_grove_operations: FeatureVersion,
+    pub apply_drive_operations: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -217,3 +230,28 @@ pub struct DriveStructureVersion {
     pub identity_indexes: FeatureVersionBounds,
     pub pools: FeatureVersionBounds,
 }
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityMethodVersions {
+    pub fetch: DriveIdentityFetchMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityFetchMethodVersions {
+    pub public_key_hashes: DriveIdentityPublicKeyHashesMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityPublicKeyHashesMethodVersions {
+    pub fetch_full_identities_by_unique_public_key_hashes: FeatureVersion,
+    pub fetch_full_identity_by_unique_public_key_hash: FeatureVersion,
+    pub fetch_identity_id_by_unique_public_key_hash: FeatureVersion,
+    pub fetch_identity_ids_by_non_unique_public_key_hash: FeatureVersion,
+    pub fetch_identity_ids_by_unique_public_key_hashes: FeatureVersion,
+    pub fetch_serialized_full_identity_by_unique_public_key_hash: FeatureVersion,
+    pub has_any_of_unique_public_key_hashes: FeatureVersion,
+    pub has_non_unique_public_key_hash: FeatureVersion,
+    pub has_non_unique_public_key_hash_already_for_identity: FeatureVersion,
+    pub has_unique_public_key_hash: FeatureVersion,
+}
+

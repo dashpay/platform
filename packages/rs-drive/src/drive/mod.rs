@@ -120,6 +120,7 @@ mod system_contracts_cache;
 pub mod verify;
 #[cfg(feature = "full")]
 mod operations;
+mod open;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DataContractCache;

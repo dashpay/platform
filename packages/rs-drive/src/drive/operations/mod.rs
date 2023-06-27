@@ -1,5 +1,4 @@
 mod rollback_transaction;
-mod open;
 mod drop_cache;
 mod commit_transaction;
 mod apply_partial_batch_low_level_drive_operations;

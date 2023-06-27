@@ -35,7 +35,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        match drive_version.methods.system.protocol_version.fetch_current_protocol_version {
+        match drive_version.methods.platform_system.protocol_version.fetch_current_protocol_version {
             0 => self.fetch_current_protocol_version_v0(transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_current_protocol_version".to_string(),
