@@ -75,21 +75,26 @@ class DockerCompose {
   async isServiceRunning(envs, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
-    const coreContainerIds = await this.getContainersList(envs, serviceName);
+    const projectContainerIds = await this.getContainersList(envs, serviceName);
 
-    for (const containerId of coreContainerIds) {
-      const container = this.docker.getContainer(containerId);
+    const targetedComposeFiles = envs.COMPOSE_FILE.split(':');
 
-      let status;
+    const containers = await Promise.all(projectContainerIds.map(async (containerId) => {
+      const container = await this.docker.getContainer(containerId);
 
-      try {
-        ({ State: { Status: status } } = await container.inspect());
-      } catch (e) {
-        if (!e.message.includes(`No such container: ${containerId}`)) {
-          throw e;
-        }
-      }
+      return container.inspect();
+    }));
 
+    const serviceContainers = containers
+      .filter((container) => {
+        const composeFiles = container.Config.Labels['com.docker.compose.project.config_files']
+          .split(',')
+          .map((fileName) => path.basename(fileName));
+
+        return composeFiles.every((composeFile) => targetedComposeFiles.includes(composeFile));
+      });
+
+    for (const { State: { status } } of serviceContainers) {
       if (status === 'running') {
         return true;
       }
