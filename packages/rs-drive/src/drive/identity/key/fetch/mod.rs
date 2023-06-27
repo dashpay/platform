@@ -1,3 +1,12 @@
+#[cfg(feature = "full")]
+mod fetch_all_current_identity_keys;
+#[cfg(feature = "full")]
+mod fetch_all_identity_keys;
+#[cfg(feature = "full")]
+mod fetch_identities_all_keys;
+#[cfg(feature = "full")]
+mod fetch_identity_keys;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::{identity_key_tree_path_vec, identity_query_keys_tree_path_vec};
 
@@ -764,152 +773,6 @@ impl IdentityKeysRequest {
     }
 }
 
-#[cfg(feature = "full")]
-impl Drive {
-    /// Fetch all the current keys of every kind for a specific Identity
-    pub fn fetch_all_current_identity_keys(
-        &self,
-        identity_id: [u8; 32],
-        transaction: TransactionArg,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.fetch_all_current_identity_keys_operations(
-            identity_id,
-            transaction,
-            &mut drive_operations,
-        )
-    }
-
-    /// Operations for fetching all the current keys of every kind for a specific Identity
-    pub(crate) fn fetch_all_current_identity_keys_operations(
-        &self,
-        identity_id: [u8; 32],
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
-        self.fetch_identity_keys_operations::<KeyIDIdentityPublicKeyPairBTreeMap>(
-            key_request,
-            transaction,
-            drive_operations,
-        )
-    }
-
-    /// Fetch all the keys of every kind for a specific Identity
-    pub fn fetch_all_identity_keys(
-        &self,
-        identity_id: [u8; 32],
-        transaction: TransactionArg,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.fetch_all_identity_keys_operations(identity_id, transaction, &mut drive_operations)
-    }
-
-    /// Operations for fetching all the keys of every kind for a specific Identity
-    pub(crate) fn fetch_all_identity_keys_operations(
-        &self,
-        identity_id: [u8; 32],
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request =
-            IdentityKeysRequest::new_all_keys_query(&identity_id, Some(IDENTITY_MAX_KEYS));
-        self.fetch_identity_keys_operations(key_request, transaction, drive_operations)
-    }
-
-    /// Fetch keys matching the request for a specific Identity
-    pub fn fetch_identity_keys<T: IdentityPublicKeyResult>(
-        &self,
-        key_request: IdentityKeysRequest,
-        transaction: TransactionArg,
-    ) -> Result<T, Error> {
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations)
-    }
-
-    /// Operations for fetching keys matching the request for a specific Identity
-    pub(crate) fn fetch_identity_keys_operations<T: IdentityPublicKeyResult>(
-        &self,
-        key_request: IdentityKeysRequest,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<T, Error> {
-        match &key_request.request_type {
-            AllKeys => {
-                let path_query = key_request.into_path_query();
-
-                let (result, _) = self.grove_get_raw_path_query(
-                    &path_query,
-                    transaction,
-                    QueryPathKeyElementTrioResultType,
-                    drive_operations,
-                )?;
-
-                T::try_from_query_results(result)
-            }
-            SpecificKeys(_) => {
-                let path_query = key_request.into_path_query();
-
-                let result = self.grove_get_raw_path_query_with_optional(
-                    &path_query,
-                    transaction,
-                    drive_operations,
-                )?;
-
-                T::try_from_path_key_optional(result)
-            }
-            SearchKey(_) => {
-                let path_query = key_request.into_path_query();
-
-                let result = self.grove_get_path_query_with_optional(
-                    &path_query,
-                    transaction,
-                    drive_operations,
-                )?;
-
-                T::try_from_path_key_optional(result)
-            }
-        }
-    }
-
-    /// Fetches all keys associated with the specified identities.
-    ///
-    /// This function retrieves all keys associated with each identity ID provided
-    /// and returns the result as a `BTreeMap` mapping the identity IDs to their respective keys.
-    ///
-    /// # Arguments
-    ///
-    /// * `identity_ids` - A slice of identity IDs as 32-byte arrays. Each identity ID is used to
-    ///   fetch its associated keys.
-    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
-    ///   for fetching the keys.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<BTreeMap<[u8; 32], Vec<BTreeMap<KeyID, IdentityPublicKey>>>, Error>` - If successful,
-    ///   returns a `BTreeMap` where the keys are the identity IDs and the values are `Vec`s containing
-    ///   `BTreeMap`s mapping `KeyID`s to `IdentityPublicKey`s. If an error occurs during the key
-    ///   fetching, returns an `Error`.
-    ///
-    /// # Errors
-    ///
-    /// This function returns an error if the key fetching fails.
-    pub fn fetch_identities_all_keys(
-        &self,
-        identity_ids: &[[u8; 32]],
-        transaction: TransactionArg,
-    ) -> Result<BTreeMap<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
-        identity_ids
-            .iter()
-            .map(|identity_id| {
-                Ok((
-                    *identity_id,
-                    Self::fetch_all_identity_keys(self, *identity_id, transaction)?,
-                ))
-            })
-            .collect()
-    }
-}
 
 #[cfg(feature = "full")]
 #[cfg(test)]
@@ -917,12 +780,14 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::block::extended_block_info::BlockInfo;
     use dpp::identity::Identity;
+    use dpp::version::drive_versions::DriveVersion;
 
     use super::*;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
         let drive = setup_drive(None);
+        let drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -930,7 +795,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(5, Some(12345));
+        let identity = Identity::random_identity( None,5, Some(12345));
 
         drive
             .add_new_identity(
@@ -942,7 +807,7 @@ mod tests {
             .expect("expected to insert identity");
 
         let public_keys = drive
-            .fetch_all_identity_keys(identity.id.to_buffer(), Some(&transaction))
+            .fetch_all_identity_keys(identity.id.to_buffer(), Some(&transaction), &drive_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 5);
@@ -951,6 +816,7 @@ mod tests {
     #[test]
     fn test_fetch_single_identity_key() {
         let drive = setup_drive(None);
+        let drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -958,7 +824,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(5, Some(12345));
+        let identity = Identity::random_identity( None,5, Some(12345));
 
         drive
             .add_new_identity(
@@ -966,6 +832,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                &drive_version,
             )
             .expect("expected to insert identity");
 
@@ -977,7 +844,7 @@ mod tests {
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction))
+            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 1);
@@ -986,6 +853,7 @@ mod tests {
     #[test]
     fn test_fetch_multiple_identity_key() {
         let drive = setup_drive(None);
+        let drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -993,7 +861,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(5, Some(12345));
+        let identity = Identity::random_identity(None,5, Some(12345));
 
         drive
             .add_new_identity(
@@ -1001,6 +869,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                &drive_version,
             )
             .expect("expected to insert identity");
 
@@ -1012,7 +881,7 @@ mod tests {
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction))
+            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 2);
@@ -1021,6 +890,7 @@ mod tests {
     #[test]
     fn test_fetch_unknown_identity_key_returns_not_found() {
         let drive = setup_drive(None);
+        let drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -1028,7 +898,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(5, Some(12345));
+        let identity = Identity::random_identity(None, 5, Some(12345));
 
         drive
             .add_new_identity(
@@ -1036,6 +906,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                &drive_version
             )
             .expect("expected to insert identity");
 
@@ -1047,13 +918,13 @@ mod tests {
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request.clone(), Some(&transaction))
+            .fetch_identity_keys(key_request.clone(), Some(&transaction), &drive_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 1); //because we are not requesting with options
 
         let public_keys: KeyIDOptionalIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction))
+            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 2);
