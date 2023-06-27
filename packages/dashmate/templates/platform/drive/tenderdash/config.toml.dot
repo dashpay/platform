@@ -212,7 +212,7 @@ tls-cert-file = ""
 tls-key-file = ""
 
 # pprof listen address (https://golang.org/pkg/net/http/pprof)
-pprof-laddr = ""
+pprof-laddr = "{{? it.platform.drive.tenderdash.pprof.enabled}}:{{=it.platform.drive.tenderdash.pprof.port}}{{?}}"
 
 #######################################################
 ###           P2P Configuration Options             ###
