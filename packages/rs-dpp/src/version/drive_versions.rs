@@ -234,15 +234,17 @@ pub struct DriveStructureVersion {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveIdentityMethodVersions {
     pub fetch: DriveIdentityFetchMethodVersions,
+    pub prove: DriveIdentityProveMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveIdentityFetchMethodVersions {
-    pub public_key_hashes: DriveIdentityPublicKeyHashesMethodVersions,
+    pub public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions,
+    pub attributes: DriveIdentityFetchAttributesMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DriveIdentityPublicKeyHashesMethodVersions {
+pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
     pub fetch_full_identities_by_unique_public_key_hashes: FeatureVersion,
     pub fetch_full_identity_by_unique_public_key_hash: FeatureVersion,
     pub fetch_identity_id_by_unique_public_key_hash: FeatureVersion,
@@ -255,3 +257,18 @@ pub struct DriveIdentityPublicKeyHashesMethodVersions {
     pub has_unique_public_key_hash: FeatureVersion,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityFetchAttributesMethodVersions {
+    pub revision: FeatureVersion,
+}
+
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityProveMethodVersions {
+    pub full_identity: FeatureVersion,
+    pub full_identities: FeatureVersion,
+    pub prove_full_identities_by_unique_public_key_hashes: FeatureVersion,
+    pub prove_full_identity_by_unique_public_key_hash: FeatureVersion,
+    pub prove_identity_id_by_unique_public_key_hash: FeatureVersion,
+    pub prove_identity_ids_by_unique_public_key_hashes: FeatureVersion,
+}

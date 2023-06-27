@@ -12,11 +12,13 @@ use dpp::identity::Identity;
 
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::state_transition::fee::calculate_fee;
+use dpp::state_transition::fee::fee_result::FeeResult;
 
 impl Drive {
     /// Fetches an identity with all its information and
     /// the cost it took from storage.
-    pub fn fetch_full_identity_with_costs(
+    pub(super) fn fetch_full_identity_with_costs_v0(
         &self,
         identity_id: [u8; 32],
         epoch: &Epoch,
@@ -84,7 +86,7 @@ impl Drive {
     // }
 
     /// Fetches identities with all its information from storage.
-    pub fn fetch_full_identities(
+    pub(super) fn fetch_full_identities(
         &self,
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
@@ -101,7 +103,7 @@ impl Drive {
     }
 
     /// Fetches an identity with all its information from storage.
-    pub fn fetch_full_identity(
+    pub(super) fn fetch_full_identity(
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
@@ -111,7 +113,7 @@ impl Drive {
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
-    pub fn fetch_full_identity_operations(
+    pub(super) fn fetch_full_identity_operations(
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
