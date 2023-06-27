@@ -69,7 +69,7 @@ async function registerMasternodeWithDMT(ctx, task) {
 
   // Keep compatibility with other registration methods
   state.operator = {
-    privateKey: state.operatorPrivateKey
+    privateKey: state.operatorPrivateKey,
   };
 
   delete state.operatorPrivateKey;
