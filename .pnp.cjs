@@ -2501,7 +2501,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["levelup", "npm:4.4.0"],\
             ["memdown", "npm:5.1.0"],\
             ["mocha", "npm:9.2.2"],\
-            ["should", "npm:13.2.3"]\
+            ["should", "npm:13.2.3"],\
+            ["sinon", "npm:11.1.2"],\
+            ["wasm-x11-hash", "npm:0.0.2"]\
           ],\
           "linkType": "SOFT"\
         }]\
