@@ -16,7 +16,7 @@ function registerMasternodeGuideTaskFactory() {
   async function registerMasternodeGuideTask() {
     const REGISTRARS = {
       CORE: 'dashCore',
-      // TODO: Disabled until additional functionality like signing protx and so on is not
+      // TODO: Disabled until additional functionality like signing protx and so on is
       //  implemented there
       // ANDROID: 'dashAndroid',
       // IOS: 'dashIOS',
