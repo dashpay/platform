@@ -14,7 +14,10 @@ use dpp::identity::state_transition::identity_public_key_transitions::IdentityPu
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};
 
+use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 /// This validation will validate the count of new keys, that there are no duplicates either by
@@ -22,6 +25,7 @@ use dpp::ProtocolError;
 /// attack vectors.
 pub(crate) fn validate_identity_public_keys_structure_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let max_items: usize = IDENTITY_PLATFORM_VALUE_SCHEMA
         .get_integer_at_path("properties.publicKeys.maxItems")

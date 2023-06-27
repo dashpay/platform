@@ -16,6 +16,7 @@ pub struct DriveMethodVersions {
     pub document: DriveDocumentMethodVersions,
     pub contract: DriveContractMethodVersions,
     pub system: DriveSystemMethodVersions,
+    pub operations: DriveOperationsMethodVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -64,6 +65,18 @@ pub struct DriveContractCostsMethodVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveSystemMethodVersions {
     pub protocol_version: DriveSystemProtocolVersionMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveOperationsMethodVersion {
+    pub rollback_transaction: FeatureVersion,
+    pub open: FeatureVersion,
+    pub drop_cache: FeatureVersion,
+    pub commit_transaction: FeatureVersion,
+    pub apply_partial_batch_low_level_drive_operations: FeatureVersion,
+    pub apply_partial_batch_grovedb_operations: FeatureVersion,
+    pub apply_batch_low_level_drive_operations: FeatureVersion,
+    pub apply_batch_grovedb_operations: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

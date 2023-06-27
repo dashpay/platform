@@ -7,6 +7,7 @@ use dpp::platform_value::Identifier;
 use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
 
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
 use drive::drive::Drive;
@@ -18,6 +19,7 @@ pub(crate) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     // first let's check that the identity has no keys with the same id
     let key_ids = identity_public_keys_with_witness
@@ -31,7 +33,11 @@ pub(crate) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
         limit: Some(limit),
         offset: None,
     };
-    let keys = drive.fetch_identity_keys::<KeyIDVec>(identity_key_request, transaction)?;
+    let keys = drive.fetch_identity_keys::<KeyIDVec>(
+        identity_key_request,
+        transaction,
+        &platform_version.drive,
+    )?;
     if !keys.is_empty() {
         // keys should all be empty
         Ok(SimpleConsensusValidationResult::new_with_error(

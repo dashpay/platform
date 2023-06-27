@@ -4,6 +4,7 @@ use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
 use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 

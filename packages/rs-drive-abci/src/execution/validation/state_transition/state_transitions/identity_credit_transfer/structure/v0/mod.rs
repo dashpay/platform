@@ -1,5 +1,5 @@
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::identity::state_transition::identity_credit_transfer_transition::validation::basic::identity_credit_transfer_basic::IDENTITY_CREDIT_TRANSFER_TRANSITION_SCHEMA_VALIDATOR;
+use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::identity_credit_transfer_transition::validation::basic::identity_credit_transfer_basic::IDENTITY_CREDIT_TRANSFER_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;

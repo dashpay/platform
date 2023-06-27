@@ -54,6 +54,7 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+use dpp::state_transition::fee::Credits;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting

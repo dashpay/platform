@@ -14,6 +14,8 @@ use dpp::identity::state_transition::identity_update_transition::IdentityUpdateT
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
+use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use dpp::ProtocolError;
 

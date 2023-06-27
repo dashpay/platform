@@ -39,7 +39,10 @@ use dpp::{
     validation::ConsensusValidationResult,
     ProtocolError,
 };
+use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionExt};
 use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
@@ -271,6 +274,8 @@ fn validate_transition(
     owner_id: &Identifier,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
+    let platform_version =
+        PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
     let latest_block_time_ms = platform.state.last_block_time_ms();
     let average_block_spacing_ms = platform.config.block_spacing_ms;
     match transition {
@@ -331,6 +336,7 @@ fn validate_transition(
                         &document_create_action,
                         owner_id,
                         transaction,
+                        &platform_version.drive,
                     )?;
                 result.merge(validation_result);
             }
@@ -400,6 +406,7 @@ fn validate_transition(
                         &document_replace_action,
                         owner_id,
                         transaction,
+                        &platform_version.drive,
                     )?;
                 result.merge(validation_result);
                 document_replace_action

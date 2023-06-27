@@ -1,5 +1,6 @@
 use dpp::document::DocumentsBatchTransition;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::StateTransitionAction;
 use drive::grovedb::TransactionArg;

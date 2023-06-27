@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::block::block_info::BlockInfo;
+use dpp::state_transition::fee::fee_result::FeeResult;
 use crate::contract::Contract;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {

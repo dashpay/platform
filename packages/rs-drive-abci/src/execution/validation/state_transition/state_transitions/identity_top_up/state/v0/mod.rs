@@ -17,6 +17,9 @@ use dpp::identity::state_transition::identity_topup_transition::{
 
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_topup_transition::{
+    IdentityTopUpTransition, IdentityTopUpTransitionAction,
+};
 use dpp::state_transition::StateTransitionAction;
 
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;

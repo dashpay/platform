@@ -7,6 +7,7 @@ use dpp::identity::state_transition::identity_create_transition::IdentityCreateT
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization_traits::{PlatformMessageSignable, Signable};
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
     fn validate_identity_and_signatures_v0(

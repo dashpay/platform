@@ -4,6 +4,7 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 

@@ -19,6 +19,7 @@ use dpp::identity::state_transition::identity_create_transition::{
 
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;

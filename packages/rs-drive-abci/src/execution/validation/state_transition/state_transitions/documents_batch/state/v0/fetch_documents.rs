@@ -12,6 +12,7 @@ use dpp::document::Document;
 use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::contract::Contract;
 use drive::drive::Drive;

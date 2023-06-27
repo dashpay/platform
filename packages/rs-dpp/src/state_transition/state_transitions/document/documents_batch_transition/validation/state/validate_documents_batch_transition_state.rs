@@ -40,6 +40,7 @@ use crate::{
     validation::ConsensusValidationResult,
     ProtocolError,
 };
+use crate::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction};
 use crate::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 
 use super::{

@@ -3,7 +3,7 @@ use crate::version::FeatureVersion;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciVersion {
     pub methods: DriveAbciMethodVersions,
-    pub validation: DriveAbciValidationVersions,
+    pub validation_and_processing: DriveAbciValidationVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -26,6 +26,7 @@ pub struct DriveAbciMethodVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
+    pub process_state_transition: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

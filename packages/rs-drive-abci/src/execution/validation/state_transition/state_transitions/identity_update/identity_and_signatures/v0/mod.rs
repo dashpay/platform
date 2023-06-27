@@ -9,6 +9,7 @@ use dpp::identity::state_transition::identity_update_transition::identity_update
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization_traits::{PlatformMessageSignable, Signable};
+use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 

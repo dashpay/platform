@@ -4,6 +4,7 @@ use crate::execution::validation::state_transition::common::validate_protocol_ve
 use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 
 pub(crate) trait StateTransitionStructureValidationV0 {

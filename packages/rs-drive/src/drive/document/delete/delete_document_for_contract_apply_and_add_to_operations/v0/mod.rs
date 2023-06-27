@@ -26,7 +26,6 @@ impl Drive {
             document_id,
             contract,
             document_type_name,
-            owner_id,
             None,
             &mut estimated_costs_only_with_layer_info,
             transaction,

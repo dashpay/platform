@@ -12,6 +12,9 @@ use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction,
 };
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_credit_withdrawal_transition::{
+    IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction,
+};
 use dpp::state_transition::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 
