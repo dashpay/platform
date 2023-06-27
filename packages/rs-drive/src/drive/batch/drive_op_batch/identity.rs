@@ -8,6 +8,7 @@ use dpp::prelude::Revision;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::version::drive_versions::DriveVersion;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]
@@ -78,6 +79,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             IdentityOperationType::AddNewIdentity { identity } => drive

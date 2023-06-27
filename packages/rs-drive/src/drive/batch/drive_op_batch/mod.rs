@@ -56,6 +56,9 @@ use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
+use dpp::state_transition::fee::calculate_fee;
+use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::version::drive_versions::DriveVersion;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -68,6 +71,7 @@ pub trait DriveLowLevelOperationConverter {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error>;
 }
 
@@ -105,6 +109,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DriveOperation::ContractOperation(contract_operation_type) => contract_operation_type
@@ -113,6 +118,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
+                    drive_version,
                 ),
             DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
                 .into_low_level_drive_operations(
@@ -120,6 +126,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
+                    drive_version,
                 ),
             DriveOperation::WithdrawalOperation(withdrawal_operation_type) => {
                 withdrawal_operation_type.into_low_level_drive_operations(
@@ -127,6 +134,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
+                    drive_version,
                 )
             }
             DriveOperation::IdentityOperation(identity_operation_type) => identity_operation_type
@@ -135,6 +143,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
+                    drive_version,
                 ),
             DriveOperation::SystemOperation(system_operation_type) => system_operation_type
                 .into_low_level_drive_operations(
@@ -142,6 +151,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
+                    drive_version,
                 ),
             DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
@@ -176,6 +186,7 @@ impl Drive {
         drive_batch_operations: Vec<DriveOperation>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<GroveDbOpBatch, Error> {
         let ops = drive_batch_operations
             .into_iter()
@@ -185,6 +196,7 @@ impl Drive {
                     &mut None,
                     block_info,
                     transaction,
+                    drive_version,
                 )?;
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,
@@ -217,6 +229,7 @@ impl Drive {
         apply: bool,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
         if operations.is_empty() {
             return Ok(FeeResult::default());
@@ -233,6 +246,7 @@ impl Drive {
                 &mut estimated_costs_only_with_layer_info,
                 block_info,
                 transaction,
+                drive_version,
             )?);
         }
         let mut cost_operations = vec![];
@@ -241,6 +255,7 @@ impl Drive {
             transaction,
             low_level_operations,
             &mut cost_operations,
+            drive_version,
         )?;
         calculate_fee(None, Some(cost_operations), &block_info.epoch)
     }

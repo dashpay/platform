@@ -15,6 +15,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
+use dpp::version::drive_versions::DriveVersion;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
@@ -208,6 +209,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddSerializedDocumentForSerializedContract {
@@ -356,7 +358,6 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 document_id,
                 contract.borrow(),
                 document_type,
-                owner_id,
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,

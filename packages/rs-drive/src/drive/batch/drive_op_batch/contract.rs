@@ -10,6 +10,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
+use dpp::version::drive_versions::DriveVersion;
 
 /// Operations on Contracts
 #[derive(Clone, Debug)]
@@ -56,6 +57,7 @@ impl DriveLowLevelOperationConverter for ContractOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             ContractOperationType::ApplyContractCbor {

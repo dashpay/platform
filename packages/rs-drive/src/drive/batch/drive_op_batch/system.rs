@@ -8,6 +8,7 @@ use dpp::platform_value::Bytes36;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::version::drive_versions::DriveVersion;
 
 /// Operations on the System
 #[derive(Clone, Debug)]
@@ -38,6 +39,7 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
         >,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             SystemOperationType::AddToSystemCredits { amount } => drive
@@ -45,12 +47,14 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
                     amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 ),
             SystemOperationType::RemoveFromSystemCredits { amount } => drive
                 .remove_from_system_credits_operations(
                     amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 ),
             SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
