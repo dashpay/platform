@@ -578,6 +578,10 @@ module.exports = {
     let i = 0;
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        // Update ports
+        config.platform.dashmate.helper.api.port = systemConfigs.base.platform
+          .dashmate.helper.api.port;
+
         if (config.group === 'local') {
           config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform.drive.tenderdash.pprof + (i * 100));
           i++;
