@@ -51,6 +51,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
       continuousStream,
       TOTAL_HEADERS_PER_STREAM,
     );
+    await blockHeadersProvider.initializeChainWith([], 0);
     const storage = await mockStorage({
       withAdapter,
     });
@@ -86,7 +87,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
       // Only first batch from the first stream that attaches to genesis block gets verified
       // The rest marked as orphaned because some batches are missing
       // and there's no connection yet between them
-      it('should process first batch of from first stream and consider remaining batches as orphaned', async () => {
+      it('should process first batch from first stream and consider remaining batches as orphaned', async () => {
         const chainStore = blockHeadersSyncWorker.storage.getDefaultChainStore();
 
         // Wait for the stream to start
@@ -265,6 +266,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
 
         // Reset spv chain
         blockHeadersProvider.spvChain.reset();
+        await blockHeadersProvider.initializeChainWith([], 0);
         blockHeadersProvider.spvChain
           .addHeaders(storage.getDefaultChainStore().state.blockHeaders);
 
