@@ -16,8 +16,10 @@ let merkleBlock = null;
 let merkleBlock2 = null;
 
 describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
-  before(() => {
+  before(async () => {
     chain = new Blockchain('testnet');
+    await Blockchain.wasmX11Ready();
+    chain.initialize();
   });
 
   it('should get 26 testnet headers', () => {
@@ -83,8 +85,9 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
 });
 
 describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => {
-  before(() => {
-    chain = new Blockchain('mainnet', 10000, utils.normalizeHeader(mainnet[0]));
+  before(async () => {
+    chain = new Blockchain('mainnet', 10000);
+    chain.initialize(utils.normalizeHeader(mainnet[0]), 1);
   });
 
   it('should get 2000 mainnet headers', () => {
@@ -127,8 +130,9 @@ describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => 
 });
 
 describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
-  before(() => {
-    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet[0]));
+  before(async () => {
+    chain = new Blockchain('testnet', 10000);
+    chain.initialize(utils.normalizeHeader(testnet[0]), 1);
   });
 
   it('should add the 1st 250 testnet headers', () => {
@@ -146,7 +150,8 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
   });
 
   it('should add the 1st 250 testnet2 headers', () => {
-    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet2[0]));
+    chain = new Blockchain('testnet', 10000);
+    chain.initialize(utils.normalizeHeader(testnet2[0]), 1);
     chain.addHeaders(testnet2.slice(1, 250));
     chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
@@ -161,7 +166,8 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
   });
 
   it('should add the 1st 250 testnet3 headers', () => {
-    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet3[0]));
+    chain = new Blockchain('testnet', 10000);
+    chain.initialize(utils.normalizeHeader(testnet3[0]), 1);
     chain.addHeaders(testnet3.slice(1, 250));
     chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
@@ -199,7 +205,8 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
 
 describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
   before(() => {
-    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet[0]));
+    chain = new Blockchain('testnet', 10000);
+    chain.initialize(utils.normalizeHeader(testnet[0]), 1);
   });
 
   it('should add the 1st 100 testnet headers', () => {
@@ -242,7 +249,8 @@ describe('SPV-DASH (addHeaders) add testnet headers out of order', () => {
 
 describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
   before(() => {
-    chain = new Blockchain('mainnet', 10000, utils.normalizeHeader(mainnet[0]));
+    chain = new Blockchain('mainnet', 10000);
+    chain.initialize(utils.normalizeHeader(mainnet[0]), 1);
   });
 
   it('should add the 1st 500 mainnet headers', () => {
@@ -290,7 +298,8 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
 
 describe('SPV-DASH (addHeaders) add mainnet headers out of order', () => {
   before(() => {
-    chain = new Blockchain('mainnet', 10000, utils.normalizeHeader(mainnet[0]));
+    chain = new Blockchain('mainnet', 10000);
+    chain.initialize(utils.normalizeHeader(mainnet[0]), 1);
   });
 
   it('should add the 1st 100 mainnet headers', () => {
@@ -377,7 +386,8 @@ describe('MerkleProofs', () => {
 
 describe('Transaction validation', () => {
   before(() => {
-    chain = new Blockchain('testnet', 10000, utils.normalizeHeader(testnet[0]));
+    chain = new Blockchain('testnet', 10000);
+    chain.initialize(utils.normalizeHeader(testnet[0]), 1);
     chain.addHeaders(testnet.slice(1, 500));
   });
 
