@@ -68,7 +68,7 @@ async function registerMasternodeWithCoreWallet(ctx, task) {
     platformNodeKey: null,
   };
 
-  let instructionsUrl = 'https://docs.dash.org/en/stable/docs/user/masternodes/setup.html#option-2-sending-from-dash-core-wallet';
+  let instructionsUrl = 'https://docs.dash.org/mn-setup-core-collateral';
   if (ctx.isHP) {
     instructionsUrl = 'https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#option-2-holding-collateral-in-dash-core-wallet';
   }
