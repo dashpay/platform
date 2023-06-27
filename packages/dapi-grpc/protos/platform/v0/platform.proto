@@ -30,6 +30,7 @@ message Proof {
   bytes quorum_hash = 2;
   bytes signature = 3;
   uint32 round = 4;
+  bytes block_id_hash = 5;
 }
 
 message ResponseMetadata {
