@@ -188,8 +188,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     cp -R /tmp/unplugged /platform/.yarn/ && \
     tree -L 4 /platform/.yarn/unplugged && \
     yarn install && \
+    tree -L 4 /platform/.yarn/unplugged && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
-    tree -L 4 /tmp/.yarn/unplugged && \
+    tree -L 4 /tmp/unplugged && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
