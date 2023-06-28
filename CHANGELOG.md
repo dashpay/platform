@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** helper default port was bound to Windows print port (#1194)
+* **dashmate:** Default dashmate helper port changed from 9000 to 9100 (#1194)
 
 ### Features
 
