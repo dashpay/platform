@@ -52,7 +52,7 @@ function configureNodeTaskFactory() {
             let platformNodeKey = ctx.tenderdashNodeKey;
             if (!ctx.tenderdashNodeKey) {
               platformNodeKey = await task.prompt(createPlatformNodeKeyInput({
-                skipInitial: ctx.nodeType === NODE_TYPE_MASTERNODE,
+                initial: ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined,
               }));
             }
 

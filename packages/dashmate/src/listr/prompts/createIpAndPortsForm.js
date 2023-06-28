@@ -61,7 +61,7 @@ async function createIpAndPortsForm(network, options = {}) {
   }
 
   let initialIp;
-  if (options.initialIp !== '' || !options.initialIp) {
+  if (options.initialIp === null || options.initialIp === undefined) {
     initialIp = await Promise.race([
       publicIp.v4().catch(() => ''),
       // Resolve in 10 seconds if public IP is not available
@@ -70,7 +70,9 @@ async function createIpAndPortsForm(network, options = {}) {
   }
 
   let initialCoreP2PPort;
-  if (options.initialCoreP2PPort !== '' || !options.initialCoreP2PPort || network === PRESET_MAINNET) {
+  if (options.initialCoreP2PPort === undefined
+    || options.initialCoreP2PPort === null
+    || network === PRESET_MAINNET) {
     initialCoreP2PPort = systemConfigs[network].core.p2p.port.toString();
   }
 
@@ -93,7 +95,9 @@ async function createIpAndPortsForm(network, options = {}) {
 
   if (options.isHPMN) {
     let initialPlatformP2PPort;
-    if (options.initialPlatformP2PPort !== '' || !options.initialPlatformP2PPort || network === PRESET_MAINNET) {
+    if (options.initialPlatformP2PPort === null
+      || options.initialPlatformP2PPort === undefined
+      || network === PRESET_MAINNET) {
       initialPlatformP2PPort = systemConfigs[network].platform.drive.tenderdash.p2p.port.toString();
     }
 
@@ -106,7 +110,9 @@ async function createIpAndPortsForm(network, options = {}) {
     });
 
     let initialPlatformHTTPPort;
-    if (options.initialPlatformHTTPPort !== '' || !options.initialPlatformHTTPPort || network === PRESET_MAINNET) {
+    if (options.initialPlatformHTTPPort === null
+      || options.initialPlatformHTTPPort === undefined
+      || network === PRESET_MAINNET) {
       initialPlatformHTTPPort = systemConfigs[network].platform.dapi.envoy.http.port.toString();
     }
 
