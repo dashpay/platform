@@ -2,8 +2,7 @@
 name = "rs-drive-light-client-bindings"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "This crate is only used to build bindings (using build.rs) for rs-drive-light-client and save them into bindings/"
 
 [dependencies]
 [build-dependencies]

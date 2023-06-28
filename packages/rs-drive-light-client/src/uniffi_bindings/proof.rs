@@ -1,11 +1,32 @@
 use dapi_grpc::platform::v0::*;
 
-/// Create function `$name` that will retrieve CBOR-encoded `$result` object from request `$req` and response `$resp`.
+/// Generate a wrapper function that exports uniffi bindings for proof processing code
 ///
-/// `$provider` must implement [`crate::proof::QuorumInfoProvider`].
+/// Generate function
+/// `$name(req_proto: Vec<u8>,resp_proto: Vec<u8>, callback: Box<dyn QuorumInfoProvider)-> Result<Vec<u8>, crate::Error>`
+///  that will return CBOR-encoded `$result` object from protobuf-encoded DAPI GRPC request of type `$req` and response of type `$resp`.
 ///
-/// `$result` must be a type that implements trait [`FromProof<$req,$resp,$provider>`](crate::proof::FromProof).
-macro_rules! proof_to_cbor {
+/// # Arguments
+///
+/// * `$name` - name of wrapper function to generate
+/// * `$req` - type of request message
+/// * `$resp` - type of response message
+/// * `$result` - type of result; must implement trait [`FromProof<$req,$resp>`](crate::proof::from_proof::FromProof).
+///
+/// # Example
+///
+/// The following code will generate function [`identity_proof_to_cbor`].
+///
+/// ```no_run
+/// uniffi_proof_binding_wrapper!(
+///     identity_proof_to_cbor,
+///     GetIdentityRequest,
+///     GetIdentityResponse,
+///     dpp::identity::Identity
+/// );
+/// ```
+#[macro_export]
+macro_rules! uniffi_proof_binding_wrapper {
     ($name:ident,$req:ty,$resp:ty,$result:ty) => {
         /// Given protobuf request and response, retrieve encapsulated objects from proof and encode it using CBOR
         ///
@@ -13,6 +34,8 @@ macro_rules! proof_to_cbor {
         ///
         /// * req_proto - protobuf-encoded request sent to the server
         /// * resp_proto - protobuf-encoded response received from the server
+        /// * callback - trait that should be implemented by the caller, that will retrieve additional quorum
+        /// information (eg. public key) needed to verify the proof
         ///
         /// # Returns
         ///
@@ -22,7 +45,7 @@ macro_rules! proof_to_cbor {
         pub fn $name(
             req_proto: Vec<u8>,
             resp_proto: Vec<u8>,
-            provider: Box<dyn crate::proof::from_proof::QuorumInfoProvider>,
+            callback: Box<dyn crate::proof::from_proof::QuorumInfoProvider>,
         ) -> Result<Vec<u8>, crate::Error> {
             use crate::proof::from_proof::FromProof;
             use dapi_grpc::Message;
@@ -42,7 +65,7 @@ macro_rules! proof_to_cbor {
                     error: e.to_string(),
                 })?;
 
-            let result = <$result>::from_proof(&request, &response, provider)?;
+            let result = <$result>::from_proof(&request, &response, callback)?;
 
             result.to_cbor().map_err(|e| crate::Error::ProtocolError {
                 error: e.to_string(),
@@ -51,17 +74,12 @@ macro_rules! proof_to_cbor {
     };
 }
 
-proof_to_cbor!(
+uniffi_proof_binding_wrapper!(
     identity_proof_to_cbor,
     GetIdentityRequest,
     GetIdentityResponse,
     dpp::identity::Identity
 );
-
-#[uniffi::export]
-pub fn hello() {
-    println!("hello world")
-}
 
 #[cfg(test)]
 mod test {

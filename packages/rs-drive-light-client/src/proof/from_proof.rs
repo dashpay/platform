@@ -11,36 +11,20 @@ use super::verify::verify_tenderdash_proof;
 // #[cfg(feature = "mockall")]
 
 /// Create an object based on proof received from DAPI
-///
-/// # Arguments
-///
-/// * request: request sent to the server
-/// * response: response received
-///
-/// # example
-///
-/// ```no_run
-/// #  tokio::runtime::Runtime::new().unwrap().block_on(async {
-/// use rs_sdk::proof::FromProof;
-/// use dapi_grpc::platform::v0::{
-///     platform_client::PlatformClient as GrpcPlatformClient, GetIdentityRequest,
-/// };
-/// use dpp::prelude::Identity;
-///
-/// let mut grpc = GrpcPlatformClient::connect("http://127.0.0.1:1234")
-///     .await
-///     .unwrap();
-/// let request = GetIdentityRequest {
-///     id: vec![0u8; 32],
-///     prove: true,
-/// };
-/// let response = grpc.get_identity(request.clone()).await.unwrap();
-/// let response = response.get_ref();
-/// let identity = Identity::maybe_from_proof(&request, response);
-/// assert!(identity.is_ok().is_some());
-/// # });
-/// ```
 pub trait FromProof<Req, Resp> {
+    /// Parse and verify the received proof and retrieve the requested object, if any.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request sent to the server.
+    /// * `response`: The response received from the server.
+    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(object))` when the requested object was found in the proof.
+    /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
+    /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof(
         request: &Req,
         response: &Resp,
@@ -49,6 +33,23 @@ pub trait FromProof<Req, Resp> {
     where
         Self: Sized;
 
+    /// Retrieve the requested object from the proof.
+    ///
+    /// Runs full verification of the proof and retrieves enclosed objects.
+    ///
+    /// This method uses [`maybe_from_proof()`] internally and throws an error if the requested object does not exist in the proof.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The request sent to the server.
+    /// * `response`: The response received from the server.
+    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(object)` when the requested object was found in the proof.
+    /// * `Err(Error::DocumentMissingInProof)` when the requested object was not found in the proof.
+    /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn from_proof(
         request: &Req,
         response: &Resp,
@@ -61,10 +62,30 @@ pub trait FromProof<Req, Resp> {
     }
 }
 
+/// `QuorumInfoProvider` trait provides an interface to fetch quorum related information, required to verify the proof.
+///
+/// Developers should implement this trait to provide required quorum details to [FromProof] implementations.
+///
+/// It defines a single method `get_quorum_public_key` which retrieves the public key of a given quorum.
 #[uniffi::export(callback_interface)]
 #[cfg_attr(feature = "mock", mockall::automock)]
 pub trait QuorumInfoProvider: Send + Sync {
-    fn get_quorum_public_key(&self, quorum_hash: Vec<u8>) -> Result<Vec<u8>, Error>;
+    /// Fetches the public key for a specified quorum.
+    ///
+    /// # Arguments
+    ///
+    /// * `quorum_type`: The type of the quorum.
+    /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<u8>)`: On success, returns a byte vector representing the public key of the quorum.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: Vec<u8>,
+    ) -> Result<Vec<u8>, Error>;
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
@@ -119,6 +140,7 @@ mod test {
 
     use super::{FromProof, MockQuorumInfoProvider};
 
+    /// Given some test vectors dumped from a devnet, prove non-existence of identity with some hardcoded identifier
     #[test]
     fn identity_not_found() {
         tracing_subscriber::fmt::fmt()
@@ -160,7 +182,9 @@ mod test {
         let mut provider = MockQuorumInfoProvider::new();
         provider
             .expect_get_quorum_public_key()
-            .returning(|_quorum_hash|Ok(hex::decode("83fe724d9658a1b3f10a2db285f6132ca5c8795c4bf36e139a4b873d29b101a666efdbe06f81a4ed19a363ef39569df9").unwrap()))
+            .returning(|_quorum_type,_quorum_hash| {
+                Ok(hex::decode("83fe724d9658a1b3f10a2db285f6132ca5c8795c4bf36e139a4b873d29b101a666efdbe06f81a4ed19a363ef39569df9").unwrap())
+            })
             .once();
 
         let identity = Identity::maybe_from_proof(&request, &response, Box::new(provider)).unwrap();

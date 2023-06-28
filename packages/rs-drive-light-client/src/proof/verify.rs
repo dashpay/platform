@@ -10,7 +10,7 @@ use crate::Error;
 
 use super::from_proof::QuorumInfoProvider;
 
-pub fn verify_tenderdash_proof(
+pub(crate) fn verify_tenderdash_proof(
     proof: &Proof,
     mtd: &ResponseMetadata,
     root_hash: &[u8],
@@ -30,7 +30,7 @@ pub fn verify_tenderdash_proof(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
-    let pubkey_bytes = provider.get_quorum_public_key(quorum_hash.to_vec())?;
+    let pubkey_bytes = provider.get_quorum_public_key(quorum_type, quorum_hash.to_vec())?;
 
     let state_id = StateId {
         app_version: version,
@@ -94,7 +94,7 @@ pub fn verify_tenderdash_proof(
     }
 }
 
-/// Verify signature for sign_digest, using public_key
+/// Verify signature for [sign_digest](tenderdash_abci::signatures::SignDigest), using provided `public_key`
 pub fn verify_signature_digest(
     sign_digest: &[u8],
     signature: &[u8; 96],

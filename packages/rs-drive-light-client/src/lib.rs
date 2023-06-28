@@ -1,7 +1,9 @@
-#[cfg(feature = "bindgen")]
-pub mod bindgen;
-pub mod bindings;
+/// Bindings generation using [uniffi]
+pub mod uniffi_bindings;
+
+/// Error definitions, compatible with bindings
 mod error;
+/// Implementation of proof verification
 pub mod proof;
 
 pub use error::Error;

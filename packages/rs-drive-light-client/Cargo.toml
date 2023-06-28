@@ -1,6 +1,6 @@
 [package]
 name = "rs-drive-light-client"
-version = "0.1.0"
+version = "0.25.0-dev"
 edition = "2021"
 rust-version = "1.70"
 
@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 uniffi = { git = "https://github.com/mozilla/uniffi-rs" }
 dapi-grpc = { path = "../dapi-grpc" }
 thiserror = { version = "1.0.39" }
-prost = { version = "0.11" }
-bytes = { version = "*" }
+# prost = { version = "0.11" }
+# bytes = { version = "*" }
 
 camino = { version = "1.1.4", optional = true }
 mockall = { version = "0.11", optional = true }

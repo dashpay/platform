@@ -1,20 +1,10 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use uniffi::TargetLanguage;
 
-/// Return path to the Drive library file, containing uniffi code
-fn drive_library_path() -> Utf8PathBuf {
-    let artifacts_dir = Utf8Path::new(env!("OUT_DIR"))
-        .parent()
-        .expect("cannot get parent of .../out/ dir")
-        .parent()
-        .expect("cannot get parrent of .../rs-drive-light-client-... dir")
-        .parent()
-        .expect("cannot get parrent of .../build/ dir");
-
-    artifacts_dir.join("librs_drive_light_client.rlib")
-}
-
 /// Generate UniFFI bindings for all available languages
+///
+/// It is intended to be called from build.rs in external crate (eg. rs-drive-light-client-bindings), in order
+/// to rebuild bindings. External crate must have this crate as build-dependencies.
 pub fn generate_uniffi_bindings(destination: Option<&str>) {
     let cargo_dir = Utf8Path::new(env!("CARGO_MANIFEST_DIR"));
 
@@ -29,9 +19,8 @@ pub fn generate_uniffi_bindings(destination: Option<&str>) {
         TargetLanguage::Kotlin,
         TargetLanguage::Swift,
         TargetLanguage::Python,
-        // TargetLanguage::Ruby, // error: callback interfaces not implemented
+        // TargetLanguage::Ruby, // Disabled due to `error: callback interfaces not implemented`- we need callbacks
     ];
-
     // Remove all bindings; ignore errors
     std::fs::remove_dir_all(&destination).ok();
 
@@ -46,4 +35,17 @@ pub fn generate_uniffi_bindings(destination: Option<&str>) {
         )
         .unwrap();
     }
+}
+
+/// Return path to the Drive library file, containing uniffi code
+fn drive_library_path() -> Utf8PathBuf {
+    let artifacts_dir = Utf8Path::new(env!("OUT_DIR"))
+        .parent()
+        .expect("cannot get parent of .../out/ dir")
+        .parent()
+        .expect("cannot get parrent of .../rs-drive-light-client-... dir")
+        .parent()
+        .expect("cannot get parrent of .../build/ dir");
+
+    artifacts_dir.join("librs_drive_light_client.rlib")
 }

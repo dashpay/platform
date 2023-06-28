@@ -3225,17 +3225,15 @@ dependencies = [
 
 [[package]]
 name = "rs-drive-light-client"
-version = "0.1.0"
+version = "0.25.0-dev"
 dependencies = [
  "base64 0.21.2",
- "bytes",
  "camino",
  "dapi-grpc",
  "dpp",
  "drive",
  "hex",
  "mockall",
- "prost",
  "tenderdash-abci",
  "thiserror",
  "tracing",
