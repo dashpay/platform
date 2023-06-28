@@ -124,11 +124,16 @@ module.exports = {
             },
           },
         },
+        buildFromSource: false,
       },
       api: {
         docker: {
           image: `dashpay/dapi:${dockerImageVersion}`,
         },
+        buildFromSource: false,
+      },
+      txFilterStream: {
+        buildFromSource: false,
       },
     },
     drive: {
@@ -152,6 +157,7 @@ module.exports = {
         validatorSet: {
           llmqType: 4,
         },
+        buildFromSource: false,
       },
       tenderdash: {
         docker: {
@@ -251,6 +257,7 @@ module.exports = {
         enable: false,
         port: 9000,
       },
+      buildFromSource: false,
     },
   },
   externalIp: null,

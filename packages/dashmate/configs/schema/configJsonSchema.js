@@ -340,6 +340,7 @@ module.exports = {
                     enabled: {
                       type: 'boolean',
                     },
+
                   },
                   required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
                   additionalProperties: false,
@@ -378,8 +379,11 @@ module.exports = {
                   required: ['provider', 'providerConfigs', 'enabled'],
                   additionalProperties: false,
                 },
+                buildFromSource: {
+                  type: 'boolean',
+                },
               },
-              required: ['docker', 'http', 'rateLimiter', 'ssl'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl', 'buildFromSource'],
               additionalProperties: false,
             },
             api: {
@@ -388,12 +392,25 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
+                buildFromSource: {
+                  type: 'boolean',
+                },
               },
-              required: ['docker'],
+              required: ['docker', 'buildFromSource'],
+              additionalProperties: false,
+            },
+            txFilterStream: {
+              type: 'object',
+              properties: {
+                buildFromSource: {
+                  type: 'boolean',
+                },
+              },
+              required: ['buildFromSource'],
               additionalProperties: false,
             },
           },
-          required: ['envoy', 'api'],
+          required: ['envoy', 'api', 'txFilterStream'],
           additionalProperties: false,
         },
         drive: {
@@ -440,9 +457,12 @@ module.exports = {
                   additionalProperties: false,
                   required: ['llmqType'],
                 },
+                buildFromSource: {
+                  type: 'boolean',
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'log', 'validatorSet'],
+              required: ['docker', 'log', 'validatorSet', 'buildFromSource'],
             },
             tenderdash: {
               type: 'object',
@@ -708,8 +728,11 @@ module.exports = {
               required: ['enable', 'port'],
               additionalProperties: false,
             },
+            buildFromSource: {
+              type: 'boolean',
+            }
           },
-          required: ['docker', 'api'],
+          required: ['docker', 'api', 'buildFromSource'],
           additionalProperties: false,
         },
       },

@@ -1,0 +1,9 @@
+version: '3.7'
+
+services:
+  drive_abci:
+    build:
+      context: ${PLATFORM_SOURCE_PATH:?err}
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/js-drive/Dockerfile
+    image: drive:local
+    stop_grace_period: 30s

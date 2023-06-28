@@ -20,9 +20,15 @@ const convertObjectToEnvs = require('../config/convertObjectToEnvs');
 function generateEnvs(configFile, config, options = {}) {
   const dockerComposeFiles = [];
 
+  dockerComposeFiles.push('docker-compose.yml');
+
+  if (config.get('platform.sourcePath') !== null
+    && config.get('dashmate.helper.buildFromSource') === true) {
+    dockerComposeFiles.push('docker-compose.platform.build.dashmate_helper.yml');
+  }
+
   if (!options.platformOnly) {
-    // TODO: it should contain only the dashmate helper that must be ran always
-    dockerComposeFiles.push('docker-compose.yml');
+    dockerComposeFiles.push('docker-compose.core.yml');
 
     if (config.get('core.masternode.enable') === true) {
       dockerComposeFiles.push('docker-compose.sentinel.yml');
@@ -33,7 +39,21 @@ function generateEnvs(configFile, config, options = {}) {
     dockerComposeFiles.push('docker-compose.platform.yml');
 
     if (config.get('platform.sourcePath') !== null) {
-      dockerComposeFiles.push('docker-compose.platform.build.yml');
+      if (config.get('platform.drive.abci.buildFromSource') === true) {
+        dockerComposeFiles.push('docker-compose.platform.build.drive_abci.yml');
+      }
+
+      if (config.get('platform.dapi.api.buildFromSource') === true) {
+        dockerComposeFiles.push('docker-compose.platform.build.dapi_api.yml');
+      }
+
+      if (config.get('platform.dapi.txFilterStream.buildFromSource') === true) {
+        dockerComposeFiles.push('docker-compose.platform.build.dapi_tx_filter_stream.yml');
+      }
+
+      if (config.get('platform.dapi.envoy.buildFromSource') === true) {
+        dockerComposeFiles.push('docker-compose.platform.build.dapi_envoy.yml');
+      }
     }
   }
 
