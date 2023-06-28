@@ -3,16 +3,16 @@ const os = require('os');
 const fs = require('fs');
 const publicIp = require('public-ip');
 
-process.env.DASHMATE_HOME_DIR = path.resolve(os.tmpdir(), '.dashmate');
-
 const { asValue } = require('awilix');
+
+const constants = require('../../src/constants');
 
 const createDIContainer = require('../../src/createDIContainer');
 const { NODE_TYPE_NAMES, getNodeTypeByName } = require('../../src/listr/tasks/setup/nodeTypes');
 const { SSL_PROVIDERS } = require('../../src/constants');
 const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderdashNodeKey');
 const createSelfSignedCertificate = require('../../src/test/createSelfSignedCertificate');
-const isServiceRunningFactory = require('../../src/test/isServiceRunningFactory');
+const assertServiceRunningFactory = require('../../src/test/asserts/assertServiceRunningFactory');
 const createRpcClient = require('../../src/core/createRpcClient');
 const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
 
@@ -23,13 +23,13 @@ describe('Testnet Fullnode', function main() {
   let container;
   let setupRegularPresetTask;
   let resetNodeTask;
-  let group;
+  let config;
   let configFile;
   let dockerCompose;
   let stopNodeTask;
   let restartNodeTask;
   let startNodeTask;
-  let isServiceRunning;
+  let assertServiceRunning;
   let coreRpcClient;
   let lastBlockHeight;
   let renderServiceTemplates;
@@ -40,6 +40,9 @@ describe('Testnet Fullnode', function main() {
   const preset = 'testnet';
 
   before(async () => {
+    constants.HOME_DIR_PATH = path.resolve(os.tmpdir(), '.dashmate');
+    constants.CONFIG_FILE_PATH = path.join(constants.HOME_DIR_PATH, 'config.json');
+
     container = await createDIContainer();
 
     const createSystemConfigs = container.resolve('createSystemConfigs');
@@ -48,14 +51,6 @@ describe('Testnet Fullnode', function main() {
 
     container.register({
       configFile: asValue(configFile),
-    });
-
-    const defaultGroupName = configFile.getDefaultGroupName();
-
-    group = configFile.getGroupConfigs(defaultGroupName);
-
-    container.register({
-      configGroup: asValue(group),
     });
 
     renderServiceTemplates = container.resolve('renderServiceTemplates');
@@ -71,27 +66,35 @@ describe('Testnet Fullnode', function main() {
     dockerCompose = container.resolve('dockerCompose');
 
     configFile = container.resolve('configFile');
+
+    assertServiceRunning = assertServiceRunningFactory(
+      configFile,
+      dockerCompose,
+    );
   });
 
   after(async () => {
-    if (!fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+    if (!fs.existsSync(constants.HOME_DIR_PATH)) {
       return;
     }
 
-    for (const config of group) {
+    if (config) {
       const resetTask = resetNodeTask(config);
 
       await resetTask.run({
         isHardReset: false,
         isForce: true,
+        isVerbose: true,
       });
     }
 
-    fs.rmSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
+    fs.rmSync(constants.HOME_DIR_PATH, { recursive: true, force: true });
   });
 
   describe('setup', () => {
     it('should setup fullnode', async () => {
+      // TODO: Refactor setup command to extract setup logic to
+      //  setupTask function and use it here
       const setupTask = setupRegularPresetTask();
 
       const initialIp = await publicIp.v4();
@@ -114,20 +117,15 @@ describe('Testnet Fullnode', function main() {
           chainFilePath: certificatePath,
           privateFilePath: privKeyPath,
         },
+        isVerbose: true,
       });
 
-      const config = configFile.getConfig(preset);
+      config = configFile.getConfig(preset);
 
       const serviceConfigFiles = renderServiceTemplates(config);
       writeServiceConfigs(config.getName(), serviceConfigFiles);
 
       await configFileRepository.write(configFile);
-
-      isServiceRunning = isServiceRunningFactory(
-        config,
-        configFile,
-        dockerCompose,
-      );
 
       coreRpcClient = createRpcClient({
         port: config.get('core.rpc.port'),
@@ -144,11 +142,11 @@ describe('Testnet Fullnode', function main() {
   describe('start', () => {
     it('should start fullnode', async () => {
       const startTask = startNodeTask(configFile.getConfig(preset));
-      await startTask.run();
+      await startTask.run({
+        isVerbose: true,
+      });
 
-      const isRunning = await isServiceRunning('core');
-
-      expect(isRunning).to.be.true();
+      await assertServiceRunning(config, 'core');
     });
   });
 
@@ -161,11 +159,11 @@ describe('Testnet Fullnode', function main() {
   describe('restart', () => {
     it('should restart fullnode and continue syncing Dash Core', async () => {
       const task = restartNodeTask(configFile.getConfig(preset));
-      await task.run();
+      await task.run({
+        isVerbose: true,
+      });
 
-      const isRunning = await isServiceRunning('core');
-
-      expect(isRunning).to.be.true();
+      await assertServiceRunning(config, 'core');
 
       await waitForCoreData(
         lastBlockHeight,
@@ -177,11 +175,11 @@ describe('Testnet Fullnode', function main() {
   describe('stop', () => {
     it('should stop fullnode', async () => {
       const task = stopNodeTask(configFile.getConfig(preset));
-      await task.run();
+      await task.run({
+        isVerbose: true,
+      });
 
-      const isRunning = await isServiceRunning('core');
-
-      expect(isRunning).to.be.false();
+      await assertServiceRunning(config, 'core', false);
     });
   });
 });

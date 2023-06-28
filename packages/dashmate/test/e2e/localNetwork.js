@@ -2,13 +2,13 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
-process.env.DASHMATE_HOME_DIR = path.resolve(os.tmpdir(), '.dashmate');
-
 const { asValue } = require('awilix');
 
+const constants = require('../../src/constants');
+
 const createDIContainer = require('../../src/createDIContainer');
-const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
-const { SERVICES } = require('../../src/test/constants/services');
+const assertServiceRunningFactory = require('../../src/test/asserts/assertServiceRunningFactory');
+const assertLocalServicesRunningFactory = require('../../src/test/asserts/assertLocalServicesRunningFactory');
 
 describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -21,13 +21,16 @@ describe('Local Network', function main() {
   let configFile;
   let startGroupNodesTask;
   let dockerCompose;
-  let areServicesRunning;
+  let assertLocalServicesRunning;
   let stopNodeTask;
   let restartNodeTask;
 
   const groupName = 'local';
 
   before(async () => {
+    constants.HOME_DIR_PATH = path.resolve(os.tmpdir(), '.dashmate');
+    constants.CONFIG_FILE_PATH = path.join(constants.HOME_DIR_PATH, 'config.json');
+
     container = await createDIContainer();
 
     const createSystemConfigs = container.resolve('createSystemConfigs');
@@ -61,10 +64,17 @@ describe('Local Network', function main() {
     stopNodeTask = await container.resolve('stopNodeTask');
 
     dockerCompose = await container.resolve('dockerCompose');
+
+    const assertServiceRunning = assertServiceRunningFactory(
+      configFile,
+      dockerCompose,
+    );
+
+    assertLocalServicesRunning = assertLocalServicesRunningFactory(assertServiceRunning);
   });
 
   after(async () => {
-    if (!fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+    if (!fs.existsSync(constants.HOME_DIR_PATH)) {
       return;
     }
 
@@ -72,16 +82,19 @@ describe('Local Network', function main() {
       const resetTask = resetNodeTask(config);
 
       await resetTask.run({
+        isVerbose: true,
         isHardReset: false,
         isForce: true,
       });
     }
 
-    fs.rmSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
+    fs.rmSync(constants.HOME_DIR_PATH, { recursive: true, force: true });
   });
 
   describe('setup', () => {
     it('should setup local network', async () => {
+      // TODO: Refactor setup command to extract setup logic to
+      //  setupTask function and use it here
       const setupTask = setupLocalPresetTask();
 
       await setupTask.run({
@@ -97,8 +110,6 @@ describe('Local Network', function main() {
 
       group = configFile.getGroupConfigs(groupName);
 
-      areServicesRunning = areServicesRunningFactory(configFile, group, dockerCompose, SERVICES);
-
       expect(configExists).to.be.true();
     });
   });
@@ -108,12 +119,11 @@ describe('Local Network', function main() {
       const task = startGroupNodesTask(group);
 
       await task.run({
+        isVerbose: true,
         waitForReadiness: true,
       });
 
-      const result = await areServicesRunning();
-
-      expect(result).to.be.true();
+      await assertLocalServicesRunning(group);
     });
   });
 
@@ -123,12 +133,12 @@ describe('Local Network', function main() {
       //  to restartGroupNodesTask function and use it here
       for (const config of group) {
         const task = restartNodeTask(config);
-        await task.run();
+        await task.run({
+          isVerbose: true,
+        });
       }
 
-      const result = await areServicesRunning();
-
-      expect(result).to.be.true();
+      await assertLocalServicesRunning(group);
     });
   });
 
@@ -138,12 +148,12 @@ describe('Local Network', function main() {
       //  to restartGroupNodesTask function and use it here
       for (const config of group.reverse()) {
         const task = stopNodeTask(config);
-        await task.run();
+        await task.run({
+          isVerbose: true,
+        });
       }
 
-      const result = await areServicesRunning();
-
-      expect(result).to.be.false();
+      await assertLocalServicesRunning(group, false);
     });
   });
 });
