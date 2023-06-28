@@ -267,6 +267,7 @@ class DockerCompose {
       }));
 
       if (formatJson) {
+        console.log(psOutput, envs['COMPOSE_FILE'], filterServiceNames)
         // dockerCompose returns array on empty list
         // or json string with result
         return typeof psOutput === 'string' ? JSON.parse(psOutput): psOutput;
