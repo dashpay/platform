@@ -1,0 +1,38 @@
+[package]
+name = "rs-drive-light-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+
+crate-type = ["cdylib"]
+
+[dependencies]
+uniffi = { git = "https://github.com/mozilla/uniffi-rs" }
+dapi-grpc = { path = "../dapi-grpc" }
+thiserror = { version = "1.0.39" }
+prost = { version = "0.11" }
+bytes = { version = "*" }
+
+camino = { version = "1.1.4", optional = true }
+mockall = { version = "0.11", optional = true }
+
+drive = { path = "../rs-drive" }
+dpp = { path = "../rs-dpp" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "9b33518a4b25b60747993c3853c1bbf00a39e703" }
+# tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
+tracing = { version = "0.1.37" }
+
+[dev-dependencies]
+
+base64 = { version = "0.21.2" }
+hex = { version = "0.4" }
+tracing-subscriber = { version = "0.3.16" }
+
+[build-dependencies]
+
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", features = ["build"] }
+
+[features]
+default = ["mock"]
+bindgen = ["uniffi/cli", "dep:camino"]
+mock = ["drive/mockall", "dep:mockall"]
