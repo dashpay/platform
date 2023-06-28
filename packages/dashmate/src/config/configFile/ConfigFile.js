@@ -8,20 +8,16 @@ class ConfigFile {
   /**
    * @param {Config[]} configs
    * @param {string} configFormatVersion
+   * @param {string|null} projectId
    * @param {string|null} defaultConfigName
    * @param {string|null} defaultGroupName
    */
-  constructor(configs, configFormatVersion, defaultConfigName, defaultGroupName) {
-    this.configsMap = configs.reduce((configsMap, config) => {
-      // eslint-disable-next-line no-param-reassign
-      configsMap[config.getName()] = config;
-
-      return configsMap;
-    }, {});
-
+  constructor(configs, configFormatVersion, projectId, defaultConfigName, defaultGroupName) {
+    this.setConfigs(configs);
     this.configFormatVersion = configFormatVersion;
     this.defaultConfigName = defaultConfigName;
     this.defaultGroupName = defaultGroupName;
+    this.projectId = projectId || null;
   }
 
   /**
@@ -215,17 +211,52 @@ class ConfigFile {
   }
 
   /**
+   * Set configs
+   * @param {Config[]} configs
+   */
+  setConfigs(configs) {
+    this.configsMap = configs.reduce((configsMap, config) => {
+      // eslint-disable-next-line no-param-reassign
+      configsMap[config.getName()] = config;
+
+      return configsMap;
+    }, {});
+  }
+
+  /**
+   * Set project id
+   *
+   * @param {string} projectId
+   * @returns {ConfigFile}
+   */
+  setProjectId(projectId) {
+    this.projectId = projectId;
+
+    return this;
+  }
+
+  /**
+   * Get project id
+   *
+   * @returns {string}
+   */
+  getProjectId() {
+    return this.projectId;
+  }
+
+  /**
    * Get config file as plain object
    *
    * @return {{
-   *     configs: Object<string, Object>,
-   *     defaultGroupName: string,
-   *     configFormatVersion: (string|null),
-   *     defaultConfigName: (string|null)
+   *  configs: Config,
+   *  defaultGroupName: string,
+   *  configFormatVersion: (string|null),
+   *  defaultConfigName: (string|null),
+   *  [projectId]: (string|null),
    * }}
    */
   toObject() {
-    return {
+    const result = {
       configFormatVersion: this.getConfigFormatVersion(),
       defaultConfigName: this.getDefaultConfigName(),
       defaultGroupName: this.getDefaultGroupName(),
@@ -236,6 +267,13 @@ class ConfigFile {
         return configsMap;
       }, {}),
     };
+
+    const projectId = this.getProjectId();
+    if (projectId !== null) {
+      result.projectId = projectId;
+    }
+
+    return result;
   }
 }
 

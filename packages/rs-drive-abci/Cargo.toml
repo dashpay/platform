@@ -29,7 +29,7 @@ bs58 = "0.4.0"
 hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev="408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
@@ -63,6 +63,13 @@ metrics = { version = "0.21" }
 metrics-exporter-prometheus = { version = "0.12" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
+tokio = { version = "1", features = [
+    "macros",
+    "signal",
+    "rt-multi-thread",
+    "time",
+] }
+tokio-util = { version = "0.7.8" }
 
 [dev-dependencies]
 base64 = "0.20.0"
