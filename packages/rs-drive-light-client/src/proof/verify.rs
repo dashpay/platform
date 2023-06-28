@@ -2,11 +2,7 @@ use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::{bls_signatures, dashcore::hashes::hex::ToHex};
 pub use drive::drive::verify::RootHash;
 use tenderdash_abci::{
-    proto::{
-        google::protobuf::Timestamp,
-        serializers::timestamp::FromMilis,
-        types::{CanonicalVote, SignedMsgType, StateId},
-    },
+    proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{SignBytes, SignDigest},
 };
 
@@ -39,7 +35,7 @@ pub fn verify_tenderdash_proof(
     let state_id = StateId {
         app_version: version,
         core_chain_locked_height: mtd.core_chain_locked_height,
-        time: Some(Timestamp::from_milis(mtd.time_ms)),
+        time: mtd.time_ms,
         app_hash: root_hash.into(),
         height,
     };

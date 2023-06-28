@@ -20,6 +20,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
 };
@@ -155,7 +156,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             app_version: APP_VERSION,
             core_chain_locked_height: core_height,
             height,
-            time: Some(time.clone()),
+            time: time.to_milis(),
         };
         let state_id_hash = state_id
             .sha256(CHAIN_ID, height as i64, ROUND)

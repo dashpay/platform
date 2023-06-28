@@ -1275,7 +1275,7 @@ dependencies = [
  "serde_with",
  "sha2",
  "tempfile",
- "tenderdash-abci 0.12.0-dev.2 (git+https://github.com/dashpay/rs-tenderdash-abci?branch=master)",
+ "tenderdash-abci",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -3236,7 +3236,7 @@ dependencies = [
  "hex",
  "mockall",
  "prost",
- "tenderdash-abci 0.12.0-dev.2 (git+https://github.com/dashpay/rs-tenderdash-abci?rev=9b33518a4b25b60747993c3853c1bbf00a39e703)",
+ "tenderdash-abci",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -3809,8 +3809,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
+version = "0.13.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/timestamp-from-milis#566c427dd7433d6f6c239f2069d199a50ba36c1a"
 dependencies = [
  "bytes",
  "futures",
@@ -3818,27 +3818,7 @@ dependencies = [
  "lhash",
  "prost",
  "semver",
- "tenderdash-proto 0.12.0-dev.2 (git+https://github.com/dashpay/rs-tenderdash-abci?branch=master)",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
-name = "tenderdash-abci"
-version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=9b33518a4b25b60747993c3853c1bbf00a39e703#9b33518a4b25b60747993c3853c1bbf00a39e703"
-dependencies = [
- "bytes",
- "futures",
- "hex",
- "lhash",
- "prost",
- "semver",
- "tenderdash-proto 0.12.0-dev.2 (git+https://github.com/dashpay/rs-tenderdash-abci?rev=9b33518a4b25b60747993c3853c1bbf00a39e703)",
+ "tenderdash-proto",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -3849,8 +3829,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
+version = "0.13.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/timestamp-from-milis#566c427dd7433d6f6c239f2069d199a50ba36c1a"
 dependencies = [
  "bytes",
  "chrono",
@@ -3861,46 +3841,14 @@ dependencies = [
  "prost",
  "serde",
  "subtle-encoding",
- "tenderdash-proto-compiler 0.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?branch=master)",
- "time 0.3.22",
-]
-
-[[package]]
-name = "tenderdash-proto"
-version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=9b33518a4b25b60747993c3853c1bbf00a39e703#9b33518a4b25b60747993c3853c1bbf00a39e703"
-dependencies = [
- "bytes",
- "chrono",
- "derive_more",
- "flex-error",
- "num-derive",
- "num-traits",
- "prost",
- "serde",
- "subtle-encoding",
- "tenderdash-proto-compiler 0.1.0 (git+https://github.com/dashpay/rs-tenderdash-abci?rev=9b33518a4b25b60747993c3853c1bbf00a39e703)",
+ "tenderdash-proto-compiler",
  "time 0.3.22",
 ]
 
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
-dependencies = [
- "fs_extra",
- "prost-build",
- "regex",
- "tempfile",
- "ureq",
- "walkdir",
- "zip",
-]
-
-[[package]]
-name = "tenderdash-proto-compiler"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=9b33518a4b25b60747993c3853c1bbf00a39e703#9b33518a4b25b60747993c3853c1bbf00a39e703"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/timestamp-from-milis#566c427dd7433d6f6c239f2069d199a50ba36c1a"
 dependencies = [
  "fs_extra",
  "prost-build",
