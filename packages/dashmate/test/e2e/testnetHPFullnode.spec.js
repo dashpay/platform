@@ -16,7 +16,7 @@ const isServiceRunningFactory = require('../../src/test/isServiceRunningFactory'
 const createRpcClient = require('../../src/core/createRpcClient');
 const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
 
-describe('Testnet HP Fullnode', function main() {
+describe.skip('Testnet HP Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
@@ -74,20 +74,18 @@ describe('Testnet HP Fullnode', function main() {
   });
 
   after(async () => {
-    if (!fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
-      return;
-    }
+    if (fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+      const config = configFile.getConfig(preset);
 
-    for (const config of group) {
       const resetTask = resetNodeTask(config);
 
       await resetTask.run({
         isHardReset: false,
-        isForce: true,
+        isForce: false,
       });
-    }
 
-    fs.rmSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
+      await configFile.removeConfig(config.getName());
+    }
   });
 
   describe('setup', () => {

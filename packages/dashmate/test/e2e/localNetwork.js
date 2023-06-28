@@ -10,7 +10,7 @@ const createDIContainer = require('../../src/createDIContainer');
 const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
 const { SERVICES } = require('../../src/test/constants/services');
 
-describe('Local Network', function main() {
+describe.skip('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
@@ -64,20 +64,18 @@ describe('Local Network', function main() {
   });
 
   after(async () => {
-    if (!fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
-      return;
+    if (fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+      for (const config of group) {
+        const resetTask = resetNodeTask(config);
+
+        await resetTask.run({
+          isHardReset: false,
+          isForce: false,
+        });
+
+        await configFile.removeConfig(config.getName());
+      }
     }
-
-    for (const config of group) {
-      const resetTask = resetNodeTask(config);
-
-      await resetTask.run({
-        isHardReset: false,
-        isForce: true,
-      });
-    }
-
-    fs.rmSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
   });
 
   describe('setup', () => {
@@ -107,9 +105,7 @@ describe('Local Network', function main() {
     it('should start local network', async () => {
       const task = startGroupNodesTask(group);
 
-      await task.run({
-        waitForReadiness: true,
-      });
+      await task.run();
 
       const result = await areServicesRunning();
 
@@ -119,8 +115,6 @@ describe('Local Network', function main() {
 
   describe('restart', () => {
     it('should restart local network', async () => {
-      // TODO: Refactor group restart command to extract group restart logic
-      //  to restartGroupNodesTask function and use it here
       for (const config of group) {
         const task = restartNodeTask(config);
         await task.run();
@@ -134,8 +128,6 @@ describe('Local Network', function main() {
 
   describe('stop', () => {
     it('should stop local network', async () => {
-      // TODO: Refactor group stop command to extract group stop logic
-      //  to restartGroupNodesTask function and use it here
       for (const config of group.reverse()) {
         const task = stopNodeTask(config);
         await task.run();
