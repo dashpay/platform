@@ -730,7 +730,7 @@ module.exports = {
             },
             buildFromSource: {
               type: 'boolean',
-            }
+            },
           },
           required: ['docker', 'api', 'buildFromSource'],
           additionalProperties: false,

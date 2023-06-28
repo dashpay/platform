@@ -1,8 +1,8 @@
 /**
  * Check if any of the service requires a build
- * 
+ *
  * @param {Config} config
- *  
+ *
  * @returns {boolean}
  */
 function isServiceBuildRequired(config) {
