@@ -60,8 +60,7 @@ function resetNodeTaskFactory(
           const serviceNames = (await dockerCompose
             .getContainersList(
               envs,
-              undefined,
-              true,
+              { returnServiceNames: true },
             ))
             .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 

@@ -8,13 +8,14 @@ const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
+const yaml = require('js-yaml')
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
-const { HOME_DIR_PATH } = require('../constants');
+const { HOME_DIR_PATH, ROOT_DIR } = require('../constants');
 
 class DockerCompose {
   /**
@@ -69,33 +70,27 @@ class DockerCompose {
    * Is service running?
    *
    * @param {Object} envs
-   * @param {string} [serviceName]
+   * @param {string|string[]} [serviceName]
    * @return {Promise<boolean>}
    */
+  // todo refactor name
   async isServiceRunning(envs, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
-    const projectContainerIds = await this.getContainersList(envs, serviceName);
-
     const targetedComposeFiles = envs.COMPOSE_FILE.split(':');
 
-    const containers = await Promise.all(projectContainerIds.map(async (containerId) => {
-      const container = await this.docker.getContainer(containerId);
+    const services = targetedComposeFiles
+      .map((composeFile) => yaml.load(fs.readFileSync(path.join(ROOT_DIR, composeFile), 'utf8')))
+      .map((composeFile) => Object.keys(composeFile.services))
+      .flat();
 
-      return container.inspect();
-    }));
+    const serviceContainers = await this.getContainersList(envs, {
+      filterServiceNames: services,
+      formatJson: true,
+    });
 
-    const serviceContainers = containers
-      .filter((container) => {
-        const composeFiles = container.Config.Labels['com.docker.compose.project.config_files']
-          .split(',')
-          .map((fileName) => path.basename(fileName));
-
-        return composeFiles.every((composeFile) => targetedComposeFiles.includes(composeFile));
-      });
-
-    for (const { State: { status } } of serviceContainers) {
-      if (status === 'running') {
+    for (const { State: state } of serviceContainers) {
+      if (state === 'running') {
         return true;
       }
     }
@@ -238,22 +233,27 @@ class DockerCompose {
    * Get list of Docker containers
    *
    * @param {Object} envs
-   * @param {string} [filterServiceNames]
-   * @param {boolean} returnServiceNames
-   * @return {Promise<string[]>}
+   * @param {string|string[]} [filterServiceNames]
+   * @param {object} options
+   * @return {Promise<string[]|object[]>}
    */
   async getContainersList(
     envs,
-    filterServiceNames = undefined,
-    returnServiceNames = false,
+    {
+      filterServiceNames = undefined,
+      returnServiceNames = false,
+      formatJson = false,
+    },
   ) {
     let psOutput;
     const commandOptions = [];
 
     if (returnServiceNames) {
       commandOptions.push('--services');
-    } else {
-      commandOptions.push('--quiet');
+    }
+
+    if (formatJson) {
+      commandOptions.push('--format', 'json');
     }
 
     commandOptions.push(filterServiceNames);
@@ -263,6 +263,10 @@ class DockerCompose {
         ...this.getOptions(envs),
         commandOptions,
       }));
+
+      if (formatJson) {
+        return JSON.parse(psOutput);
+      }
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
         return [];
