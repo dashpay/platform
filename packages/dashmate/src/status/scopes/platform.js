@@ -34,6 +34,8 @@ function getPlatformScopeFactory(dockerCompose,
 
   async function getTenderdashInfo(config, isCoreSynced) {
     const info = {
+      p2pPortState: null,
+      httpPortState: null,
       dockerStatus: null,
       serviceStatus: null,
       version: null,
@@ -140,11 +142,13 @@ function getPlatformScopeFactory(dockerCompose,
       info.dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_abci');
       info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
-      const driveEchoResult = await dockerCompose.execCommand(generateEnvs(configFile, config),
-        'drive_abci', 'yarn workspace @dashevo/drive echo');
+      if (info.serviceStatus === ServiceStatusEnum.up) {
+        const driveEchoResult = await dockerCompose.execCommand(generateEnvs(configFile, config),
+          'drive_abci', 'yarn workspace @dashevo/drive echo');
 
-      if (driveEchoResult.exitCode !== 0) {
-        info.serviceStatus = ServiceStatusEnum.error;
+        if (driveEchoResult.exitCode !== 0) {
+          info.serviceStatus = ServiceStatusEnum.error;
+        }
       }
 
       return info;
