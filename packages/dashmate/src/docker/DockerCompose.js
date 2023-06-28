@@ -8,7 +8,8 @@ const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
-const yaml = require('js-yaml')
+const yaml = require('js-yaml');
+const fs = require('fs');
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
@@ -67,10 +68,11 @@ class DockerCompose {
   }
 
   /**
-   * Checks if node is running by checking whether first container from the targeted node is in `running` state
+   * Checks if node is running by checking whether first container
+   * from the targeted node is in `running` state
    *
    * @param {Object} envs
-   * @param {string|string[]} [serviceName] filter by service name
+   * @param {string} [serviceName] filter by service name
    * @return {Promise<boolean>}
    */
   async isNodeRunning(envs, serviceName = undefined) {
@@ -81,7 +83,8 @@ class DockerCompose {
     const services = targetedComposeFiles
       .map((composeFile) => yaml.load(fs.readFileSync(path.join(ROOT_DIR, composeFile), 'utf8')))
       .map((composeFile) => Object.keys(composeFile.services))
-      .flat();
+      .flat()
+      .filter((service) => (serviceName ? service === serviceName : true));
 
     const serviceContainers = await this.getContainersList(envs, {
       filterServiceNames: services,
