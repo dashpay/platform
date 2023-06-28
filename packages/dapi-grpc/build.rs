@@ -8,8 +8,6 @@ fn main() {
     generate().expect("failed to compile protobuf definitions");
 
     println!("cargo:rerun-if-changed=./protos");
-    println!("cargo:rerun-if-changed=./src/core/proto");
-    println!("cargo:rerun-if-changed=./src/platform/proto");
 }
 
 /// Generate Rust definitions from Protobuf definitions
