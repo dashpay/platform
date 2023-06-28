@@ -1,14 +1,15 @@
 {
   "name": "dashmate",
-  "version": "0.24.11",
+  "version": "0.24.12",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
     "postpack": "rm -f oclif.manifest.json",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": "yarn run test:unit",
+    "test": "yarn run test:unit && yarn run test:e2e",
     "test:unit": "mocha --recursive test/unit",
+    "test:e2e": "mocha --recursive test/e2e",
     "helper": "node scripts/helper.js"
   },
   "repository": {
