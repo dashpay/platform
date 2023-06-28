@@ -1469,7 +1469,7 @@ __metadata:
     sinon-chai: ^3.7.0
     swagger-jsdoc: ^3.5.0
     ws: ^7.5.3
-    zeromq: ^5.3.1
+    zeromq: ^5.2.8
   languageName: unknown
   linkType: soft
 
@@ -15620,7 +15620,7 @@ typescript@^3.9.5:
   languageName: node
   linkType: hard
 
-"zeromq@npm:^5.3.1":
+"zeromq@npm:^5.2.8":
   version: 5.3.1
   resolution: "zeromq@npm:5.3.1"
   dependencies:

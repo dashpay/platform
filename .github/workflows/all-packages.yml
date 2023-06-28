@@ -116,11 +116,12 @@ jobs:
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-
       - name: Run test suite
         run: yarn test:suite
+
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
 
       - name: Show Docker logs
         if: ${{ failure() }}
