@@ -64,18 +64,20 @@ describe('Local Network', function main() {
   });
 
   after(async () => {
-    if (fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
-      for (const config of group) {
-        const resetTask = resetNodeTask(config);
-
-        await resetTask.run({
-          isHardReset: false,
-          isForce: false,
-        });
-
-        await configFile.removeConfig(config.getName());
-      }
+    if (!fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+      return;
     }
+
+    for (const config of group) {
+      const resetTask = resetNodeTask(config);
+
+      await resetTask.run({
+        isHardReset: false,
+        isForce: true,
+      });
+    }
+
+    fs.rmSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
   });
 
   describe('setup', () => {
@@ -105,7 +107,9 @@ describe('Local Network', function main() {
     it('should start local network', async () => {
       const task = startGroupNodesTask(group);
 
-      await task.run();
+      await task.run({
+        waitForReadiness: true,
+      });
 
       const result = await areServicesRunning();
 
@@ -115,6 +119,8 @@ describe('Local Network', function main() {
 
   describe('restart', () => {
     it('should restart local network', async () => {
+      // TODO: Refactor group restart command to extract group restart logic
+      //  to restartGroupNodesTask function and use it here
       for (const config of group) {
         const task = restartNodeTask(config);
         await task.run();
@@ -128,6 +134,8 @@ describe('Local Network', function main() {
 
   describe('stop', () => {
     it('should stop local network', async () => {
+      // TODO: Refactor group stop command to extract group stop logic
+      //  to restartGroupNodesTask function and use it here
       for (const config of group.reverse()) {
         const task = stopNodeTask(config);
         await task.run();

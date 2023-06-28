@@ -74,18 +74,20 @@ describe('Testnet Fullnode', function main() {
   });
 
   after(async () => {
-    if (fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
-      const config = configFile.getConfig(preset);
+    if (!fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+      return;
+    }
 
+    for (const config of group) {
       const resetTask = resetNodeTask(config);
 
       await resetTask.run({
         isHardReset: false,
-        isForce: false,
+        isForce: true,
       });
-
-      await configFile.removeConfig(config.getName());
     }
+
+    fs.rmSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
   });
 
   describe('setup', () => {
