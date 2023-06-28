@@ -16,7 +16,7 @@ const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError'
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
-const { HOME_DIR_PATH, ROOT_DIR } = require('../constants');
+const { HOME_DIR_PATH, PACKAGE_ROOT_DIR } = require('../constants');
 
 class DockerCompose {
   /**
@@ -81,7 +81,7 @@ class DockerCompose {
     const targetedComposeFiles = envs.COMPOSE_FILE.split(':');
 
     const services = targetedComposeFiles
-      .map((composeFile) => yaml.load(fs.readFileSync(path.join(ROOT_DIR, composeFile), 'utf8')))
+      .map((composeFile) => yaml.load(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, composeFile), 'utf8')))
       .map((composeFile) => Object.keys(composeFile.services))
       .flat()
       .filter((service) => (serviceName ? service === serviceName : true));

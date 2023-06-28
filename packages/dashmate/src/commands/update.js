@@ -51,7 +51,9 @@ class UpdateCommand extends ConfigBaseCommand {
                     pulled = true;
                   }
                 } catch (e) {
-                  // eslint-disable-next-line no-empty
+                  if (process.env.DEBUG) {
+                    console.error('Could not parse docker data', e)
+                  }
                 }
               });
               stream.on('error', reject);
@@ -63,6 +65,7 @@ class UpdateCommand extends ConfigBaseCommand {
         })),
     );
 
+    // Draw table or show json
     printObject(updated
       .reduce((acc, {
         serviceName, humanName: title, pulled, image,
