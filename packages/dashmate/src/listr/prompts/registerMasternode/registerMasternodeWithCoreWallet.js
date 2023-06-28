@@ -84,7 +84,7 @@ async function registerMasternodeWithCoreWallet(ctx, task) {
         header: `  Dashmate needs to collect your collateral funding transaction hash and index.              
   The funding value must be exactly ${collateralAmount} ${collateralDenomination}.
   
-  Please follow instructions on how to send a collateral in Dash Core Wallet:
+  Please follow the instructions on how to create a collateral funding transaction in Dash Core Wallet:
   ${instructionsUrl}\n`,
         message: 'Enter collateral funding transaction information:',
         choices: [

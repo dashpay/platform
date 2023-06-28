@@ -29,7 +29,7 @@ async function registerMasternodeWithDMT(ctx, task) {
   const prompts = [
     {
       type: 'confirm',
-      header: `  Complete the initial DMT setup then return here to continue:
+      header: `  Complete initial DMT setup and return here to continue:
     
     See https://docs.dash.org/dmt-setup for instructions on using Dash Masternode Tool
     to store your collateral and register your masternode.\n`,
