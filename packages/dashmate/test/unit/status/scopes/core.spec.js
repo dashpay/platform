@@ -126,7 +126,7 @@ describe('getCoreScopeFactory', () => {
         version: null,
         chain: null,
         latestVersion: null,
-        dockerStatus: null,
+        dockerStatus: DockerStatusEnum.not_started,
         serviceStatus: ServiceStatusEnum.stopped,
         peersCount: null,
         p2pPortState: null,
