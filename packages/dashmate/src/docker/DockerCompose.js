@@ -40,7 +40,7 @@ class DockerCompose {
   async runService(envs, serviceName, command = [], options = []) {
     await this.throwErrorIfNotInstalled();
 
-    if (await this.isServiceRunning(envs, serviceName)) {
+    if (await this.isNodeRunning(envs, serviceName)) {
       throw new ServiceAlreadyRunningError(serviceName);
     }
 
@@ -67,14 +67,13 @@ class DockerCompose {
   }
 
   /**
-   * Is service running?
+   * Checks if node is running by checking whether first container from the targeted node is in `running` state
    *
    * @param {Object} envs
-   * @param {string|string[]} [serviceName]
+   * @param {string|string[]} [serviceName] filter by service name
    * @return {Promise<boolean>}
    */
-  // todo refactor name
-  async isServiceRunning(envs, serviceName = undefined) {
+  async isNodeRunning(envs, serviceName = undefined) {
     await this.throwErrorIfNotInstalled();
 
     const targetedComposeFiles = envs.COMPOSE_FILE.split(':');
@@ -205,7 +204,7 @@ class DockerCompose {
   async execCommand(envs, serviceName, command, commandOptions = []) {
     await this.throwErrorIfNotInstalled();
 
-    if (!(await this.isServiceRunning(envs, serviceName))) {
+    if (!(await this.isNodeRunning(envs, serviceName))) {
       throw new ServiceIsNotRunningError(envs.CONFIG_NAME, serviceName);
     }
 

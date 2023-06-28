@@ -33,7 +33,7 @@ describe('getCoreScopeFactory', () => {
         getNetworkInfo: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
-      mockDockerCompose = { isServiceRunning: this.sinon.stub() };
+      mockDockerCompose = { isNodeRunning: this.sinon.stub() };
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockGithubProvider = this.sinon.stub(providers.github, 'release');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
@@ -62,7 +62,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should just work', async function it() {
-      mockDockerCompose.isServiceRunning.resolves(true);
+      mockDockerCompose.isNodeRunning().resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
 
       mockRpcClient.mnsync.returns({
@@ -115,7 +115,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should return status stopped if no service is running', async () => {
-      mockDockerCompose.isServiceRunning.resolves(false);
+      mockDockerCompose.isNodeRunning.resolves(false);
 
       const scope = await getCoreScope(config);
 
@@ -143,7 +143,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should return status error if docker is not in running state', async () => {
-      mockDockerCompose.isServiceRunning.resolves(true);
+      mockDockerCompose.isNodeRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.restarting);
 
       const scope = await getCoreScope(config);
@@ -172,7 +172,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should not make any requests if docker status is bad', async function it() {
-      mockDockerCompose.isServiceRunning.resolves(true);
+      mockDockerCompose.isNodeRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.restarting);
       mockInsightProvider.returns({ status: this.sinon.stub() });
 
@@ -210,7 +210,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should set service error if couldnt get core data', async function it() {
-      mockDockerCompose.isServiceRunning.resolves(true);
+      mockDockerCompose.isNodeRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns(Promise.reject());
       mockRpcClient.getNetworkInfo.returns({ result: { subversion: '' } });
@@ -256,7 +256,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should omit providers data if error is thrown', async () => {
-      mockDockerCompose.isServiceRunning.resolves(true);
+      mockDockerCompose.isNodeRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns({
         result:

@@ -41,7 +41,7 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose = {
         execCommand: this.sinon.stub(),
         getContainerIp: this.sinon.stub(),
-        isServiceRunning: this.sinon.stub(),
+        isNodeRunning: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
@@ -69,7 +69,7 @@ describe('getPlatformScopeFactory', () => {
     it('should just work', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
-      mockDockerCompose.isServiceRunning.returns(true);
+      mockDockerCompose.isNodeRunning.returns(true);
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
@@ -175,7 +175,7 @@ describe('getPlatformScopeFactory', () => {
     });
 
     it('should return empty scope if core is not synced', async () => {
-      mockDockerCompose.isServiceRunning
+      mockDockerCompose.isNodeRunning
         .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
@@ -222,7 +222,7 @@ describe('getPlatformScopeFactory', () => {
 
     it('should return drive info if tenderdash is failed', async () => {
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
-      mockDockerCompose.isServiceRunning
+      mockDockerCompose.isNodeRunning
         .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_tenderdash')
@@ -270,7 +270,7 @@ describe('getPlatformScopeFactory', () => {
 
     it('should still return scope with tenderdash if drive is failed', async () => {
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
-      mockDockerCompose.isServiceRunning
+      mockDockerCompose.isNodeRunning
         .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
       mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_tenderdash')
@@ -340,7 +340,7 @@ describe('getPlatformScopeFactory', () => {
 
     it('should have error service status in case FetchError to tenderdash', async () => {
       mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
-      mockDockerCompose.isServiceRunning
+      mockDockerCompose.isNodeRunning
         .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });

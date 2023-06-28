@@ -48,7 +48,7 @@ function getPlatformScopeFactory(dockerCompose,
       network: null,
     };
     try {
-      if (!(await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'drive_tenderdash'))) {
+      if (!(await dockerCompose.isNodeRunning(generateEnvs(configFile, config), 'drive_tenderdash'))) {
         info.dockerStatus = DockerStatusEnum.not_started;
         info.serviceStatus = ServiceStatusEnum.stopped;
 
