@@ -68,9 +68,9 @@ async function registerMasternodeWithCoreWallet(ctx, task) {
     platformNodeKey: null,
   };
 
-  let instructionsUrl = 'https://docs.dash.org/en/stable/docs/user/masternodes/setup.html#option-2-sending-from-dash-core-wallet';
+  let instructionsUrl = 'https://docs.dash.org/mn-setup-core-collateral';
   if (ctx.isHP) {
-    instructionsUrl = 'https://docs.dash.org/en/stable/docs/user/masternodes/setup-evonode.html#option-2-holding-collateral-in-dash-core-wallet';
+    instructionsUrl = 'https://docs.dash.org/evonode-setup-core-collateral';
   }
 
   let confirmation;
@@ -150,7 +150,7 @@ async function registerMasternodeWithCoreWallet(ctx, task) {
         name: 'operator',
         header: `  Dashmate needs to collect details on the operator key and operator reward share
   to use in the registration transaction. The operator key is a BLS private key,
-  encoded in HEX format. Dashmate will record the private key in the masternode
+  encoded in hexadecimal format. Dashmate will record the private key in the masternode
   configuration, and derive the public key for use in the masternode registration
   transaction. You may optionally also specify a percentage share of the
   masternode reward to pay to the operator.\n`,
