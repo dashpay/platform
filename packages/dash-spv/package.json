@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dash-spv",
-  "version": "0.24.11",
+  "version": "0.24.12",
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
