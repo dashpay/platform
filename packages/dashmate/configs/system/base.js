@@ -105,6 +105,10 @@ module.exports = {
         docker: {
           image: `dashpay/envoy:${dockerImageVersion}`,
         },
+        dockerBuild: {
+          context: null,
+          dockerFilePath: null,
+        },
         http: {
           port: 443,
         },
@@ -124,22 +128,25 @@ module.exports = {
             },
           },
         },
-        buildFromSource: false,
       },
       api: {
         docker: {
           image: `dashpay/dapi:${dockerImageVersion}`,
         },
-        buildFromSource: false,
-      },
-      txFilterStream: {
-        buildFromSource: false,
+        dockerBuild: {
+          context: null,
+          dockerFilePath: null,
+        },
       },
     },
     drive: {
       abci: {
         docker: {
           image: `dashpay/drive:${dockerImageVersion}`,
+        },
+        dockerBuild: {
+          context: null,
+          dockerFilePath: null,
         },
         log: {
           stdout: {
@@ -157,7 +164,6 @@ module.exports = {
         validatorSet: {
           llmqType: 4,
         },
-        buildFromSource: false,
       },
       tenderdash: {
         docker: {
@@ -257,11 +263,14 @@ module.exports = {
       docker: {
         image: `dashpay/dashmate-helper:${dockerImageVersion}`,
       },
+      dockerBuild: {
+        context: null,
+        dockerFilePath: null,
+      },
       api: {
         enable: false,
         port: 9100,
       },
-      buildFromSource: false,
     },
   },
   externalIp: null,

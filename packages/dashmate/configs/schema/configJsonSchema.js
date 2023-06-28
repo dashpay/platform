@@ -18,24 +18,17 @@ module.exports = {
     dockerBuild: {
       type: 'object',
       properties: {
-        image: {
-          type: 'string',
+        context: {
+          type: ['string', 'null'],
           minLength: 1,
         },
-        build: {
-          type: 'object',
-          properties: {
-            path: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          additionalProperties: false,
-          required: ['path'],
+        dockerFilePath: {
+          type: ['string', 'null'],
+          minLength: 1,
         },
       },
-      required: ['image', 'build'],
       additionalProperties: false,
+      required: ['path', 'context'],
     },
     port: {
       type: 'integer',
@@ -312,6 +305,9 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
+                dockerBuild: {
+                  $ref: '#/definitions/dockerBuild',
+                },
                 http: {
                   type: 'object',
                   properties: {
@@ -379,11 +375,8 @@ module.exports = {
                   required: ['provider', 'providerConfigs', 'enabled'],
                   additionalProperties: false,
                 },
-                buildFromSource: {
-                  type: 'boolean',
-                },
               },
-              required: ['docker', 'http', 'rateLimiter', 'ssl', 'buildFromSource'],
+              required: ['docker', 'dockerBuild', 'http', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
@@ -392,25 +385,15 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/docker',
                 },
-                buildFromSource: {
-                  type: 'boolean',
+                dockerBuild: {
+                  $ref: '#/definitions/dockerBuild',
                 },
               },
-              required: ['docker', 'buildFromSource'],
-              additionalProperties: false,
-            },
-            txFilterStream: {
-              type: 'object',
-              properties: {
-                buildFromSource: {
-                  type: 'boolean',
-                },
-              },
-              required: ['buildFromSource'],
+              required: ['docker', 'dockerBuild'],
               additionalProperties: false,
             },
           },
-          required: ['envoy', 'api', 'txFilterStream'],
+          required: ['envoy', 'api'],
           additionalProperties: false,
         },
         drive: {
@@ -421,6 +404,9 @@ module.exports = {
               properties: {
                 docker: {
                   $ref: '#/definitions/docker',
+                },
+                dockerBuild: {
+                  $ref: '#/definitions/dockerBuild',
                 },
                 log: {
                   type: 'object',
@@ -457,12 +443,9 @@ module.exports = {
                   additionalProperties: false,
                   required: ['llmqType'],
                 },
-                buildFromSource: {
-                  type: 'boolean',
-                },
               },
               additionalProperties: false,
-              required: ['docker', 'log', 'validatorSet', 'buildFromSource'],
+              required: ['docker', 'dockerBuild', 'log', 'validatorSet'],
             },
             tenderdash: {
               type: 'object',
@@ -728,6 +711,9 @@ module.exports = {
             docker: {
               $ref: '#/definitions/docker',
             },
+            dockerBuild: {
+              $ref: '#/definitions/dockerBuild',
+            },
             api: {
               type: 'object',
               properties: {
@@ -741,11 +727,8 @@ module.exports = {
               required: ['enable', 'port'],
               additionalProperties: false,
             },
-            buildFromSource: {
-              type: 'boolean',
-            },
           },
-          required: ['docker', 'api', 'buildFromSource'],
+          required: ['docker', 'dockerBuild', 'api'],
           additionalProperties: false,
         },
       },
