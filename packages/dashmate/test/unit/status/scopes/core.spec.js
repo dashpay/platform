@@ -62,7 +62,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should just work', async function it() {
-      mockDockerCompose.isNodeRunning().resolves(true);
+      mockDockerCompose.isNodeRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
 
       mockRpcClient.mnsync.returns({
