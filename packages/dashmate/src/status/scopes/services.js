@@ -18,6 +18,7 @@ function getServicesScopeFactory(dockerCompose, configFile, getServiceList) {
    */
   async function getServicesScope(config) {
     const services = getServiceList(config);
+    console.log(services)
 
     const scope = {};
 
