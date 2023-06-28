@@ -1,3 +1,35 @@
+### [0.24.12](https://github.com/dashpay/platform/compare/v0.24.11...v0.24.12) (2023-06-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** helper default port was bound to Windows print port (#1194)
+
+### Features
+
+* **dashmate:** configure tenderdash pprof ([#1201](https://github.com/dashpay/platform/issues/1201))
+* **dashmate:** setup masternode with DMT ([#1203](https://github.com/dashpay/platform/issues/1203))
+
+
+### Bug Fixes
+
+* **dashmate:** helper default port was bound to Windows print port ([#1194](https://github.com/dashpay/platform/issues/1194))
+
+
+### Code Refactoring
+
+* unwanted usage of x11-hash-js ([#1191](https://github.com/dashpay/platform/issues/1191))
+
+
+### Miscellaneous Chores
+
+* **drive:** downgrade grovedb to supported version ([#1202](https://github.com/dashpay/platform/issues/1202))
+
+
+### Tests
+
+* **dashmate:** e2e tests ([#1152](https://github.com/dashpay/platform/issues/1152))
+
 ### [0.24.11](https://github.com/dashpay/platform/compare/v0.24.10...v0.24.11) (2023-06-23)
 
 
