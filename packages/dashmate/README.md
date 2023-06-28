@@ -53,6 +53,8 @@ USAGE
 FLAGS
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+  --format=<option>  [default: plain] display output format
+                   <options: json|plain>
 ```
 
 Example usage:
@@ -61,6 +63,14 @@ Example usage:
 $ dashmate stop
 $ npm update -g dashmate
 $ dashmate update
+╔══════════════════╤══════════════════════════════╤════════════╗
+║ Core             │ dashpay/dashd:19.1.0         │ up to date ║
+║ Drive ABCI       │ dashpay/drive:0.24           │ updated    ║
+║ Drive Tenderdash │ dashpay/tenderdash:0.11.2    │ up to date ║
+║ DAPI API         │ dashpay/dapi:0.24            │ updated    ║
+║ DAPI Envoy       │ dashpay/envoy:0.24           │ updated    ║
+║ Dashmate Helper  │ dashpay/dashmate-helper:0.24 │ updated    ║
+╚══════════════════╧══════════════════════════════╧════════════╝
 $ dashmate start
 ```
 

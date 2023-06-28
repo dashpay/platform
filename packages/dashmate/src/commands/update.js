@@ -52,7 +52,7 @@ class UpdateCommand extends ConfigBaseCommand {
                   }
                 } catch (e) {
                   if (process.env.DEBUG) {
-                    console.error('Could not parse docker data', e)
+                    console.error('Could not parse docker data', e);
                   }
                 }
               });
