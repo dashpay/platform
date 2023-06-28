@@ -87,7 +87,7 @@ class DockerCompose {
       .filter((service) => (serviceName ? service === serviceName : true));
 
     const serviceContainers = await this.getContainersList(envs, {
-      filterServiceNames: services,
+      filterServiceNames: ['asdasd'],
       formatJson: true,
     });
 
@@ -267,8 +267,9 @@ class DockerCompose {
       }));
 
       if (formatJson) {
-        console.log(psOutput)
-        return JSON.parse(psOutput);
+        // dockerCompose returns array on empty list
+        // or json string with result
+        return typeof psOutput === 'string' ? JSON.parse(psOutput): psOutput;
       }
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
