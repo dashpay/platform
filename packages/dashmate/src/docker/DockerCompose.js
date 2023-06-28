@@ -267,6 +267,7 @@ class DockerCompose {
       }));
 
       if (formatJson) {
+        console.log(psOutput)
         return JSON.parse(psOutput);
       }
     } catch (e) {
