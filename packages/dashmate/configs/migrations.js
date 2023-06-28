@@ -579,16 +579,17 @@ module.exports = {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         // Update ports
-        config.platform.dashmate.helper.api.port = systemConfigs.base.platform
-          .dashmate.helper.api.port;
+        config.dashmate.helper.api.port = systemConfigs.base.dashmate.helper.api.port;
 
-        if (config.group === 'local') {
-          config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform
-            .drive.tenderdash.pprof + (i * 100));
-          i++;
-        } else {
-          config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
-            .drive.tenderdash.pprof;
+        if (config.platform) {
+          if (config.group === 'local') {
+            config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform
+              .drive.tenderdash.pprof + (i * 100));
+            i++;
+          } else {
+            config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
+              .drive.tenderdash.pprof;
+          }
         }
       });
     return configFile;
