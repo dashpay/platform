@@ -578,18 +578,18 @@ module.exports = {
     let i = 0;
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        // Update ports
+        // Update dashmate helper port
         config.dashmate.helper.api.port = systemConfigs.base.dashmate.helper.api.port;
 
-        if (config.platform) {
-          if (config.group === 'local') {
-            config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform
-              .drive.tenderdash.pprof + (i * 100));
-            i++;
-          } else {
-            config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
-              .drive.tenderdash.pprof;
-          }
+        // Add pprof config
+        config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
+          .drive.tenderdash.pprof;
+
+        // Set different ports for local netwrok if exists
+        if (config.group === 'local') {
+          config.platform.drive.tenderdash.pprof.port += i * 100;
+
+          i++;
         }
       });
     return configFile;
