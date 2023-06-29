@@ -271,7 +271,7 @@ class DockerCompose {
 
       if (formatJson) {
         const [jsonString] = psOutput.split('\n').filter(Boolean)
-        console.log(jsonString, envs['COMPOSE_FILE'], filterServiceNames)
+        console.log(psOutput, jsonString, envs['COMPOSE_FILE'], filterServiceNames)
         // dockerCompose returns array on empty list
         // or json string with result
         return typeof psOutput === 'string' ? JSON.parse(jsonString): psOutput;
