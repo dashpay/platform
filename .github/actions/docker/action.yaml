@@ -58,6 +58,8 @@ runs:
 
     - name: Load Docker mount cache
       uses: dcginfra/buildkit-cache-dance/inject@main
+      with:
+        platforms: ${{ inputs.platforms }}
 
     - name: Set suffix
       uses: actions/github-script@v6
@@ -97,7 +99,7 @@ runs:
            return '${{inputs.platforms}}'
               .split(',')
               .map((platform) => `linux/${platform.trim()}`)
-              .join(',') 
+              .join(',')
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -118,3 +120,5 @@ runs:
 
     - name: Save Docker mount cache
       uses: dcginfra/buildkit-cache-dance/extract@main
+      with:
+        platforms: ${{ inputs.platforms }}
