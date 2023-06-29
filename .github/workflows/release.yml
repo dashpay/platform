@@ -88,11 +88,11 @@ jobs:
         with:
           result-encoding: string
           script: |
-            let tag = context.payload.release.tag_name;
-            if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ github.event.inputs.tag }}';
-            }
-            return tag;
+            return (
+              context.eventName === 'workflow_dispatch'
+                ? '${{ github.event.inputs.tag }}'
+                : context.payload.release.tag_name
+            );
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -118,11 +118,11 @@ jobs:
         with:
           result-encoding: string
           script: |
-            let tag = context.payload.release.tag_name;
-            if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ github.event.inputs.tag }}';
-            }
-            return tag;
+            return (
+              context.eventName === 'workflow_dispatch'
+                ? '${{ github.event.inputs.tag }}'
+                : context.payload.release.tag_name
+            );
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -148,11 +148,11 @@ jobs:
         with:
           result-encoding: string
           script: |
-            let tag = context.payload.release.tag_name;
-            if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ github.event.inputs.tag }}';
-            }
-            return tag;
+            return (
+              context.eventName === 'workflow_dispatch'
+                ? '${{ github.event.inputs.tag }}'
+                : context.payload.release.tag_name
+            );
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -177,11 +177,11 @@ jobs:
         with:
           result-encoding: string
           script: |
-            let tag = context.payload.release.tag_name;
-            if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ github.event.inputs.tag }}';
-            }
-            return tag;
+            return (
+              context.eventName === 'workflow_dispatch'
+                ? '${{ github.event.inputs.tag }}'
+                : context.payload.release.tag_name
+            );
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -207,11 +207,11 @@ jobs:
         with:
           result-encoding: string
           script: |
-            let tag = context.payload.release.tag_name;
-            if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ github.event.inputs.tag }}';
-            }
-            return tag;
+            return (
+              context.eventName === 'workflow_dispatch'
+                ? '${{ github.event.inputs.tag }}'
+                : context.payload.release.tag_name
+            );
 
       - name: Build Docker image
         uses: ./.github/actions/docker
