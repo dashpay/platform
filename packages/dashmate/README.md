@@ -71,6 +71,8 @@ $ dashmate update
 ║ DAPI Envoy       │ dashpay/envoy:0.24           │ updated    ║
 ║ Dashmate Helper  │ dashpay/dashmate-helper:0.24 │ updated    ║
 ╚══════════════════╧══════════════════════════════╧════════════╝
+$ dashmate update --format=json 
+[{"serviceName":"core","title":"Core","pulled":false,"image":"dashpay/dashd:19.2.0"},{"serviceName":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"serviceName":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"serviceName":"dapi_api","title":"DAPI API","pulled":false,"image":"dashpay/dapi:0.24"},{"serviceName":"dapi_envoy","title":"DAPI Envoy","pulled":false,"image":"dashpay/envoy:0.24"},{"serviceName":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
 $ dashmate start
 ```
 
