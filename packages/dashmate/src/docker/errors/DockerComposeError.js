@@ -14,6 +14,8 @@ class DockerComposeError extends AbstractError {
 
     super(`Docker Compose error: ${message}`);
 
+    console.error(e)
+
     this.dockerComposeExecutionResult = dockerComposeExecutionResult;
   }
 
