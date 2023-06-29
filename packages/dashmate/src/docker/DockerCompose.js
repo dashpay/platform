@@ -86,6 +86,8 @@ class DockerCompose {
       .flat()
       .filter((service) => (serviceName ? service === serviceName : true));
 
+    console.log('services', services)
+
     const serviceContainers = await this.getContainersList(envs, {
       filterServiceNames: services,
       formatJson: true,
