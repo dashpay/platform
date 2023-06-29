@@ -1,3 +1,10 @@
+### [0.24.13](https://github.com/dashpay/platform/compare/v0.24.12...v0.24.13) (2023-06-29)
+
+
+### Bug Fixes
+
+* **dashmate:** invalid migration ([#1209](https://github.com/dashpay/platform/issues/1209))
+
 ### [0.24.12](https://github.com/dashpay/platform/compare/v0.24.11...v0.24.12) (2023-06-28)
 
 
