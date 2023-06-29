@@ -38,6 +38,7 @@ class UpdateCommand extends ConfigBaseCommand {
 
               stream.on('data', (data) => {
                 try {
+                  // parse all stdout and gather Status message
                   const [status] = data
                     .toString()
                     .trim()
