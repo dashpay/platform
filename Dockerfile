@@ -140,7 +140,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TARGET_DIR="/platform/target" \
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86
+    # If you want to update wasm-bindgen you also need to update version in:
+    #  - packages/wasm-dpp/Cargo.toml
+    #  - packages/wasm-dpp/scripts/build-wasm.sh
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.87
 
 #
 # LOAD SOURCES
