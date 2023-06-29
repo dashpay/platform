@@ -94,7 +94,7 @@ runs:
       with:
         result-encoding: string
         script: |
-           return core.getInput('platforms')
+           return '${{inputs.platforms}}'
               .split(',')
               .map((platform) => `linux/${platform.trim()}`)
               .join(',') 

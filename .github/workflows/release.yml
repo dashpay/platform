@@ -87,7 +87,12 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: |
+            let tag = context.payload.release.tag_name;
+            if (context.eventName === 'workflow_dispatch') {
+              tag = '${{ inputs.tag }}';            
+            }
+            return tag;
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -112,7 +117,12 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: |
+            let tag = context.payload.release.tag_name;
+            if (context.eventName === 'workflow_dispatch') {
+              tag = '${{ inputs.tag }}';            
+            }
+            return tag;
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -137,7 +147,12 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: |
+            let tag = context.payload.release.tag_name;
+            if (context.eventName === 'workflow_dispatch') {
+              tag = '${{ inputs.tag }}';            
+            }
+            return tag;
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -161,7 +176,12 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: |
+            let tag = context.payload.release.tag_name;
+            if (context.eventName === 'workflow_dispatch') {
+              tag = '${{ inputs.tag }}';            
+            }
+            return tag;
 
       - name: Build Docker image
         uses: ./.github/actions/docker
@@ -175,7 +195,7 @@ jobs:
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
-    runs-on: self-hosted`
+    runs-on: self-hosted
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -186,7 +206,12 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: |
+            let tag = context.payload.release.tag_name;
+            if (context.eventName === 'workflow_dispatch') {
+              tag = '${{ inputs.tag }}';            
+            }
+            return tag;
 
       - name: Build Docker image
         uses: ./.github/actions/docker
