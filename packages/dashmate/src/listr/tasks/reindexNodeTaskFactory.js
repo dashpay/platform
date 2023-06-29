@@ -120,6 +120,15 @@ function reindexNodeTaskFactory(
           observer.complete();
         }),
       },
+      {
+        title: 'Stop services',
+        enabled: (ctx) => !ctx.detach,
+        task: async () => {
+          const container = dockerCompose.docker.getContainer(ctx.containerId);
+
+          await container.stop();
+        },
+      },
     ]);
   }
 
