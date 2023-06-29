@@ -84,7 +84,8 @@ class DockerCompose {
       .map((composeFile) => yaml.load(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, composeFile), 'utf8')))
       .map((composeFile) => Object.keys(composeFile.services))
       .flat()
-      .filter((service) => (serviceName ? service === serviceName : true));
+      .filter((service) => (serviceName ? service === serviceName : true))
+      .filter((value, index, array) => array.indexOf(value) === index);
 
     console.log('services', services)
 
