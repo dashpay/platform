@@ -87,7 +87,7 @@ class DockerCompose {
       .filter((value, index, array) => array.indexOf(value) === index)
       .filter((service) => (serviceName ? service === serviceName : true));
 
-    console.log('services', services)
+    console.log('services', services);
 
     const serviceContainers = await this.getContainersList(envs, {
       filterServiceNames: services,
@@ -268,17 +268,6 @@ class DockerCompose {
         ...this.getOptions(envs),
         commandOptions,
       }));
-
-      if (formatJson) {
-        const [jsonString] = psOutput.split('\n').filter(Boolean)
-        console.log('psOutput', psOutput, typeof psOutput, Buffer.from(psOutput).toString('base64'))
-        console.log('jsonString', jsonString, typeof jsonString)
-        console.log('envs', envs['COMPOSE_FILE'])
-        console.log('filterServiceNames', filterServiceNames)
-        // dockerCompose returns array on empty list
-        // or json string with result
-        return typeof psOutput === 'string' ? JSON.parse(jsonString): psOutput;
-      }
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
         return [];
@@ -287,10 +276,23 @@ class DockerCompose {
       throw new DockerComposeError(e);
     }
 
-    return psOutput
+    const containerList = psOutput
       .trim()
       .split(/\r?\n/)
       .filter(Boolean);
+
+    if (formatJson) {
+      const [jsonString] = containerList;
+      console.log('psOutput', psOutput, typeof psOutput, Buffer.from(psOutput).toString('base64'));
+      console.log('jsonString', jsonString, typeof jsonString);
+      console.log('envs', envs.COMPOSE_FILE);
+      console.log('filterServiceNames', filterServiceNames);
+      // dockerCompose returns array on empty list
+      // or json string with result
+      return JSON.parse(jsonString);
+    }
+
+    return containerList;
   }
 
   /**
