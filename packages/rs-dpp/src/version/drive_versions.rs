@@ -236,6 +236,7 @@ pub struct DriveIdentityMethodVersions {
     pub fetch: DriveIdentityFetchMethodVersions,
     pub prove: DriveIdentityProveMethodVersions,
     pub keys: DriveIdentityKeysMethodVersions,
+    pub update: DriveIdentityUpdateMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -261,6 +262,9 @@ pub struct DriveIdentityFetchPublicKeyHashesMethodVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveIdentityFetchAttributesMethodVersions {
     pub revision: FeatureVersion,
+    pub balance: FeatureVersion,
+    pub balance_include_debt: FeatureVersion,
+    pub negative_balance: FeatureVersion,
 }
 
 
@@ -292,4 +296,23 @@ pub struct DriveIdentityKeysFetchMethodVersions {
 pub struct DriveIdentityKeysProveMethodVersions {
     pub prove_identities_all_keys: FeatureVersion,
     pub prove_identity_keys: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityUpdateMethodVersions {
+    pub update_identity_revision: FeatureVersion,
+    pub initialize_identity_revision: FeatureVersion,
+    pub disable_identity_keys: FeatureVersion,
+    pub re_enable_identity_keys: FeatureVersion,
+    pub add_new_non_unique_keys_to_identity: FeatureVersion,
+    pub add_new_unique_keys_to_identity: FeatureVersion,
+    pub add_new_keys_to_identity: FeatureVersion,
+    pub insert_identity_balance: FeatureVersion,
+    pub initialize_negative_identity_balance: FeatureVersion,
+    pub update_identity_balance_operation: FeatureVersion,
+    pub update_identity_negative_credit: FeatureVersion,
+    pub add_to_identity_balance: FeatureVersion,
+    pub add_to_previous_balance: FeatureVersion,
+    pub apply_balance_change_from_fee_to_identity: FeatureVersion,
+    pub remove_from_identity_balance: FeatureVersion,
 }

@@ -4,7 +4,8 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 use crate::error::Error;
 
 use crate::error::query::QuerySyntaxError;
-use grovedb::{PathQuery, Query};
+use grovedb::{PathQuery, Query, SizedQuery};
+use crate::drive::balances::balance_path_vec;
 
 /// An enumeration representing the types of identity prove requests.
 ///
@@ -139,5 +140,34 @@ impl Drive {
             &key_hashes_to_identity_ids_query,
         ])
         .map_err(Error::GroveDB)
+    }
+
+    /// The query for the identity balance
+    pub fn identity_balance_query(identity_id: &[u8; 32]) -> PathQuery {
+        let balance_path = balance_path_vec();
+        let mut query = Query::new();
+        query.insert_key(identity_id.to_vec());
+        PathQuery {
+            path: balance_path,
+            query: SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        }
+    }
+
+    /// The query for proving the identities balance from an identity id.
+    pub fn balance_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
+        let balance_path = balance_path_vec();
+        PathQuery::new_single_key(balance_path, identity_id.to_vec())
+    }
+
+    /// The query for proving the identities balance and revision from an identity id.
+    pub fn balance_and_revision_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
+        let balance_path_query = Self::balance_for_identity_id_query(identity_id);
+        let revision_path_query = Self::identity_revision_query(&identity_id);
+        //todo: lazy static this
+        PathQuery::merge(vec![&balance_path_query, &revision_path_query]).unwrap()
     }
 }

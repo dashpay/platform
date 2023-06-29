@@ -44,6 +44,7 @@ mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "full")]
 mod revision;
+mod balance;
 
 impl Drive {
     #[cfg(any(feature = "full", feature = "verify"))]
