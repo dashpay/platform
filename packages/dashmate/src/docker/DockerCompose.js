@@ -284,6 +284,7 @@ class DockerCompose {
     if (formatJson) {
       const [jsonString] = containerList;
       console.log('psOutput', psOutput, psOutput.toString('hex'), typeof psOutput, Buffer.from(psOutput).toString('base64'));
+      console.log('containerList', containerList);
       console.log('jsonString', jsonString, typeof jsonString);
       console.log('envs', envs.COMPOSE_FILE);
       console.log('filterServiceNames', filterServiceNames);
