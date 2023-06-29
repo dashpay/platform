@@ -90,7 +90,7 @@ jobs:
           script: |
             let tag = context.payload.release.tag_name;
             if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ inputs.tag }}';            
+              tag = '${{ github.event.inputs.tag }}';
             }
             return tag;
 
@@ -120,7 +120,7 @@ jobs:
           script: |
             let tag = context.payload.release.tag_name;
             if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ inputs.tag }}';            
+              tag = '${{ github.event.inputs.tag }}';
             }
             return tag;
 
@@ -150,7 +150,7 @@ jobs:
           script: |
             let tag = context.payload.release.tag_name;
             if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ inputs.tag }}';            
+              tag = '${{ github.event.inputs.tag }}';
             }
             return tag;
 
@@ -179,7 +179,7 @@ jobs:
           script: |
             let tag = context.payload.release.tag_name;
             if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ inputs.tag }}';            
+              tag = '${{ github.event.inputs.tag }}';
             }
             return tag;
 
@@ -209,7 +209,7 @@ jobs:
           script: |
             let tag = context.payload.release.tag_name;
             if (context.eventName === 'workflow_dispatch') {
-              tag = '${{ inputs.tag }}';            
+              tag = '${{ github.event.inputs.tag }}';
             }
             return tag;
 
