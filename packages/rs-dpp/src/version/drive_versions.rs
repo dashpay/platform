@@ -21,6 +21,7 @@ pub struct DriveMethodVersions {
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
     pub contract: DriveContractMethodVersions,
+    pub asset_lock: DriveAssetLockMethodVersions,
     pub identity: DriveIdentityMethodVersions,
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
@@ -42,6 +43,13 @@ pub struct DriveBalancesMethodVersions {
     pub remove_from_system_credits: FeatureVersion,
     pub remove_from_system_credits_operations: FeatureVersion,
     pub calculate_total_credits_balance: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAssetLockMethodVersions {
+    pub add_asset_lock_outpoint: FeatureVersion,
+    pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
+    pub has_asset_lock_outpoint: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
