@@ -91,25 +91,17 @@ mod test {
             Message,
         };
 
-        let req_proto = GetIdentityRequest {
-            // fill data here
-            ..Default::default()
-        }
-        .encode_to_vec();
+        use crate::Error;
+        let (request, response, quorum_info_callback) =
+            crate::proof::from_proof::test::test_vector_identity_not_found();
 
-        let resp_proto = GetIdentityResponse {
-            // fill data here
-            ..Default::default()
-        }
-        .encode_to_vec();
+        let req_proto = request.encode_to_vec();
 
-        let ret = super::identity_proof_to_cbor(
-            req_proto,
-            resp_proto,
-            Box::new(crate::proof::from_proof::MockQuorumInfoProvider::new()),
-        )
-        .unwrap();
+        let resp_proto = response.encode_to_vec();
 
-        assert_ne!(ret.len(), 0)
+        let ret =
+            super::identity_proof_to_cbor(req_proto, resp_proto, Box::new(quorum_info_callback));
+
+        assert!(matches!(ret, Result::Err(Error::DocumentMissingInProof)));
     }
 }
