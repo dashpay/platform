@@ -587,8 +587,7 @@ module.exports = {
 
         // Set different ports for local netwrok if exists
         if (config.group === 'local') {
-          config.platform.drive.tenderdash.pprof.port = config.platform.drive
-            .tenderdash.pprof.port + (i * 100);
+          config.platform.drive.tenderdash.pprof.port += i * 100;
 
           i++;
         }
