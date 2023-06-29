@@ -1,7 +1,8 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
-const CoreService = require('../../core/CoreService');
+const DockerStatusEnum = require('../../status/enums/dockerStatus');
 const generateEnvs = require('../../util/generateEnvs');
+const CoreService = require("../../core/CoreService");
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -24,11 +25,10 @@ function reindexNodeTaskFactory(
   waitForCoreStart,
   waitForCoreSync,
   createRpcClient,
-  renderServiceTemplates,
-  writeServiceConfigs,
   configFileRepository,
   configFile,
   getConnectionHost,
+  storage
 ) {
   /**
    * @typedef {reindexNodeTask}
@@ -38,7 +38,6 @@ function reindexNodeTaskFactory(
     return new Listr([
       {
         title: 'Check services are not running',
-        enabled: () => config.get('core.reindex.enable'),
         task: async () => {
           const isRunning = await dockerCompose.isServiceRunning(generateEnvs(configFile, config));
 
@@ -48,80 +47,65 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        title: 'Set reindex mode',
-        enabled: () => config.get('core.reindex.enable'),
-        task: async () => {
-          config.set('core.reindex.enable', 1);
+        title: 'Check reindex is running',
+        task: async (ctx) => {
+          const {docker} = dockerCompose
 
-          // Write configs
-          configFileRepository.write(configFile);
-          const configFiles = renderServiceTemplates(config);
-          writeServiceConfigs(config.getName(), configFiles);
+          const containerId = await storage.getItem('containerId')
+
+          if (containerId) {
+            try {
+              const info = await docker.getContainer(containerId).inspect();
+              const {State} = info
+
+              console.log(info)
+
+              switch (State) {
+                case DockerStatusEnum.running:
+                  ctx.containerId = containerId
+                  ctx.coreService = new CoreService(
+                    config,
+                    createRpcClient(
+                      {
+                        port: config.get('core.rpc.port'),
+                        user: config.get('core.rpc.user'),
+                        pass: config.get('core.rpc.password'),
+                        host: await getConnectionHost(config, 'core'),
+                      },
+                    ),
+                    docker.getContainer(containerId),
+                  );
+                case DockerStatusEnum.exited:
+                  // todo check exit code
+                  // remove from db and exit
+                  await storage.setItem('containerId', null)
+                  break;
+                default:
+                  throw new Error('Unexpected reindex container status')
+              }
+            } catch (e) {
+              if (e.reason !== 'no such container') {
+                throw e;
+              }
+            }
+          }
         },
       },
       {
         title: 'Start core',
+        enabled: (ctx) => !ctx.containerId,
         task: async (ctx) => {
-          const { docker } = dockerCompose;
-
-          let containerId = config.get('core.reindex.containerId', false);
-          let containerInfo;
-
-          if (containerId) {
-            try {
-              containerInfo = await docker.getContainer(containerId).inspect();
-            } catch (e) {
-              if (e.reason === 'no such container') {
-                containerId = null;
-              }
-              throw e;
-            }
-          }
-
-          if (!containerId) {
-            ctx.coreService = await startCore(config);
-            containerInfo = await ctx.coreService.dockerContainer.inspect();
-
-            ctx.reindexContainerId = containerInfo.Id;
-            config.set('core.reindex.containerId', containerInfo.Id);
-            configFileRepository.write(configFile);
-
-            return;
-          }
-
-          ctx.reindexContainerId = containerInfo.Id;
-          ctx.coreService = new CoreService(
-            config,
-            createRpcClient(
-              {
-                port: config.get('core.rpc.port'),
-                user: config.get('core.rpc.user'),
-                pass: config.get('core.rpc.password'),
-                host: await getConnectionHost(config, 'core'),
-              },
-            ),
-            docker.getContainer(containerId),
-          );
-
-          const { State } = containerInfo;
-
-          if (State.Status === 'paused' || State.Status === 'exited') {
-            switch (State.ExitCode) {
-              default:
-              // eslint-disable-next-line no-console
-                console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`);
-              // eslint-disable-next-line no-fallthrough
-              case 0:
-                await docker.getContainer(containerId).start();
-            }
-          }
+          ctx.coreService = await startCore(config, { reindex: true });
+          ctx.containerId = ctx.coreService.dockerContainer.id
         },
       },
       {
         title: 'Wait for Core start',
+        enabled: (ctx) => !ctx.detach,
         task: async (ctx) => waitForCoreStart(ctx.coreService),
       },
       {
+        enabled: (ctx) => !ctx.detach,
         task: async (ctx) => new Observable(async (observer) => {
           observer.next(`Reindexing Core for ${config.getName()}`);
 
@@ -135,27 +119,6 @@ function reindexNodeTaskFactory(
 
           observer.complete();
         }),
-      },
-      {
-        title: 'Stop services',
-        task: async () => {
-          const containerId = config.get('core.reindex.containerId', false);
-          const container = dockerCompose.docker.getContainer(containerId);
-
-          await container.stop();
-        },
-      },
-      {
-        title: 'Disable reindex mode',
-        task: async () => {
-          config.set('core.reindex.enable', 0);
-          config.set('core.reindex.containerId', null);
-
-          // Write configs
-          configFileRepository.write(configFile);
-          const configFiles = renderServiceTemplates(config);
-          writeServiceConfigs(config.getName(), configFiles);
-        },
       },
     ]);
   }

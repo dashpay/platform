@@ -6415,6 +6415,7 @@ __metadata:
     node-fetch: ^2.6.7
     node-forge: ^1.3.1
     node-graceful: ^3.0.1
+    node-persist: ^3.1.3
     pretty-bytes: ^5.3.0
     pretty-ms: ^7.0.0
     public-ip: ^4.0.4
@@ -11554,6 +11555,13 @@ fsevents@~2.3.2:
   version: 1.0.8
   resolution: "node-inspect-extracted@npm:1.0.8"
   checksum: 41ecca97d3d1931066c31c97679a89a7c67d0eb3246eb8895f8861fd49c7607dfd382c1dc14ea774951d32abe281d68b027d0ca200adf8761049f3ee7a40c854
+  languageName: node
+  linkType: hard
+
+"node-persist@npm:^3.1.3":
+  version: 3.1.3
+  resolution: "node-persist@npm:3.1.3"
+  checksum: a67d1f7e646e9926558237b4f30a50cc73ae9e58a1be28fb87203b0b7180b7f7178c380f74229900c62cf7ee139e00c4c8bd5abcbb82e91326d8eb7938a827a9
   languageName: node
   linkType: hard
 

@@ -56,6 +56,11 @@ ReindexCommand.description = 'Reindex Core data';
 ReindexCommand.flags = {
   ...ConfigBaseCommand.flags,
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+  detach: Flags.boolean({
+    char: 'd',
+    description: 'detach from the process and keep reindexing in the background',
+    default: false
+  }),
 };
 
 module.exports = ReindexCommand;

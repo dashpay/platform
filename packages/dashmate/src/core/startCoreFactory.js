@@ -32,6 +32,7 @@ function startCoreFactory(
     // eslint-disable-next-line no-param-reassign
     options = {
       wallet: false,
+      reindex: false,
       addressIndex: false,
       ...options,
     };
@@ -50,6 +51,10 @@ function startCoreFactory(
 
     if (options.addressIndex) {
       coreCommand.push('--addressindex=1');
+    }
+
+    if (options.reindex) {
+      coreCommand.push('--reindex');
     }
 
     if (options.wallet) {

@@ -8499,6 +8499,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["node-fetch", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:2.6.7"],\
             ["node-forge", "npm:1.3.1"],\
             ["node-graceful", "npm:3.1.0"],\
+            ["node-persist", "npm:3.1.3"],\
             ["pretty-bytes", "npm:5.6.0"],\
             ["pretty-ms", "npm:7.0.1"],\
             ["public-ip", "npm:4.0.4"],\
@@ -14607,6 +14608,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/node-inspect-extracted-npm-1.0.8-53baa7fd4f-41ecca97d3.zip/node_modules/node-inspect-extracted/",\
           "packageDependencies": [\
             ["node-inspect-extracted", "npm:1.0.8"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["node-persist", [\
+        ["npm:3.1.3", {\
+          "packageLocation": "./.yarn/cache/node-persist-npm-3.1.3-b93fc5f6fd-a67d1f7e64.zip/node_modules/node-persist/",\
+          "packageDependencies": [\
+            ["node-persist", "npm:3.1.3"]\
           ],\
           "linkType": "HARD"\
         }]\

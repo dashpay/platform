@@ -280,24 +280,9 @@ module.exports = {
         indexes: {
           type: 'boolean',
         },
-        reindex: {
-          type: 'object',
-          properties: {
-            enable: {
-              type: 'boolean',
-            },
-            containerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            additionalProperties: false,
-          },
-          required: ['enable', 'containerId'],
-          additionalProperties: false,
-        },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'log', 'reindex', 'logIps', 'indexes'],
+        'log', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {
