@@ -283,14 +283,17 @@ class DockerCompose {
 
     if (formatJson) {
       const [jsonString] = containerList;
-      console.log('psOutput', psOutput, psOutput.toString('hex'), typeof psOutput, Buffer.from(psOutput).toString('base64'));
-      console.log('containerList', containerList);
-      console.log('jsonString', jsonString, typeof jsonString);
-      console.log('envs', envs.COMPOSE_FILE);
-      console.log('filterServiceNames', filterServiceNames);
-      // dockerCompose returns array on empty list
-      // or json string with result
-      return JSON.parse(jsonString);
+
+      if (jsonString) {
+        console.log('psOutput', psOutput, psOutput.toString('hex'), typeof psOutput, Buffer.from(psOutput).toString('base64'), commandOptions);
+        console.log('containerList', containerList);
+        console.log('jsonString', jsonString, typeof jsonString);
+        console.log('envs', envs.COMPOSE_FILE);
+        console.log('filterServiceNames', filterServiceNames);
+        // dockerCompose returns array on empty list
+        // or json string with result
+        return JSON.parse(jsonString);
+      }
     }
 
     return containerList;
