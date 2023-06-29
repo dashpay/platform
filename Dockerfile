@@ -169,7 +169,6 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci && \
@@ -187,15 +186,13 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
-    tree -L 4 /platform/.yarn/unplugged && \
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     yarn install && \
-    tree -L 4 /platform/.yarn/unplugged && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
-    tree -L 4 /tmp/unplugged && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
+    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     yarn build && \
     if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
 
