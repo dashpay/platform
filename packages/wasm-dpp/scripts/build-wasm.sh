@@ -23,7 +23,8 @@ if ! [[ -d ${OUTPUT_DIR} ]]; then
   mkdir -p "${OUTPUT_DIR}"
 fi
 
-# If you want to update wasm-bindgen you also need to update version in:
+# TODO: Build wasm with build.rs
+# Meantime if you want to update wasm-bindgen you also need to update version in:
 #  - packages/wasm-dpp/Cargo.toml
 #  - Dockerfile
 if ! [[ -x "$(command -v wasm-bindgen)" ]]; then
