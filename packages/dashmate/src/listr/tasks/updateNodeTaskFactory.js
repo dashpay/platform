@@ -4,12 +4,12 @@ const _ = require('lodash');
 /**
  * @param {getServiceList} getServiceList
  * @param {docker} docker
- * @return {restartNodeTask}
+ * @return {updateNodeTask}
  */
 function updateNodeTaskFactory(getServiceList, docker) {
   /**
-   * Restart node
-   * @typedef {restartNodeTask}
+   * Pulls all recent images by given config
+   * @typedef {updateNodeTask}
    *
    * @param {Config} config
    *

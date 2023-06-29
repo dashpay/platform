@@ -12,7 +12,7 @@ class UpdateCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {string} format
-   * @param isVerbose
+   * @param {boolean} isVerbose
    * @param {docker} docker
    * @param {Config} config
    * @param updateNodeTask
