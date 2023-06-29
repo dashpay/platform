@@ -1,4 +1,3 @@
-const { Listr } = require('listr2');
 const _ = require('lodash');
 
 /**
@@ -13,50 +12,43 @@ function updateNodeTaskFactory(getServiceList, docker) {
    *
    * @param {Config} config
    *
-   * @return {Listr}
+   * @return {object[]}
    */
   function updateNodeTask(config) {
-    return new Listr([
-      {
-        enabled: () => true,
-        task: async () => {
-          const services = getServiceList(config);
+    const services = getServiceList(config);
 
-          return Promise.all(
-            _.uniqBy(services, 'image')
-              .map(async ({ serviceName, image, title }) => new Promise((resolve, reject) => {
-                docker.pull(image, (err, stream) => {
-                  if (err) {
-                    reject(err);
-                  } else {
-                    let pulled = null;
+    return Promise.all(
+      _.uniqBy(services, 'image')
+        .map(async ({ serviceName, image, title }) => new Promise((resolve, reject) => {
+          docker.pull(image, (err, stream) => {
+            if (err) {
+              reject(err);
+            } else {
+              let pulled = null;
 
-                    stream.on('data', (data) => {
-                      // parse all stdout and gather Status message
-                      const [status] = data
-                        .toString()
-                        .trim()
-                        .split('\r\n')
-                        .map((str) => JSON.parse(str))
-                        .filter((obj) => obj.status.startsWith('Status: '));
+              stream.on('data', (data) => {
+                // parse all stdout and gather Status message
+                const [status] = data
+                  .toString()
+                  .trim()
+                  .split('\r\n')
+                  .map((str) => JSON.parse(str))
+                  .filter((obj) => obj.status.startsWith('Status: '));
 
-                      if (status?.status.includes('Image is up to date for')) {
-                        pulled = false;
-                      } else if (status?.status.includes('Downloaded newer image for')) {
-                        pulled = true;
-                      }
-                    });
-                    stream.on('error', reject);
-                    stream.on('end', () => resolve({
-                      serviceName, title, image, pulled,
-                    }));
-                  }
-                });
-              })),
-          );
-        },
-      },
-    ]);
+                if (status?.status.includes('Image is up to date for')) {
+                  pulled = false;
+                } else if (status?.status.includes('Downloaded newer image for')) {
+                  pulled = true;
+                }
+              });
+              stream.on('error', reject);
+              stream.on('end', () => resolve({
+                serviceName, title, image, pulled,
+              }));
+            }
+          });
+        })),
+    );
   }
 
   return updateNodeTask;
