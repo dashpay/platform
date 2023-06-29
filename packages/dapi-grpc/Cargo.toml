@@ -20,22 +20,14 @@ tonic = { version = "0.9.2", features = [
     "prost",
 ], default-features = false }
 
-[dev-dependencies]
-tokio = { version = "1.29.0" }
-
 [build-dependencies]
 tonic-build = { version = "0.9.2" }
 
 [features]
-default = ["core", "platform", "client", "testnet"]
-# Build dash core data structures
+default = ["core", "platform", "client"]
 core = ["core_v0"]
-# Build dash platform data structures
 platform = ["platform_v0"]
-# Build client implementation based on tonic
-client = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
-# Enable tests that require communication with testnet
-testnet = ["client"]
+client = ["tonic/channel", "tonic/tls", "platform"]
 
 core_v0 = []
 platform_v0 = []
