@@ -87,8 +87,6 @@ class DockerCompose {
       .filter((value, index, array) => array.indexOf(value) === index)
       .filter((service) => (serviceName ? service === serviceName : true));
 
-    console.log('services', services);
-
     const serviceContainers = await this.getContainersList(envs, {
       filterServiceNames: services,
       formatJson: true,
@@ -281,19 +279,8 @@ class DockerCompose {
       .split(/\r?\n/)
       .filter(Boolean);
 
-    if (formatJson) {
-      const [jsonString] = containerList;
-
-      if (jsonString) {
-        console.log('psOutput', psOutput, psOutput.toString('hex'), typeof psOutput, Buffer.from(psOutput).toString('base64'), commandOptions);
-        console.log('containerList', containerList);
-        console.log('jsonString', jsonString, typeof jsonString);
-        console.log('envs', envs.COMPOSE_FILE);
-        console.log('filterServiceNames', filterServiceNames);
-        // dockerCompose returns array on empty list
-        // or json string with result
-        return JSON.parse(jsonString);
-      }
+    if (containerList.length && formatJson) {
+      return JSON.parse(containerList[0]);
     }
 
     return containerList;
