@@ -185,7 +185,11 @@ class DockerCompose {
   async inspectService(envs, serviceName) {
     await this.throwErrorIfNotInstalled();
 
-    const containerIds = await this.getContainersList(envs, serviceName);
+    const containerIds = await this.getContainersList(envs, {
+      filterServiceNames:
+      serviceName,
+      quiet: true,
+    });
 
     if (containerIds.length === 0) {
       throw new ContainerIsNotPresentError(serviceName);
@@ -245,6 +249,7 @@ class DockerCompose {
     {
       filterServiceNames = undefined,
       returnServiceNames = false,
+      quiet = false,
       formatJson = false,
     },
   ) {
@@ -253,6 +258,10 @@ class DockerCompose {
 
     if (returnServiceNames) {
       commandOptions.push('--services');
+    }
+
+    if (quiet) {
+      commandOptions.push('--quiet');
     }
 
     if (formatJson) {
