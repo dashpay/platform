@@ -599,7 +599,7 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 // Declaration and FfiConverters for QuorumInfoProvider Callback Interface
 
 public protocol QuorumInfoProvider : AnyObject {
-    func `getQuorumPublicKey`(`quorumHash`: [UInt8]) throws -> [UInt8]
+    func `getQuorumPublicKey`(`quorumType`: UInt32, `quorumHash`: [UInt8]) throws -> [UInt8]
     
 }
 
@@ -612,6 +612,7 @@ fileprivate let foreignCallbackCallbackInterfaceQuorumInfoProvider : ForeignCall
         var reader = createReader(data: Data(bytes: argsData, count: Int(argsLen)))
         func makeCall() throws -> Int32 {
             let result = try swiftCallbackInterface.`getQuorumPublicKey`(
+                    `quorumType`:  try FfiConverterUInt32.read(from: &reader), 
                     `quorumHash`:  try FfiConverterSequenceUInt8.read(from: &reader)
                     )
             var writer = [UInt8]()
@@ -731,21 +732,21 @@ fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
     }
 }
 
-public func `hello`()  {
-    try! rustCall() {
-    uniffi_rs_drive_light_client_fn_func_hello($0)
-}
-}
-
-
-
-public func `identityProofToCbor`(`reqProto`: [UInt8], `respProto`: [UInt8], `provider`: QuorumInfoProvider) throws -> [UInt8] {
+public func `identityProofToCbor`(`reqProto`: [UInt8], `respProto`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
     return try  FfiConverterSequenceUInt8.lift(
         try rustCallWithError(FfiConverterTypeError.lift) {
     uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor(
         FfiConverterSequenceUInt8.lower(`reqProto`),
         FfiConverterSequenceUInt8.lower(`respProto`),
-        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(`provider`),$0)
+        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(`callback`),$0)
+}
+    )
+}
+
+public func `version`()  -> String {
+    return try!  FfiConverterString.lift(
+        try! rustCall() {
+    uniffi_rs_drive_light_client_fn_func_version($0)
 }
     )
 }
@@ -765,13 +766,13 @@ private var initializationResult: InitializationResult {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_rs_drive_light_client_checksum_func_hello() != 32699) {
+    if (uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor() != 50752) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor() != 26330) {
+    if (uniffi_rs_drive_light_client_checksum_func_version() != 31055) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 29670) {
+    if (uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 62936) {
         return InitializationResult.apiChecksumMismatch
     }
 

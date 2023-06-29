@@ -160,21 +160,21 @@ mod test {
 
         let response =  GetIdentityResponse{
             metadata: Some(
-                ResponseMetadata { height:23,
-                        core_chain_locked_height:1553,
-                        time_ms:1687871674372, // TODO: should be 2023-06-27T13:14:34.372422898Z but this requires nanos
+                ResponseMetadata { height:189,
+                        core_chain_locked_height:1617,
+                        time_ms:1688035046883, // TODO: should be 2023-06-27T13:14:34.372422898Z but this requires nanos
                         protocol_version: 1,
-                        chain_id:"dashmate_local_44".to_string() 
+                        chain_id:"dashmate_local_5".to_string() // TODO: chain id must be read from tenderdash genesis.json
                 }
             ),
             result: Some(platform::get_identity_response::Result::Proof(
                 Proof{
-                    grovedb_proof: b64.decode("Ab4CAdTMXXKfNBehMLGIDo1S/+VaobU2N+QpXBdr6owVPleeBAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmACACDCtOGi/yyGncjKmZqC9fqfxV9nCtsO4y2gn4l+9fxABYiG0IZHw7TDXzDUAXWi6z/hgr8lQzAN0j5wuMdJ6aqIRAq2LjwtLqRl3c1vXyNdJbjkiqqNzSo7D6lGlVpFqDdXnEAHDNjUTblAumsUkSxWiCnV+B1nOCpCCPNN/iT9qSVVtJgQBYAAlBAEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgAAHOVB8mU4K79Rdese3jm2g58QKT2XPka+IX6tpGkQpcaEAFSECjhepg5Q7de0bwiqqL865Ld4kZl6n9ukB/BRckx7hERAa8CAUTBdOXhdoytGGHcrzmhQWCjPI1uGYsDFVn32FxViWYbAkdxoPOsy9DT6kvKbcEpP0FM3WLiGQK0vdhXK5wEEF/vEAEwUJLq51xHHt60BH2s6/VNgxByXCdvp8Y41qjUp6uU/QLwuqamIdLJqKS4xhWUvDFZLhZJdMVZt139Y8BWREOqLxAFIIHZyUBcdCWDoV4ys55RTjRRM/wkHP4yvL9cjAJcXEsCV3a5TQtfQOOBFCxdVzWbjsMF2loXqN9E9sOVsaxhps8REQUgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZha1yeCyXQq8C1LzJb//PEJxztgvzhW251WU1y3eCO11hABaWJNMvhAlZ068ODAL/QQTIvB8Dva9NR3dKNkw3WRWxgRAq8CAc2Yxt2Dqgacp9xO/kQALsasiPkhvLegWwERnbyMFFyHAok3IKl7xC9vN+2O7dSXI5GBlSBWezZEvNGS1Xg1Gc0tEAHlmBOqdoRiNVSluckGRW3/5D8Z4qS0Jk5/6Rt1/KzIFgLqvap1+tURIGj7/7p+LwwMzPdvgXNDMd0nPuhv32x8SxAFIIHZyUBcdCWDoV4ys55RTjRRM/wkHP4yvL9cjAJcXEsCKNgzkJLLlg6FlPUrw1EvCg6b0NbBAVP75FVHF4aRetkREQUgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgo2DOQksuWDoWU9SvDUS8KDpvQ1sEBU/vkVUcXhpF62RAB8iWtldjew7fM6/uTR+w6kIM+AqWleXuHVZTy5BZaB5ER").unwrap(),
-                    quorum_hash: b64.decode("DHiurOlg/svYjTZD6o9S89f293yvDEqvo/TMu0mLHh4=").unwrap(),
-                    signature: b64.decode( "kcEDkS5mYSRecLYpOUm8Vb7CJLSHKQRBoVGb52VGlqjjygm+LS4Ddh8AMhcejoMfCfrxp/OfJZCsBAkzKbO8W/vcthvATMFADFDG4D2yQIIqSzoizTL2LZiTMuKD1T8E").unwrap(),
+                    grovedb_proof: b64.decode("Ab4CAexDylk+WuD86iRYb6bx230lXLoFtSqLCeSw/nOfXJbzBAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmABZxibcZD2C32GaVZgNvQPxYBU/KRFKrLVkOU8XFjqhyRAB4mgui2Q7VyjYiyGOhQEHJkboQALRbgk27TBWwAEwq1MRAq2LjwtLqRl3c1vXyNdJbjkiqqNzSo7D6lGlVpFqDdXnEAHDNjUTblAumsUkSxWiCnV+B1nOCpCCPNN/iT9qSVVtJgQBYAAlBAEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgAAL+cHKphVe39PALl2CUHnzcEgIHnmPGQ365s/gLamwDhEAHNvOJim418TBEmZxdVX05Gz061JolAhxPmeH9hMx4KjRERAY0CASXW3HRMrb0+AAqVCkdJD+RsZae6sGW1r/vCDyFsv+5KAmi22C3rnUSnLDn+c9CSt04QOkpxKL1/YZ5GUiy6PzzsEAGdUhPjzqZgpGOWjAJP/znIzTn7qKPgk1a6LyqBq1MKtgUgbrmteWWfYvdMrBlDy3wFecWT6loLtbebBT32T7twCL8z4hMW3QlC0VXIs32IH74GchFZrO/qfURj+X+VvzGh9BARBSCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmPpy14uS/Mz7XiFgFNWyiV1sK/ax7OyTRyP6Za2XPVYQEAEPxjC56LCfmjtCqSmPNZCiSrA5tHTV314El3etV8ASwBECjQIBMEug99o1aL1r1fTvjQWXnN5x05C0e5L6l7qn+ahazyECiTcgqXvEL2837Y7t1JcjkYGVIFZ7NkS80ZLVeDUZzS0QAUPVbm2zx+3HgQdPsmd+RaQ771V7S+7SeKoYqjyqLSb7BSBuua15ZZ9i90ysGUPLfAV5xZPqWgu1t5sFPfZPu3AIvyjYM5CSy5YOhZT1K8NRLwoOm9DWwQFT++RVRxeGkXrZEBEFIJ9lpQpnWWt2hiM+zQ71gqhWvin3i3GqyltFh/Ly22GYKNgzkJLLlg6FlPUrw1EvCg6b0NbBAVP75FVHF4aRetkQASjSJd0LlYIYG6WOaQQ7lr9v8gvVTprLZhKFGxh5uMwiEQ==").unwrap(),
+                    quorum_hash: b64.decode("Wpwae/E+1U3EEcalbAVFohB//qOaDd+xw8ptDamXoi0=").unwrap(),
+                    signature: b64.decode("gdgljA8wRS/BQn1IzI2fz4rBgAErLxsLdN3/0kBuYcf4wk9FpCSqS+3TBXriSs1cFChyFgChivdEhWbHUM0liwV6kktGGTWLvySDwdwxDrei4xwEzoxuvOA2tuikUoHj").unwrap(),
                     round:0,
                     quorum_type: 106,
-                    block_id_hash:  b64.decode( "TVwes9dgmiBOwcWR48wwNOpuXXn1NRU/pV93ZfY5wVk=").unwrap(),
+                    block_id_hash:  b64.decode("iI1GM0cAhHtJBu+uv1EkhCCqLd9ZIiQWiLa8dUHhuxg=").unwrap(),
                 }
             ))
         };
@@ -183,7 +183,7 @@ mod test {
         provider
             .expect_get_quorum_public_key()
             .returning(|_quorum_type,_quorum_hash| {
-                Ok(hex::decode("83fe724d9658a1b3f10a2db285f6132ca5c8795c4bf36e139a4b873d29b101a666efdbe06f81a4ed19a363ef39569df9").unwrap())
+                Ok(hex::decode("b69aaf2a341960b0c6f0f94ce24170be898f0a64cf51dfdca51464bac1af66fa69df2f533294e3fb1bcb9b72edd97ef9").unwrap())
             })
             .once();
 

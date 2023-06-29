@@ -86,15 +86,30 @@ mod test {
     #[cfg(feature = "mock")]
     #[test]
     fn test_get_identity_proof_to_cbor() {
-        // let req =
-        let req_proto = vec![0u8; 32];
-        let resp_proto = vec![0u8; 32];
+        use dapi_grpc::{
+            platform::v0::{GetIdentityRequest, GetIdentityResponse},
+            Message,
+        };
 
-        super::identity_proof_to_cbor(
+        let req_proto = GetIdentityRequest {
+            // fill data here
+            ..Default::default()
+        }
+        .encode_to_vec();
+
+        let resp_proto = GetIdentityResponse {
+            // fill data here
+            ..Default::default()
+        }
+        .encode_to_vec();
+
+        let ret = super::identity_proof_to_cbor(
             req_proto,
             resp_proto,
             Box::new(crate::proof::from_proof::MockQuorumInfoProvider::new()),
         )
         .unwrap();
+
+        assert_ne!(ret.len(), 0)
     }
 }

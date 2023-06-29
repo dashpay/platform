@@ -3228,6 +3228,7 @@ name = "rs-drive-light-client"
 version = "0.25.0-dev"
 dependencies = [
  "base64 0.21.2",
+ "bytes",
  "camino",
  "dapi-grpc",
  "dpp",

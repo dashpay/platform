@@ -11,7 +11,7 @@ uniffi = { git = "https://github.com/mozilla/uniffi-rs" }
 dapi-grpc = { path = "../dapi-grpc" }
 thiserror = { version = "1.0.39" }
 # prost = { version = "0.11" }
-# bytes = { version = "*" }
+bytes = { version = "1.4.0" }
 
 camino = { version = "1.1.4", optional = true }
 mockall = { version = "0.11", optional = true }

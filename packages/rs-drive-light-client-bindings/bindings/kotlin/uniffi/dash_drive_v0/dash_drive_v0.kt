@@ -370,9 +370,9 @@ internal interface _UniFFILib : Library {
 
     fun uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider(`callbackStub`: ForeignCallback,_uniffi_out_err: RustCallStatus, 
     ): Unit
-    fun uniffi_rs_drive_light_client_fn_func_hello(_uniffi_out_err: RustCallStatus, 
-    ): Unit
-    fun uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor(`reqProto`: RustBuffer.ByValue,`respProto`: RustBuffer.ByValue,`provider`: Long,_uniffi_out_err: RustCallStatus, 
+    fun uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor(`reqProto`: RustBuffer.ByValue,`respProto`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_rs_drive_light_client_fn_func_version(_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_dash_drive_v0_rustbuffer_alloc(`size`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
@@ -382,9 +382,9 @@ internal interface _UniFFILib : Library {
     ): Unit
     fun ffi_dash_drive_v0_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
-    fun uniffi_rs_drive_light_client_checksum_func_hello(
-    ): Short
     fun uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor(
+    ): Short
+    fun uniffi_rs_drive_light_client_checksum_func_version(
     ): Short
     fun uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key(
     ): Short
@@ -405,13 +405,13 @@ private fun uniffiCheckContractApiVersion(lib: _UniFFILib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
-    if (lib.uniffi_rs_drive_light_client_checksum_func_hello() != 32699.toShort()) {
+    if (lib.uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor() != 50752.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor() != 26330.toShort()) {
+    if (lib.uniffi_rs_drive_light_client_checksum_func_version() != 31055.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 29670.toShort()) {
+    if (lib.uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 62936.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -940,7 +940,7 @@ public abstract class FfiConverterCallbackInterface<CallbackInterface>(
 // Declaration and FfiConverters for QuorumInfoProvider Callback Interface
 
 public interface QuorumInfoProvider {
-    fun `getQuorumPublicKey`(`quorumHash`: List<UByte>): List<UByte>
+    fun `getQuorumPublicKey`(`quorumType`: UInt, `quorumHash`: List<UByte>): List<UByte>
     
 }
 
@@ -995,6 +995,8 @@ internal class ForeignCallbackTypeQuorumInfoProvider : ForeignCallback {
         }
         fun makeCall() : Int {
             val returnValue = kotlinCallbackInterface.`getQuorumPublicKey`(
+                FfiConverterUInt.read(argsBuf)
+                , 
                 FfiConverterSequenceUByte.read(argsBuf)
                 
             )
@@ -1049,20 +1051,20 @@ public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
         }
     }
 }
+@Throws(Exception::class)
 
-fun `hello`() =
-    
-    rustCall() { _status ->
-    _UniFFILib.INSTANCE.uniffi_rs_drive_light_client_fn_func_hello(_status)
+fun `identityProofToCbor`(`reqProto`: List<UByte>, `respProto`: List<UByte>, `callback`: QuorumInfoProvider): List<UByte> {
+    return FfiConverterSequenceUByte.lift(
+    rustCallWithError(Exception) { _status ->
+    _UniFFILib.INSTANCE.uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor(FfiConverterSequenceUByte.lower(`reqProto`),FfiConverterSequenceUByte.lower(`respProto`),FfiConverterTypeQuorumInfoProvider.lower(`callback`),_status)
+})
 }
 
 
-@Throws(Exception::class)
-
-fun `identityProofToCbor`(`reqProto`: List<UByte>, `respProto`: List<UByte>, `provider`: QuorumInfoProvider): List<UByte> {
-    return FfiConverterSequenceUByte.lift(
-    rustCallWithError(Exception) { _status ->
-    _UniFFILib.INSTANCE.uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor(FfiConverterSequenceUByte.lower(`reqProto`),FfiConverterSequenceUByte.lower(`respProto`),FfiConverterTypeQuorumInfoProvider.lower(`provider`),_status)
+fun `version`(): String {
+    return FfiConverterString.lift(
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.uniffi_rs_drive_light_client_fn_func_version(_status)
 })
 }
 
