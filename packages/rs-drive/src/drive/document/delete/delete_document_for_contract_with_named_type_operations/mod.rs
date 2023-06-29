@@ -26,7 +26,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(Vec<LowLevelDriveOperation>)` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
-    pub(super) fn delete_document_for_contract_with_named_type_operations(
+    pub(crate) fn delete_document_for_contract_with_named_type_operations(
         &self,
         document_id: [u8; 32],
         contract: &Contract,

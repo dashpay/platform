@@ -111,8 +111,6 @@ pub enum DocumentOperationType<'a> {
         contract_id: [u8; 32],
         /// The name of the document type
         document_type_name: Cow<'a, String>,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
     },
     /// Deletes a document and returns the associated fee.
     DeleteDocumentOfNamedTypeForContract {
@@ -122,8 +120,6 @@ pub enum DocumentOperationType<'a> {
         contract: &'a DataContract,
         /// The name of the document type
         document_type_name: &'a str,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
     },
     /// Deletes a document and returns the associated fee.
     DeleteDocumentForContract {
@@ -133,33 +129,6 @@ pub enum DocumentOperationType<'a> {
         contract: &'a DataContract,
         /// The name of the document type
         document_type: &'a DocumentType<'a>,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
-    },
-    /// Deletes a document and returns the associated fee.
-    /// The contract CBOR is given instead of the contract itself.
-    DeleteDocumentForContractCbor {
-        /// The document id
-        document_id: [u8; 32],
-        /// The serialized contract
-        contract_cbor: &'a [u8],
-        /// The name of the document type
-        document_type_name: &'a str,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
-    },
-    /// Updates a serialized document given a contract CBOR and returns the associated fee.
-    UpdateDocumentForContractCbor {
-        /// The serialized document
-        serialized_document: &'a [u8],
-        /// The serialized contract
-        contract_cbor: &'a [u8],
-        /// The name of the document type
-        document_type_name: &'a str,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
-        /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<Cow<'a, StorageFlags>>,
     },
     /// Updates a serialized document and returns the associated fee.
     UpdateSerializedDocumentForContract {
@@ -244,6 +213,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )
             }
             DocumentOperationType::AddSerializedDocumentForContract {
@@ -276,6 +246,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )
             }
             DocumentOperationType::AddDocument {
@@ -311,6 +282,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )?;
                 drive_operations.append(&mut operations);
                 Ok(drive_operations)
@@ -336,6 +308,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )
             }
             DocumentOperationType::AddDocumentForContract {
@@ -348,12 +321,12 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 &mut None,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             DocumentOperationType::DeleteDocumentForContract {
                 document_id,
                 contract,
                 document_type,
-                owner_id,
             } => drive.delete_document_for_contract_operations(
                 document_id,
                 contract.borrow(),
@@ -361,85 +334,35 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
                 document_id,
                 contract_id,
                 document_type_name,
-                owner_id,
             } => drive.delete_document_for_contract_id_with_named_type_operations(
                 document_id,
                 contract_id,
                 document_type_name.as_str(),
-                owner_id,
                 &block_info.epoch,
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             DocumentOperationType::DeleteDocumentOfNamedTypeForContract {
                 document_id,
                 contract,
                 document_type_name,
-                owner_id,
             } => drive.delete_document_for_contract_with_named_type_operations(
                 document_id,
                 contract.borrow(),
                 document_type_name,
-                owner_id,
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
-            DocumentOperationType::DeleteDocumentForContractCbor {
-                document_id,
-                contract_cbor,
-                document_type_name,
-                owner_id,
-            } => {
-                let contract = DataContract::from_cbor(contract_cbor)?;
-                drive.delete_document_for_contract_with_named_type_operations(
-                    document_id,
-                    &contract,
-                    document_type_name,
-                    owner_id,
-                    None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                )
-            }
-            DocumentOperationType::UpdateDocumentForContractCbor {
-                serialized_document,
-                contract_cbor,
-                document_type_name,
-                owner_id,
-                storage_flags,
-            } => {
-                let contract = DataContract::from_cbor(contract_cbor)?;
-
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
-
-                let document_info =
-                    DocumentRefAndSerialization((&document, serialized_document, storage_flags));
-
-                let document_type = contract.document_type_for_name(document_type_name)?;
-
-                let document_and_contract_info = DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info,
-                        owner_id,
-                    },
-                    contract: &contract,
-                    document_type,
-                };
-                drive.update_document_for_contract_operations(
-                    document_and_contract_info,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                )
-            }
             DocumentOperationType::UpdateSerializedDocumentForContract {
                 serialized_document,
                 contract,
@@ -468,6 +391,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )
             }
             DocumentOperationType::UpdateDocumentForContract {
@@ -497,6 +421,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )
             }
             DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
@@ -527,6 +452,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 &mut Some(&mut drive_operations),
                                 estimated_costs_only_with_layer_info,
                                 transaction,
+                                drive_version,
                             )?;
                             drive_operations.append(&mut operations);
                         }
@@ -562,6 +488,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 &mut Some(&mut drive_operations),
                                 estimated_costs_only_with_layer_info,
                                 transaction,
+                                drive_version,
                             )?;
                             drive_operations.append(&mut operations);
                         }
@@ -582,6 +509,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         true,
                         transaction,
                         &mut drive_operations,
+                        drive_version,
                     )?
                     .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
@@ -600,6 +528,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    drive_version,
                 )?;
                 drive_operations.append(&mut operations);
                 Ok(drive_operations)

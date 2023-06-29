@@ -15,17 +15,19 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
+use crate::error::Error;
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion
     pub(super) fn add_estimation_costs_for_contract_insertion_v0(
         contract: &DataContract,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    ) {
+    ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
             contract,
             estimated_costs_only_with_layer_info,
-        );
+            drive_version,
+        )?;
 
         // we only store the owner_id storage
         let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {

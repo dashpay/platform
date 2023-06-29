@@ -82,7 +82,7 @@ pub mod defaults;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod document;
 #[cfg(feature = "full")]
-mod estimation_costs;
+mod shared_estimation_costs;
 /// Fee pools module
 #[cfg(feature = "full")]
 pub mod fee_pools;

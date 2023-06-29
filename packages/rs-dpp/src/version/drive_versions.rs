@@ -21,6 +21,7 @@ pub struct DriveMethodVersions {
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
     pub contract: DriveContractMethodVersions,
+    pub estimated_costs: DriveEstimatedCostsMethodVersions,
     pub asset_lock: DriveAssetLockMethodVersions,
     pub identity: DriveIdentityMethodVersions,
     pub platform_system: DrivePlatformSystemMethodVersions,
@@ -323,4 +324,10 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub add_to_previous_balance: FeatureVersion,
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,
     pub remove_from_identity_balance: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveEstimatedCostsMethodVersions {
+    pub add_estimation_costs_for_levels_up_to_contract: FeatureVersion,
+    pub add_estimation_costs_for_levels_up_to_contract_document_type_excluded: FeatureVersion,
 }

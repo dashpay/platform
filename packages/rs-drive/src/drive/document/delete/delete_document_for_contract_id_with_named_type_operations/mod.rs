@@ -32,7 +32,6 @@ impl Drive {
         document_id: [u8; 32],
         contract_id: [u8; 32],
         document_type_name: &str,
-        owner_id: Option<[u8; 32]>,
         epoch: &Epoch,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -46,7 +45,6 @@ impl Drive {
                 document_id,
                 contract_id,
                 document_type_name,
-                owner_id,
                 epoch,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
