@@ -90,7 +90,7 @@ class DockerCompose {
     console.log('services', services)
 
     const serviceContainers = await this.getContainersList(envs, {
-      filterServiceNames: services,
+      filterServiceNames: ['asdasd'],
       formatJson: true,
     });
 
@@ -270,10 +270,11 @@ class DockerCompose {
       }));
 
       if (formatJson) {
-        console.log(psOutput, envs['COMPOSE_FILE'], filterServiceNames)
+        const [jsonString] = psOutput.split('\n')
+        console.log(jsonString, envs['COMPOSE_FILE'], filterServiceNames)
         // dockerCompose returns array on empty list
         // or json string with result
-        return typeof psOutput === 'string' ? JSON.parse(psOutput): psOutput;
+        return typeof psOutput === 'string' ? JSON.parse(jsonString): psOutput;
       }
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
