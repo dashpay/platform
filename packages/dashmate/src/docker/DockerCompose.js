@@ -90,7 +90,7 @@ class DockerCompose {
     console.log('services', services)
 
     const serviceContainers = await this.getContainersList(envs, {
-      filterServiceNames: ['asdasd'],
+      filterServiceNames: serviceName,
       formatJson: true,
     });
 
@@ -270,7 +270,7 @@ class DockerCompose {
       }));
 
       if (formatJson) {
-        const [jsonString] = psOutput.split('\n')
+        const [jsonString] = psOutput.split('\n').filter(Boolean)
         console.log(jsonString, envs['COMPOSE_FILE'], filterServiceNames)
         // dockerCompose returns array on empty list
         // or json string with result
