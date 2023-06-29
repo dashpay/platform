@@ -19,7 +19,7 @@ describe('getServicesScopeFactory', () => {
 
       getServiceList = this.sinon.stub();
 
-      getServiceList.returns([{ serviceName: 'mock', humanName: 'Mock service', image: 'fakeImageId' }]);
+      getServiceList.returns([{ serviceName: 'mock', title: 'Mock service', image: 'fakeImageId' }]);
 
       getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile, getServiceList);
     });

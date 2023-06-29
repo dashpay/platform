@@ -1,4 +1,4 @@
-const _ = require('lodash');
+const { Listr } = require('listr2');
 const { Flags } = require('@oclif/core');
 const chalk = require('chalk');
 
@@ -6,79 +6,68 @@ const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const printObject = require('../printers/printObject');
 const { OUTPUT_FORMATS } = require('../constants');
+const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
 
 class UpdateCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {string} format
+   * @param isVerbose
    * @param {docker} docker
    * @param {Config} config
-   * @param {getServiceList} getServiceList
+   * @param updateNodeTask
    * @return {Promise<void>}
    */
   async runWithDependencies(
     args,
     {
       format,
+      verbose: isVerbose,
     },
     docker,
     config,
-    getServiceList,
+    updateNodeTask,
   ) {
-    const services = getServiceList(config);
-
-    const updated = await Promise.all(
-      _.uniqBy(services, 'image')
-        .map(async ({ serviceName, image, humanName }) => new Promise((resolve, reject) => {
-          docker.pull(image, (err, stream) => {
-            if (err) {
-              reject(err);
-            } else {
-              let pulled = null;
-
-              stream.on('data', (data) => {
-                try {
-                  // parse all stdout and gather Status message
-                  const [status] = data
-                    .toString()
-                    .trim()
-                    .split('\r\n')
-                    .map((str) => JSON.parse(str))
-                    .filter((obj) => obj.status.startsWith('Status: '));
-
-                  if (status?.status.includes('Image is up to date for')) {
-                    pulled = false;
-                  } else if (status?.status.includes('Downloaded newer image for')) {
-                    pulled = true;
-                  }
-                } catch (e) {
-                  if (process.env.DEBUG) {
-                    console.error('Could not parse docker data', e);
-                  }
-                }
-              });
-              stream.on('error', reject);
-              stream.on('end', () => resolve({
-                serviceName, humanName, image, pulled,
-              }));
-            }
-          });
-        })),
+    const tasks = new Listr(
+      [
+        {
+          title: `Update ${config.getName()} node`,
+          task: () => updateNodeTask(config),
+        },
+      ],
+      {
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
+      },
     );
 
-    // Draw table or show json
-    printObject(updated
-      .reduce((acc, {
-        serviceName, humanName: title, pulled, image,
-      }) => ([
-        ...acc,
-        format === OUTPUT_FORMATS.PLAIN
-          ? [title, image, pulled ? chalk.yellow('updated') : chalk.green('up to date')]
-          : {
-            serviceName, title, pulled, image,
-          },
-      ]),
-      []), format, false);
+    try {
+      const updated = await tasks.run({
+        isVerbose,
+        format,
+      });
+
+      // Draw table or show json
+      printObject(updated
+        .reduce((acc, {
+          serviceName, title, pulled, image,
+        }) => ([
+          ...acc,
+          format === OUTPUT_FORMATS.PLAIN
+            ? [title, image, pulled ? chalk.yellow('updated') : chalk.green('up to date')]
+            : {
+              serviceName, title, pulled, image,
+            },
+        ]),
+        []), format, false);
+    } catch (e) {
+      throw new MuteOneLineError(e);
+    }
   }
 }
 

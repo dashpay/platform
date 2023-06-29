@@ -41,7 +41,7 @@ class DockerCompose {
   async runService(envs, serviceName, command = [], options = []) {
     await this.throwErrorIfNotInstalled();
 
-    if (await this.isNodeRunning(envs, serviceName)) {
+    if (await this.isServiceRunning(envs, serviceName)) {
       throw new ServiceAlreadyRunningError(serviceName);
     }
 
@@ -72,10 +72,9 @@ class DockerCompose {
    * from the targeted node is in `running` state
    *
    * @param {Object} envs
-   * @param {string} [serviceName] filter by service name
    * @return {Promise<boolean>}
    */
-  async isNodeRunning(envs, serviceName = undefined) {
+  async isNodeRunning(envs) {
     await this.throwErrorIfNotInstalled();
 
     const targetedComposeFiles = envs.COMPOSE_FILE.split(':');
@@ -84,8 +83,7 @@ class DockerCompose {
       .map((composeFile) => yaml.load(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, composeFile), 'utf8')))
       .map((composeFile) => Object.keys(composeFile.services))
       .flat()
-      .filter((value, index, array) => array.indexOf(value) === index)
-      .filter((service) => (serviceName ? service === serviceName : true));
+      .filter((value, index, array) => array.indexOf(value) === index);
 
     const serviceContainers = await this.getContainersList(envs, {
       filterServiceNames: services,
@@ -99,6 +97,24 @@ class DockerCompose {
     }
 
     return false;
+  }
+
+  /**
+   * Checks if service is running
+   *
+   * @param {Object} envs
+   * @param {string} serviceName filter by service name
+   * @return {Promise<boolean>}
+   */
+  async isServiceRunning(envs, serviceName) {
+    await this.throwErrorIfNotInstalled();
+
+    const [container] = await this.getContainersList(envs, {
+      filterServiceNames: serviceName,
+      formatJson: true,
+    });
+
+    return container?.State === 'running';
   }
 
   /**
@@ -212,7 +228,7 @@ class DockerCompose {
   async execCommand(envs, serviceName, command, commandOptions = []) {
     await this.throwErrorIfNotInstalled();
 
-    if (!(await this.isNodeRunning(envs, serviceName))) {
+    if (!(await this.isServiceRunning(envs, serviceName))) {
       throw new ServiceIsNotRunningError(envs.CONFIG_NAME, serviceName);
     }
 

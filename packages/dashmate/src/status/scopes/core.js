@@ -49,7 +49,7 @@ function getCoreScopeFactory(dockerCompose,
 
     // this try catch handle getConnectionHost, isNodeRunning calls
     try {
-      if (!(await dockerCompose.isNodeRunning(generateEnvs(configFile, config), 'core'))) {
+      if (!(await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'core'))) {
         core.dockerStatus = DockerStatusEnum.not_started;
         core.serviceStatus = ServiceStatusEnum.stopped;
 
