@@ -107,6 +107,10 @@ impl PlatformVersion {
         }
     }
 
+    pub fn latest<'a>() -> &'a Self {
+        PLATFORM_VERSIONS.last().expect("expected to have a platform version")
+    }
+
     pub fn validate_contract_version(&self, version: u16) -> SimpleConsensusValidationResult {
         if self.contract.check_version(version) {
             SimpleConsensusValidationResult::default()

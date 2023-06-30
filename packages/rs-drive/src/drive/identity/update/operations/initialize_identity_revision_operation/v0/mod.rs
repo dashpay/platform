@@ -7,7 +7,7 @@ use crate::fee::op::LowLevelDriveOperation;
 impl Drive {
     /// Initialize the revision of the identity, should only be called on create identity
     /// Revisions get bumped on all changes except for the balance and negative credit fields
-    pub(in crate::drive::identity::update) fn initialize_identity_revision_operation_v0(
+    pub(in crate::drive::identity) fn initialize_identity_revision_operation_v0(
         &self,
         identity_id: [u8; 32],
         revision: Revision,

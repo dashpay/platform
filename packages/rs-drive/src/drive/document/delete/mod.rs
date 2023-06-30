@@ -98,7 +98,7 @@ use dpp::data_contract::document_type::{DocumentType, IndexLevel};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,

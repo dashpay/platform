@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
+use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::validation::ValidationResult;
 use drive::fee::result::FeeResult;
 

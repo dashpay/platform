@@ -1,4 +1,4 @@
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 
 use crate::drive::Drive;
 

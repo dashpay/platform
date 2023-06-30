@@ -6,7 +6,7 @@ mod tests {
     use dpp::util::cbor_serializer;
     use serde_json::json;
 
-    use crate::contract::Contract;
+    use dpp::data_contract::DataContract;
     use crate::drive::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;

@@ -8,7 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
 use dpp::version::drive_versions::DriveVersion;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::{contract_document_type_path, contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_primary_key_path, make_document_reference};
 use crate::drive::Drive;

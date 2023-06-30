@@ -1,3 +1,4 @@
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
@@ -12,44 +13,36 @@ use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::state_transition::fee::calculate_fee;
+use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
-    /// Deserialize an identity from cbor encoded bytes and potentially apply it to the state
-    pub fn add_new_identity_from_cbor_encoded_bytes(
-        &self,
-        identity_bytes: Vec<u8>,
-        block_info: &BlockInfo,
-        apply: bool,
-        transaction: TransactionArg,
-    ) -> Result<FeeResult, Error> {
-        let identity = Identity::from_cbor(identity_bytes.as_slice()).map_err(Error::Protocol)?;
-
-        self.add_new_identity(identity, block_info, apply, transaction)
-    }
-
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
-    pub fn add_new_identity(
+    pub(super) fn add_new_identity_v0(
         &self,
         identity: Identity,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.add_new_identity_add_to_operations(
+        self.add_new_identity_add_to_operations_v0(
             identity,
             block_info,
             apply,
             &mut None,
             transaction,
             &mut drive_operations,
+            drive_version,
         )?;
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)
     }
 
     /// Adds identity creation operations to drive operations
-    pub(crate) fn add_new_identity_add_to_operations(
+    pub(super) fn add_new_identity_add_to_operations_v0(
         &self,
         identity: Identity,
         block_info: &BlockInfo,
@@ -57,6 +50,7 @@ impl Drive {
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -64,7 +58,7 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let batch_operations = self.add_insert_identity_operations(
+        let batch_operations = self.add_new_identity_operations(
             identity,
             block_info,
             previous_batch_operations,
@@ -77,11 +71,12 @@ impl Drive {
             transaction,
             batch_operations,
             drive_operations,
+            drive_version,
         )
     }
 
     /// The operations needed to create an identity
-    pub(crate) fn add_insert_identity_operations(
+    pub(super) fn add_new_identity_operations_v0(
         &self,
         identity: Identity,
         block_info: &BlockInfo,
@@ -90,6 +85,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -124,6 +120,7 @@ impl Drive {
             transaction,
             previous_batch_operations,
             &mut batch_operations,
+            drive_version,
         )?;
 
         if !inserted {
@@ -144,13 +141,14 @@ impl Drive {
         // We insert the revision
         // todo: we might not need the revision
         batch_operations
-            .push(self.initialize_identity_revision_operation(id.to_buffer(), revision));
+            .push(self.initialize_identity_revision_operation_v0(id.to_buffer(), revision));
 
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
             public_keys.into_values().collect(),
             estimated_costs_only_with_layer_info,
             transaction,
+            drive_version,
         )?;
         // We insert the key tree and keys
         batch_operations.append(&mut create_tree_keys_operations);
@@ -159,6 +157,7 @@ impl Drive {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
@@ -166,32 +165,36 @@ mod tests {
 
     use dpp::block::extended_block_info::BlockInfo;
     use tempfile::TempDir;
+    use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     use crate::drive::Drive;
 
     #[test]
-    fn test_insert_and_fetch_identity() {
+    fn test_insert_and_fetch_identity_v0() {
         let drive = setup_drive(None);
+        let drive_version = &PlatformVersion::get(0).unwrap().drive;
 
         let transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&transaction))
+            .create_initial_state_structure(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(5, Some(12345));
+        let identity = Identity::random_identity(Some(0), 5, Some(12345));
 
         drive
-            .add_new_identity(
+            .add_new_identity_v0(
                 identity.clone(),
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                drive_version,
             )
             .expect("expected to insert identity");
 
         let fetched_identity = drive
-            .fetch_full_identity(identity.id.to_buffer(), Some(&transaction))
+            .fetch_full_identity(identity.id.to_buffer(), Some(&transaction), drive_version)
             .expect("should fetch an identity")
             .expect("should have an identity");
 
@@ -199,19 +202,20 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_identity() {
+    fn test_insert_identity_v0() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive_version = &PlatformVersion::get(0).unwrap().drive;
 
-        let identity = Identity::random_identity(5, Some(12345));
+        let identity = Identity::random_identity(Some(0), 5, Some(12345));
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), drive_version)
             .expect("expected to create root tree successfully");
 
         drive
-            .add_new_identity(identity, &BlockInfo::default(), true, Some(&db_transaction))
+            .add_new_identity_v0(identity, &BlockInfo::default(), true, Some(&db_transaction), drive_version)
             .expect("expected to insert identity");
 
         drive

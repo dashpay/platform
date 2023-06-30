@@ -7,7 +7,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::block::block_info::BlockInfo;
 use dpp::document::Document;
 use dpp::version::drive_versions::DriveVersion;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};

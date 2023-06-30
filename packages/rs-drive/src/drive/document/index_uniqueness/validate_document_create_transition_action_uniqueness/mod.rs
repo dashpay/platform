@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};

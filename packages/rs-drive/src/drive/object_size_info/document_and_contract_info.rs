@@ -1,5 +1,5 @@
 use dpp::data_contract::document_type::DocumentType;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::object_size_info::OwnedDocumentInfo;
 
 /// Document and contract info

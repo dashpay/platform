@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::version::drive_versions::DriveVersion;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;

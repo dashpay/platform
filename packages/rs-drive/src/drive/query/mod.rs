@@ -35,7 +35,7 @@
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;

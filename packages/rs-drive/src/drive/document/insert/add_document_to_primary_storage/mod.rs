@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::option::Option::None;
 use dpp::block::block_info::BlockInfo;
 
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
 use crate::drive::document::{
     contract_document_type_path_vec,

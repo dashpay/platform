@@ -6,7 +6,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;

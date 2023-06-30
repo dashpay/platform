@@ -10,6 +10,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
 use dpp::validation::SimpleConsensusValidationResult;
@@ -43,7 +44,7 @@ where
 
         if state_transition_execution_event.is_valid() {
             let execution_event = state_transition_execution_event.into_data()?;
-            self.execute_event_v0(execution_event, block_info, transaction)
+            self.execute_event(execution_event, block_info, transaction)
         } else {
             Ok(ConsensusExecutionError(
                 SimpleConsensusValidationResult::new_with_errors(
@@ -117,7 +118,7 @@ mod tests {
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization_traits::{PlatformSerializable, Signable};
     use dpp::state_transition::{StateTransition, StateTransitionType};
-    use dpp::version::LATEST_VERSION;
+    use dpp::version::{LATEST_VERSION, PlatformVersion};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -128,12 +129,13 @@ mod tests {
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+        let platform_version = PlatformVersion::latest();
 
         let key = IdentityPublicKey::random_authentication_key(1, Some(1));
 
         platform
             .drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(None, &platform_version.drive)
             .expect("expected to create state structure");
         let identity = Identity {
             protocol_version: 1,

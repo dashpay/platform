@@ -3,6 +3,9 @@ mod estimation_costs;
 pub mod misc_tree_constants;
 /// Protocol version module
 pub mod protocol_version;
+/// Genesis time module
+#[cfg(feature = "full")]
+pub mod genesis_time;
 
 use crate::drive::RootTree;
 

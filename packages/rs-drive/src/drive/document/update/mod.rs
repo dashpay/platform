@@ -68,7 +68,7 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::batch::drive_op_batch::{
     DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
 };

@@ -83,7 +83,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             IdentityOperationType::AddNewIdentity { identity } => drive
-                .add_insert_identity_operations(
+                .add_new_identity_operations(
                     identity,
                     block_info,
                     &mut None,

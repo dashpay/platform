@@ -9,7 +9,7 @@ use dpp::data_contract::document_type::{DocumentType, IndexLevel};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;

@@ -1,0 +1,33 @@
+use grovedb::Element;
+use dpp::identity::IdentityPublicKey;
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::version::drive_versions::DriveVersion;
+use crate::drive::Drive;
+use crate::drive::identity::identity_key_tree_path;
+use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
+use crate::error::Error;
+
+impl Drive {
+    pub(super) fn insert_key_to_storage_operations_v0(
+        &self,
+        identity_id: [u8; 32],
+        identity_key: &IdentityPublicKey,
+        key_id_bytes: &[u8],
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
+        // Now lets insert the public key
+        let identity_key_tree = identity_key_tree_path(identity_id.as_slice());
+
+        self.batch_insert(
+            PathFixedSizeKeyRefElement((
+                identity_key_tree,
+                key_id_bytes,
+                Element::new_item_with_flags(serialized_identity_key, None),
+            )),
+            drive_operations,
+            drive_version,
+        )
+    }
+}

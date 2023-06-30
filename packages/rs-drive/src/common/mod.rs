@@ -57,7 +57,7 @@ use ciborium::value::Value;
 use grovedb::TransactionArg;
 
 #[cfg(feature = "full")]
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use crate::drive::Drive;
 

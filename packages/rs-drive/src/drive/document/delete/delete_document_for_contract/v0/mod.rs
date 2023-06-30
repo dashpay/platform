@@ -5,7 +5,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::fee::calculate_fee;
 use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::calculate_fee;

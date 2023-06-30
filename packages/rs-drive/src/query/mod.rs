@@ -76,7 +76,7 @@ use dpp::data_contract::document_type::{Index, IndexProperty};
 pub use ordering::OrderClause;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 #[cfg(feature = "full")]
@@ -1666,7 +1666,7 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use crate::contract::Contract;
+    use dpp::data_contract::DataContract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;

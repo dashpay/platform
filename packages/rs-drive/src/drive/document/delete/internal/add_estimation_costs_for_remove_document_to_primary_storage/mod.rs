@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::data_contract::document_type::DocumentType;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES,
     AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,

@@ -51,7 +51,7 @@ use object_size_info::DocumentAndContractInfo;
 use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 
 #[cfg(feature = "full")]
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -88,9 +88,6 @@ mod shared_estimation_costs;
 pub mod fee_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod flags;
-/// Genesis time module
-#[cfg(feature = "full")]
-pub mod genesis_time;
 #[cfg(feature = "full")]
 pub(crate) mod grove_operations;
 /// Identity module

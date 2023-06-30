@@ -14,6 +14,7 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use dpp::state_transition::fee::calculate_fee;
 use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches an identity with all its information and
@@ -23,10 +24,11 @@ impl Drive {
         identity_id: [u8; 32],
         epoch: &Epoch,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<(Option<Identity>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let maybe_identity =
-            self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)?;
+            self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations, drive_version)?;
         let fee = calculate_fee(None, Some(drive_operations), epoch)?;
         Ok((maybe_identity, fee))
     }
@@ -86,30 +88,32 @@ impl Drive {
     // }
 
     /// Fetches identities with all its information from storage.
-    pub(super) fn fetch_full_identities(
+    pub(super) fn fetch_full_identities_v0(
         &self,
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
         identity_ids
             .iter()
             .map(|identity_id| {
                 Ok((
                     *identity_id,
-                    self.fetch_full_identity(*identity_id, transaction)?,
+                    self.fetch_full_identity(*identity_id, transaction, drive_version)?,
                 ))
             })
             .collect()
     }
 
     /// Fetches an identity with all its information from storage.
-    pub(super) fn fetch_full_identity(
+    pub(super) fn fetch_full_identity_v0(
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations)
+        self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations, drive_version)
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -118,6 +122,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
     ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
         let balance = self.fetch_identity_balance_operations(
@@ -125,19 +130,20 @@ impl Drive {
             true,
             transaction,
             drive_operations,
+            drive_version,
         )?;
         if balance.is_none() {
             return Ok(None);
         }
         let balance = balance.unwrap();
         let revision = self
-            .fetch_identity_revision_operations(identity_id, true, transaction, drive_operations)?
+            .fetch_identity_revision_operations(identity_id, true, transaction, drive_operations, drive_version)?
             .ok_or(Error::Drive(DriveError::CorruptedDriveState(
                 "revision not found on identity".to_string(),
             )))?;
 
         let public_keys =
-            self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations)?;
+            self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations, drive_version)?;
         Ok(Some(Identity {
             feature_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),

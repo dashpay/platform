@@ -74,7 +74,7 @@ mod tests {
     use dpp::data_contract::DataContract;
 
     use super::*;
-    use crate::contract::Contract;
+    use dpp::data_contract::DataContract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,

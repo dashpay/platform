@@ -5,7 +5,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::fee::fee_result::FeeResult;
-use crate::contract::Contract;
+use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
