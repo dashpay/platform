@@ -27,8 +27,8 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,
-    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+    let platform_version = platform.state.current_platform_version()?;
     match platform_version
         .drive_abci
         .validation_and_processing

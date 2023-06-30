@@ -8,6 +8,7 @@ use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::fee::fee_result::FeeResult;
@@ -39,12 +40,14 @@ where
             config: &self.config,
             core_rpc: &self.core_rpc,
         };
+
         let state_transition_execution_event =
             process_state_transition(&platform_ref, state_transition, Some(transaction))?;
 
         if state_transition_execution_event.is_valid() {
+            let platform_version = platform.state.current_platform_version()?;
             let execution_event = state_transition_execution_event.into_data()?;
-            self.execute_event(execution_event, block_info, transaction)
+            self.execute_event(execution_event, block_info, transaction, platform_version)
         } else {
             Ok(ConsensusExecutionError(
                 SimpleConsensusValidationResult::new_with_errors(
@@ -82,17 +85,19 @@ where
         };
         let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
 
+        let platform_version = platform.state.current_platform_version()?;
+
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
         if let Some(block_info) = state_read_guard.last_committed_block_info().as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event_v0(execution_event, &block_info.basic_info(), None)
+                self.validate_fees_of_event(execution_event, &block_info.basic_info(), None, platform_version)
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event_v0(execution_event, &BlockInfo::default(), None)
+                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None, platform_version)
             })
         }
     }
@@ -122,6 +127,8 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+    use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 
     #[test]
     fn data_contract_create_check_tx() {
@@ -175,9 +182,11 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         platform
             .drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(None, &platform_version.drive)
             .expect("expected to create state structure");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -220,13 +229,15 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         let genesis_time = 0;
 
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -258,13 +269,15 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         let genesis_time = 0;
 
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -301,13 +314,15 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         let genesis_time = 0;
 
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -328,13 +343,15 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         let genesis_time = 0;
 
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -382,13 +399,15 @@ mod tests {
             .with_config(config)
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         let genesis_time = 0;
 
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -464,13 +483,15 @@ mod tests {
             .with_config(config)
             .build_with_mock_rpc();
 
+        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+
         let genesis_time = 0;
 
         let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None)
+            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
             .expect("expected to create genesis state");
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);

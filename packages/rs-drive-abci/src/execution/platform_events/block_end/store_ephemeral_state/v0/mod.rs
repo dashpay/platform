@@ -33,6 +33,7 @@ where
         let serialized_platform_state = platform_state.serialize()?;
 
         // next we need to store this data in grovedb
+        //todo:: maybe this should be in actual state
         self.drive
             .grove
             .put_aux(

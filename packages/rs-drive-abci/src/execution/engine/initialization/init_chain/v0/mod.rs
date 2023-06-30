@@ -48,13 +48,14 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
-        self.update_core_info_v0(
+        self.update_core_info(
             None,
             &mut state_cache,
             core_height,
             true,
             &BlockInfo::genesis(),
             transaction,
+            platform_version,
         )?;
 
         let (quorum_hash, validator_set) =

@@ -36,6 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
+use dpp::state_transition::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;
@@ -159,7 +160,6 @@ mod tests {
             genesis_time_ms: u64,
             epoch_index: u16,
             block_height: u64,
-            _block_hash: [u8; 32],
             previous_block_time_ms: Option<u64>,
             should_distribute: bool,
             transaction: &Transaction,
@@ -173,7 +173,7 @@ mod tests {
                 let mut batch = vec![];
 
                 platform
-                    .add_distribute_block_fees_into_pools_operations_v0(
+                    .add_distribute_block_fees_into_pools_operations(
                         &current_epoch,
                         &block_fees,
                         None,
@@ -302,7 +302,6 @@ mod tests {
             genesis_time_ms,
             epoch_index,
             block_height,
-            [0; 32],
             None,
             false,
             &transaction,
@@ -322,7 +321,6 @@ mod tests {
             genesis_time_ms,
             epoch_index,
             block_height,
-            [0; 32],
             Some(block_info.block_time_ms),
             true,
             &transaction,
@@ -342,7 +340,6 @@ mod tests {
             genesis_time_ms,
             epoch_index,
             block_height,
-            [0; 32],
             Some(block_info.block_time_ms),
             true,
             &transaction,
