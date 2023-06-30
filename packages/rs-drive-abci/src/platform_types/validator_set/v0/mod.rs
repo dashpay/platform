@@ -315,15 +315,17 @@ impl ValidatorSet {
     /// validators is above a certain threshold. If it is, the validator set is considered unhealthy.
     /// If the validator set is unhealthy, we need to rotate to the next validator set to prevent
     /// the network from a possible stall
-    pub fn is_low_health(&self) -> bool {
+    pub fn is_low_health(&self, quorum_size: u16) -> bool {
         let validators_total = self.members.len();
         let banned_validators_count = self
             .members
             .values()
             .filter(|validator| validator.is_banned)
             .count();
+        let invalid_members_count = quorum_size as usize - validators_total;
+        let total_offline_members = banned_validators_count + invalid_members_count;
 
-        banned_validators_count as f64 / validators_total as f64
+        total_offline_members as f64 / quorum_size as f64
             > VALIDATOR_SET_QUORUM_HEALTH_THRESHOLD
     }
 }

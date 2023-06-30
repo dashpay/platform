@@ -36,7 +36,7 @@ where
             .get(&platform_state.current_validator_set_quorum_hash)
         {
             // We need to perform a rotation if the quorum health is low
-            if current_quorum.is_low_health() {
+            if current_quorum.is_low_health(self.config.quorum_size) {
                 perform_rotation = true;
             }
         }
