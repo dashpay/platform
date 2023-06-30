@@ -322,6 +322,7 @@ pub struct DriveIdentityKeysMethodVersions {
     pub fetch: DriveIdentityKeysFetchMethodVersions,
     pub prove: DriveIdentityKeysProveMethodVersions,
     pub insert: DriveIdentityKeysInsertMethodVersions,
+    pub insert_key_hash_identity_reference: DriveIdentityKeyHashesToIdentityInsertMethodVersions,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -349,6 +350,15 @@ pub struct DriveIdentityKeysInsertMethodVersions {
     pub replace_key_in_storage: FeatureVersion,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveIdentityKeyHashesToIdentityInsertMethodVersions {
+    pub add_estimation_costs_for_insert_non_unique_public_key_hash_reference: FeatureVersion,
+    pub add_estimation_costs_for_insert_unique_public_key_hash_reference: FeatureVersion,
+    pub insert_non_unique_public_key_hash_reference_to_identity: FeatureVersion,
+    pub insert_reference_to_non_unique_key: FeatureVersion,
+    pub insert_reference_to_unique_key: FeatureVersion,
+    pub insert_unique_public_key_hash_reference_to_identity: FeatureVersion,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveIdentityUpdateMethodVersions {

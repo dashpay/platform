@@ -28,14 +28,15 @@ use dpp::version::drive_versions::DriveVersion;
 
 
 impl Drive {
-    /// Generates a set of operations to insert a non-unique public key hash reference.
+    /// Generates a set of operations to insert a unique public key hash reference.
     ///
     /// # Arguments
     ///
     /// * `identity_id` - A byte array representing the identity id.
-    /// * `identity_key` - The public key of the identity.
+    /// * `public_key_hash` - The hash of the public key.
     /// * `estimated_costs_only_with_layer_info` - An optional mutable reference to a map from `KeyInfoPath` to `EstimatedLayerInformation`.
     /// * `transaction` - A `TransactionArg` to be used in the operation.
+    /// * `drive_version` - A `DriveVersion` object.
     ///
     /// # Returns
     ///
@@ -44,20 +45,20 @@ impl Drive {
     /// # Errors
     ///
     /// This function may return an `Error` if the operation creation process fails or if the drive version does not match any of the implemented method versions.
-    pub fn insert_reference_to_non_unique_key_operations(
+    pub fn insert_unique_public_key_hash_reference_to_identity_operations(
         &self,
         identity_id: [u8; 32],
-        identity_key: &IdentityPublicKey,
+        public_key_hash: [u8; 20],
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.identity.keys.insert_key_hash_identity_reference.insert_reference_to_non_unique_key {
-            0 => self.insert_reference_to_non_unique_key_operations_v0(identity_id, identity_key, estimated_costs_only_with_layer_info, transaction, drive_version),
+        match drive_version.methods.identity.keys.insert_key_hash_identity_reference.insert_unique_public_key_hash_reference_to_identity {
+            0 => self.insert_unique_public_key_hash_reference_to_identity_operations_v0(identity_id, public_key_hash, estimated_costs_only_with_layer_info, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "insert_reference_to_non_unique_key_operations".to_string(),
+                method: "insert_unique_public_key_hash_reference_to_identity_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
