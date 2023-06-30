@@ -38,7 +38,7 @@ use std::option::Option::None;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
+use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;

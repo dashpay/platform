@@ -6,7 +6,7 @@ use crate::execution::types::unpaid_epoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
+use drive::drive::credit_pools::epochs::start_block::StartBlockInfo;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use drive::grovedb::TransactionArg;
 

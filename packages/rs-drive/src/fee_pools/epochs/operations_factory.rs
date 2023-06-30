@@ -33,7 +33,7 @@
 //!
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee_pools::pools_vec_path;
+use crate::drive::credit_pools::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};

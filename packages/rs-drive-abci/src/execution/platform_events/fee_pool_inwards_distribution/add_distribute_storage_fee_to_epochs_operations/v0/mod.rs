@@ -80,7 +80,7 @@ mod tests {
         use dpp::block::epoch::Epoch;
         use dpp::block::extended_block_info::BlockInfo;
         use drive::drive::batch::DriveOperation;
-        use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
+        use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee::credits::{Creditable, Credits};
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
         use drive::fee_pools::epochs::operations_factory::EpochOperations;

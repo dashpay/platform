@@ -1,0 +1,43 @@
+mod v0;
+
+use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
+use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::block::epoch::Epoch;
+use dpp::version::drive_versions::DriveVersion;
+
+impl Drive {
+
+    /// Returns a list of the Epoch's block proposers
+    ///
+    /// # Arguments
+    ///
+    /// * `epoch_tree` - An Epoch instance.
+    /// * `limit` - An Option containing the limit of proposers to be fetched.
+    /// * `transaction` - A TransactionArg instance.
+    /// * `drive_version` - A DriveVersion instance representing the version of the drive.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing a vector of tuples with proposers' transaction hashes and block counts or an Error.
+    pub fn get_epoch_proposers(
+        &self,
+        epoch_tree: &Epoch,
+        limit: Option<u16>,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
+        match drive_version.methods.credit_pools.get_epoch_proposers {
+            0 => self.get_epoch_proposers_v0(epoch_tree, limit, transaction),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "get_epoch_proposers".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}

@@ -30,7 +30,7 @@
 //! Epochs Mod File.
 //!
 
-use crate::drive::fee_pools::pools_path;
+use crate::drive::credit_pools::pools_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
@@ -43,7 +43,8 @@ pub mod start_time;
 
 impl Drive {
     /// Checks if an Epoch tree exists. Returns a bool.
-    pub fn is_epoch_tree_exists(
+    /// Does not need to be versioned as it is very simple
+    pub fn has_epoch_tree_exists(
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
@@ -62,7 +63,7 @@ mod tests {
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
-    mod is_epoch_tree_exists {
+    mod has_epoch_tree_exists {
         use super::*;
 
         use crate::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
@@ -75,7 +76,7 @@ mod tests {
             let epoch_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let is_exist = drive
-                .is_epoch_tree_exists(&epoch_tree, Some(&transaction))
+                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
                 .expect("should check epoch tree existence");
 
             assert!(is_exist);
@@ -89,7 +90,7 @@ mod tests {
             let epoch_tree = Epoch::new(PERPETUAL_STORAGE_EPOCHS + 1).unwrap();
 
             let is_exist = drive
-                .is_epoch_tree_exists(&epoch_tree, Some(&transaction))
+                .has_epoch_tree_exists(&epoch_tree, Some(&transaction))
                 .expect("should check epoch tree existence");
 
             assert!(!is_exist);

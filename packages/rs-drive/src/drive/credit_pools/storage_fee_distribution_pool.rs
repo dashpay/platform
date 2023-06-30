@@ -30,7 +30,7 @@
 //! Storage Fee Distribution Pool.
 //!
 
-use crate::drive::fee_pools::pools_path;
+use crate::drive::credit_pools::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use grovedb::{Element, TransactionArg};
@@ -70,7 +70,7 @@ mod tests {
     mod get_storage_fees_from_distribution_pool {
         use super::*;
         use crate::drive::batch::GroveDbOpBatch;
-        use crate::drive::fee_pools::pools_vec_path;
+        use crate::drive::credit_pools::pools_vec_path;
 
         #[test]
         fn test_error_if_epoch_is_not_initiated() {

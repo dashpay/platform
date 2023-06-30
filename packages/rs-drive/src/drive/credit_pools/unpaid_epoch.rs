@@ -30,7 +30,7 @@
 //! Unpaid Epoch.
 //!
 
-use crate::drive::fee_pools::pools_path;
+use crate::drive::credit_pools::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

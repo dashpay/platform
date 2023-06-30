@@ -85,7 +85,7 @@ pub mod document;
 mod shared_estimation_costs;
 /// Fee pools module
 #[cfg(feature = "full")]
-pub mod fee_pools;
+pub mod credit_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod flags;
 #[cfg(feature = "full")]

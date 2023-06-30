@@ -251,7 +251,18 @@ pub struct DriveInitializationMethodVersions {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveCreditPoolMethodVersions {
-    pub get_storage_credits_for_distribution_for_epochs_in_range: FeatureVersion
+    pub get_epoch_fee_multiplier: FeatureVersion,
+    pub get_epoch_processing_credits_for_distribution: FeatureVersion,
+    pub get_epoch_storage_credits_for_distribution: FeatureVersion,
+    pub get_epoch_total_credits_for_distribution: FeatureVersion,
+    pub get_storage_credits_for_distribution_for_epochs_in_range: FeatureVersion,
+    pub get_epoch_start_time: FeatureVersion,
+    pub get_epoch_start_block_core_height: FeatureVersion,
+    pub get_epoch_start_block_height: FeatureVersion,
+    pub get_first_epoch_start_block_info_between_epochs: FeatureVersion,
+    pub get_epoch_proposers: FeatureVersion,
+    pub get_epochs_proposer_block_count: FeatureVersion,
+    pub is_epochs_proposers_tree_empty: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

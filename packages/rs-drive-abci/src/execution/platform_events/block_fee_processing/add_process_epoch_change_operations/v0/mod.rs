@@ -238,12 +238,12 @@ mod tests {
             // Next thousandth epoch should be created
             let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS).unwrap();
 
-            let is_epoch_tree_exists = platform
+            let has_epoch_tree_exists = platform
                 .drive
-                .is_epoch_tree_exists(&next_thousandth_epoch, Some(transaction))
+                .has_epoch_tree_exists(&next_thousandth_epoch, Some(transaction))
                 .expect("should check epoch tree existence");
 
-            assert!(is_epoch_tree_exists);
+            assert!(has_epoch_tree_exists);
 
             // epoch should be initialized as current
             let epoch_start_block_height = platform
