@@ -31,7 +31,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<u64, Error> {
-        match drive_version.methods.credit_pools.get_epochs_proposer_block_count {
+        match drive_version.methods.credit_pools.epochs.get_epochs_proposer_block_count {
             0 => self.get_epochs_proposer_block_count_v0(epoch, proposer_tx_hash, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epochs_proposer_block_count".to_string(),

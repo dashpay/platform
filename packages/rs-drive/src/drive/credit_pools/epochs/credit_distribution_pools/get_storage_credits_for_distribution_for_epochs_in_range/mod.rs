@@ -34,7 +34,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u64>, Error> {
-        match drive_version.methods.credit_pools.get_storage_credits_for_distribution_for_epochs_in_range {
+        match drive_version.methods.credit_pools.epochs.get_storage_credits_for_distribution_for_epochs_in_range {
             0 => Ok(self.get_storage_credits_for_distribution_for_epochs_in_range_v0(epoch_range, transaction)),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_storage_credits_for_distribution_for_epochs_in_range".to_string(),

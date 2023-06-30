@@ -34,7 +34,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<u32, Error> {
-        match drive_version.methods.credit_pools.get_epoch_start_block_core_height {
+        match drive_version.methods.credit_pools.epochs.get_epoch_start_block_core_height {
             0 => self.get_epoch_start_block_core_height_v0(epoch_tree, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_start_block_core_height".to_string(),

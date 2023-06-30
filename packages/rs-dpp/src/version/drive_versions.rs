@@ -251,6 +251,12 @@ pub struct DriveInitializationMethodVersions {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveCreditPoolMethodVersions {
+    pub epochs: DriveCreditPoolEpochsMethodVersions,
+    pub pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_epoch_fee_multiplier: FeatureVersion,
     pub get_epoch_processing_credits_for_distribution: FeatureVersion,
     pub get_epoch_storage_credits_for_distribution: FeatureVersion,
@@ -263,6 +269,14 @@ pub struct DriveCreditPoolMethodVersions {
     pub get_epoch_proposers: FeatureVersion,
     pub get_epochs_proposer_block_count: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveCreditPoolPendingEpochRefundsMethodVersions {
+    pub add_delete_pending_epoch_refunds_except_specified: FeatureVersion,
+    pub fetch_and_add_pending_epoch_refunds_to_collection: FeatureVersion,
+    pub fetch_pending_epoch_refunds: FeatureVersion,
+    pub add_update_pending_epoch_refunds_operations: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

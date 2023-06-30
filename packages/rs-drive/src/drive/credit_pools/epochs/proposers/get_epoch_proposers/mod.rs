@@ -31,7 +31,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
-        match drive_version.methods.credit_pools.get_epoch_proposers {
+        match drive_version.methods.credit_pools.epochs.get_epoch_proposers {
             0 => self.get_epoch_proposers_v0(epoch_tree, limit, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_proposers".to_string(),

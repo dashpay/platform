@@ -28,7 +28,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        match drive_version.methods.credit_pools.is_epochs_proposers_tree_empty {
+        match drive_version.methods.credit_pools.epochs.is_epochs_proposers_tree_empty {
             0 => self.is_epochs_proposers_tree_empty_v0(epoch_tree, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "is_epochs_proposers_tree_empty".to_string(),

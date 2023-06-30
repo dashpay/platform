@@ -39,7 +39,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Option<StartBlockInfo>, Error> {
-        match drive_version.methods.credit_pools.get_first_epoch_start_block_info_between_epochs {
+        match drive_version.methods.credit_pools.epochs.get_first_epoch_start_block_info_between_epochs {
             0 => self.get_first_epoch_start_block_info_between_epochs_v0(from_epoch_index, to_epoch_index, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_first_epoch_start_block_info_between_epochs".to_string(),

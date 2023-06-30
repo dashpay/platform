@@ -29,7 +29,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<u64, Error> {
-        match drive_version.methods.credit_pools.get_epoch_start_time {
+        match drive_version.methods.credit_pools.epochs.get_epoch_start_time {
             0 => self.get_epoch_start_time_v0(epoch_tree, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_start_time".to_string(),
