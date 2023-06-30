@@ -245,7 +245,7 @@ impl Drive {
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_cbor_from_contract(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
@@ -271,7 +271,7 @@ impl Drive {
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_from_contract(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
@@ -297,7 +297,7 @@ impl Drive {
     /// Performs and returns the result of the specified query along with skipped items.
     pub(crate) fn query_documents_for_cbor_query_internal(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,
@@ -354,7 +354,7 @@ impl Drive {
     /// Proof is generated.
     pub fn query_proof_of_documents_using_cbor_encoded_query_with_cost(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
@@ -382,7 +382,7 @@ impl Drive {
     /// Proof is generated.
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,
@@ -396,7 +396,7 @@ impl Drive {
     /// Performs the specified internal query and returns the root hash, values, and fee.
     pub fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
@@ -424,7 +424,7 @@ impl Drive {
     /// Performs the specified internal query and returns the root hash and values.
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,

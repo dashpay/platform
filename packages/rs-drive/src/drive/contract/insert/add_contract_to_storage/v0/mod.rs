@@ -22,7 +22,7 @@ impl Drive {
     pub(super) fn add_contract_to_storage_v0(
         &self,
         contract_element: Element,
-        contract: &Contract,
+        contract: &DataContract,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -44,7 +44,7 @@ impl Drive {
                     contract,
                     estimated_costs_only_with_layer_info,
                     drive_version,
-                );
+                )?;
             }
 
             if is_first_insert {

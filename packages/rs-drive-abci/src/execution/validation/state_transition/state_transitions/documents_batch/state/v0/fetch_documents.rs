@@ -99,7 +99,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
 
 pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
     drive: &Drive,
-    contract: &Contract,
+    contract: &DataContract,
     document_type: &DocumentType,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,

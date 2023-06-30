@@ -1621,7 +1621,7 @@ mod tests {
 
     fn apply_person(
         drive: &Drive,
-        contract: &Contract,
+        contract: &DataContract,
         block_info: BlockInfo,
         person: &Person,
         apply: bool,
@@ -1660,7 +1660,7 @@ mod tests {
 
     fn delete_person(
         drive: &Drive,
-        contract: &Contract,
+        contract: &DataContract,
         block_info: BlockInfo,
         person: &Person,
         transaction: TransactionArg,

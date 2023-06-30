@@ -134,7 +134,7 @@ impl Domain {
 /// Creates and adds to a contract domains with random data.
 pub fn add_domains_to_contract(
     drive: &Drive,
-    contract: &Contract,
+    contract: &DataContract,
     transaction: TransactionArg,
     count: u32,
     seed: u64,

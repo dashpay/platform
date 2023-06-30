@@ -32,7 +32,7 @@ impl Drive {
     pub fn delete_document_for_contract(
         &self,
         document_id: [u8; 32],
-        contract: &Contract,
+        contract: &DataContract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,

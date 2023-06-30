@@ -56,7 +56,7 @@ use drive::grovedb::TransactionArg;
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
 fn create_test_mn_share_document(
     drive: &Drive,
-    contract: &Contract,
+    contract: &DataContract,
     identity_id: Identifier,
     pay_to_identity: &Identity,
     percentage: u16,
@@ -111,7 +111,7 @@ fn create_test_mn_share_document(
 /// a test MN_REWARD_SHARES_DOCUMENT_TYPE document for each.
 pub fn create_test_masternode_share_identities_and_documents(
     drive: &Drive,
-    contract: &Contract,
+    contract: &DataContract,
     pro_tx_hashes: &Vec<[u8; 32]>,
     seed: Option<u64>,
     transaction: TransactionArg,

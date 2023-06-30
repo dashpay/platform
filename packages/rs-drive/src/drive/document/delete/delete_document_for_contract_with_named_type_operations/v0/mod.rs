@@ -32,7 +32,7 @@ impl Drive {
     pub(super) fn delete_document_for_contract_with_named_type_operations_v0(
         &self,
         document_id: [u8; 32],
-        contract: &Contract,
+        contract: &DataContract,
         document_type_name: &str,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<

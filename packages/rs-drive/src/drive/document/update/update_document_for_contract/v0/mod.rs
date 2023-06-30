@@ -20,7 +20,7 @@ impl Drive {
     pub(super) fn update_document_for_contract_v0(
         &self,
         document: &Document,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,

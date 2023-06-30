@@ -59,7 +59,7 @@ impl Drive {
     pub(super) fn insert_contract_element_v0(
         &self,
         contract_element: Element,
-        contract: &Contract,
+        contract: &DataContract,
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
@@ -93,7 +93,7 @@ impl Drive {
     pub(super) fn insert_contract_add_operations_v0(
         &self,
         contract_element: Element,
-        contract: &Contract,
+        contract: &DataContract,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -118,7 +118,7 @@ impl Drive {
     pub(super) fn insert_contract_operations_v0(
         &self,
         contract_element: Element,
-        contract: &Contract,
+        contract: &DataContract,
         block_info: &BlockInfo,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

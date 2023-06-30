@@ -587,7 +587,7 @@ impl Domain {
 /// Adds `count` random domain names to the given contract
 pub fn add_domains_to_contract(
     drive: &Drive,
-    contract: &Contract,
+    contract: &DataContract,
     transaction: TransactionArg,
     count: u32,
     seed: u64,

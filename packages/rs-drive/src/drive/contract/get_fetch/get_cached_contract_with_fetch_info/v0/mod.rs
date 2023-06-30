@@ -1,0 +1,20 @@
+use std::sync::Arc;
+use grovedb::TransactionArg;
+use crate::drive::contract::ContractFetchInfo;
+use crate::drive::Drive;
+
+impl Drive {
+    /// Returns the contract fetch info with the given ID if it's in cache.
+    pub(super) fn get_cached_contract_with_fetch_info_v0(
+        &self,
+        contract_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Option<Arc<ContractFetchInfo>> {
+        self.cache
+            .read()
+            .unwrap()
+            .cached_contracts
+            .get(contract_id, transaction.is_some())
+            .map(|fetch_info| Arc::clone(&fetch_info))
+    }
+}

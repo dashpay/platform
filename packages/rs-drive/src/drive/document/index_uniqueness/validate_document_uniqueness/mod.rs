@@ -42,7 +42,7 @@ impl Drive {
     /// This function will return an error if the version of the Drive is unknown.
     pub fn validate_document_uniqueness(
         &self,
-        contract: &Contract,
+        contract: &DataContract,
         document_type: &DocumentType,
         document: &Document,
         owner_id: &Identifier,

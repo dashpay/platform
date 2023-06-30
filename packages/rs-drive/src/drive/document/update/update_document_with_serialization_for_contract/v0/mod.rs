@@ -21,7 +21,7 @@ impl Drive {
         &self,
         document: &Document,
         serialized_document: &[u8],
-        contract: &Contract,
+        contract: &DataContract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,

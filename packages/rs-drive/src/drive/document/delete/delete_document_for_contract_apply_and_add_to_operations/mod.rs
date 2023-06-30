@@ -29,7 +29,7 @@ impl Drive {
     pub fn delete_document_for_contract_apply_and_add_to_operations(
         &self,
         document_id: [u8; 32],
-        contract: &Contract,
+        contract: &DataContract,
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
         mut estimated_costs_only_with_layer_info: Option<
