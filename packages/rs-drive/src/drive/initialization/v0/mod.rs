@@ -40,13 +40,14 @@ use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
+use dpp::version::drive_versions::DriveVersion;
 use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 
 use super::identity::add_initial_withdrawal_state_structure_operations;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub fn create_initial_state_structure_0(&self, transaction: TransactionArg) -> Result<(), Error> {
+    pub(super) fn create_initial_state_structure_0(&self, transaction: TransactionArg, drive_version: &DriveVersion) -> Result<(), Error> {
         // We can not use batching to insert the root tree structure
 
         let mut drive_operations = vec![];
@@ -59,6 +60,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         //Row 1 (Full)
@@ -69,6 +71,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_sum_tree(
@@ -77,6 +80,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         //Row 2 (Full)
@@ -87,6 +91,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_sum_tree(
@@ -95,6 +100,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_tree(
@@ -103,6 +109,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_tree(
@@ -111,6 +118,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         //Row 3 (3/8 taken)
@@ -121,6 +129,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_tree(
@@ -129,6 +138,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_tree(
@@ -137,6 +147,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         self.grove_insert_empty_tree(
@@ -145,6 +156,7 @@ impl Drive {
             transaction,
             None,
             &mut drive_operations,
+            drive_version,
         )?;
 
         // On lower layers we can use batching

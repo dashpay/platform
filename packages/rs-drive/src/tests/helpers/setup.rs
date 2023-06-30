@@ -43,6 +43,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use grovedb::TransactionArg;
 use tempfile::TempDir;
+use dpp::version::drive_versions::DriveVersion;
 
 /// Struct with options regarding setting up fee pools.
 pub struct SetupFeePoolsOptions {
@@ -73,8 +74,10 @@ pub fn setup_drive_with_initial_state_structure() -> Drive {
         batching_consistency_verification: true,
         ..Default::default()
     }));
+
+    let drive_version = DriveVersion::latest();
     drive
-        .create_initial_state_structure_0(None)
+        .create_initial_state_structure(None, &drive_version)
         .expect("should create root tree successfully");
 
     drive
@@ -86,8 +89,9 @@ pub fn setup_system_data_contract(
     data_contract: &DataContract,
     transaction: TransactionArg,
 ) {
+    let drive_version = DriveVersion::latest();
     drive
-        .apply_contract(data_contract, BlockInfo::default(), true, None, transaction)
+        .apply_contract(data_contract, BlockInfo::default(), true, None, transaction, &drive_version)
         .unwrap();
 }
 
@@ -99,6 +103,7 @@ pub fn setup_document(
     document_type: &DocumentType,
     transaction: TransactionArg,
 ) {
+    let drive_version = DriveVersion::latest();
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -113,6 +118,7 @@ pub fn setup_document(
             BlockInfo::default(),
             true,
             transaction,
+            &drive_version
         )
         .unwrap();
 }
