@@ -14,7 +14,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 # Meantime if you want to update wasm-bindgen you also need to update version in:
 #  - packages/wasm-dpp/scripts/build-wasm.sh
 #  - Dockerfile
-wasm-bindgen = { version = "=0.2.87" }
+wasm-bindgen = { version = "=0.2.86" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
 thiserror = { version = "1.0" }
