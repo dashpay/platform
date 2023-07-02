@@ -4,3 +4,4 @@ pub mod identity_credit_withdrawal_transition;
 pub mod identity_public_key_transitions;
 pub mod identity_topup_transition;
 pub mod identity_update_transition;
+mod common_fields;
