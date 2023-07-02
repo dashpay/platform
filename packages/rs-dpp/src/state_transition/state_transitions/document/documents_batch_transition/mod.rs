@@ -18,7 +18,6 @@ use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
-use crate::prelude::{DocumentTransition, Identifier};
 
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
@@ -36,14 +35,13 @@ use crate::{
 };
 use platform_value::string_encoding::Encoding;
 
-use self::document_transition::{
+pub use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
 };
 use crate::serialization_traits::PlatformSerializable;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod action;
-pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 mod v0;
 mod v0_action;

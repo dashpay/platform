@@ -48,6 +48,7 @@ mod tests {
     use rand::SeedableRng;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
+    use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 
     #[test]
     fn identity_create_transition_ser_de() {

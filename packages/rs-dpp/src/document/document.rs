@@ -10,6 +10,8 @@ use platform_value::{Identifier, Value};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
+use crate::document::DocumentV0Methods;
+use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::JsonValue;
 
 /// The property names of a document
 pub mod property_names {
@@ -158,7 +160,7 @@ impl Document {
     }
 
     /// Convert the document to a JSON value.
-    pub fn seria(&self) -> Result<JsonValue, ProtocolError> {
+    pub fn serialize(&self) -> Result<JsonValue, ProtocolError> {
         match self {
             Document::V0(v0) => v0.to_json(),
         }

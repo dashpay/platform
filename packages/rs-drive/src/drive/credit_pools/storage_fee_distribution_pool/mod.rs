@@ -30,10 +30,11 @@
 //! Storage Fee Distribution Pool.
 //!
 
-use crate::drive::credit_pools::pools_path;
+use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use grovedb::{Element, TransactionArg};
+use dpp::state_transition::fee::Credits;
 
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
@@ -70,7 +71,7 @@ mod tests {
     mod get_storage_fees_from_distribution_pool {
         use super::*;
         use crate::drive::batch::GroveDbOpBatch;
-        use crate::drive::credit_pools::pools_vec_path;
+        use crate::drive::credit_pools::paths::pools_vec_path;
 
         #[test]
         fn test_error_if_epoch_is_not_initiated() {

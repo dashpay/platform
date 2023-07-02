@@ -28,6 +28,8 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
+mod v0;
+mod v0_action;
 
 use crate::identity::SecurityLevel;
 use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};

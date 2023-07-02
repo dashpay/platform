@@ -35,7 +35,6 @@ use crate::fee::credits::SignedCredits;
 use crate::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
-use crate::fee_pools::epochs::paths;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 use dpp::block::epoch::Epoch;
@@ -48,29 +47,9 @@ pub mod epochs;
 pub mod pending_epoch_refunds;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
+mod paths;
 
-/// Returns the path to the Pools subtree.
-pub fn pools_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::Pools)]
-}
-
-/// Returns the path to the Pools subtree as a mutable vector.
-pub fn pools_vec_path() -> Vec<Vec<u8>> {
-    vec![vec![RootTree::Pools as u8]]
-}
-
-/// Returns the path to the aggregate storage fee distribution pool.
-pub fn aggregate_storage_fees_distribution_pool_path() -> [&'static [u8]; 2] {
-    [
-        Into::<&[u8; 1]>::into(RootTree::Pools),
-        KEY_STORAGE_FEE_POOL,
-    ]
-}
-
-/// Returns the path to the aggregate storage fee distribution pool as a mutable vector.
-pub fn aggregate_storage_fees_distribution_pool_vec_path() -> Vec<Vec<u8>> {
-    vec![vec![RootTree::Pools as u8], KEY_STORAGE_FEE_POOL.to_vec()]
-}
+pub use paths::*;
 
 impl Drive {
     /// Adds GroveDB operations to update epoch storage fee pools with specified map of credits to epochs
@@ -194,6 +173,8 @@ mod tests {
         use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use grovedb::batch::Op;
+        use dpp::block::epoch::EpochIndex;
+        use dpp::state_transition::fee::Credits;
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {

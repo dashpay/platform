@@ -30,7 +30,7 @@
 //! Epochs Mod File.
 //!
 
-use crate::drive::credit_pools::pools_path;
+use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;

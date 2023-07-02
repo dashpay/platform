@@ -1,4 +1,4 @@
-use crate::drive::credit_pools::pools_vec_path;
+use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

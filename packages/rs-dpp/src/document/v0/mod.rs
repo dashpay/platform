@@ -81,9 +81,52 @@ pub struct DocumentV0 {
     pub updated_at: Option<TimestampMillis>,
 }
 
-impl DocumentV0 {
+pub trait DocumentV0Methods {
     /// Return a value given the path to its key for a document type.
-    pub fn get_raw_for_document_type<'a>(
+    fn get_raw_for_document_type<'a>(
+        &'a self,
+        key_path: &str,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+    ) -> Result<Option<Vec<u8>>, ProtocolError>;
+    /// Return a value given the path to its key and the document type for a contract.
+    fn get_raw_for_contract<'a>(
+        &'a self,
+        key: &str,
+        document_type_name: &str,
+        contract: &DataContract,
+        owner_id: Option<[u8; 32]>,
+    ) -> Result<Option<Vec<u8>>, ProtocolError>;
+    /// The document is only unique within the contract and document type
+    /// Hence we must include contract and document type information to get uniqueness
+    fn hash(
+        &self,
+        contract: &DataContract,
+        document_type: &DocumentType,
+    ) -> Result<Vec<u8>, ProtocolError>;
+    fn increment_revision(&mut self) -> Result<(), ProtocolError>;
+    fn get_identifiers_and_binary_paths<'a>(
+        data_contract: &'a DataContract,
+        document_type_name: &'a str,
+    ) -> Result<(HashSet<&'a str>, HashSet<&'a str>), ProtocolError>;
+    fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError>;
+    fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError>;
+    fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError>;
+    fn into_value(self) -> Result<Value, ProtocolError>;
+    fn to_object(&self) -> Result<Value, ProtocolError>;
+    #[cfg(feature = "cbor")]
+    fn to_cbor_value(&self) -> Result<CborValue, ProtocolError>;
+    fn to_json(&self) -> Result<JsonValue, ProtocolError>;
+    fn from_json_value<S>(document_value: JsonValue) -> Result<Self, ProtocolError>
+    where
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+    ;
+    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError>;
+}
+
+impl DocumentV0Methods for DocumentV0 {
+    /// Return a value given the path to its key for a document type.
+    fn get_raw_for_document_type<'a>(
         &'a self,
         key_path: &str,
         document_type: &DocumentType,
@@ -119,7 +162,7 @@ impl DocumentV0 {
     }
 
     /// Return a value given the path to its key and the document type for a contract.
-    pub fn get_raw_for_contract<'a>(
+    fn get_raw_for_contract<'a>(
         &'a self,
         key: &str,
         document_type_name: &str,
@@ -136,7 +179,7 @@ impl DocumentV0 {
 
     /// The document is only unique within the contract and document type
     /// Hence we must include contract and document type information to get uniqueness
-    pub fn hash(
+    fn hash(
         &self,
         contract: &DataContract,
         document_type: &DocumentType,
@@ -147,7 +190,7 @@ impl DocumentV0 {
         Ok(hash_to_vec(buf))
     }
 
-    pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
+    fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let Some(revision) = self.revision else {
             return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
                 document: Box::new(self.clone().into()),
@@ -163,7 +206,7 @@ impl DocumentV0 {
         Ok(())
     }
 
-    pub fn get_identifiers_and_binary_paths<'a>(
+    fn get_identifiers_and_binary_paths<'a>(
         data_contract: &'a DataContract,
         document_type_name: &'a str,
     ) -> Result<(HashSet<&'a str>, HashSet<&'a str>), ProtocolError> {
@@ -174,7 +217,7 @@ impl DocumentV0 {
         Ok((identifiers_paths, binary_paths))
     }
 
-    pub fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             super::property_names::ID: self.id,
             super::property_names::OWNER_ID: self.owner_id,
@@ -210,7 +253,7 @@ impl DocumentV0 {
         Ok(value)
     }
 
-    pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
         map.insert(super::property_names::ID.to_string(), self.id.into());
         map.insert(
@@ -242,7 +285,7 @@ impl DocumentV0 {
         Ok(map)
     }
 
-    pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
         map.insert(super::property_names::ID.to_string(), self.id.into());
         map.insert(
@@ -274,26 +317,26 @@ impl DocumentV0 {
         Ok(map)
     }
 
-    pub fn into_value(self) -> Result<Value, ProtocolError> {
+    fn into_value(self) -> Result<Value, ProtocolError> {
         Ok(self.into_map_value()?.into())
     }
 
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_map_value()?.into())
     }
 
     #[cfg(feature = "cbor")]
-    pub fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
+    fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
-    pub fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
+    fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
     where
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
     {
@@ -327,7 +370,7 @@ impl DocumentV0 {
         Ok(document)
     }
 
-    pub fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
+    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;

@@ -28,7 +28,7 @@
 //
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::credit_pools::pools_vec_path;
+use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
 use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};

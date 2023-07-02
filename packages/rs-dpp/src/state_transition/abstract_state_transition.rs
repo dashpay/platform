@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use dashcore::signer;
 
-use platform_value::{BinaryData, Value, ValueMapHelper};
+use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value, ValueMapHelper};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -23,6 +24,9 @@ use crate::{
     util::hash,
     BlsModule,
 };
+use crate::data_contract::DataContract;
+use crate::identity::KeyID;
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
 use super::{StateTransition, StateTransitionType};
 
@@ -190,6 +194,18 @@ pub trait StateTransitionLike:
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>);
+
+    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        if skip_signature {
+            Ok(hash::hash_to_vec(self.signable_bytes()?))
+        } else {
+            Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+        }
+    }
+    /// Get owner ID
+    fn get_owner_id(&self) -> &Identifier;
+    fn get_signature_public_key_id(&self) -> Option<KeyID>;
+    fn set_signature_public_key_id(&mut self, key_id: crate::identity::KeyID);
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
@@ -198,7 +214,11 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
     fn signature_property_paths() -> Vec<&'static str>;
     fn identifiers_property_paths() -> Vec<&'static str>;
     fn binary_property_paths() -> Vec<&'static str>;
-    #[cfg(feature = "platform-value")]
+}
+
+#[cfg(feature = "platform-value")]
+/// The trait contains methods related to conversion of StateTransition into different formats
+pub trait StateTransitionValueConvert: Serialize + Signable + PlatformSerializable {
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -209,7 +229,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         };
         state_transition_helpers::to_object(self, skip_signature_paths)
     }
-    #[cfg(feature = "platform-value")]
+
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_canonical_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -223,7 +243,7 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         object.as_map_mut_ref().unwrap().sort_by_keys();
         Ok(object)
     }
-    #[cfg(feature = "platform-value")]
+
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -238,7 +258,21 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         Ok(object)
     }
 
-    #[cfg(feature = "json-object")]
+    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        self.to_object(skip_signature)
+    }
+    fn from_raw_object(
+        raw_object: Value,
+    ) -> Result<Self, ProtocolError>;
+    fn from_value_map(
+        raw_data_contract_create_transition: BTreeMap<String, Value>,
+    ) -> Result<Self, ProtocolError>;
+    fn clean_value(value: &mut Value) -> Result<(), ProtocolError>;
+}
+
+#[cfg(feature = "json-object")]
+/// The trait contains methods related to conversion of StateTransition into different formats
+pub trait StateTransitionJsonConvert: Serialize + Signable + PlatformSerializable {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
@@ -250,27 +284,17 @@ pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
         };
         state_transition_helpers::to_json(self, skip_signature_paths)
     }
+}
 
-    #[cfg(feature = "cbor")]
+#[cfg(feature = "cbor")]
+/// The trait contains methods related to conversion of StateTransition into different formats
+pub trait StateTransitionCborConvert: Serialize + Signable + PlatformSerializable {
     // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut value = self.to_canonical_cleaned_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
         cbor_serializer::serializable_value_to_cbor(&value, Some(protocol_version))
-    }
-
-    // Returns the hash of cibor-encoded bytes representation of the object
-    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        if skip_signature {
-            Ok(hash::hash_to_vec(self.signable_bytes()?))
-        } else {
-            Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
-        }
-    }
-    #[cfg(feature = "platform-value")]
-    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        self.to_object(skip_signature)
     }
 }
 

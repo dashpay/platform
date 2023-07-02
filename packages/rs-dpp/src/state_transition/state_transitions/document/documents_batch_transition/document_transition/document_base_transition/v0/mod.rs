@@ -1,27 +1,15 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use anyhow::bail;
 use bincode::{Decode, Encode};
-use num_enum::IntoPrimitive;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 pub use serde_json::Value as JsonValue;
-use serde_repr::*;
 
-use crate::document::errors::DocumentError;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
-
-pub(self) mod property_names {
-    pub const ID: &str = "$id";
-    pub const DATA_CONTRACT_ID: &str = "$dataContractId";
-    pub const DOCUMENT_TYPE: &str = "$type";
-    pub const ACTION: &str = "$action";
-}
-
-pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::DATA_CONTRACT_ID];
+use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::fields;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -32,9 +20,6 @@ pub struct DocumentBaseTransitionV0 {
     /// Name of document type found int the data contract associated with the `data_contract_id`
     #[serde(rename = "$type")]
     pub document_type_name: String,
-    /// Action the platform should take for the associated document
-    #[serde(rename = "$action")]
-    pub action: Action,
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
@@ -49,7 +34,7 @@ impl DocumentBaseTransitionV0 {
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
-        Ok(DocumentBaseTransition {
+        Ok(DocumentBaseTransitionV0 {
             id: Identifier::from(
                 map.remove_hash256_bytes(property_names::ID)
                     .map_err(ProtocolError::ValueError)?,
@@ -57,10 +42,6 @@ impl DocumentBaseTransitionV0 {
             document_type_name: map
                 .remove_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,
-            action: map
-                .remove_integer::<u8>(property_names::ACTION)
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
             data_contract_id: Identifier::new(
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
                     .map_err(ProtocolError::ValueError)?
@@ -100,7 +81,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         map: BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
-        Ok(DocumentBaseTransition {
+        Ok(DocumentBaseTransitionV0 {
             id: Identifier::from(
                 map.get_hash256_bytes(property_names::ID)
                     .map_err(ProtocolError::ValueError)?,
@@ -108,10 +89,6 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
             document_type_name: map
                 .get_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,
-            action: map
-                .get_integer::<u8>(property_names::ACTION)
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
             data_contract_id: data_contract.id,
             data_contract,
         })

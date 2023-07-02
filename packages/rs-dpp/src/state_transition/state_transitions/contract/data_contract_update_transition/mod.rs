@@ -1,6 +1,3 @@
-use crate::data_contract::state_transition::data_contract_update_transition::property_names::{
-    DATA_CONTRACT, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
-};
 use crate::data_contract::DataContract;
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::identity::KeyID;
@@ -8,7 +5,7 @@ use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
 use crate::state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType,
+    StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
@@ -25,39 +22,22 @@ use std::fmt;
 use platform_versioning::PlatformVersioned;
 
 mod action;
-pub mod apply_data_contract_update_transition_factory;
 
 mod v0;
 mod v0_action;
+mod fields;
+mod json_conversion;
+mod state_transition_like;
+mod v0_methods;
+mod value_conversion;
+
+pub use fields::*;
 
 use crate::version::FeatureVersion;
 pub use action::DataContractUpdateTransitionAction;
 pub use v0::*;
 pub use v0_action::DataContractUpdateTransitionActionV0;
 
-pub mod property_names {
-    pub const STATE_TRANSITION_PROTOCOL_VERSION: &str = "version";
-    pub const DATA_CONTRACT: &str = "dataContract";
-    pub const DATA_CONTRACT_ID: &str = "dataContract.$id";
-    pub const DATA_CONTRACT_OWNER_ID: &str = "dataContract.ownerId";
-    pub const DATA_CONTRACT_ENTROPY: &str = "dataContract.entropy";
-    pub const DATA_CONTRACT_PROTOCOL_VERSION: &str = "dataContract.protocolVersion";
-    pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
-    pub const SIGNATURE: &str = "signature";
-}
-
-pub const IDENTIFIER_FIELDS: [&str; 2] = [
-    property_names::DATA_CONTRACT_ID,
-    property_names::DATA_CONTRACT_OWNER_ID,
-];
-pub const BINARY_FIELDS: [&str; 2] = [
-    property_names::DATA_CONTRACT_ENTROPY,
-    property_names::SIGNATURE,
-];
-pub const U32_FIELDS: [&str; 2] = [
-    property_names::STATE_TRANSITION_PROTOCOL_VERSION,
-    property_names::DATA_CONTRACT_PROTOCOL_VERSION,
-];
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 

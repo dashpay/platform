@@ -1,9 +1,7 @@
 use crate::data_contract::DataContract;
-use crate::document::document_transition::document_base_transition::{
-    DocumentBaseTransition, DocumentBaseTransitionV0,
-};
 use crate::identifier::Identifier;
 use serde::{Deserialize, Serialize};
+use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransitionV0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

@@ -204,7 +204,7 @@ mod tests {
 
         let next_unpaid_epoch_index = platform
             .drive
-            .get_unpaid_epoch_index(Some(&transaction))
+            .get_unpaid_epoch_index_v0(Some(&transaction))
             .expect("should get unpaid epoch index");
 
         assert_eq!(next_unpaid_epoch_index, current_epoch.index);

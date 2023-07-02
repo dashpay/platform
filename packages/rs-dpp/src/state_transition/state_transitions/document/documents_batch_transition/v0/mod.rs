@@ -3,7 +3,6 @@ use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::identity::KeyID;
 use crate::platform_serialization::PlatformSignable;
-use crate::prelude::DocumentTransition;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::StateTransitionType;
@@ -18,6 +17,7 @@ use platform_value::btreemap_extensions::{
 use platform_value::string_encoding::Encoding;
 use platform_value::{BinaryData, Identifier, Value};
 use std::collections::{BTreeMap, HashMap};
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 
 #[derive(
     Debug,

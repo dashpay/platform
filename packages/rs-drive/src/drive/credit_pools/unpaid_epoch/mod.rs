@@ -30,17 +30,18 @@
 //! Unpaid Epoch.
 //!
 
-use crate::drive::credit_pools::pools_path;
+use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::epoch::EpochIndex;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use grovedb::{Element, TransactionArg};
+use dpp::block::epoch::EpochIndex;
 
 impl Drive {
     /// Returns the index of the unpaid Epoch.
-    pub fn get_unpaid_epoch_index(&self, transaction: TransactionArg) -> Result<EpochIndex, Error> {
+    pub(super) fn get_unpaid_epoch_index_v0(&self, transaction: TransactionArg) -> Result<EpochIndex, Error> {
         let element = self
             .grove
             .get(&pools_path(), KEY_UNPAID_EPOCH_INDEX, transaction)
@@ -79,7 +80,7 @@ mod tests {
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
-            let result = drive.get_unpaid_epoch_index(Some(&transaction));
+            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction));
 
             assert!(matches!(
                 result,
@@ -116,7 +117,7 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_unpaid_epoch_index(Some(&transaction));
+            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction));
 
             assert!(matches!(
                 result,
@@ -141,7 +142,7 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_unpaid_epoch_index(Some(&transaction));
+            let result = drive.get_unpaid_epoch_index_v0(Some(&transaction));
 
             assert!(matches!(
                 result,

@@ -1,63 +1,40 @@
 mod action;
-pub mod apply_data_contract_create_transition_factory;
 mod v0;
 mod v0_action;
+mod fields;
+#[cfg(feature = "json-object")]
+mod json_conversion;
+#[cfg(feature = "platform-value")]
+mod value_conversion;
+mod state_transition_like;
+mod v0_methods;
+
+use fields::*;
 
 use crate::data_contract::property_names::ENTROPY;
-use crate::data_contract::state_transition::data_contract_create_transition::property_names::{
-    DATA_CONTRACT, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
-};
 
 use crate::data_contract::DataContract;
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::identity::KeyID;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::{PlatformSerializable, Signable};
-use crate::state_transition::{StateTransition, StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType};
-use crate::version::{FeatureVersion, PlatformVersion};
-use crate::{Convertible, ProtocolError};
+use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
+use crate::version::{PlatformVersion};
+use crate::{ProtocolError};
 pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_versioning::PlatformVersioned;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::BTreeMap;
-use std::convert::TryInto;
+
 use std::fmt;
 pub use v0::*;
 pub use v0_action::*;
 use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
-
-pub mod property_names {
-    pub const STATE_TRANSITION_PROTOCOL_VERSION: &str = "version";
-    pub const DATA_CONTRACT: &str = "dataContract";
-    pub const DATA_CONTRACT_ID: &str = "dataContract.$id";
-    pub const DATA_CONTRACT_OWNER_ID: &str = "dataContract.ownerId";
-    pub const DATA_CONTRACT_ENTROPY: &str = "dataContract.entropy";
-    pub const DATA_CONTRACT_PROTOCOL_VERSION: &str = "dataContract.protocolVersion";
-    pub const ENTROPY: &str = "entropy";
-    pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
-    pub const SIGNATURE: &str = "signature";
-}
-
-pub const IDENTIFIER_FIELDS: [&str; 2] = [
-    property_names::DATA_CONTRACT_ID,
-    property_names::DATA_CONTRACT_OWNER_ID,
-];
-pub const BINARY_FIELDS: [&str; 3] = [
-    property_names::ENTROPY,
-    property_names::DATA_CONTRACT_ENTROPY,
-    property_names::SIGNATURE,
-];
-pub const U32_FIELDS: [&str; 2] = [
-    property_names::STATE_TRANSITION_PROTOCOL_VERSION,
-    property_names::DATA_CONTRACT_PROTOCOL_VERSION,
-];
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -190,197 +167,13 @@ impl StateTransitionConvert for DataContractCreateTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE, ENTROPY]
     }
-
-    #[cfg(feature = "platform-value")]
-    fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut object: Value = platform_value::to_value(self)?;
-        if skip_signature {
-            Self::signature_property_paths()
-                .into_iter()
-                .try_for_each(|path| {
-                    object
-                        .remove_values_matching_path(path)
-                        .map_err(ProtocolError::ValueError)
-                        .map(|_| ())
-                })?;
-        }
-        object.insert(
-            String::from(DATA_CONTRACT),
-            self.data_contract().to_object()?,
-        )?;
-        Ok(object)
-    }
-
-    #[cfg(feature = "json-object")]
-    fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object(skip_signature)
-            .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
-    }
-
-    #[cfg(feature = "platform-value")]
-    fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut object: Value = platform_value::to_value(self)?;
-        if skip_signature {
-            Self::signature_property_paths()
-                .into_iter()
-                .try_for_each(|path| {
-                    object
-                        .remove_values_matching_path(path)
-                        .map_err(ProtocolError::ValueError)
-                        .map(|_| ())
-                })?;
-        }
-        object.insert(
-            String::from(DATA_CONTRACT),
-            self.data_contract().to_cleaned_object()?,
-        )?;
-        Ok(object)
-    }
-}
-
-impl StateTransitionLike for DataContractCreateTransition {
-    /// Returns ID of the created contract
-    fn modified_data_ids(&self) -> Vec<Identifier> {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.get_modified_data_ids(),
-        }
-    }
-
-    fn state_transition_protocol_version(&self) -> FeatureVersion {
-        match self {
-            DataContractCreateTransition::V0(_) => 0,
-        }
-    }
-    /// returns the type of State Transition
-    fn state_transition_type(&self) -> StateTransitionType {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.state_transition_type(),
-        }
-    }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.signature(),
-        }
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.set_signature(signature),
-        }
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        match self {
-            DataContractCreateTransition::V0(transition) => {
-                transition.set_signature_bytes(signature)
-            }
-        }
-    }
-}
-
-impl StateTransitionIdentitySignedV0 for DataContractCreateTransition {
-    /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
-        &self.data_contract().owner_id
-    }
-
-    fn get_signature_public_key_id(&self) -> Option<KeyID> {
-        match self {
-            DataContractCreateTransition::V0(transition) => {
-                Some(transition.signature_public_key_id)
-            }
-        }
-    }
-
-    fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-        match self {
-            DataContractCreateTransition::V0(transition) => {
-                transition.signature_public_key_id = key_id
-            }
-        }
-    }
 }
 
 impl DataContractCreateTransition {
-    #[cfg(feature = "platform-value")]
-    pub fn from_raw_object(
-        mut raw_object: Value,
-    ) -> Result<DataContractCreateTransition, ProtocolError> {
-        let version: u8 = raw_object
-            .remove_integer(property_names::STATE_TRANSITION_PROTOCOL_VERSION)
-            .map_err(ProtocolError::ValueError)?;
-        match version {
-            0 => Ok(DataContractCreateTransitionV0::from_raw_object(raw_object)?.into()),
-            n => Err(ProtocolError::UnknownProtocolVersionError(format!(
-                "Unknown DataContractCreateTransition version {n}"
-            ))),
-        }
-    }
-
-    pub fn from_value_map(
-        mut raw_data_contract_create_transition: BTreeMap<String, Value>,
-    ) -> Result<DataContractCreateTransition, ProtocolError> {
-        let version: u8 = raw_data_contract_create_transition
-            .remove_integer(property_names::STATE_TRANSITION_PROTOCOL_VERSION)
-            .map_err(ProtocolError::ValueError)?;
-
-        match version {
-            0 => Ok(DataContractCreateTransitionV0::from_value_map(
-                raw_data_contract_create_transition,
-            )?
-            .into()),
-            n => Err(ProtocolError::UnknownProtocolVersionError(format!(
-                "Unknown DataContractCreateTransition version {n}"
-            ))),
-        }
-    }
-
-    pub fn data_contract(&self) -> &DataContract {
-        match self {
-            DataContractCreateTransition::V0(transition) => &transition.data_contract,
-        }
-    }
-
-    pub fn set_data_contract(&mut self, data_contract: DataContract) {
-        match self {
-            DataContractCreateTransition::V0(transition) => {
-                transition.data_contract = data_contract
-            }
-        }
-    }
-
-    pub fn entropy(&self) -> Bytes32 {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.entropy,
-        }
-    }
-
-    pub fn entropy_ref(&self) -> &Bytes32 {
-        match self {
-            DataContractCreateTransition::V0(transition) => &transition.entropy,
-        }
-    }
-
-    pub fn set_entropy(&mut self, entropy: Bytes32) {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.entropy = entropy,
-        }
-    }
-
     pub fn state_transition_version(&self) -> u16 {
         match self {
             DataContractCreateTransition::V0(_) => 0,
         }
-    }
-
-    /// Returns ID of the created contract
-    pub fn get_modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.data_contract().id]
-    }
-
-    pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
-        DataContractCreateTransitionLatest::clean_value(value)
     }
 }
 
@@ -391,28 +184,26 @@ mod test {
     use integer_encoding::VarInt;
     use platform_value::Bytes32;
 
-    use crate::data_contract::state_transition::data_contract_create_transition::property_names::{
-        ENTROPY, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID, STATE_TRANSITION_PROTOCOL_VERSION,
-    };
     use crate::state_transition::StateTransitionType;
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::util::json_value::JsonValueExt;
     use crate::version::LATEST_PLATFORM_VERSION;
-    use crate::{version, Convertible};
-
+    use crate::{Convertible, version};
+    use crate::state_transition::abstract_state_transition::StateTransitionValueConvert;
+    use crate::state_transition::state_transitions::common_fields::property_names;
     use super::*;
 
-    struct TestData {
-        state_transition: DataContractCreateTransition,
-        created_data_contract: CreatedDataContract,
+    pub(crate) struct TestData {
+        pub(crate) state_transition: DataContractCreateTransition,
+        pub(crate) created_data_contract: CreatedDataContract,
     }
 
-    fn get_test_data() -> TestData {
+    pub(crate) fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None);
 
         let state_transition = DataContractCreateTransition::from_raw_object(Value::from([
             (
-                property_names::STATE_TRANSITION_PROTOCOL_VERSION,
+                STATE_TRANSITION_PROTOCOL_VERSION,
                 LATEST_PLATFORM_VERSION
                     .state_transitions
                     .contract_create_state_transition
@@ -421,11 +212,11 @@ mod test {
             ),
             (
                 property_names::ENTROPY,
-                created_data_contract.entropy_used.into(),
+                created_data_contract.entropy_used().into(),
             ),
             (
                 DATA_CONTRACT,
-                created_data_contract.data_contract.to_object().unwrap(),
+                created_data_contract.data_contract().to_object().unwrap(),
             ),
         ]))
         .expect("state transition should be created without errors");
@@ -473,47 +264,6 @@ mod test {
         );
     }
 
-    #[test]
-    fn should_return_state_transition_in_json_format() {
-        let data = get_test_data();
-        let mut json_object = data
-            .state_transition
-            .to_json(false)
-            .expect("conversion to JSON shouldn't fail");
-
-        assert_eq!(
-            version::LATEST_VERSION,
-            json_object
-                .get_u64(STATE_TRANSITION_PROTOCOL_VERSION)
-                .expect("the protocol version should be present") as u32
-        );
-
-        assert_eq!(
-            0,
-            json_object
-                .get_u64(TRANSITION_TYPE)
-                .expect("the transition type should be present") as u8
-        );
-        assert_eq!(
-            0,
-            json_object
-                .get_u64(SIGNATURE_PUBLIC_KEY_ID)
-                .expect("default public key id should be defined"),
-        );
-        assert_eq!(
-            "",
-            json_object
-                .remove_into::<String>(SIGNATURE)
-                .expect("default string value for signature should be present")
-        );
-
-        assert_eq!(
-            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used),
-            json_object
-                .remove_into::<String>(ENTROPY)
-                .expect("the entropy should be present")
-        )
-    }
 
     #[test]
     fn should_return_serialized_state_transition_to_buffer() {
