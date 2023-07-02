@@ -11,13 +11,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionLike,
     StateTransitionType,
 }};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
-use crate::state_transition::abstract_state_transition::StateTransitionValueConvert;
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};

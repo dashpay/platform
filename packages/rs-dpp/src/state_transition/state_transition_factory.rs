@@ -2,50 +2,21 @@ use std::{
     convert::{TryFrom, TryInto},
     sync::Arc,
 };
+use platform_value::Value;
+use crate::consensus::basic::BasicError;
 
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
 };
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::ProtocolError;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::StateTransitionError;
-use crate::state_transition::StateTransitionConvert;
-
-use crate::{
-    consensus::{basic::BasicError, ConsensusError},
-    data_contract::{
-        state_transition::{
-            data_contract_create_transition::DataContractCreateTransition,
-            data_contract_update_transition::DataContractUpdateTransition,
-        },
-        DataContract,
-    },
-    document::DocumentsBatchTransition,
-    identity::state_transition::{
-        identity_create_transition::IdentityCreateTransition,
-        identity_credit_transfer_transition::IdentityCreditTransferTransition,
-        identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-        identity_topup_transition::IdentityTopUpTransition,
-    },
-    prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    validation::AsyncDataValidatorWithContext,
-    BlsModule, ProtocolError,
-};
-use platform_value::Value;
-
-use super::{
-    state_transition_execution_context::StateTransitionExecutionContext,
-    validation::{
-        validate_state_transition_basic::StateTransitionBasicValidator,
-        validate_state_transition_by_type::StateTransitionByTypeValidator,
-    },
-    StateTransition, StateTransitionType,
-};
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionType};
 
 #[derive(Default)]
 pub struct StateTransitionFactoryOptions {
@@ -137,95 +108,95 @@ where
         Ok(())
     }
 }
-
-pub async fn create_state_transition(
-    state_repository: &impl StateRepositoryLike,
-    raw_state_transition: Value,
-) -> Result<StateTransition, ProtocolError> {
-    let transition_type = try_get_transition_type(&raw_state_transition)?;
-    let execution_context = StateTransitionExecutionContext::default();
-
-    match transition_type {
-        StateTransitionType::DataContractCreate => {
-            let transition = DataContractCreateTransition::from_raw_object(raw_state_transition)?;
-            Ok(StateTransition::DataContractCreate(transition))
-        }
-        StateTransitionType::DataContractUpdate => {
-            let transition = DataContractUpdateTransition::from_raw_object(raw_state_transition)?;
-            Ok(StateTransition::DataContractUpdate(transition))
-        }
-        StateTransitionType::IdentityCreate => {
-            let transition = IdentityCreateTransition::from_raw_object(raw_state_transition)?;
-            Ok(StateTransition::IdentityCreate(transition))
-        }
-        StateTransitionType::IdentityTopUp => {
-            let transition = IdentityTopUpTransition::new(raw_state_transition)?;
-            Ok(StateTransition::IdentityTopUp(transition))
-        }
-        StateTransitionType::IdentityCreditWithdrawal => {
-            let transition =
-                IdentityCreditWithdrawalTransition::from_raw_object(raw_state_transition)?;
-            Ok(StateTransition::IdentityCreditWithdrawal(transition))
-        }
-        StateTransitionType::DocumentsBatch => {
-            let raw_transitions = raw_state_transition
-                .get_array_ref("transitions")
-                .map_err(ProtocolError::ValueError)?;
-            let data_contracts = fetch_data_contracts_for_document_transition(
-                state_repository,
-                raw_transitions,
-                &execution_context,
-            )
-            .await?;
-            let documents_batch_transition =
-                DocumentsBatchTransition::from_raw_object_with_contracts(
-                    raw_state_transition,
-                    data_contracts,
-                )?;
-            Ok(StateTransition::DocumentsBatch(documents_batch_transition))
-        }
-        StateTransitionType::IdentityUpdate => {
-            let transition = IdentityUpdateTransition::new(raw_state_transition)?;
-            Ok(StateTransition::IdentityUpdate(transition))
-        }
-        StateTransitionType::IdentityCreditTransfer => {
-            let transition = IdentityCreditTransferTransition::new(raw_state_transition)?;
-            Ok(StateTransition::IdentityCreditTransfer(transition))
-        }
-    }
-}
-
-async fn fetch_data_contracts_for_document_transition(
-    state_repository: &impl StateRepositoryLike,
-    raw_document_transitions: impl IntoIterator<Item = &Value>,
-    execution_context: &StateTransitionExecutionContext,
-) -> Result<Vec<DataContract>, ProtocolError> {
-    let mut data_contracts = vec![];
-    for transition in raw_document_transitions {
-        let data_contract_id_bytes = transition.get_bytes("$dataContractId").map_err(|_| {
-            ProtocolError::MissingDataContractIdError(MissingDataContractIdError::new(
-                transition.to_owned(),
-            ))
-        })?;
-
-        let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
-        let data_contract: DataContract = state_repository
-            .fetch_data_contract(&data_contract_id, Some(execution_context))
-            .await?
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Into::into)?
-            .ok_or_else(|| {
-                ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
-                    data_contract_id,
-                ))
-            })?;
-
-        data_contracts.push(data_contract);
-    }
-
-    Ok(data_contracts)
-}
+// 
+// pub async fn create_state_transition(
+//     state_repository: &impl StateRepositoryLike,
+//     raw_state_transition: Value,
+// ) -> Result<StateTransition, ProtocolError> {
+//     let transition_type = try_get_transition_type(&raw_state_transition)?;
+//     let execution_context = StateTransitionExecutionContext::default();
+// 
+//     match transition_type {
+//         StateTransitionType::DataContractCreate => {
+//             let transition = DataContractCreateTransition::from_raw_object(raw_state_transition)?;
+//             Ok(StateTransition::DataContractCreate(transition))
+//         }
+//         StateTransitionType::DataContractUpdate => {
+//             let transition = DataContractUpdateTransition::from_raw_object(raw_state_transition)?;
+//             Ok(StateTransition::DataContractUpdate(transition))
+//         }
+//         StateTransitionType::IdentityCreate => {
+//             let transition = IdentityCreateTransition::from_raw_object(raw_state_transition)?;
+//             Ok(StateTransition::IdentityCreate(transition))
+//         }
+//         StateTransitionType::IdentityTopUp => {
+//             let transition = IdentityTopUpTransition::new(raw_state_transition)?;
+//             Ok(StateTransition::IdentityTopUp(transition))
+//         }
+//         StateTransitionType::IdentityCreditWithdrawal => {
+//             let transition =
+//                 IdentityCreditWithdrawalTransition::from_raw_object(raw_state_transition)?;
+//             Ok(StateTransition::IdentityCreditWithdrawal(transition))
+//         }
+//         StateTransitionType::DocumentsBatch => {
+//             let raw_transitions = raw_state_transition
+//                 .get_array_ref("transitions")
+//                 .map_err(ProtocolError::ValueError)?;
+//             let data_contracts = fetch_data_contracts_for_document_transition(
+//                 state_repository,
+//                 raw_transitions,
+//                 &execution_context,
+//             )
+//             .await?;
+//             let documents_batch_transition =
+//                 DocumentsBatchTransition::from_raw_object_with_contracts(
+//                     raw_state_transition,
+//                     data_contracts,
+//                 )?;
+//             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
+//         }
+//         StateTransitionType::IdentityUpdate => {
+//             let transition = IdentityUpdateTransition::new(raw_state_transition)?;
+//             Ok(StateTransition::IdentityUpdate(transition))
+//         }
+//         StateTransitionType::IdentityCreditTransfer => {
+//             let transition = IdentityCreditTransferTransition::new(raw_state_transition)?;
+//             Ok(StateTransition::IdentityCreditTransfer(transition))
+//         }
+//     }
+// }
+// 
+// async fn fetch_data_contracts_for_document_transition(
+//     state_repository: &impl StateRepositoryLike,
+//     raw_document_transitions: impl IntoIterator<Item = &Value>,
+//     execution_context: &StateTransitionExecutionContext,
+// ) -> Result<Vec<DataContract>, ProtocolError> {
+//     let mut data_contracts = vec![];
+//     for transition in raw_document_transitions {
+//         let data_contract_id_bytes = transition.get_bytes("$dataContractId").map_err(|_| {
+//             ProtocolError::MissingDataContractIdError(MissingDataContractIdError::new(
+//                 transition.to_owned(),
+//             ))
+//         })?;
+// 
+//         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
+//         let data_contract: DataContract = state_repository
+//             .fetch_data_contract(&data_contract_id, Some(execution_context))
+//             .await?
+//             .map(TryInto::try_into)
+//             .transpose()
+//             .map_err(Into::into)?
+//             .ok_or_else(|| {
+//                 ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
+//                     data_contract_id,
+//                 ))
+//             })?;
+// 
+//         data_contracts.push(data_contract);
+//     }
+// 
+//     Ok(data_contracts)
+// }
 
 pub fn try_get_transition_type(
     raw_state_transition: &Value,
@@ -261,7 +232,7 @@ mod test {
             DocumentsBatchTransition,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::{StateTransition, StateTransitionConvert},
+        state_transition::{StateTransition, StateTransitionFieldTypes},
         tests::fixtures::get_documents_fixture_with_owner_id_from_contract,
         tests::fixtures::{get_data_contract_fixture, get_document_transitions_fixture},
         ProtocolError,

@@ -18,7 +18,7 @@ use crate::{
     state_transition::{
         fee::operations::{Operation, SignatureVerificationOperation},
         state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransition, StateTransitionConvert, StateTransitionLike,
+        StateTransition, StateTransitionFieldTypes, StateTransitionLike,
     },
     validation::SimpleConsensusValidationResult,
     ProtocolError,

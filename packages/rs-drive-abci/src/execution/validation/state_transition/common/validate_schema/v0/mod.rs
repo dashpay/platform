@@ -1,9 +1,9 @@
-use dpp::state_transition::StateTransitionConvert;
+use dpp::state_transition::StateTransitionFieldTypes;
 use dpp::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 
 pub(crate) fn validate_schema_v0(
     json_schema_validator: &JsonSchemaValidator,
-    state_transition: &impl StateTransitionConvert,
+    state_transition: &impl StateTransitionFieldTypes,
 ) -> SimpleConsensusValidationResult {
     json_schema_validator
         .validate(

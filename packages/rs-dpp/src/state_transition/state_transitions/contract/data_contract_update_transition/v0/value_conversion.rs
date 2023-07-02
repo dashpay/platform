@@ -3,10 +3,10 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
-use crate::state_transition::abstract_state_transition::StateTransitionValueConvert;
+use crate::state_transition::StateTransitionValueConvert;
 use crate::state_transition::data_contract_update_transition::{BINARY_FIELDS, DataContractUpdateTransitionV0, IDENTIFIER_FIELDS, U32_FIELDS};
-use crate::state_transition::data_contract_update_transition::property_names::{DATA_CONTRACT, SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
-use crate::state_transition::StateTransitionConvert;
+use crate::state_transition::data_contract_update_transition::fields::*;
+use crate::state_transition::StateTransitionFieldTypes;
 
 impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

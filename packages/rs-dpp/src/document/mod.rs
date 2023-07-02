@@ -15,7 +15,6 @@ pub mod extended_document;
 pub mod fetch_and_validate_data_contract;
 pub mod generate_document_id;
 mod serde_serialize;
-pub mod state_transition;
 mod v0;
 
 pub use v0::*;

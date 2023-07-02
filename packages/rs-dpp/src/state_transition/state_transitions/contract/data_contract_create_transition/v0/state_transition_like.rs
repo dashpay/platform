@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionLike,
     StateTransitionType,
 }};
 
@@ -48,13 +48,5 @@ impl StateTransitionLike for DataContractCreateTransitionV0 {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.data_contract.owner_id()
-    }
-
-    fn get_signature_public_key_id(&self) -> Option<KeyID> {
-        Some(self.signature_public_key_id)
-    }
-
-    fn set_signature_public_key_id(&mut self, key_id: crate::identity::KeyID) {
-        self.signature_public_key_id = key_id
     }
 }

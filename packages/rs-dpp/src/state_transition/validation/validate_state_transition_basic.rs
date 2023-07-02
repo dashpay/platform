@@ -147,7 +147,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         state_transition::{
             state_transition_execution_context::StateTransitionExecutionContext,
-            StateTransitionConvert, StateTransitionLike,
+            StateTransitionFieldTypes, StateTransitionLike,
         },
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},

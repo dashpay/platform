@@ -6,14 +6,14 @@ use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, Replace
 use serde::{Deserialize, Serialize};
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionFieldTypes, StateTransitionLike,
     StateTransitionType,
 }};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use crate::state_transition::abstract_state_transition::StateTransitionValueConvert;
+use crate::state_transition::StateTransitionValueConvert;
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
 use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
 

@@ -14,7 +14,7 @@ use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
 use crate::serialization_traits::PlatformSerializable;
-use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
@@ -166,7 +166,7 @@ impl IdentityTopUpTransition {
     }
 }
 
-impl StateTransitionConvert for IdentityTopUpTransition {
+impl StateTransitionFieldTypes for IdentityTopUpTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![property_names::SIGNATURE]
     }

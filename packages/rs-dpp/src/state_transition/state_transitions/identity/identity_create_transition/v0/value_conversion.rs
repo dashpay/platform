@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionFieldTypes, StateTransitionLike,
     StateTransitionType,
 }};
 

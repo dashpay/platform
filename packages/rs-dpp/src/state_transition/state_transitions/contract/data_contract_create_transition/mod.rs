@@ -8,6 +8,7 @@ mod json_conversion;
 mod value_conversion;
 mod state_transition_like;
 mod v0_methods;
+mod identity_signed;
 
 use fields::*;
 
@@ -18,7 +19,7 @@ use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::identity::KeyID;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::{PlatformSerializable, Signable};
-use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
 use crate::version::{PlatformVersion};
 use crate::{ProtocolError};
 pub use action::DataContractCreateTransitionAction;
@@ -155,7 +156,7 @@ impl Signable for DataContractCreateTransition {
     }
 }
 
-impl StateTransitionConvert for DataContractCreateTransition {
+impl StateTransitionFieldTypes for DataContractCreateTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
     }

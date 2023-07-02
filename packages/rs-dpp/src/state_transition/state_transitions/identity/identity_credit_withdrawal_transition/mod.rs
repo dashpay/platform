@@ -13,7 +13,7 @@ use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
     ProtocolError,
@@ -180,7 +180,7 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     }
 }
 
-impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
+impl StateTransitionFieldTypes for IdentityCreditWithdrawalTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![PROPERTY_SIGNATURE, PROPERTY_SIGNATURE_PUBLIC_KEY_ID]
     }

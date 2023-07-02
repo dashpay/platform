@@ -22,7 +22,7 @@ use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
     version::LATEST_VERSION,
@@ -327,7 +327,7 @@ where
         .collect()
 }
 
-impl StateTransitionConvert for IdentityUpdateTransition {
+impl StateTransitionFieldTypes for IdentityUpdateTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![
             property_names::SIGNATURE,

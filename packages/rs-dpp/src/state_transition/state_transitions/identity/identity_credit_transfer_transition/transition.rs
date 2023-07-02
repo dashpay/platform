@@ -4,7 +4,7 @@ use crate::platform_serialization::PlatformSignable;
 use crate::prelude::Identifier;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::{
-    StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType,
+    StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike, StateTransitionType,
 };
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
@@ -116,7 +116,7 @@ impl IdentityCreditTransferTransition {
     }
 }
 
-impl StateTransitionConvert for IdentityCreditTransferTransition {
+impl StateTransitionFieldTypes for IdentityCreditTransferTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![property_names::SIGNATURE]
     }

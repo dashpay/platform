@@ -51,18 +51,4 @@ impl StateTransitionLike for DataContractUpdateTransition {
             }
         }
     }
-
-    fn get_signature_public_key_id(&self) -> Option<KeyID> {
-        match self {
-            DataContractUpdateTransition::V0(transition) => {
-                transition.get_signature_public_key_id()
-            }
-        }
-    }
-
-    fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-        match self {
-            DataContractUpdateTransition::V0(transition) => transition.set_signature_public_key_id(key_id),
-        }
-    }
 }

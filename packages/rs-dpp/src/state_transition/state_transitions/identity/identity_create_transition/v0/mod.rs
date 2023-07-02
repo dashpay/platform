@@ -23,7 +23,7 @@ use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
-use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
@@ -252,7 +252,7 @@ impl IdentityCreateTransitionV0 {
 
 }
 
-impl StateTransitionConvert for IdentityCreateTransitionV0 {
+impl StateTransitionFieldTypes for IdentityCreateTransitionV0 {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![
             property_names::SIGNATURE,
@@ -267,31 +267,4 @@ impl StateTransitionConvert for IdentityCreateTransitionV0 {
     }
 
 
-}
-
-impl StateTransitionLike for IdentityCreateTransitionV0 {
-    /// Returns ids of created identities
-    fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![*self.get_identity_id()]
-    }
-
-    fn state_transition_protocol_version(&self) -> FeatureVersion {
-        self.protocol_version as FeatureVersion
-    }
-    /// returns the type of State Transition
-    fn state_transition_type(&self) -> StateTransitionType {
-        StateTransitionType::IdentityCreate
-    }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
-    }
 }

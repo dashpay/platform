@@ -8,7 +8,7 @@ use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementTyp
 use serde::{Deserialize, Serialize};
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionLike,
     StateTransitionType,
 }};
 

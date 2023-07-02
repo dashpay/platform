@@ -29,7 +29,7 @@ use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
 };
@@ -375,7 +375,7 @@ impl DocumentsBatchTransition {
     }
 }
 
-impl StateTransitionConvert for DocumentsBatchTransition {
+impl StateTransitionFieldTypes for DocumentsBatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {
         vec![property_names::SIGNATURE]
     }

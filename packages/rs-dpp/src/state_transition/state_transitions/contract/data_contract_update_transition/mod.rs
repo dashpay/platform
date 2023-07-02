@@ -5,7 +5,7 @@ use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
 use crate::state_transition::{
-    StateTransitionConvert, StateTransitionLike, StateTransitionType,
+    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
@@ -26,10 +26,13 @@ mod action;
 mod v0;
 mod v0_action;
 mod fields;
+#[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
 mod v0_methods;
+#[cfg(feature = "platform-value")]
 mod value_conversion;
+mod identity_signed;
 
 pub use fields::*;
 
@@ -144,7 +147,7 @@ impl Signable for DataContractUpdateTransition {
     }
 }
 
-impl StateTransitionConvert for DataContractUpdateTransition {
+impl StateTransitionFieldTypes for DataContractUpdateTransition {
     fn signature_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
     }

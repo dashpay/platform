@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 use crate::ProtocolError;
-use crate::state_transition::abstract_state_transition::{StateTransitionJsonConvert, StateTransitionValueConvert};
+use crate::state_transition::{StateTransitionJsonConvert, StateTransitionValueConvert};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 

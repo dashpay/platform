@@ -5,6 +5,7 @@ mod value_conversion;
 mod state_transition_like;
 pub(super) mod v0_methods;
 mod types;
+mod identity_signed;
 
 use crate::serialization_traits::PlatformSerializable;
 use platform_serialization::PlatformSignable;
@@ -14,7 +15,7 @@ use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementTyp
 use serde::{Deserialize, Serialize};
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionFieldTypes, StateTransitionLike,
     StateTransitionType,
 }};
 

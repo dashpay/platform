@@ -163,7 +163,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         state_transition::{
             state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-            StateTransitionConvert, StateTransitionLike, StateTransitionType,
+            StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
         },
         tests::{
             fixtures::identity_fixture_raw_object,
@@ -202,7 +202,7 @@ mod test {
         pub signature: BinaryData,
     }
 
-    impl StateTransitionConvert for ExampleStateTransition {
+    impl StateTransitionFieldTypes for ExampleStateTransition {
         fn signature_property_paths() -> Vec<&'static str> {
             vec!["signature", "signaturePublicKeyId"]
         }

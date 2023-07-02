@@ -57,7 +57,7 @@ mod deserialization {
 
 #[cfg(test)]
 mod serialization {
-    use crate::state_transition::StateTransitionConvert;
+    use crate::state_transition::StateTransitionFieldTypes;
 
     use super::*;
 

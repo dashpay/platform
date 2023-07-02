@@ -5,6 +5,7 @@ mod json_conversion;
 mod value_conversion;
 pub(super) mod v0_methods;
 mod state_transition_like;
+mod identity_signed;
 
 
 use platform_value::{BinaryData, ReplacementType, Value};
@@ -19,7 +20,7 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use crate::state_transition::StateTransition;
 use crate::{data_contract::DataContract, identity::KeyID, state_transition::{
-    StateTransitionConvert, StateTransitionLike,
+    StateTransitionFieldTypes, StateTransitionLike,
     StateTransitionType,
 }, Convertible, ProtocolError, NonConsensusError};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;

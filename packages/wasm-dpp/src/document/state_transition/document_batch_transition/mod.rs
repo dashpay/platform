@@ -7,7 +7,7 @@ use dpp::{
     },
     prelude::{DataContract, DocumentTransition, Identifier},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
     util::json_value::JsonValueExt,

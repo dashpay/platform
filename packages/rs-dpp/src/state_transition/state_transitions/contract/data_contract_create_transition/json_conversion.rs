@@ -1,6 +1,6 @@
 use serde_json::Number;
 use crate::ProtocolError;
-use crate::state_transition::abstract_state_transition::StateTransitionJsonConvert;
+use crate::state_transition::StateTransitionJsonConvert;
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition};
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
@@ -21,9 +21,9 @@ impl StateTransitionJsonConvert for DataContractCreateTransition {
 #[cfg(test)]
 mod test {
     use platform_value::Bytes32;
-    use crate::state_transition::abstract_state_transition::StateTransitionJsonConvert;
     use crate::version;
     use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
+    use crate::state_transition::StateTransitionJsonConvert;
 
     #[test]
     fn should_return_state_transition_in_json_format() {

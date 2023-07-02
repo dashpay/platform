@@ -215,7 +215,7 @@ mod test {
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
         state_transition::{
-            StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
+            StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
         },
         util::hash::ripemd160_sha256,
         NativeBlsModule,
@@ -254,7 +254,7 @@ mod test {
         pub signature_public_key_id: KeyID,
     }
 
-    impl StateTransitionConvert for ExampleStateTransition {
+    impl StateTransitionFieldTypes for ExampleStateTransition {
         fn binary_property_paths() -> Vec<&'static str> {
             vec!["signature"]
         }

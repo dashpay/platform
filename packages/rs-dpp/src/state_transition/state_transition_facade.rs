@@ -18,7 +18,7 @@ use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysVa
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::apply_state_transition::ApplyStateTransition;
 use crate::state_transition::{
-    StateTransition, StateTransitionAction, StateTransitionConvert, StateTransitionFactory,
+    StateTransition, StateTransitionAction, StateTransitionFieldTypes, StateTransitionFactory,
     StateTransitionFactoryOptions,
 };
 

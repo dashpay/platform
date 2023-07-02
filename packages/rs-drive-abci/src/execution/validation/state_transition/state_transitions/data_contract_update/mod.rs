@@ -131,7 +131,7 @@ mod tests {
     use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
-    use dpp::state_transition::{StateTransitionConvert, StateTransitionType};
+    use dpp::state_transition::{StateTransitionFieldTypes, StateTransitionType};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::LATEST_VERSION;
 

@@ -9,7 +9,7 @@ use crate::{
         KeyType, Purpose, SecurityLevel,
     },
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySignedV0, StateTransitionType,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionType,
     },
     tests::{
         fixtures::get_identity_update_transition_fixture, utils::generate_random_identifier_struct,
