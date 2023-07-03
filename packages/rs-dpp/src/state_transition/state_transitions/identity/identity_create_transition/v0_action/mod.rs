@@ -8,6 +8,9 @@ use crate::identity::{IdentityPublicKey, PartialIdentity};
 
 use platform_value::Bytes36;
 use serde::{Deserialize, Serialize};
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,7 +60,7 @@ impl IdentityCreateTransitionActionV0 {
         value: IdentityCreateTransition,
         initial_balance_amount: u64,
     ) -> Result<Self, ConsensusError> {
-        let IdentityCreateTransition {
+        let IdentityCreateTransitionV0 {
             public_keys,
             identity_id,
             asset_lock_proof,
@@ -74,7 +77,6 @@ impl IdentityCreateTransitionActionV0 {
             ))?
             .into();
         Ok(IdentityCreateTransitionActionV0 {
-            version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
             public_keys: public_keys
                 .into_iter()
                 .map(IdentityPublicKeyInCreation::to_identity_public_key)
@@ -106,7 +108,6 @@ impl IdentityCreateTransitionActionV0 {
             ))?
             .into();
         Ok(IdentityCreateTransitionActionV0 {
-            version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
             public_keys: public_keys
                 .iter()
                 .map(|key| key.clone().to_identity_public_key())

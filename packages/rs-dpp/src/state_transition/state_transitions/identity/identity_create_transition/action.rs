@@ -1,5 +1,6 @@
 use crate::prelude::Identity;
 use derive_more::From;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::identity_create_transition::v0_action::IdentityCreateTransitionActionV0;
 
 #[derive(Debug, Clone, From)]

@@ -1,14 +1,9 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::PlatformSignable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
     StateTransitionFieldTypes, StateTransitionLike,
@@ -17,10 +12,11 @@ use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsen
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
-use crate::state_transition::abstract_state_transition::StateTransitionValueConvert;
-use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
-use crate::state_transition::data_contract_create_transition::fields::*;
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
+use crate::prelude::AssetLockProof;
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+use crate::state_transition::identity_create_transition::fields::*;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::StateTransitionValueConvert;
 
 
 impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
@@ -41,18 +37,15 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
             state_transition.set_public_keys(keys);
         }
 
-        if let Some(proof) = transition_map.get(property_names::ASSET_LOCK_PROOF) {
+        if let Some(proof) = transition_map.get(ASSET_LOCK_PROOF) {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
         if let Some(signature) =
-            transition_map.get_optional_binary_data(property_names::SIGNATURE)?
+            transition_map.get_optional_binary_data(SIGNATURE)?
         {
             state_transition.set_signature(signature);
         }
-
-        state_transition.protocol_version =
-            transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
 
         Ok(state_transition)
     }
@@ -87,7 +80,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
         }
 
         value.insert(
-            property_names::PUBLIC_KEYS.to_owned(),
+            PUBLIC_KEYS.to_owned(),
             Value::Array(public_keys),
         )?;
 
@@ -109,7 +102,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
         }
 
         value.insert(
-            property_names::PUBLIC_KEYS.to_owned(),
+            PUBLIC_KEYS.to_owned(),
             Value::Array(public_keys),
         )?;
 

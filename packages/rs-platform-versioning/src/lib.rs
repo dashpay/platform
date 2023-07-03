@@ -2,13 +2,13 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Ident, Lit, Meta};
-
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Ident, Lit, Meta, Type, Fields};
 #[proc_macro_derive(PlatformSerdeVersioned)]
 pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = &input.ident;
+    let name_str = name.to_string();
     let data_enum = match &input.data {
         Data::Enum(data_enum) => data_enum,
         _ => panic!("PlatformSerdeVersioned can only be used with enums"),
@@ -20,136 +20,95 @@ pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
         .map(|variant| &variant.ident)
         .collect();
 
-    let serialize_arms = generate_serialize_arms(&variant_idents);
-    let deserialize_arms = generate_deserialize_arms(&variant_idents);
+    let variant_types: Vec<Type> = data_enum
+        .variants
+        .iter()
+        .map(|variant| {
+            // assuming the variant is of the form `Variant(Type)`
+            match &variant.fields {
+                Fields::Unnamed(fields_unnamed) => fields_unnamed.unnamed.first().unwrap().ty.clone(),
+                _ => panic!("PlatformSerdeVersioned can only be used with enums of the form `Variant(Type)`"),
+            }
+        })
+        .collect();
+
+    let serialize_arms = variant_idents.iter().zip(variant_types.iter()).map(|(variant_ident, variant_type)| {
+        let variant_index = variant_ident.to_string().trim_start_matches('V').parse::<u16>().unwrap();
+        quote! {
+        #name::#variant_ident(inner) => {
+            use ::serde::ser::SerializeMap;
+            let mut map = serializer.serialize_map(None)?;
+            map.serialize_entry("$version", &#variant_index)?;
+            inner.serialize_flattened(&mut map)?;
+            map.end()
+        }
+    }
+    });
+
+    let deserialize_arms = variant_idents.iter().zip(variant_types.iter()).map(|(variant_ident, variant_type)| {
+        let variant_index = variant_ident.to_string().trim_start_matches('V').parse::<u16>().unwrap();
+        quote! {
+    #variant_index => {
+        let inner = <#variant_type as ::serde::Deserialize>::deserialize(&mut map)?;
+        Ok(#name::#variant_ident(inner))
+    }
+}
+    });
 
     let output = quote! {
-            impl ::serde::ser::Serialize for #name {
-                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where
-                    S: ::serde::ser::Serializer,
-                {
-                    use ::serde::ser::SerializeStruct;
-
-                    let mut state = serializer.serialize_struct(stringify!(#name), 2)?;
-                    match self {
-                        #(#serialize_arms),*
-                    };
-                    state.end()
+        impl ::serde::ser::Serialize for #name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: ::serde::ser::Serializer,
+            {
+                match self {
+                    #(#serialize_arms),*
                 }
             }
+        }
 
-            impl<'de> ::serde::Deserialize<'de> for #name {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: ::serde::Deserializer<'de>,
-        {
-            enum Field {
-                Version,
-            }
+        impl<'de> ::serde::de::Deserialize<'de> for #name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: ::serde::Deserializer<'de>,
+            {
+                struct MapVisitor;
 
-            impl<'de> ::serde::de::Deserialize<'de> for Field {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: ::serde::Deserializer<'de>,
-                {
-                    struct FieldVisitor;
+                impl<'de> ::serde::de::Visitor<'de> for MapVisitor {
+                    type Value = #name;
 
-                    impl<'de> ::serde::de::Visitor<'de> for FieldVisitor {
-                        type Value = Field;
-
-                        fn expecting(
-                            &self,
-                            formatter: &mut ::std::fmt::Formatter,
-                        ) -> ::std::fmt::Result {
-                            formatter.write_str("field identifier")
-                        }
-
-                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-                        where
-                            E: ::serde::de::Error,
-                        {
-                            match value {
-                                "$version" => Ok(Field::Version),
-                                _ => Err(::serde::de::Error::unknown_field(value, FIELDS)),
-                            }
-                        }
+                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                        formatter.write_str("enum ");
+                        formatter.write_str(#name_str)
                     }
 
-                    deserializer.deserialize_identifier(FieldVisitor)
-                }
-            }
-
-            struct NameVisitor;
-
-            impl<'de> ::serde::de::Visitor<'de> for NameVisitor {
-                type Value = #name;
-
-                fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                    formatter.write_str("struct DataContract")
-                }
-
-                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                where
-                    A: ::serde::de::MapAccess<'de>,
-                {
-                    let mut version: Option<u16> = None;
-                    while let Some(key) = map.next_key()? {
-                        match key {
-                            Field::Version => {
+                    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                    where
+                        A: ::serde::de::MapAccess<'de>,
+                    {
+                        let mut version: Option<u16> = None;
+                        while let Some(key) = map.next_key::<String>()? {
+                            if key == "$version" {
                                 if version.is_some() {
                                     return Err(::serde::de::Error::duplicate_field("$version"));
                                 }
                                 version = Some(map.next_value()?);
                             }
                         }
-                    }
-                    let version = version.ok_or_else(|| ::serde::de::Error::missing_field("$version"))?;
-                    match version {
-                        #(#deserialize_arms),*
-                        _ => Err(::serde::de::Error::custom("Invalid version value")),
+                        let version = version.ok_or_else(|| ::serde::de::Error::missing_field("$version"))?;
+                        match version {
+                            #(#deserialize_arms),*
+                            _ => Err(::serde::de::Error::custom("Invalid version value")),
+                        }
                     }
                 }
-            }
 
-            const FIELDS: &'static [&'static str] = &["$version"];
-            deserializer.deserialize_struct(stringify!(#name), FIELDS, NameVisitor)
+                deserializer.deserialize_map(MapVisitor)
+            }
         }
-    }
     };
+
     TokenStream::from(output)
-}
-
-fn generate_serialize_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStream> {
-    variant_idents
-        .iter()
-        .enumerate()
-        .map(|(index, ident)| {
-            let index_u16 = index as u16;
-            quote! {
-                Self::#ident(inner) => {
-                    state.serialize_field("$version", &#index_u16)?;
-                    state.serialize_field(stringify!(#ident), inner)?;
-                }
-            }
-        })
-        .collect()
-}
-
-fn generate_deserialize_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStream> {
-    variant_idents
-        .iter()
-        .enumerate()
-        .map(|(index, ident)| {
-            let index_u16 = index as u16;
-            quote! {
-                #index_u16 => {
-                    let inner: #ident = map.next_value()?;
-                    Ok(Self::#ident(inner))
-                }
-            }
-        })
-        .collect()
 }
 
 #[proc_macro_derive(PlatformVersioned, attributes(platform_version_path))]

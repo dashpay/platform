@@ -20,15 +20,13 @@ use crate::state_transition::StateTransitionType::IdentityCreate;
 use crate::version::FeatureVersion;
 
 
-impl StateTransitionLike for IdentityCreateTransitionV0 {
-    /// Returns ID of the created contract
-    fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.identity_id]
-    }
 
+
+impl StateTransitionLike for IdentityCreateTransitionV0 {
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         0
     }
+
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         IdentityCreate
@@ -41,6 +39,10 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
     }
+    /// Returns ID of the created contract
+    fn modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.identity_id]
+    }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
@@ -49,13 +51,5 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     /// Get owner ID
     fn get_owner_id(&self) -> &Identifier {
         &self.identity_id
-    }
-
-    fn get_signature_public_key_id(&self) -> Option<KeyID> {
-        Some(self.signature_public_key_id)
-    }
-
-    fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-        self.signature_public_key_id = key_id
     }
 }

@@ -9,6 +9,7 @@ mod value_conversion;
 mod state_transition_like;
 mod v0_methods;
 mod identity_signed;
+mod serialize;
 
 use fields::*;
 
@@ -26,7 +27,7 @@ pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use platform_versioning::PlatformVersioned;
+use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
@@ -39,108 +40,13 @@ use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATUR
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformVersioned, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformVersioned, Encode, Decode, From, PartialEq)]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.contract_create_state_transition)]
 pub enum DataContractCreateTransition {
     V0(DataContractCreateTransitionV0),
 }
 
-impl Serialize for DataContractCreateTransition {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_map(None)?;
-
-        match *self {
-            DataContractCreateTransition::V0(ref v0) => {
-                state.serialize_entry("type", &StateTransitionType::DataContractCreate)?;
-                state.serialize_entry("version", &0u16)?;
-                state.serialize_entry("dataContract", &v0.data_contract)?;
-                state.serialize_entry("entropy", &v0.entropy)?;
-                state.serialize_entry("signaturePublicKeyId", &v0.signature_public_key_id)?;
-                state.serialize_entry("signature", &v0.signature)?;
-            }
-        }
-
-        state.end()
-    }
-}
-
-struct DataContractCreateTransitionVisitor;
-
-impl<'de> Visitor<'de> for DataContractCreateTransitionVisitor {
-    type Value = DataContractCreateTransition;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a map representing a DataContractCreateTransition")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let mut version: Option<u16> = None;
-        let mut data_contract: Option<DataContract> = None;
-        let mut entropy: Option<Bytes32> = None;
-        let mut signature_public_key_id: Option<KeyID> = None;
-        let mut signature: Option<BinaryData> = None;
-
-        while let Some(key) = map.next_key()? {
-            match key {
-                "version" => {
-                    version = Some(map.next_value()?);
-                }
-                "dataContract" => {
-                    data_contract = Some(map.next_value()?);
-                }
-                "entropy" => {
-                    entropy = Some(map.next_value()?);
-                }
-                "signaturePublicKeyId" => {
-                    signature_public_key_id = Some(map.next_value()?);
-                }
-                "signature" => {
-                    signature = Some(map.next_value()?);
-                }
-                _ => {}
-            }
-        }
-
-        let version = version.ok_or_else(|| serde::de::Error::missing_field("version"))?;
-        let data_contract =
-            data_contract.ok_or_else(|| serde::de::Error::missing_field("dataContract"))?;
-        let entropy = entropy.ok_or_else(|| serde::de::Error::missing_field("entropy"))?;
-        let signature_public_key_id = signature_public_key_id
-            .ok_or_else(|| serde::de::Error::missing_field("signaturePublicKeyId"))?;
-        let signature = signature.ok_or_else(|| serde::de::Error::missing_field("signature"))?;
-
-        match version {
-            0 => Ok(DataContractCreateTransition::V0(
-                DataContractCreateTransitionV0 {
-                    data_contract,
-                    entropy,
-                    signature_public_key_id,
-                    signature,
-                },
-            )),
-            _ => Err(serde::de::Error::unknown_variant(
-                &format!("{}", version),
-                &[],
-            )),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for DataContractCreateTransition {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_map(DataContractCreateTransitionVisitor)
-    }
-}
 
 impl From<DataContract> for DataContractCreateTransition {
     fn from(value: DataContract) -> Self {
@@ -185,12 +91,11 @@ mod test {
     use integer_encoding::VarInt;
     use platform_value::Bytes32;
 
-    use crate::state_transition::StateTransitionType;
+    use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::util::json_value::JsonValueExt;
     use crate::version::LATEST_PLATFORM_VERSION;
     use crate::{Convertible, version};
-    use crate::state_transition::abstract_state_transition::StateTransitionValueConvert;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use super::*;
 
