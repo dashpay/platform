@@ -15,7 +15,7 @@ use dpp::identity::state_transition::identity_update_transition::validate_public
 use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};
 
 use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-use dpp::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
+use dpp::state_transition::identity_update_transition::validate_identity_update_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

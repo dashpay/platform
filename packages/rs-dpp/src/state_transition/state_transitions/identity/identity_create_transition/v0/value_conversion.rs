@@ -13,13 +13,14 @@ use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsen
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::prelude::AssetLockProof;
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::identity_create_transition::fields::*;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
 
-impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
+impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
     fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
@@ -61,7 +62,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
 
     fn from_value_map(
         mut raw_data_contract_create_transition: BTreeMap<String, Value>,
-    ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
+    ) -> Result<Self, ProtocolError> {
         todo()
     }
 

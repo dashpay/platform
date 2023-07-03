@@ -1,4 +1,4 @@
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::StateTransitionJsonConvert;
 
-impl StateTransitionJsonConvert for DataContractCreateTransitionV0 {}
+impl StateTransitionJsonConvert for IdentityCreateTransitionV0 {}

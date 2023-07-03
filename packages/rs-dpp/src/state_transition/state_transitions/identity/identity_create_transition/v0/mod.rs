@@ -1,8 +1,10 @@
+#[cfg(feature = "json-object")]
 mod json_conversion;
-mod state_transition_like;
-mod types;
-pub(super) mod v0_methods;
+#[cfg(feature = "platform-value")]
 mod value_conversion;
+mod state_transition_like;
+pub(super) mod v0_methods;
+mod types;
 
 use std::convert::{TryFrom, TryInto};
 
