@@ -256,8 +256,11 @@ class DockerCompose {
    * Get list of Docker containers
    *
    * @param {Object} envs
-   * @param {string|string[]} [filterServiceNames]
-   * @param {object?} options optional
+   * @param {Object} options optional
+   * @param {string|string[]} options.filterServiceNames - Filter by service name or array of services
+   * @param {boolean} options.returnServiceNames - Return only service names
+   * @param {boolean} options.quiet - Return only container ids
+   * @param {boolean} options.formatJson - Return as json with details
    * @return {Promise<string[]|object[]>}
    */
   async getContainersList(
