@@ -594,4 +594,11 @@ module.exports = {
       });
     return configFile;
   },
+  '0.24.13': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+      });
+    return configFile;
+  },
 };
