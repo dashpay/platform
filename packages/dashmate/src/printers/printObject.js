@@ -14,7 +14,8 @@ function printObject(object, format) {
   let output;
   switch (format) {
     case OUTPUT_FORMATS.PLAIN: {
-      output = table(Object.entries(object));
+      const rows = Object.entries(object);
+      output = table(rows, { singleLine: true });
       break;
     }
     case OUTPUT_FORMATS.JSON: {
