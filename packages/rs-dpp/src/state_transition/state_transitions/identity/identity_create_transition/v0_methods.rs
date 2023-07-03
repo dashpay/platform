@@ -3,7 +3,6 @@ use crate::identity::{Identity, KeyID, PartialIdentity};
 use crate::identity::signer::Signer;
 use crate::prelude::AssetLockProof;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
-use crate::state_transition::data_contract_create_transition::{IdentityCreateTransition, IdentityCreateTransitionV0};
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
@@ -15,7 +14,7 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransition {
 
     fn try_from_identity_with_signer<S: Signer>(identity: Identity, asset_lock_proof: AssetLockProof, asset_lock_proof_private_key: &[u8], signer: &S, bls: &impl BlsModule, version: FeatureVersion) -> Result<Self, ProtocolError> {
         match version { 0 => {
-            IdentityCreateTransitionV0::new_from_data_contract(data_contract, entropy, identity, key_id, signer, version)
+            Ok(IdentityCreateTransitionV0::try_from_identity_with_signer(identity, asset_lock_proof, asset_lock_proof_private_key, signer, bls, version)?.into())
         }
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreateTransition version for try_from_identity_with_signer {v}"
@@ -24,7 +23,7 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransition {
     }
 
     fn get_type() -> StateTransitionType {
-        match self { IdentityCreateTransition::V0(transition) =>transition.get_type() }
+        StateTransitionType::IdentityCreate
     }
 
     fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof) -> Result<(), NonConsensusError> {

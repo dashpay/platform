@@ -2,8 +2,6 @@ use crate::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoun
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identifier::Identifier;
-use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::identity::{IdentityPublicKey, PartialIdentity};
 
 use platform_value::Bytes36;
@@ -57,7 +55,7 @@ impl From<&IdentityCreateTransitionActionV0> for PartialIdentity {
 
 impl IdentityCreateTransitionActionV0 {
     pub fn from(
-        value: IdentityCreateTransition,
+        value: IdentityCreateTransitionV0,
         initial_balance_amount: u64,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateTransitionV0 {

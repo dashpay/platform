@@ -7,8 +7,8 @@ use crate::execution::validation::state_transition::processor::process_state_tra
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::fee::fee_result::FeeResult;
@@ -93,11 +93,21 @@ where
         if let Some(block_info) = state_read_guard.last_committed_block_info().as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &block_info.basic_info(), None, platform_version)
+                self.validate_fees_of_event(
+                    execution_event,
+                    &block_info.basic_info(),
+                    None,
+                    platform_version,
+                )
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None, platform_version)
+                self.validate_fees_of_event(
+                    execution_event,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
             })
         }
     }
@@ -122,13 +132,13 @@ mod tests {
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization_traits::{PlatformSerializable, Signable};
+    use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+    use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::{StateTransition, StateTransitionType};
-    use dpp::version::{LATEST_VERSION, PlatformVersion};
+    use dpp::version::{PlatformVersion, LATEST_VERSION};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-    use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 
     #[test]
     fn data_contract_create_check_tx() {
@@ -237,7 +247,12 @@ mod tests {
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
+            .create_genesis_state_v0(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -277,7 +292,12 @@ mod tests {
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
+            .create_genesis_state_v0(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -322,7 +342,12 @@ mod tests {
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
+            .create_genesis_state_v0(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
             .expect("expected to create genesis state");
 
         let validation_result = platform
@@ -351,7 +376,12 @@ mod tests {
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
+            .create_genesis_state_v0(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -407,7 +437,12 @@ mod tests {
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
+            .create_genesis_state_v0(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
             .expect("expected to create genesis state");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -491,7 +526,12 @@ mod tests {
             platform.config.abci.keys.clone().into();
 
         platform
-            .create_genesis_state_v0(genesis_time, system_identity_public_keys_v0.into(), None, platform_version)
+            .create_genesis_state_v0(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
             .expect("expected to create genesis state");
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);

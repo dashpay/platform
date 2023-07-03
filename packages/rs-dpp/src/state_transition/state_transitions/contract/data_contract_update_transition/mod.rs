@@ -8,7 +8,7 @@ use crate::state_transition::{
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Identifier, Value};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
@@ -39,20 +39,11 @@ pub use v0_action::DataContractUpdateTransitionActionV0;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformVersioned, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformSignable, PlatformVersioned, Encode, Decode, From, PartialEq)]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.contract_update_state_transition)]
 pub enum DataContractUpdateTransition {
     V0(DataContractUpdateTransitionV0),
-}
-
-
-impl Signable for DataContractUpdateTransition {
-    fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        match self {
-            DataContractUpdateTransition::V0(transition) => transition.signable_bytes(),
-        }
-    }
 }
 
 impl StateTransitionFieldTypes for DataContractUpdateTransition {
@@ -71,6 +62,7 @@ impl StateTransitionFieldTypes for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeMap;
     use crate::util::json_value::JsonValueExt;
     use integer_encoding::VarInt;
     use std::convert::TryInto;
@@ -79,6 +71,7 @@ mod test {
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::LATEST_PLATFORM_VERSION;
     use crate::{version, Convertible};
+    use crate::data_contract::DataContract;
     use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert};
 
     use super::*;

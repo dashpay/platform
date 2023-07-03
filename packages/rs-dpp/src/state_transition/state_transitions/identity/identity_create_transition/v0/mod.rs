@@ -20,13 +20,11 @@ use serde_json::Value as JsonValue;
 use crate::identity::signer::Signer;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
-use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
-use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;

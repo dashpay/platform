@@ -18,11 +18,11 @@ use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
-use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
 
 /// Platform state
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]
@@ -45,8 +45,8 @@ impl PlatformState {
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&PlatformVersion, Error> {
         PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::Protocol)
-    } 
-    
+    }
+
     /// The default state at platform start
     pub fn default_with_protocol_versions(
         current_protocol_version_in_consensus: ProtocolVersion,

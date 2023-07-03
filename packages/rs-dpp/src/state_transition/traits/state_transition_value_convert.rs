@@ -6,7 +6,7 @@ use crate::serialization_traits::{PlatformSerializable, Signable};
 use crate::state_transition::state_transition_helpers;
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionValueConvert: Serialize + Signable + PlatformSerializable {
+pub trait StateTransitionValueConvert: Serialize {
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

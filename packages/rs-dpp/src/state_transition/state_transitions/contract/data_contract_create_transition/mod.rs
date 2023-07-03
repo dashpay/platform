@@ -26,7 +26,7 @@ use crate::{ProtocolError};
 pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
 use serde::de::{MapAccess, Visitor};
@@ -40,7 +40,7 @@ use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATUR
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformVersioned, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformSignable, PlatformVersioned, Encode, Decode, From, PartialEq)]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.contract_create_state_transition)]
 pub enum DataContractCreateTransition {
@@ -51,14 +51,6 @@ pub enum DataContractCreateTransition {
 impl From<DataContract> for DataContractCreateTransition {
     fn from(value: DataContract) -> Self {
         DataContractCreateTransitionV0::from(value).into()
-    }
-}
-
-impl Signable for DataContractCreateTransition {
-    fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.signable_bytes(),
-        }
     }
 }
 

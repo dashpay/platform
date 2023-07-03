@@ -1,8 +1,3 @@
-use std::collections::BTreeMap;
-use std::convert::TryInto;
-
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::PlatformSignable;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -15,20 +10,16 @@ use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsen
     StateTransitionType,
 }};
 
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::property_names::*;
-
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
-use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
-
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
+use crate::state_transition::StateTransitionType::{DataContractUpdate};
 use crate::version::FeatureVersion;
 
-impl StateTransitionLike for DataContractCreateTransitionV0 {
+impl StateTransitionLike for DataContractUpdateTransitionV0 {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.data_contract.id()]

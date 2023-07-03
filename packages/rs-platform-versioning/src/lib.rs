@@ -2,7 +2,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Ident, Lit, Meta, Type, Fields};
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, Lit, Meta, Type};
 #[proc_macro_derive(PlatformSerdeVersioned)]
 pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -32,28 +32,44 @@ pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let serialize_arms = variant_idents.iter().zip(variant_types.iter()).map(|(variant_ident, variant_type)| {
-        let variant_index = variant_ident.to_string().trim_start_matches('V').parse::<u16>().unwrap();
-        quote! {
-        #name::#variant_ident(inner) => {
-            use ::serde::ser::SerializeMap;
-            let mut map = serializer.serialize_map(None)?;
-            map.serialize_entry("$version", &#variant_index)?;
-            inner.serialize_flattened(&mut map)?;
-            map.end()
-        }
-    }
-    });
+    let serialize_arms =
+        variant_idents
+            .iter()
+            .zip(variant_types.iter())
+            .map(|(variant_ident, variant_type)| {
+                let variant_index = variant_ident
+                    .to_string()
+                    .trim_start_matches('V')
+                    .parse::<u16>()
+                    .unwrap();
+                quote! {
+                    #name::#variant_ident(inner) => {
+                        use ::serde::ser::SerializeMap;
+                        let mut map = serializer.serialize_map(None)?;
+                        map.serialize_entry("$version", &#variant_index)?;
+                        inner.serialize_flattened(&mut map)?;
+                        map.end()
+                    }
+                }
+            });
 
-    let deserialize_arms = variant_idents.iter().zip(variant_types.iter()).map(|(variant_ident, variant_type)| {
-        let variant_index = variant_ident.to_string().trim_start_matches('V').parse::<u16>().unwrap();
-        quote! {
-    #variant_index => {
-        let inner = <#variant_type as ::serde::Deserialize>::deserialize(&mut map)?;
-        Ok(#name::#variant_ident(inner))
-    }
-}
-    });
+    let deserialize_arms =
+        variant_idents
+            .iter()
+            .zip(variant_types.iter())
+            .map(|(variant_ident, variant_type)| {
+                let variant_index = variant_ident
+                    .to_string()
+                    .trim_start_matches('V')
+                    .parse::<u16>()
+                    .unwrap();
+                quote! {
+                    #variant_index => {
+                        let inner = <#variant_type as ::serde::Deserialize>::deserialize(&mut map)?;
+                        Ok(#name::#variant_ident(inner))
+                    }
+                }
+            });
 
     let output = quote! {
         impl ::serde::ser::Serialize for #name {

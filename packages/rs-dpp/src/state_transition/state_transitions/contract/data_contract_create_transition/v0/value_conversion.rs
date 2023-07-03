@@ -1,8 +1,4 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
-
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::PlatformSignable;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;

@@ -1,6 +1,5 @@
 use serde::Serialize;
 use crate::ProtocolError;
-use crate::serialization_traits::{PlatformSerializable, Signable};
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -10,7 +9,7 @@ pub struct JsonSerializationOptions {
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionJsonConvert: Serialize + Signable + PlatformSerializable {
+pub trait StateTransitionJsonConvert: Serialize {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64

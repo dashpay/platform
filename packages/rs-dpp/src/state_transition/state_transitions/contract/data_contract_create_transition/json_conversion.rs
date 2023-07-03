@@ -23,14 +23,17 @@ mod test {
     use platform_value::Bytes32;
     use crate::version;
     use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
-    use crate::state_transition::StateTransitionJsonConvert;
+    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
 
     #[test]
     fn should_return_state_transition_in_json_format() {
         let data = crate::state_transition::data_contract_create_transition::test::get_test_data();
         let mut json_object = data
             .state_transition
-            .to_json(false)
+            .to_json(JsonSerializationOptions {
+                skip_signature: false,
+                into_validating_json: false,
+            })
             .expect("conversion to JSON shouldn't fail");
 
         assert_eq!(

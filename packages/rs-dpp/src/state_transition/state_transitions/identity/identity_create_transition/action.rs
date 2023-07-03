@@ -1,5 +1,7 @@
 use crate::prelude::Identity;
 use derive_more::From;
+use platform_value::{Bytes36, Identifier};
+use crate::identity::IdentityPublicKey;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::identity_create_transition::v0_action::IdentityCreateTransitionActionV0;
 
@@ -9,35 +11,31 @@ pub enum IdentityCreateTransitionAction {
 }
 
 impl IdentityCreateTransitionAction {
-    pub fn public_keys(self) -> Identity {
+    // Public Keys
+    pub fn public_keys(&self) -> &Vec<IdentityPublicKey> {
         match self {
-            IdentityCreateTransitionAction::V0(transition) => transition.data_contract,
+            IdentityCreateTransitionAction::V0(transition) => &transition.public_keys,
         }
     }
 
-    pub fn data_contract_ref(&self) -> &Identity {
+    // Initial Balance Amount
+    pub fn initial_balance_amount(&self) -> u64 {
         match self {
-            IdentityCreateTransitionAction::V0(transition) => &transition.data_contract,
+            IdentityCreateTransitionAction::V0(transition) => transition.initial_balance_amount,
         }
     }
-}
 
-impl From<IdentityCreateTransition> for IdentityCreateTransitionAction {
-    fn from(value: IdentityCreateTransition) -> Self {
-        match value {
-            IdentityCreateTransition::V0(v0) => {
-                IdentityCreateTransitionActionV0::from(v0).into()
-            }
+    // Identity Id
+    pub fn identity_id(&self) -> Identifier {
+        match self {
+            IdentityCreateTransitionAction::V0(transition) => transition.identity_id,
         }
     }
-}
 
-impl From<&IdentityCreateTransition> for IdentityCreateTransitionAction {
-    fn from(value: &IdentityCreateTransition) -> Self {
-        match value {
-            IdentityCreateTransition::V0(v0) => {
-                IdentityCreateTransitionActionV0::from(v0).into()
-            }
+    // Asset Lock Outpoint
+    pub fn asset_lock_outpoint(&self) -> Bytes36 {
+        match self {
+            IdentityCreateTransitionAction::V0(transition) => transition.asset_lock_outpoint,
         }
     }
 }
