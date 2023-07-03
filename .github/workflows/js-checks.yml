@@ -116,6 +116,14 @@ jobs:
       - name: Load Docker mount cache
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/inject@main
+        with:
+          mounts: |
+            cargo_registry_index
+            cargo_registry_cache
+            cargo_git
+            target_amd64
+            target_wasm
+            unplugged_amd64
 
       - name: Setup local network
         run: yarn configure
@@ -131,6 +139,14 @@ jobs:
       - name: Store Docker mount cache
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/extract@main
+        with:
+          mounts: |
+            cargo_registry_index
+            cargo_registry_cache
+            cargo_git
+            target_amd64
+            target_wasm
+            unplugged_amd64
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"
