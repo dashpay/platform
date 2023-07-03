@@ -9,13 +9,12 @@ const UnsupportedFormatError = require('./errors/UnsupportedFormatError');
  *
  * @param {Object} object
  * @param {string} format
- * @param {boolean} flatten
  */
-function printObject(object, format, flatten = true) {
+function printObject(object, format) {
   let output;
   switch (format) {
     case OUTPUT_FORMATS.PLAIN: {
-      output = table(flatten ? Object.entries(object) : object, { singleLine: true });
+      output = table(Object.entries(object));
       break;
     }
     case OUTPUT_FORMATS.JSON: {

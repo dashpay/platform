@@ -257,7 +257,7 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string|string[]} [filterServiceNames]
-   * @param {object} options
+   * @param {object?} options optional
    * @return {Promise<string[]|object[]>}
    */
   async getContainersList(
@@ -267,7 +267,7 @@ class DockerCompose {
       returnServiceNames = false,
       quiet = false,
       formatJson = false,
-    },
+    } = {},
   ) {
     let psOutput;
     const commandOptions = [];

@@ -3,18 +3,18 @@ const _ = require('lodash');
 /**
  * @param {getServiceList} getServiceList
  * @param {docker} docker
- * @return {updateNodeTask}
+ * @return {updateNode}
  */
-function updateNodeTaskFactory(getServiceList, docker) {
+function updateNodeFactory(getServiceList, docker) {
   /**
    * Pulls all recent images by given config
-   * @typedef {updateNodeTask}
+   * @typedef {updateNode}
    *
    * @param {Config} config
    *
    * @return {object[]}
    */
-  function updateNodeTask(config) {
+  function updateNode(config) {
     const services = getServiceList(config);
 
     return Promise.all(
@@ -24,7 +24,7 @@ function updateNodeTaskFactory(getServiceList, docker) {
             if (err) {
               reject(err);
             } else {
-              let pulled = null;
+              let updated = null;
 
               stream.on('data', (data) => {
                 // parse all stdout and gather Status message
@@ -36,14 +36,14 @@ function updateNodeTaskFactory(getServiceList, docker) {
                   .filter((obj) => obj.status.startsWith('Status: '));
 
                 if (status?.status.includes('Image is up to date for')) {
-                  pulled = false;
+                  updated = false;
                 } else if (status?.status.includes('Downloaded newer image for')) {
-                  pulled = true;
+                  updated = true;
                 }
               });
               stream.on('error', reject);
               stream.on('end', () => resolve({
-                serviceName, title, image, pulled,
+                serviceName, title, image, updated,
               }));
             }
           });
@@ -51,7 +51,7 @@ function updateNodeTaskFactory(getServiceList, docker) {
     );
   }
 
-  return updateNodeTask;
+  return updateNode;
 }
 
-module.exports = updateNodeTaskFactory;
+module.exports = updateNodeFactory;

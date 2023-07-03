@@ -3,8 +3,8 @@ const chalk = require('chalk');
 
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
-const printObject = require('../printers/printObject');
 const { OUTPUT_FORMATS } = require('../constants');
+const printArrayOfObjects = require('../printers/printArrayOfObjects');
 
 class UpdateCommand extends ConfigBaseCommand {
   /**
@@ -12,7 +12,7 @@ class UpdateCommand extends ConfigBaseCommand {
    * @param {string} format
    * @param {docker} docker
    * @param {Config} config
-   * @param updateNodeTask
+   * @param updateNode
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -22,23 +22,23 @@ class UpdateCommand extends ConfigBaseCommand {
     },
     docker,
     config,
-    updateNodeTask,
+    updateNode,
   ) {
-    const updated = await updateNodeTask(config);
+    const updateInfo = await updateNode(config);
 
     // Draw table or show json
-    printObject(updated
+    printArrayOfObjects(updateInfo
       .reduce((acc, {
-        serviceName, title, pulled, image,
+        name, title, updated, image,
       }) => ([
         ...acc,
         format === OUTPUT_FORMATS.PLAIN
-          ? [title, image, pulled ? chalk.yellow('updated') : chalk.green('up to date')]
+          ? { Service: title, Image: image, Updated: updated ? chalk.yellow('updated') : chalk.green('up to date') }
           : {
-            serviceName, title, pulled, image,
+            name, title, updated, image,
           },
       ]),
-      []), format, false);
+      []), format);
   }
 }
 

@@ -65,7 +65,6 @@ const setupRegularPresetTaskFactory = require('./listr/tasks/setup/setupRegularP
 const stopNodeTaskFactory = require('./listr/tasks/stopNodeTaskFactory');
 const restartNodeTaskFactory = require('./listr/tasks/restartNodeTaskFactory');
 const resetNodeTaskFactory = require('./listr/tasks/resetNodeTaskFactory');
-const updateNodeTaskFactory = require('./listr/tasks/updateNodeTaskFactory');
 const configureCoreTaskFactory = require('./listr/tasks/setup/local/configureCoreTaskFactory');
 const configureTenderdashTaskFactory = require('./listr/tasks/setup/local/configureTenderdashTaskFactory');
 const obtainSelfSignedCertificateTaskFactory = require('./listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory');
@@ -74,6 +73,8 @@ const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCo
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
 const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
 const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
+
+const updateNodeFactory = require('./update/updateNodeFactory');
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
@@ -117,6 +118,13 @@ async function createDIContainer() {
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
+  });
+
+  /**
+   * Update
+   */
+  container.register({
+    updateNode: asFunction(updateNodeFactory).singleton(),
   });
 
   /**
@@ -224,7 +232,6 @@ async function createDIContainer() {
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
     resetNodeTask: asFunction(resetNodeTaskFactory).singleton(),
-    updateNodeTask: asFunction(updateNodeTaskFactory).singleton(),
     setupLocalPresetTask: asFunction(setupLocalPresetTaskFactory).singleton(),
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
