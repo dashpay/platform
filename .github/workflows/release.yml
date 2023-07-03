@@ -166,7 +166,7 @@ jobs:
 
   release-envoy-docker-image:
     name: Release Envoy to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
