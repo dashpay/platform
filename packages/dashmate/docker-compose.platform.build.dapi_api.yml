@@ -3,7 +3,7 @@ version: '3.7'
 services:
   dapi_api:
     build:
-      context: ${PLATFORM_SOURCE_PATH:?err}
-      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
+      context: ${PLATFORM_DAPI_API_DOCKER_BUILD_CONTEXT:?err}
+      dockerfile: ${PLATFORM_DAPI_API_DOCKER_BUILD_DOCKER_FILE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
     stop_grace_period: 10s

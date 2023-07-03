@@ -3,7 +3,7 @@ version: '3.7'
 services:
   dapi_envoy:
     build:
-      context: ${PLATFORM_SOURCE_PATH:?err}
-      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/docker/envoy/Dockerfile
+      context: ${PLATFORM_DAPI_ENVOY_DOCKER_BUILD_CONTEXT:?err}
+      dockerfile: ${PLATFORM_DAPI_ENVOY_DOCKER_BUILD_DOCKER_FILE_PATH:?err}/packages/dashmate/docker/envoy/Dockerfile
     image: dapi-envoy:local
     stop_grace_period: 10s

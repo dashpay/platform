@@ -22,8 +22,7 @@ function generateEnvs(configFile, config, options = {}) {
 
   dockerComposeFiles.push('docker-compose.yml');
 
-  if (config.get('platform.sourcePath') !== null
-    && config.get('dashmate.helper.buildFromSource') === true) {
+  if (config.get('dashmate.helper.dockerBuild.context') !== null) {
     dockerComposeFiles.push('docker-compose.platform.build.dashmate_helper.yml');
   }
 
@@ -38,22 +37,20 @@ function generateEnvs(configFile, config, options = {}) {
   if (config.get('platform.enable')) {
     dockerComposeFiles.push('docker-compose.platform.yml');
 
-    if (config.get('platform.sourcePath') !== null) {
-      if (config.get('platform.drive.abci.buildFromSource') === true) {
-        dockerComposeFiles.push('docker-compose.platform.build.drive_abci.yml');
-      }
+    if (config.get('platform.drive.abci.dockerBuild.context') !== null) {
+      dockerComposeFiles.push('docker-compose.platform.build.drive_abci.yml');
+    }
 
-      if (config.get('platform.dapi.api.buildFromSource') === true) {
-        dockerComposeFiles.push('docker-compose.platform.build.dapi_api.yml');
-      }
+    if (config.get('platform.dapi.api.dockerBuild.context') !== null) {
+      dockerComposeFiles.push('docker-compose.platform.build.dapi_api.yml');
+    }
 
-      if (config.get('platform.dapi.txFilterStream.buildFromSource') === true) {
-        dockerComposeFiles.push('docker-compose.platform.build.dapi_tx_filter_stream.yml');
-      }
+    if (config.get('platform.dapi.api.dockerBuild.context') !== null) {
+      dockerComposeFiles.push('docker-compose.platform.build.dapi_tx_filter_stream.yml');
+    }
 
-      if (config.get('platform.dapi.envoy.buildFromSource') === true) {
-        dockerComposeFiles.push('docker-compose.platform.build.dapi_envoy.yml');
-      }
+    if (config.get('platform.dapi.envoy.dockerBuild.context') !== null) {
+      dockerComposeFiles.push('docker-compose.platform.build.dapi_envoy.yml');
     }
   }
 
