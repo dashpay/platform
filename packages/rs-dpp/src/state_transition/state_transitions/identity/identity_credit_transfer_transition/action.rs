@@ -1,49 +1,33 @@
-use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use derive_more::From;
+use platform_value::{Bytes36, Identifier};
 use crate::state_transition::fee::Credits;
-use platform_value::Identifier;
-use serde::{Deserialize, Serialize};
+use crate::state_transition::identity_credit_transfer_transition::v0_action::IdentityCreditTransferTransitionActionV0;
 
-pub const IDENTITY_CREDIT_TRANSFER_TRANSITION_ACTION_VERSION: u32 = 0;
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdentityCreditTransferTransitionAction {
-    pub version: u32,
-    pub transfer_amount: Credits,
-    pub recipient_id: Identifier,
-    pub identity_id: Identifier,
+#[derive(Debug, Clone, From)]
+pub enum IdentityCreditTransferTransitionAction {
+    V0(IdentityCreditTransferTransitionActionV0),
 }
 
-impl From<IdentityCreditTransferTransition> for IdentityCreditTransferTransitionAction {
-    fn from(value: IdentityCreditTransferTransition) -> Self {
-        let IdentityCreditTransferTransition {
-            identity_id: owner_id,
-            recipient_id,
-            amount,
-            ..
-        } = value;
-        IdentityCreditTransferTransitionAction {
-            version: IDENTITY_CREDIT_TRANSFER_TRANSITION_ACTION_VERSION,
-            identity_id: owner_id,
-            recipient_id,
-            transfer_amount: amount,
+impl IdentityCreditTransferTransitionAction {
+    // Transfer amount
+    pub fn transfer_amount(&self) -> Credits {
+        match self {
+            IdentityCreditTransferTransitionAction::V0(transition) => transition.transfer_amount,
         }
     }
-}
 
-impl From<&IdentityCreditTransferTransition> for IdentityCreditTransferTransitionAction {
-    fn from(value: &IdentityCreditTransferTransition) -> Self {
-        let IdentityCreditTransferTransition {
-            identity_id,
-            recipient_id,
-            amount,
-            ..
-        } = value;
-        IdentityCreditTransferTransitionAction {
-            version: IDENTITY_CREDIT_TRANSFER_TRANSITION_ACTION_VERSION,
-            identity_id: *identity_id,
-            recipient_id: *recipient_id,
-            transfer_amount: *amount,
+    // Identity Id
+    pub fn identity_id(&self) -> Identifier {
+        match self {
+            IdentityCreditTransferTransitionAction::V0(transition) => transition.identity_id,
         }
     }
+
+    // Recipient Id
+    pub fn recipient_id(&self) -> Identifier {
+        match self {
+            IdentityCreditTransferTransitionAction::V0(transition) => transition.recipient_id,
+        }
+    }
+
 }
