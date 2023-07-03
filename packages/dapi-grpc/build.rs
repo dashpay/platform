@@ -9,7 +9,8 @@ fn main() {
 
     println!("cargo:rerun-if-changed=./protos");
     // TODO: This doesn't work when we cache target dir but use clean source code with ignored rust files
-    //  Force to build every time
+    //  As a possible solution we need to commit these files
+    // Force to build every time
     println!("cargo:rerun-if-changed=./src/core/proto");
     println!("cargo:rerun-if-changed=./src/platform/proto");
 }
