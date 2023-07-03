@@ -1,8 +1,10 @@
+use crate::version::drive_versions::DriveStructureVersion;
 use crate::version::protocol_version::{
-    DriveStructureVersion, FeatureVersionBounds, PlatformVersion, StateTransitionVersion,
+    FeatureVersionBounds, PlatformVersion, StateTransitionVersion,
 };
 use crate::version::{
-    AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion,
+    AbciStructureVersion, DataContractFactoryVersion, DocumentFeatureVersionBounds,
+    PlatformArchitectureVersion,
 };
 use std::collections::BTreeMap;
 
@@ -38,6 +40,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         max_version: 0,
         default_current_version: 0,
     },
+    state_transition_signing: Default::default(),
     state_transitions: StateTransitionVersion {
         identity_create_state_transition: FeatureVersionBounds {
             min_version: 0,
@@ -59,6 +62,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             max_version: 0,
             default_current_version: 0,
         },
+        identity_credit_transfer_state_transition: Default::default(),
         contract_create_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
@@ -79,24 +83,20 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             max_version: 0,
             default_current_version: 0,
         },
-    },
-    drive_structure: DriveStructureVersion {
-        document_indexes: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+        document_create_state_transition: DocumentFeatureVersionBounds {
+            bounds: Default::default(),
+            base_version_mapping: Default::default(),
         },
-        identity_indexes: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+        document_replace_state_transition: DocumentFeatureVersionBounds {
+            bounds: Default::default(),
+            base_version_mapping: Default::default(),
         },
-        pools: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
+        document_delete_state_transition: DocumentFeatureVersionBounds {
+            bounds: Default::default(),
+            base_version_mapping: Default::default(),
         },
     },
+    drive: Default::default(),
     abci_structure: AbciStructureVersion {
         extended_block_info: FeatureVersionBounds {
             min_version: 0,
@@ -122,4 +122,5 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             )]),
         },
     },
+    drive_abci: Default::default(),
 };

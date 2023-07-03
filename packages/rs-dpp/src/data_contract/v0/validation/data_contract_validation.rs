@@ -6,12 +6,13 @@ use serde_json::Value as JsonValue;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::consensus::basic::data_contract::{
-    DuplicateIndexError, DuplicateIndexNameError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
+    DuplicateIndexV0Error, DuplicateIndexV0NameError, InvalidIndexV0PropertyTypeError,
+    InvalidIndexV0edPropertyConstraintError, SystemPropertyIndexV0AlreadyPresentError,
+    UndefinedIndexV0PropertyError, UniqueIndicesLimitReachedError,
 };
 use crate::consensus::ConsensusError;
 use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::document_type::IndexV0;
 use crate::mocks::JsonSchemaValidator;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
@@ -20,10 +21,7 @@ use crate::{
         enrich_with_base_schema::PREFIX_BYTE_0,
         get_property_definition_by_path::get_property_definition_by_path, DataContract,
     },
-    util::{
-        json_schema::{Index, JsonSchemaExt},
-        json_value::JsonValueExt,
-    },
+    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     validation::{DataValidator, JsonSchemaValidator},
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -144,7 +142,7 @@ impl DataContractV0 {
     /// checks the correctness of indices and returns the validation result. The bool flags should be on,
     /// when further validation should be stopped
     pub fn validate_index_definitions(
-        indices: &[Index],
+        indices: &[IndexV0],
         document_type: &str,
         document_schema: &JsonValue,
     ) -> (SimpleConsensusValidationResult, bool) {
@@ -214,8 +212,8 @@ impl DataContractV0 {
                 //     .all(|field| !required_fields.contains(&field.as_str()));
                 //
                 // if !all_are_required && !all_are_not_required {
-                //     result.add_error(BasicError::IndexError(
-                //         IndexError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
+                //     result.add_error(BasicError::IndexV0Error(
+                //         IndexV0Error::InvalidCompoundIndexV0Error(InvalidCompoundIndexV0Error::new(
                 //             document_type.to_owned(),
                 //             index_definition.clone(),
                 //         )),
@@ -226,12 +224,12 @@ impl DataContractV0 {
                 let indices_fingerprint = serde_json::to_string(&index_definition.properties)
                     .expect("fingerprint creation shouldn't fail");
                 if indices_fingerprints.contains(&indices_fingerprint) {
-                    result.add_error(ConsensusError::BasicError(BasicError::DuplicateIndexError(
-                        DuplicateIndexError::new(
+                    result.add_error(ConsensusError::BasicError(
+                        BasicError::DuplicateIndexV0Error(DuplicateIndexV0Error::new(
                             document_type.to_owned(),
                             index_definition.name.to_owned(),
-                        ),
-                    )));
+                        )),
+                    ));
                 }
                 indices_fingerprints.push(indices_fingerprint)
             }
@@ -243,7 +241,7 @@ impl DataContractV0 {
         property_name: &str,
         maybe_property_definition: Option<&JsonValue>,
         document_type: &str,
-        index_definition: &Index,
+        index_definition: &IndexV0,
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
 
@@ -276,7 +274,7 @@ impl DataContractV0 {
 
         if !invalid_property_type.is_empty() {
             result.add_error(ConsensusError::BasicError(
-                BasicError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
+                BasicError::InvalidIndexV0PropertyTypeError(InvalidIndexV0PropertyTypeError::new(
                     document_type.to_owned(),
                     index_definition.name.to_owned(),
                     property_name.to_owned(),
@@ -301,7 +299,7 @@ impl DataContractV0 {
         //
         //   if (isInvalidPrefixItems || isInvalidItemTypes) {
         //     result.addError(
-        //       new InvalidIndexedPropertyConstraintError(
+        //       new InvalidIndexV0edPropertyConstraintError(
         //         documentType,
         //         indexDefinition,
         //         propertyName,
@@ -323,8 +321,8 @@ impl DataContractV0 {
 
             if max_items.is_none() || max_items.unwrap() > max_limit as u64 {
                 result.add_error(ConsensusError::BasicError(
-                    BasicError::InvalidIndexedPropertyConstraintError(
-                        InvalidIndexedPropertyConstraintError::new(
+                    BasicError::InvalidIndexV0edPropertyConstraintError(
+                        InvalidIndexV0edPropertyConstraintError::new(
                             document_type.to_owned(),
                             index_definition.name.to_owned(),
                             property_name.to_owned(),
@@ -343,8 +341,8 @@ impl DataContractV0 {
                 || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64
             {
                 result.add_error(ConsensusError::BasicError(
-                    BasicError::InvalidIndexedPropertyConstraintError(
-                        InvalidIndexedPropertyConstraintError::new(
+                    BasicError::InvalidIndexV0edPropertyConstraintError(
+                        InvalidIndexV0edPropertyConstraintError::new(
                             document_type.to_owned(),
                             index_definition.name.to_owned(),
                             property_name.to_owned(),
@@ -365,14 +363,14 @@ impl DataContractV0 {
     /// checks if properties defined in indices are existing in the contract
     fn validate_not_defined_properties(
         properties: &HashMap<&String, Option<&JsonValue>>,
-        index_definition: &Index,
+        index_definition: &IndexV0,
         document_type: &str,
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
         for (property_name, definition) in properties {
             if definition.is_none() {
                 result.add_error(ConsensusError::BasicError(
-                    BasicError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
+                    BasicError::UndefinedIndexV0PropertyError(UndefinedIndexV0PropertyError::new(
                         document_type.to_owned(),
                         index_definition.name.to_owned(),
                         property_name.to_owned().to_owned(),
@@ -385,13 +383,16 @@ impl DataContractV0 {
 
     /// checks if names of indices are not duplicated
     pub fn validate_index_naming_duplicates(
-        indices: &[Index],
+        indices: &[IndexV0],
         document_type: &str,
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
         for duplicate_index in indices.iter().map(|i| &i.name).duplicates() {
-            result.add_error(BasicError::DuplicateIndexNameError(
-                DuplicateIndexNameError::new(document_type.to_owned(), duplicate_index.to_owned()),
+            result.add_error(BasicError::DuplicateIndexV0NameError(
+                DuplicateIndexV0NameError::new(
+                    document_type.to_owned(),
+                    duplicate_index.to_owned(),
+                ),
             ))
         }
         result
@@ -399,7 +400,7 @@ impl DataContractV0 {
 
     /// checks the limit of unique indexes defined in the data contract
     pub fn validate_max_unique_indices(
-        indices: &[Index],
+        indices: &[IndexV0],
         document_type: &str,
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
@@ -417,7 +418,7 @@ impl DataContractV0 {
 
     /// checks if the system properties are not included in index definition
     fn validate_no_system_indices(
-        index_definition: &Index,
+        index_definition: &IndexV0,
         document_type: &str,
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
@@ -425,8 +426,8 @@ impl DataContractV0 {
         for property in index_definition.properties.iter() {
             if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&property.name.as_str()) {
                 result.add_error(ConsensusError::BasicError(
-                    BasicError::SystemPropertyIndexAlreadyPresentError(
-                        SystemPropertyIndexAlreadyPresentError::new(
+                    BasicError::SystemPropertyIndexV0AlreadyPresentError(
+                        SystemPropertyIndexV0AlreadyPresentError::new(
                             document_type.to_owned(),
                             index_definition.name.to_owned(),
                             property.name.to_owned(),

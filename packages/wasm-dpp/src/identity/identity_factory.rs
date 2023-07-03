@@ -12,7 +12,7 @@ use crate::{
     InstantAssetLockProofWasm,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
-use dpp::identity::factory::IdentityFactory;
+use dpp::identity::identity_factory::IdentityFactory;
 
 use dpp::prelude::Identity;
 

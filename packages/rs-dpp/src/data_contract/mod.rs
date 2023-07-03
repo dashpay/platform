@@ -2,13 +2,11 @@ use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use bincode::{config, BorrowDecode, Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
-pub use factory::*;
+
 pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
-
-mod data_contract_facade;
 
 pub mod errors;
 pub mod extra;
@@ -17,8 +15,15 @@ mod generate_data_contract;
 
 pub mod created_data_contract;
 pub mod document_type;
-mod factory;
+
 mod v0;
+
+#[cfg(feature = "client")]
+mod factory;
+#[cfg(feature = "client")]
+pub use factory::*;
+#[cfg(feature = "client")]
+mod data_contract_facade;
 
 pub use created_data_contract::CreatedDataContract;
 pub use v0::*;
@@ -28,6 +33,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::data_contract::DataContractV0;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;

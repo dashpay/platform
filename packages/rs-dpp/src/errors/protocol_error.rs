@@ -6,8 +6,6 @@ use crate::consensus::signature::{
 };
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,

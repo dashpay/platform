@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-use crate::data_contract::document_type::property_names;
+use crate::data_contract::document_type::{property_names, ArrayFieldTypeV0};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::data_contract::document_type::document_field::v0::{
@@ -10,7 +10,6 @@ use crate::data_contract::document_type::document_field::v0::{
 };
 use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
 use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
-use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
 use crate::state_transition::documents_batch_transition::document_transition::INITIAL_REVISION;
@@ -302,7 +301,7 @@ impl DocumentTypeV0 {
             );
         }
 
-        let index_structure = IndexLevel::from(indices.as_slice());
+        let index_structure = IndexLevelV0::from(indices.as_slice());
 
         let (identifier_paths, binary_paths) =
             Self::find_identifier_and_binary_paths(&document_properties);
@@ -432,10 +431,10 @@ impl DocumentTypeV0 {
                 DocumentFieldTypeV0::Array(array_field_type) => {
                     let new_path = format!("{}[]", new_path);
                     match array_field_type {
-                        ArrayFieldType::Identifier => {
+                        ArrayFieldTypeV0::Identifier => {
                             identifier_paths.insert(new_path.clone());
                         }
-                        ArrayFieldType::ByteArray(_, _) => {
+                        ArrayFieldTypeV0::ByteArray(_, _) => {
                             binary_paths.insert(new_path.clone());
                         }
                         _ => {}
@@ -445,10 +444,10 @@ impl DocumentTypeV0 {
                     for (i, array_field_type) in array_field_types.iter().enumerate() {
                         let new_path = format!("{}[{}]", new_path, i);
                         match array_field_type {
-                            ArrayFieldType::Identifier => {
+                            ArrayFieldTypeV0::Identifier => {
                                 identifier_paths.insert(new_path.clone());
                             }
-                            ArrayFieldType::ByteArray(_, _) => {
+                            ArrayFieldTypeV0::ByteArray(_, _) => {
                                 binary_paths.insert(new_path.clone());
                             }
                             _ => {}
@@ -550,7 +549,7 @@ fn insert_values_nested(
                 //   but we still can use them as document fields with current cbor encoding
                 //   This is a temporary workaround to bring back v0.22 behavior and should be
                 //   replaced with a proper array support in future versions
-                None => DocumentFieldTypeV0::Array(ArrayFieldType::Boolean),
+                None => DocumentFieldTypeV0::Array(ArrayFieldTypeV0::Boolean),
             };
         }
         "object" => {
@@ -707,7 +706,7 @@ fn insert_values(
                     //   but we still can use them as document fields with current cbor encoding
                     //   This is a temporary workaround to bring back v0.22 behavior and should be
                     //   replaced with a proper array support in future versions
-                    None => DocumentFieldTypeV0::Array(ArrayFieldType::Boolean),
+                    None => DocumentFieldTypeV0::Array(ArrayFieldTypeV0::Boolean),
                 };
 
                 document_properties.insert(

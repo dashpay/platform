@@ -1,4 +1,4 @@
-use crate::identity::identity_public_key::factory::KeyCount;
+use crate::identity::identity_public_key::public_key_factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::v0::identity::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};

@@ -1,6 +1,5 @@
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DataContract;
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::document::property_names::FEATURE_VERSION;
 use crate::document::v0::DocumentV0;
 use crate::version::FeatureVersion;
@@ -170,7 +169,6 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::data_contract::extra::common::json_document_to_contract;
     use regex::Regex;
 
@@ -178,6 +176,7 @@ mod tests {
     fn test_serialization() {
         let contract = json_document_to_contract(
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
+            0,
         )
         .expect("expected to get dashpay contract");
 
@@ -209,6 +208,7 @@ mod tests {
     fn test_document_cbor_serialization() {
         let contract = json_document_to_contract(
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
+            0,
         )
         .expect("expected to get cbor contract");
 
@@ -229,6 +229,7 @@ mod tests {
     fn test_document_display() {
         let contract = json_document_to_contract(
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
+            0,
         )
         .expect("expected to get contract");
 

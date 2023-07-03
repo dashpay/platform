@@ -1,4 +1,3 @@
-use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
@@ -431,7 +430,7 @@ impl DocumentV0 {
     #[cfg(feature = "cbor")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = Vec::new();
-        buffer.write_varint(PROTOCOL_VERSION).map_err(|_| {
+        buffer.write_varint(0).map_err(|_| {
             ProtocolError::EncodingError("error writing protocol version".to_string())
         })?;
         let cbor_document = DocumentForCbor::try_from(self.clone())?;

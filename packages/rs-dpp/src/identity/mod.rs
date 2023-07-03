@@ -8,14 +8,12 @@ pub use identity_public_key::*;
 pub mod core_script;
 mod get_biggest_possible_identity;
 mod identity;
-mod identity_facade;
 mod identity_public_key;
 
 pub mod state_transition;
 
 mod credits_converter;
 pub mod errors;
-pub mod factory;
 pub mod signer;
 
 pub mod accessors;

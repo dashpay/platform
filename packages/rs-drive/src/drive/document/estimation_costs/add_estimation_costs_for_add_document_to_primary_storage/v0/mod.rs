@@ -8,7 +8,7 @@ use crate::drive::document::contract_documents_keeping_history_primary_key_path_
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
-use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;

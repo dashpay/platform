@@ -1,6 +1,5 @@
 #![allow(clippy::from_over_into)]
 
-pub mod factory;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
@@ -29,7 +28,7 @@ use crate::Convertible;
 use bincode::{config, Decode, Encode};
 use dashcore::hashes::Hash;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::util::vec;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 

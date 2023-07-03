@@ -7,7 +7,6 @@ use platform_value::{BinaryData, Value};
 pub use state_transition_types::*;
 
 // TODO unify the import paths ::object::state_transition::*
-use crate::document::DocumentsBatchTransition;
 use crate::prelude::Identifier;
 use crate::serialization_traits::PlatformSerializable;
 use bincode::{config, Decode, Encode};

@@ -2,7 +2,6 @@ use platform_value::Value;
 
 use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
@@ -11,11 +10,6 @@ use crate::{
     },
     validation::SimpleConsensusValidationResult,
     BlsModule, NonConsensusError, ProtocolError,
-};
-
-use super::{
-    identity_create_transition::IdentityCreateTransition,
-    identity_update_transition::identity_update_transition::IdentityUpdateTransition,
 };
 
 pub trait TPublicKeysSignaturesValidator {

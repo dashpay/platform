@@ -9,17 +9,12 @@ use crate::contracts::withdrawals_contract::document_types;
 
 use crate::document::Document;
 use crate::{
-    document::{
-        document_factory::DocumentFactory,
-        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    },
+    document::fetch_and_validate_data_contract::DataContractFetcherAndValidator,
     prelude::*,
     state_repository::{MockStateRepositoryLike, StateRepositoryLike},
     tests::utils::generate_random_identifier_struct as gen_owner_id,
     version::LATEST_VERSION,
 };
-
-use super::get_document_validator_fixture;
 
 pub fn get_documents_fixture_with_owner_id_from_contract(
     data_contract: DataContract,

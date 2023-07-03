@@ -1,5 +1,4 @@
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
@@ -7,6 +6,7 @@ use chrono::Utc;
 use platform_value::Value;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::state_transition::documents_batch_transition::document_transition::INITIAL_REVISION;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

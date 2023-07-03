@@ -1,4 +1,4 @@
-use crate::identity::identity_public_key::factory::KeyCount;
+use crate::identity::identity_public_key::public_key_factory::KeyCount;
 use crate::identity::v0::identity::IdentityV0;
 use crate::identity::{Identity, IdentityPublicKey};
 use crate::version::FeatureVersion;

@@ -4,7 +4,7 @@ use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTri
 use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::document::document_transition::DocumentTransitionAction;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};

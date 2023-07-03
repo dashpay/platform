@@ -28,6 +28,7 @@ pub mod version;
 pub mod errors;
 
 pub mod schema;
+#[cfg(feature = "validation")]
 pub mod validation;
 
 mod dash_platform_protocol;

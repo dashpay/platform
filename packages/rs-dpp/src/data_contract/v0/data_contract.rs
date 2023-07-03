@@ -2,6 +2,7 @@ use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
@@ -25,13 +26,13 @@ use crate::data_contract::contract_config::{
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::DocumentType;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
 use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
-use super::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::version::LATEST_VERSION;
 
@@ -87,10 +88,7 @@ impl Convertible for DataContractV0 {
     /// Returns Data Contract as a Buffer
     #[cfg(feature = "cbor")]
     fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let protocol_version = self.data_contract_protocol_version;
-
         let mut object = self.to_object()?;
-        object.remove(property_names::PROTOCOL_VERSION)?;
         if self.defs.is_none() {
             object.remove(property_names::DEFINITIONS)?;
         }
@@ -99,7 +97,8 @@ impl Convertible for DataContractV0 {
             .unwrap()
             .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
 
-        cbor_serializer::serializable_value_to_cbor(&object, Some(protocol_version))
+        // we are on version 0 here
+        cbor_serializer::serializable_value_to_cbor(&object, Some(0))
     }
 }
 
@@ -574,22 +573,26 @@ impl DataContractV0 {
             .unwrap_or_default())
     }
 
-    pub fn optional_document_type_for_name(
+    pub fn optional_document_type_for_name<'a>(
         &self,
         document_type_name: &str,
-    ) -> Option<&DocumentType> {
-        self.document_types.get(document_type_name)
+    ) -> Option<DocumentType<'a>> {
+        self.document_types
+            .get(document_type_name)
+            .map(|a| DocumentType::V0(Cow::Borrowed(a)))
     }
 
-    pub fn document_type_for_name(
+    pub fn document_type_for_name<'a>(
         &self,
         document_type_name: &str,
-    ) -> Result<&DocumentType, ProtocolError> {
-        self.document_types.get(document_type_name).ok_or({
-            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                "can not get document type from contract",
-            ))
-        })
+    ) -> Result<DocumentType<'a>, ProtocolError> {
+        Ok(DocumentType::V0(Cow::Borrowed(
+            self.document_types.get(document_type_name).ok_or({
+                ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                    "can not get document type from contract",
+                ))
+            })?,
+        )))
     }
 
     pub fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
@@ -687,13 +690,13 @@ pub fn get_contract_configuration_properties(
     })
 }
 
-pub fn get_document_types_from_value(
+pub fn get_document_types_from_value<'a>(
     data_contract_id: Identifier,
-    documents_value: &Value,
-    definition_references: &BTreeMap<String, &Value>,
+    documents_value: &'a Value,
+    definition_references: &'a BTreeMap<String, &'a Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+) -> Result<BTreeMap<String, DocumentType<'a>>, ProtocolError> {
     let contract_document_types_raw =
         documents_value
             .as_map()
@@ -716,14 +719,14 @@ pub fn get_document_types_from_value(
     )
 }
 
-pub fn get_document_types_from_value_array(
+pub fn get_document_types_from_value_array<'a>(
     data_contract_id: Identifier,
-    contract_document_types_raw: &Vec<(&str, &Value)>,
-    definition_references: &BTreeMap<String, &Value>,
+    contract_document_types_raw: &'a Vec<(&str, &Value)>,
+    definition_references: &BTreeMap<String, &'a Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
+) -> Result<BTreeMap<String, DocumentType<'a>>, ProtocolError> {
+    let mut contract_document_types: BTreeMap<String, DocumentType<'a>> = BTreeMap::new();
     for (type_key_str, document_type_value) in contract_document_types_raw {
         // Make sure the document_type_value is a map
         let Some(document_type_value_map) = document_type_value.as_map() else {
@@ -732,26 +735,27 @@ pub fn get_document_types_from_value_array(
             )));
         };
 
-        let document_type = DocumentType::from_platform_value(
+        let document_type = DocumentType::V0(Cow::Owned(DocumentTypeV0::from_platform_value(
             data_contract_id,
             type_key_str,
             document_type_value_map,
             definition_references,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
-        )?;
+        )?));
+
         contract_document_types.insert(type_key_str.to_string(), document_type);
     }
     Ok(contract_document_types)
 }
 
-pub fn get_document_types_from_contract(
+pub fn get_document_types_from_contract<'a>(
     data_contract_id: Identifier,
-    contract: &BTreeMap<String, Value>,
-    definition_references: &BTreeMap<String, &Value>,
+    contract: &'a BTreeMap<String, Value>,
+    definition_references: &'a BTreeMap<String, &'a Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+) -> Result<BTreeMap<String, DocumentType<'a>>, ProtocolError> {
     let Some(documents_value) =
         contract
             .get("documents") else {

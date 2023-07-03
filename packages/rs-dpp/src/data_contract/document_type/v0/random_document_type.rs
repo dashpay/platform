@@ -97,9 +97,10 @@ impl RandomDocumentTypeParameters {
     }
 }
 
+use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{
-    DocumentFieldTypeV0, DocumentFieldV0, DocumentType, Index, IndexLevel, IndexV0,
+    DocumentFieldTypeV0, DocumentFieldV0, DocumentType, IndexV0,
 };
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -223,7 +224,7 @@ impl DocumentTypeV0 {
         let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
 
-        let index_structure = IndexLevel::from(indices.as_slice());
+        let index_structure = IndexLevelV0::from(indices.as_slice());
         let (identifier_paths, binary_paths) =
             DocumentType::find_identifier_and_binary_paths(&properties);
         Ok(DocumentTypeV0 {

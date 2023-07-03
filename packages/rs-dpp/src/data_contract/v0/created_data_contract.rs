@@ -1,6 +1,7 @@
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::state_transition::property_names::{DATA_CONTRACT, ENTROPY};
+use crate::data_contract::property_names::ENTROPY;
 use crate::data_contract::DataContract;
+use crate::state_transition::data_contract_create_transition::DATA_CONTRACT;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
@@ -29,7 +30,7 @@ impl CreatedDataContractV0 {
         let data_contract = DataContractV0::from_raw_object(raw_data_contract)?;
 
         Ok(Self {
-            data_contract,
+            data_contract: data_contract.into(),
             entropy_used,
         })
     }

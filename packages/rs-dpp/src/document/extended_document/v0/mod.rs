@@ -1,13 +1,11 @@
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DataContract;
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::document::extended_document::property_names;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
 use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
-use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -19,6 +17,9 @@ use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRem
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
+
+#[cfg(feature = "json-object")]
+use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ pub struct ExtendedDocumentV0 {
 }
 
 impl ExtendedDocumentV0 {
+    #[cfg(feature = "json-object")]
     fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
             .properties
@@ -120,6 +122,7 @@ impl ExtendedDocumentV0 {
         }
     }
 
+    #[cfg(feature = "json-object")]
     /// Create an extended document from a JSON string.
     ///
     /// # Arguments
@@ -137,6 +140,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(json_value.into(), contract)
     }
 
+    #[cfg(feature = "json-object")]
     /// Create an extended document from a raw JSON document.
     ///
     /// # Arguments
@@ -257,6 +261,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
+    #[cfg(feature = "json-object")]
     /// Convert the extended document to a JSON object.
     ///
     /// # Errors
@@ -280,6 +285,7 @@ impl ExtendedDocumentV0 {
         Ok(value)
     }
 
+    #[cfg(feature = "json-object")]
     /// Convert the extended document to a pretty JSON object.
     ///
     /// # Errors
@@ -381,6 +387,7 @@ impl ExtendedDocumentV0 {
         Ok(self.to_map_value()?.into())
     }
 
+    #[cfg(feature = "json-object")]
     pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
         self.to_value()?
             .try_into_validating_json()
