@@ -150,13 +150,13 @@ where
     ) -> Result<(), ProtocolError> {
         // Otherwise, key security level should be less than MASTER but more or equal than required
         if !self
-            .get_security_level_requirement()
+            .security_level_requirement()
             .contains(&public_key.security_level)
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
                     public_key.security_level,
-                    self.get_security_level_requirement(),
+                    self.security_level_requirement(),
                 ),
             ));
         }

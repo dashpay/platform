@@ -8,6 +8,7 @@ mod json_conversion;
 mod value_conversion;
 mod state_transition_like;
 mod v0_methods;
+mod identity_signed;
 
 pub use action::{IdentityCreditTransferTransitionAction};
 

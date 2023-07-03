@@ -58,9 +58,6 @@ pub trait IdentityUpdateTransitionV0Methods {
         public_keys_disabled_at: Option<TimestampMillis>,
     );
     fn get_public_keys_disabled_at(&self) -> Option<TimestampMillis>;
-    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
-        vec![SecurityLevel::MASTER]
-    }
     fn get_owner_id(&self) -> &Identifier;
 }
 
