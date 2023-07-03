@@ -304,7 +304,7 @@ class DockerCompose {
       .split(/\r?\n/)
       .filter(Boolean);
 
-    if (containerList.length && formatJson) {
+    if (containerList.length > 0 && formatJson) {
       return JSON.parse(containerList[0]);
     }
 
