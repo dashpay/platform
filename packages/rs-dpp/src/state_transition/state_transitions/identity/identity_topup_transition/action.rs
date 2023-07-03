@@ -1,75 +1,33 @@
-use crate::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::identifier::Identifier;
-use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use platform_value::Bytes36;
-use serde::{Deserialize, Serialize};
+use derive_more::From;
+use platform_value::{Bytes36, Identifier};
+use crate::identity::IdentityPublicKey;
+use crate::state_transition::identity_topup_transition::v0_action::IdentityTopUpTransitionActionV0;
 
-pub const IDENTITY_TOP_UP_TRANSITION_ACTION_VERSION: u32 = 0;
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdentityTopUpTransitionAction {
-    pub version: u32,
-    pub top_up_balance_amount: u64,
-    pub identity_id: Identifier,
-    pub asset_lock_outpoint: Bytes36,
+#[derive(Debug, Clone, From)]
+pub enum IdentityTopUpTransitionAction {
+    V0(IdentityTopUpTransitionActionV0),
 }
 
 impl IdentityTopUpTransitionAction {
-    pub fn from(
-        value: IdentityTopUpTransition,
-        top_up_balance_amount: u64,
-    ) -> Result<Self, ConsensusError> {
-        let IdentityTopUpTransition {
-            identity_id,
-            asset_lock_proof,
-            ..
-        } = value;
-        let asset_lock_outpoint = asset_lock_proof
-            .out_point()
-            .ok_or(ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                    IdentityAssetLockTransactionOutputNotFoundError::new(
-                        asset_lock_proof.instant_lock_output_index().unwrap(),
-                    ),
-                ),
-            ))?
-            .into();
-        Ok(IdentityTopUpTransitionAction {
-            version: IDENTITY_TOP_UP_TRANSITION_ACTION_VERSION,
-            top_up_balance_amount,
-            identity_id,
-            asset_lock_outpoint,
-        })
+    // The balance being topped up
+    pub fn top_up_balance_amount(&self) -> u64 {
+        match self {
+            IdentityTopUpTransitionAction::V0(transition) => transition.top_up_balance_amount,
+        }
     }
 
-    pub fn from_borrowed(
-        value: &IdentityTopUpTransition,
-        top_up_balance_amount: u64,
-    ) -> Result<Self, ConsensusError> {
-        let IdentityTopUpTransition {
-            identity_id,
-            asset_lock_proof,
-            ..
-        } = value;
-        let asset_lock_outpoint = asset_lock_proof
-            .out_point()
-            .ok_or(ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                    IdentityAssetLockTransactionOutputNotFoundError::new(
-                        asset_lock_proof.instant_lock_output_index().unwrap(),
-                    ),
-                ),
-            ))?
-            .into();
 
-        Ok(IdentityTopUpTransitionAction {
-            version: IDENTITY_TOP_UP_TRANSITION_ACTION_VERSION,
-            top_up_balance_amount,
-            identity_id: *identity_id,
-            asset_lock_outpoint,
-        })
+    // Identity Id
+    pub fn identity_id(&self) -> Identifier {
+        match self {
+            IdentityTopUpTransitionAction::V0(transition) => transition.identity_id,
+        }
+    }
+
+    // Asset Lock Outpoint
+    pub fn asset_lock_outpoint(&self) -> Bytes36 {
+        match self {
+            IdentityTopUpTransitionAction::V0(transition) => transition.asset_lock_outpoint,
+        }
     }
 }

@@ -49,7 +49,6 @@ use crate::state_transition::identity_create_transition::IdentityCreateTransitio
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {

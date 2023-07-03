@@ -7,29 +7,30 @@ use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsen
     StateTransitionFieldTypes, StateTransitionLike,
     StateTransitionType,
 }};
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+
 use crate::state_transition::StateTransition;
-
-use crate::state_transition::StateTransitionType::IdentityCreate;
+use crate::state_transition::StateTransitionType::IdentityTopUp;
 use crate::version::FeatureVersion;
 
-impl From<IdentityCreateTransitionV0> for StateTransition {
-    fn from(value: IdentityCreateTransitionV0) -> Self {
-        let transition: IdentityCreateTransition = value.into();
+
+impl From<IdentityTopUpTransitionV0> for StateTransition {
+    fn from(value: IdentityTopUpTransitionV0) -> Self {
+        let transition: IdentityTopUpTransition = value.into();
         transition.into()
     }
 }
 
-impl StateTransitionLike for IdentityCreateTransitionV0 {
+impl StateTransitionLike for IdentityTopUpTransitionV0 {
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         0
     }
 
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
-        IdentityCreate
+        IdentityTopUp
     }
     /// returns the signature as a byte-array
     fn signature(&self) -> &BinaryData {
@@ -39,7 +40,7 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
     }
-    /// Returns ID of the created contract
+    /// Returns ID of the topUpd contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.identity_id]
     }

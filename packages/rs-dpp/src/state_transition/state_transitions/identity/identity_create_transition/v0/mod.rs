@@ -138,11 +138,3 @@ impl TryFrom<Identity> for IdentityCreateTransitionV0 {
         Ok(identity_create_transition)
     }
 }
-
-impl From<IdentityCreateTransitionV0> for StateTransition {
-    fn from(value: IdentityCreateTransitionV0) -> Self {
-        let transition: IdentityCreateTransition = value.into();
-        transition.into()
-    }
-}
-
