@@ -5,26 +5,31 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use crate::state_transition::data_contract_update_transition::{DataContractUpdateTransition, DataContractUpdateTransitionV0};
+use crate::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionV0,
+};
 use crate::state_transition::state_transitions::data_contract_update_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
+use bincode::{config, Decode, Encode};
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 
 impl StateTransitionValueConvert for DataContractUpdateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        match self { 
+        match self {
             DataContractUpdateTransition::V0(transition) => {
                 let mut value = transition.to_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
-            } 
+            }
         }
     }
 
@@ -83,13 +88,12 @@ impl StateTransitionValueConvert for DataContractUpdateTransition {
             0 => Ok(DataContractUpdateTransitionV0::from_value_map(
                 raw_data_contract_update_transition,
             )?
-                .into()),
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractUpdateTransition version {n}"
             ))),
         }
     }
-
 
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
         let version: u8 = value
@@ -97,11 +101,7 @@ impl StateTransitionValueConvert for DataContractUpdateTransition {
             .map_err(ProtocolError::ValueError)?;
 
         match version {
-            0 => {
-                DataContractUpdateTransitionV0::clean_value(
-                    value,
-                )
-            },
+            0 => DataContractUpdateTransitionV0::clean_value(value),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractUpdateTransition version {n}"
             ))),

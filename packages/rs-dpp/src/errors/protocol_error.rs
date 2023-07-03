@@ -1,7 +1,9 @@
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+use crate::consensus::signature::{
+    InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
+};
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
@@ -156,6 +158,9 @@ pub enum ProtocolError {
 
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
+
+    #[error("critical corrupted credits code execution: {0}")]
+    CriticalCorruptedCreditsCodeExecution(String),
 }
 
 impl From<&str> for ProtocolError {

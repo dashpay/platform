@@ -1,10 +1,10 @@
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::validation::SimpleConsensusValidationResult;
+use crate::version::drive_abci_versions::DriveAbciVersion;
+use crate::version::drive_versions::DriveVersion;
 use crate::version::v0::PLATFORM_V1;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
-use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::DriveVersion;
 
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
@@ -108,7 +108,9 @@ impl PlatformVersion {
     }
 
     pub fn latest<'a>() -> &'a Self {
-        PLATFORM_VERSIONS.last().expect("expected to have a platform version")
+        PLATFORM_VERSIONS
+            .last()
+            .expect("expected to have a platform version")
     }
 
     pub fn validate_contract_version(&self, version: u16) -> SimpleConsensusValidationResult {

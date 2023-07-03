@@ -2,9 +2,9 @@ use crate::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoun
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identifier::Identifier;
+use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use platform_value::Bytes36;
 use serde::{Deserialize, Serialize};
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

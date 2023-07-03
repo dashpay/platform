@@ -1,14 +1,11 @@
-use platform_value::Identifier;
 use crate::identity::SecurityLevel;
 use crate::prelude::Revision;
-use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::v0_methods::IdentityCreditWithdrawalTransitionV0Methods;
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-
+use platform_value::Identifier;
 
 impl IdentityCreditWithdrawalTransitionV0Methods for IdentityCreditWithdrawalTransition {
-
-
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),

@@ -1,20 +1,21 @@
-
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityTopUp;
 use crate::version::FeatureVersion;
-
 
 impl From<IdentityTopUpTransitionV0> for StateTransition {
     fn from(value: IdentityTopUpTransitionV0) -> Self {

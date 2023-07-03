@@ -5,27 +5,28 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;
+use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use crate::state_transition::StateTransitionValueConvert;
-use crate::state_transition::identity_credit_transfer_transition::{IdentityCreditTransferTransition};
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;
 
 impl StateTransitionValueConvert for IdentityCreditTransferTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        match self { 
+        match self {
             IdentityCreditTransferTransition::V0(transition) => {
                 let mut value = transition.to_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
-            } 
+            }
         }
     }
 
@@ -84,13 +85,12 @@ impl StateTransitionValueConvert for IdentityCreditTransferTransition {
             0 => Ok(IdentityCreditTransferTransitionV0::from_value_map(
                 raw_data_contract_create_transition,
             )?
-                .into()),
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreditTransferTransition version {n}"
             ))),
         }
     }
-
 
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
         let version: u8 = value
@@ -98,11 +98,7 @@ impl StateTransitionValueConvert for IdentityCreditTransferTransition {
             .map_err(ProtocolError::ValueError)?;
 
         match version {
-            0 => {
-                IdentityCreditTransferTransitionV0::clean_value(
-                    value,
-                )
-            },
+            0 => IdentityCreditTransferTransitionV0::clean_value(value),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreditTransferTransition version {n}"
             ))),

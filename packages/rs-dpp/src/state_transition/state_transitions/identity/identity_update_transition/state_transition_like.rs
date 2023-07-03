@@ -1,8 +1,8 @@
-use platform_value::{BinaryData, Identifier};
+use crate::state_transition::identity_update_transition::v0::v0_methods::IdentityUpdateTransitionV0Methods;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::state_transition::identity_update_transition::v0::v0_methods::IdentityUpdateTransitionV0Methods;
 use crate::version::FeatureVersion;
+use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityUpdateTransition {
     /// Returns ID of the updated contract
@@ -38,17 +38,13 @@ impl StateTransitionLike for IdentityUpdateTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
-            IdentityUpdateTransition::V0(transition) => {
-                transition.set_signature_bytes(signature)
-            }
+            IdentityUpdateTransition::V0(transition) => transition.set_signature_bytes(signature),
         }
     }
 
     fn get_owner_id(&self) -> &Identifier {
         match self {
-            IdentityUpdateTransition::V0(transition) => {
-                transition.get_owner_id()
-            }
+            IdentityUpdateTransition::V0(transition) => transition.get_owner_id(),
         }
     }
 }

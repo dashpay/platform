@@ -7,6 +7,7 @@ use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
 use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
+use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -326,8 +327,7 @@ impl ExtendedDocumentV0 {
         let document_type_name = document_map.remove_string(property_names::DOCUMENT_TYPE)?;
 
         let document = Document::from_map(document_map, None, None)?;
-        Ok(ExtendedDocument {
-            feature_version: protocol_version as u16,
+        Ok(ExtendedDocumentV0 {
             document_type_name,
             data_contract_id,
             document,

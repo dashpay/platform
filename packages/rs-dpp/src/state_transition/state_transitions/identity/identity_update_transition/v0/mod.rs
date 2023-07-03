@@ -1,11 +1,11 @@
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-pub(super) mod v0_methods;
-mod types;
-mod identity_signed;
 
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
@@ -23,32 +23,28 @@ use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
 use crate::serialization_traits::PlatformSerializable;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionLike,
-        StateTransitionType,
-    },
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     version::LATEST_VERSION,
     ProtocolError,
 };
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-
 
 #[derive(
-Serialize,
-Deserialize,
-Encode,
-Decode,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
-Debug,
-Clone,
-PartialEq,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    Debug,
+    Clone,
+    PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
@@ -116,8 +112,8 @@ fn remove_integer_list_or_default<T>(
     value: &mut Value,
     property_name: &str,
 ) -> Result<Vec<T>, ProtocolError>
-    where
-        T: TryFrom<i128>
+where
+    T: TryFrom<i128>
         + TryFrom<u128>
         + TryFrom<u64>
         + TryFrom<i64>
@@ -139,9 +135,9 @@ fn remove_integer_list_or_default<T>(
 
 #[cfg(test)]
 mod test {
+    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
     use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
     use getrandom::getrandom;
-    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
 
     use super::*;
 
@@ -162,10 +158,7 @@ mod test {
             .to_object(false)
             .expect("conversion to raw object shouldn't fail");
 
-        assert!(matches!(
-            result[IDENTITY_ID],
-            Value::Identifier(_)
-        ));
+        assert!(matches!(result[IDENTITY_ID], Value::Identifier(_)));
         assert!(matches!(result[SIGNATURE], Value::Bytes(_)));
         assert!(matches!(
             result[ADD_PUBLIC_KEYS][0]["data"],

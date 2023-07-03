@@ -1,12 +1,14 @@
 use crate::data_contract::DataContract;
-use crate::identity::{KeyID, PartialIdentity};
 use crate::identity::signer::Signer;
-use crate::{NonConsensusError, ProtocolError};
+use crate::identity::{KeyID, PartialIdentity};
 use crate::serialization_traits::Signable;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-use crate::state_transition::data_contract_update_transition::{DataContractUpdateTransition, DataContractUpdateTransitionV0};
+use crate::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionV0,
+};
 use crate::state_transition::StateTransitionLike;
 use crate::version::FeatureVersion;
+use crate::{NonConsensusError, ProtocolError};
 
 pub trait DataContractUpdateTransitionV0Methods {
     /// Creates a new instance of `DataContractUpdateTransition` from the given `data_contract`.

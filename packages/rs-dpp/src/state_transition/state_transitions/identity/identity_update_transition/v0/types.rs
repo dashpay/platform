@@ -1,14 +1,11 @@
-use crate::state_transition::identity_update_transition::fields::*;
 use crate::state_transition::identity_update_transition::fields::property_names::*;
+use crate::state_transition::identity_update_transition::fields::*;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::StateTransitionFieldTypes;
 
 impl StateTransitionFieldTypes for IdentityUpdateTransitionV0 {
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![
-            SIGNATURE,
-            ADD_PUBLIC_KEYS_SIGNATURE,
-        ]
+        vec![SIGNATURE, ADD_PUBLIC_KEYS_SIGNATURE]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
@@ -22,5 +19,4 @@ impl StateTransitionFieldTypes for IdentityUpdateTransitionV0 {
             ADD_PUBLIC_KEYS_SIGNATURE,
         ]
     }
-
 }

@@ -2,14 +2,15 @@ use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::data_contract::CreatedDataContract;
 use crate::prelude::Identifier;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::Value;
-
-use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 /// # Data Contract Facade
 ///
@@ -79,6 +80,7 @@ impl DataContractFacade {
             .await
     }
 
+    #[cfg(feature = "state-transitions")]
     /// Create Data Contract Create State Transition
     pub fn create_data_contract_create_transition(
         &self,
@@ -88,6 +90,7 @@ impl DataContractFacade {
             .create_data_contract_create_transition(created_data_contract)
     }
 
+    #[cfg(feature = "state-transitions")]
     /// Create Data Contract Update State Transition
     pub fn create_data_contract_update_transition(
         &self,
@@ -97,8 +100,9 @@ impl DataContractFacade {
             .create_data_contract_update_transition(data_contract)
     }
 
+    #[cfg(feature = "validation")]
     /// Validate Data Contract
-    pub async fn validate(
+    pub fn validate(
         &self,
         protocol_version: u32,
         data_contract: &Value,

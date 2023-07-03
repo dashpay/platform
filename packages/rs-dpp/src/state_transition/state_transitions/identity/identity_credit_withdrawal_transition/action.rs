@@ -1,9 +1,9 @@
-use derive_more::From;
-use platform_value::{Bytes36, Identifier};
 use crate::document::Document;
 use crate::prelude::Revision;
 use crate::state_transition::fee::Credits;
 use crate::state_transition::identity_credit_withdrawal_transition::v0_action::IdentityCreditWithdrawalTransitionActionV0;
+use derive_more::From;
+use platform_value::{Bytes36, Identifier};
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreditWithdrawalTransitionAction {
@@ -28,8 +28,9 @@ impl IdentityCreditWithdrawalTransitionAction {
     // Recipient Id
     pub fn prepared_withdrawal_document(&self) -> &Document {
         match self {
-            IdentityCreditWithdrawalTransitionAction::V0(transition) => &transition.prepared_withdrawal_document,
+            IdentityCreditWithdrawalTransitionAction::V0(transition) => {
+                &transition.prepared_withdrawal_document
+            }
         }
     }
-
 }

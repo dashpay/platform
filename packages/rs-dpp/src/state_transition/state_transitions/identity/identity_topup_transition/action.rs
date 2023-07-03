@@ -1,7 +1,7 @@
-use derive_more::From;
-use platform_value::{Bytes36, Identifier};
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::identity_topup_transition::v0_action::IdentityTopUpTransitionActionV0;
+use derive_more::From;
+use platform_value::{Bytes36, Identifier};
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityTopUpTransitionAction {
@@ -15,7 +15,6 @@ impl IdentityTopUpTransitionAction {
             IdentityTopUpTransitionAction::V0(transition) => transition.top_up_balance_amount,
         }
     }
-
 
     // Identity Id
     pub fn identity_id(&self) -> Identifier {

@@ -1,6 +1,8 @@
 use crate::prelude::DataContract;
+use crate::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionActionV0,
+};
 use derive_more::From;
-use crate::state_transition::data_contract_update_transition::{DataContractUpdateTransition, DataContractUpdateTransitionActionV0};
 
 #[derive(Debug, Clone, From)]
 pub enum DataContractUpdateTransitionAction {

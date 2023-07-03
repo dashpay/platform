@@ -6,15 +6,15 @@ use crate::state_transition::StateTransitionIdentitySigned;
 impl StateTransitionIdentitySigned for DataContractUpdateTransition {
     fn signature_public_key_id(&self) -> Option<KeyID> {
         match self {
-            DataContractUpdateTransition::V0(transition) => {
-                transition.signature_public_key_id()
-            }
+            DataContractUpdateTransition::V0(transition) => transition.signature_public_key_id(),
         }
     }
 
     fn set_signature_public_key_id(&mut self, key_id: KeyID) {
         match self {
-            DataContractUpdateTransition::V0(transition) => transition.set_signature_public_key_id(key_id),
+            DataContractUpdateTransition::V0(transition) => {
+                transition.set_signature_public_key_id(key_id)
+            }
         }
     }
 

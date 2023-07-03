@@ -1,9 +1,9 @@
-use platform_value::{BinaryData, Identifier};
 use crate::identity::KeyID;
+use crate::state_transition::data_contract_create_transition::v0::v0_methods::DataContractCreateTransitionV0Methods;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::state_transition::data_contract_create_transition::v0::v0_methods::DataContractCreateTransitionV0Methods;
 use crate::version::FeatureVersion;
+use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for DataContractCreateTransition {
     /// Returns ID of the created contract
@@ -47,9 +47,7 @@ impl StateTransitionLike for DataContractCreateTransition {
 
     fn get_owner_id(&self) -> &Identifier {
         match self {
-            DataContractCreateTransition::V0(transition) => {
-                transition.get_owner_id()
-            }
+            DataContractCreateTransition::V0(transition) => transition.get_owner_id(),
         }
     }
 }

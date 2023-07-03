@@ -1,14 +1,11 @@
-
-
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-
 pub mod state_transition_helpers {
     use super::*;
-    use std::convert::TryInto;
-    use platform_value::Value;
     use crate::ProtocolError;
+    use platform_value::Value;
+    use std::convert::TryInto;
 
     pub fn to_json<'a, I: IntoIterator<Item = &'a str>>(
         serializable: impl Serialize,

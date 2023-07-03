@@ -13,18 +13,12 @@ extern crate core;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod common;
-/// Contract module
-#[cfg(any(feature = "full", feature = "verify"))]
-pub mod contract;
 /// Drive module
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod drive;
 /// Error module
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod error;
-/// Fee module
-#[cfg(any(feature = "full", feature = "verify"))]
-pub mod fee;
 /// Fee pools module
 #[cfg(feature = "full")]
 pub mod fee_pools;

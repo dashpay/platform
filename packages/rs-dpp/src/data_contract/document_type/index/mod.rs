@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]

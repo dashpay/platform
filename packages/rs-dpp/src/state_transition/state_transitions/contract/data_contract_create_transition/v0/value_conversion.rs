@@ -1,15 +1,18 @@
-use std::collections::BTreeMap;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use std::collections::BTreeMap;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
@@ -17,7 +20,6 @@ use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueCon
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
-
 
 impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
     fn from_raw_object(

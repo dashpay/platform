@@ -1,10 +1,8 @@
-
 use std::fmt::Debug;
 
 use dashcore::signer;
 
 use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
-
 
 use crate::consensus::signature::InvalidStateTransitionSignatureError;
 use crate::consensus::signature::SignatureError;
@@ -23,8 +21,8 @@ use crate::{
 };
 
 use crate::identity::KeyID;
-use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use crate::state_transition::StateTransitionType;
+use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] =
     [StateTransitionType::DocumentsBatch];
@@ -41,11 +39,10 @@ pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
     StateTransitionType::DataContractUpdate,
 ];
 
-
 /// The StateTransitionLike represents set of methods that are shared for all types of State Transition.
 /// Every type of state transition should also implement Debug, Clone, and support conversion to compounded [`StateTransition`]
 pub trait StateTransitionLike:
-StateTransitionFieldTypes + Clone + Debug + Into<StateTransition> + Signable
+    StateTransitionFieldTypes + Clone + Debug + Into<StateTransition> + Signable
 {
     /// returns the protocol version
     fn state_transition_protocol_version(&self) -> FeatureVersion;

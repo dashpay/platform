@@ -32,27 +32,23 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
-
-use std::collections::BTreeMap;
-use serde::{Deserialize, Serialize};
-use platform_value::Identifier;
 use crate::block::epoch::{Epoch, EpochIndex};
 use crate::state_transition::fee::Credits;
+use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
 /// a dust refund limit is used
 const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 
-
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
-
 
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
-
 
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
@@ -213,7 +209,6 @@ impl FeeRefunds {
     }
 }
 
-
 impl IntoIterator for FeeRefunds {
     type Item = (Identifier, CreditsPerEpoch);
     type IntoIter = IntoIter<Identifier, CreditsPerEpoch>;
@@ -222,7 +217,6 @@ impl IntoIterator for FeeRefunds {
         self.0.into_iter()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

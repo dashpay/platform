@@ -1,9 +1,9 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::state_transition::property_names::{DATA_CONTRACT, ENTROPY};
+use crate::data_contract::DataContract;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
-use crate::data_contract::DataContract;
 
 #[derive(Clone, Debug)]
 pub struct CreatedDataContractV0 {

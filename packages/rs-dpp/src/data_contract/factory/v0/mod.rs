@@ -1,13 +1,10 @@
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use std::sync::Arc;
 
 use data_contract::state_transition::property_names as st_prop;
 use platform_value::{Bytes32, Error, Value};
 
-use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::errors::InvalidDataContractError;
 
 use crate::data_contract::property_names::SYSTEM_VERSION;
@@ -16,22 +13,23 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::state_transition::data_contract_create_transition::property_names::DATA_CONTRACT_PROTOCOL_VERSION;
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 use crate::data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 use crate::serialization_traits::PlatformDeserializable;
-use crate::state_transition::StateTransitionType;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
 use crate::{
-    data_contract::{self, generate_data_contract_id},
+    data_contract::{self},
     errors::ProtocolError,
     prelude::Identifier,
     Convertible,
 };
-use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -66,7 +64,8 @@ impl DataContractFactoryV0 {
     ) -> Result<CreatedDataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);
 
-        let data_contract_id = generate_data_contract_id(owner_id.to_buffer(), entropy.to_buffer());
+        let data_contract_id =
+            DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), entropy.to_buffer());
 
         let definition_references = definitions
             .as_ref()
@@ -129,18 +128,22 @@ impl DataContractFactoryV0 {
         Ok(CreatedDataContractV0 {
             data_contract,
             entropy_used: entropy,
-        }.into())
+        }
+        .into())
     }
 
     #[cfg(feature = "platform-value")]
     /// Create Data Contract from plain object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         mut data_contract_object: Value,
-        skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        if !skip_validation {
-            self.validate_data_contract(&data_contract_object)?;
+        #[cfg(feature = "validation")]
+        {
+            if !skip_validation {
+                self.validate_data_contract(&data_contract_object)?;
+            }
         }
         let Some(version) = !data_contract_object
             .get_optional_integer::<u16>(SYSTEM_VERSION)
@@ -164,10 +167,10 @@ impl DataContractFactoryV0 {
     }
 
     /// Create Data Contract from buffer
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let data_contract: DataContract =
             DataContract::deserialize(buffer.as_slice()).map_err(|e| {
@@ -176,13 +179,17 @@ impl DataContractFactoryV0 {
                 ))
             })?;
 
-        if !skip_validation {
-            self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
+        #[cfg(feature = "validation")]
+        {
+            if !skip_validation {
+                self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
+            }
         }
 
         Ok(data_contract)
     }
 
+    #[cfg(feature = "validation")]
     pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
         let result =
             DataContract::validate(self.data_contract_feature_version, raw_data_contract, false)?;
@@ -196,6 +203,7 @@ impl DataContractFactoryV0 {
         Ok(())
     }
 
+    #[cfg(feature = "state-transitions")]
     pub fn create_data_contract_create_transition(
         &self,
         created_data_contract: CreatedDataContract,
@@ -203,6 +211,7 @@ impl DataContractFactoryV0 {
         Ok(created_data_contract.into())
     }
 
+    #[cfg(feature = "state-transitions")]
     pub fn create_data_contract_update_transition(
         &self,
         data_contract: DataContract,
@@ -253,7 +262,7 @@ mod tests {
             .to_object()
             .unwrap();
 
-        let factory = DataContractFactoryV0::new(1, data_contract_validator);
+        let factory = DataContractFactoryV0::new(1, None);
         TestData {
             created_data_contract,
             raw_data_contract,

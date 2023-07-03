@@ -1,10 +1,10 @@
 use crate::identifier::Identifier;
 use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::Revision;
-use serde::{Deserialize, Serialize};
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_UPDATE_TRANSITION_ACTION_VERSION: u32 = 0;
 

@@ -1,9 +1,9 @@
+use crate::consensus::basic::BasicError;
+use platform_value::Value;
 use std::{
     convert::{TryFrom, TryInto},
     sync::Arc,
 };
-use platform_value::Value;
-use crate::consensus::basic::BasicError;
 
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
@@ -13,10 +13,10 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-use crate::ProtocolError;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionType};
+use crate::ProtocolError;
 
 #[derive(Default)]
 pub struct StateTransitionFactoryOptions {
@@ -108,14 +108,14 @@ where
         Ok(())
     }
 }
-// 
+//
 // pub async fn create_state_transition(
 //     state_repository: &impl StateRepositoryLike,
 //     raw_state_transition: Value,
 // ) -> Result<StateTransition, ProtocolError> {
 //     let transition_type = try_get_transition_type(&raw_state_transition)?;
 //     let execution_context = StateTransitionExecutionContext::default();
-// 
+//
 //     match transition_type {
 //         StateTransitionType::DataContractCreate => {
 //             let transition = DataContractCreateTransition::from_raw_object(raw_state_transition)?;
@@ -165,7 +165,7 @@ where
 //         }
 //     }
 // }
-// 
+//
 // async fn fetch_data_contracts_for_document_transition(
 //     state_repository: &impl StateRepositoryLike,
 //     raw_document_transitions: impl IntoIterator<Item = &Value>,
@@ -178,7 +178,7 @@ where
 //                 transition.to_owned(),
 //             ))
 //         })?;
-// 
+//
 //         let data_contract_id = Identifier::from_bytes(&data_contract_id_bytes)?;
 //         let data_contract: DataContract = state_repository
 //             .fetch_data_contract(&data_contract_id, Some(execution_context))
@@ -191,10 +191,10 @@ where
 //                     data_contract_id,
 //                 ))
 //             })?;
-// 
+//
 //         data_contracts.push(data_contract);
 //     }
-// 
+//
 //     Ok(data_contracts)
 // }
 

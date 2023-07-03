@@ -1,11 +1,11 @@
-use crate::identity::IdentityPublicKey;
 use crate::identity::signer::Signer;
-use crate::ProtocolError;
+use crate::identity::IdentityPublicKey;
 use crate::state_transition::StateTransitionLike;
+use crate::ProtocolError;
 
 pub(super) trait StateTransitionIdentitySignExternalV0
-    where
-        Self: StateTransitionLike,
+where
+    Self: StateTransitionLike,
 {
     fn sign_external_v0<S: Signer>(
         &mut self,

@@ -1,12 +1,14 @@
-use std::collections::BTreeMap;
+use crate::data_contract::DataContract;
+use crate::state_transition::data_contract_update_transition::fields::*;
+use crate::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransitionV0, BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS,
+};
+use crate::state_transition::StateTransitionFieldTypes;
+use crate::state_transition::StateTransitionValueConvert;
+use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
-use crate::data_contract::DataContract;
-use crate::ProtocolError;
-use crate::state_transition::StateTransitionValueConvert;
-use crate::state_transition::data_contract_update_transition::{BINARY_FIELDS, DataContractUpdateTransitionV0, IDENTIFIER_FIELDS, U32_FIELDS};
-use crate::state_transition::data_contract_update_transition::fields::*;
-use crate::state_transition::StateTransitionFieldTypes;
+use std::collections::BTreeMap;
 
 impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -44,9 +46,7 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
         Ok(object)
     }
 
-    fn from_raw_object(
-        mut raw_object: Value,
-    ) -> Result<Self, ProtocolError> {
+    fn from_raw_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionV0 {
             signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)

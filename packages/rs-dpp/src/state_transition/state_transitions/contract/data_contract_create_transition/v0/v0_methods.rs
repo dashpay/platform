@@ -7,10 +7,13 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
@@ -54,47 +57,46 @@ pub trait DataContractCreateTransitionV0Methods {
 }
 
 impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
+    fn new_from_data_contract<S: Signer>(
+        mut data_contract: DataContract,
+        entropy: Bytes32,
+        identity: &PartialIdentity,
+        key_id: KeyID,
+        signer: &S,
+        _version: FeatureVersion,
+    ) -> Result<DataContractCreateTransition, ProtocolError> {
+        data_contract.owner_id = identity.id;
+        data_contract.id = DataContract::generate_data_contract_id_v0(identity.id, entropy);
+        let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+            data_contract,
+            entropy: Default::default(),
+            signature_public_key_id: key_id,
+            signature: Default::default(),
+        });
+        let value = transition.signable_bytes()?;
+        let public_key =
+            identity
+                .loaded_public_keys
+                .get(&key_id)
+                .ok_or(ProtocolError::NonConsensusError(
+                    NonConsensusError::StateTransitionCreationError(
+                        "public key did not exist".to_string(),
+                    ),
+                ))?;
+        transition.set_signature(signer.sign(public_key, &value)?.into());
+        Ok(transition)
+    }
 
-        fn new_from_data_contract<S: Signer>(
-            mut data_contract: DataContract,
-            entropy: Bytes32,
-            identity: &PartialIdentity,
-            key_id: KeyID,
-            signer: &S,
-            _version: FeatureVersion,
-        ) -> Result<DataContractCreateTransition, ProtocolError> {
-            data_contract.owner_id = identity.id;
-            data_contract.id = DataContract::generate_data_contract_id_v0(identity.id, entropy);
-            let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
-                data_contract,
-                entropy: Default::default(),
-                signature_public_key_id: key_id,
-                signature: Default::default(),
-            });
-            let value = transition.signable_bytes()?;
-            let public_key =
-                identity
-                    .loaded_public_keys
-                    .get(&key_id)
-                    .ok_or(ProtocolError::NonConsensusError(
-                        NonConsensusError::StateTransitionCreationError(
-                            "public key did not exist".to_string(),
-                        ),
-                    ))?;
-            transition.set_signature(signer.sign(public_key, &value)?.into());
-            Ok(transition)
-        }
+    fn get_data_contract(&self) -> &DataContract {
+        &self.data_contract
+    }
 
-        fn get_data_contract(&self) -> &DataContract {
-            &self.data_contract
-        }
+    fn set_data_contract(&mut self, data_contract: DataContract) {
+        self.data_contract = data_contract;
+    }
 
-        fn set_data_contract(&mut self, data_contract: DataContract) {
-            self.data_contract = data_contract;
-        }
-
-        /// Returns ID of the created contract
-        fn get_modified_data_ids(&self) -> Vec<Identifier> {
-            vec![self.data_contract.id]
-        }
+    /// Returns ID of the created contract
+    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.data_contract.id]
+    }
 }

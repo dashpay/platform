@@ -1,11 +1,11 @@
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-pub(super) mod v0_methods;
-mod types;
-mod identity_signed;
 
 use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{KeyID, SecurityLevel};
@@ -24,18 +24,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-
 #[derive(
-Debug,
-Clone,
-Serialize,
-Deserialize,
-Encode,
-Decode,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
-PartialEq,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
@@ -62,8 +61,6 @@ impl Default for IdentityCreditTransferTransitionV0 {
     }
 }
 
-
-
 #[cfg(test)]
 mod test {
     use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionV0;
@@ -71,10 +68,10 @@ mod test {
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::StateTransitionType;
 
+    use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
-    use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 
     fn test_identity_credit_transfer_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,

@@ -37,6 +37,7 @@ mod tests {
     use crate::serialization_traits::PlatformMessageSignable;
     use crate::serialization_traits::Signable;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
@@ -48,7 +49,6 @@ mod tests {
     use rand::SeedableRng;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
-    use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 
     #[test]
     fn identity_create_transition_ser_de() {

@@ -36,8 +36,6 @@
 pub mod decode;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod encode;
-#[cfg(feature = "full")]
-mod epoch;
 
 #[cfg(feature = "full")]
 use std::fs::File;

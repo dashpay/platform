@@ -6,9 +6,9 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::Value;
 
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 impl DocumentTypeV0 {
     /// Creates a document at the current time based on document type information

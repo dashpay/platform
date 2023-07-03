@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use bincode::{config, BorrowDecode, Decode, Encode};
 pub use data_contract::*;
@@ -7,6 +6,7 @@ pub use factory::*;
 pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 use platform_value::{Identifier, Value};
+use std::collections::BTreeMap;
 
 mod data_contract_facade;
 
@@ -14,7 +14,6 @@ pub mod errors;
 pub mod extra;
 
 mod generate_data_contract;
-pub mod state_transition;
 
 pub mod created_data_contract;
 pub mod document_type;
@@ -26,13 +25,13 @@ pub use v0::*;
 
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::data_contract::DataContractV0;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersioned;
-use crate::data_contract::document_type::DocumentType;
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -45,11 +44,11 @@ pub mod property_names {
     pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
 }
 
-pub trait DataContractLike {
+pub trait DataContractLike<'a> {
     fn id() -> Identifier;
     fn owner_id() -> Identifier;
     fn contract_version() -> u32;
-    fn document_types() -> BTreeMap<DocumentName, DocumentType>;
+    fn document_types() -> BTreeMap<DocumentName, DocumentType<'a>>;
 }
 
 #[derive(

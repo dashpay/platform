@@ -1,19 +1,20 @@
-
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{BlsModule, Convertible, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    BlsModule, Convertible, NonConsensusError, ProtocolError,
+};
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::version::FeatureVersion;
@@ -32,10 +33,7 @@ pub trait IdentityTopUpTransitionV0Methods {
         StateTransitionType::IdentityTopUp
     }
     /// Set asset lock
-    fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    );
+    fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof);
     /// Get asset lock proof
     fn asset_lock_proof(&self) -> &AssetLockProof;
     /// Set identity id
@@ -70,10 +68,7 @@ impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
     }
 
     /// Set asset lock
-    fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) {
+    fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof) {
         self.asset_lock_proof = asset_lock_proof;
     }
 

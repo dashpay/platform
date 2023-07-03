@@ -6,10 +6,6 @@ use dashcore::{OutPoint, Transaction, TxOut};
 
 use serde::{Deserialize, Serialize};
 
-pub use asset_lock_proof_validator::*;
-pub use asset_lock_public_key_hash_fetcher::*;
-pub use asset_lock_transaction_output_fetcher::*;
-pub use asset_lock_transaction_validator::*;
 pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
@@ -18,14 +14,8 @@ use platform_value::Value;
 use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{DPPError, NonConsensusError, ProtocolError, SerdeParsingError};
 
-mod asset_lock_proof_validator;
-mod asset_lock_public_key_hash_fetcher;
-mod asset_lock_transaction_output_fetcher;
-mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
@@ -35,64 +25,64 @@ pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(ChainAssetLockProof),
 }
-
-impl AssetLockProof {
-    /// This fetches the asset lock transaction output from core
-    pub async fn fetch_asset_lock_transaction_output(
-        &self,
-        state_repository: &impl StateRepositoryLike,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> Result<TxOut, DPPError> {
-        match self {
-            AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
-                .output()
-                .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
-                .cloned(),
-            AssetLockProof::Chain(asset_lock_proof) => {
-                let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
-
-                let output_index = out_point.vout as usize;
-                let transaction_hash = out_point.txid;
-
-                let transaction_data = state_repository
-                    .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
-                    .await
-                    .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
-
-                if execution_context.is_dry_run() {
-                    return Ok(TxOut {
-                        value: 1000,
-                        ..Default::default()
-                    });
-                }
-
-                let transaction_data = transaction_data
-                    .try_into()
-                    .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
-
-                if let Some(raw_transaction) = transaction_data.data {
-                    let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
-                        .map_err(|e| {
-                            DPPError::CoreMessageCorruption(format!(
-                                "could not decode transaction {:?}",
-                                e
-                            ))
-                        })?;
-
-                    transaction
-                        .output
-                        .get(output_index)
-                        .cloned()
-                        .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
-                } else {
-                    Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
-                        transaction_hash,
-                    )))
-                }
-            }
-        }
-    }
-}
+//
+// impl AssetLockProof {
+//     /// This fetches the asset lock transaction output from core
+//     pub async fn fetch_asset_lock_transaction_output(
+//         &self,
+//         state_repository: &impl StateRepositoryLike,
+//         execution_context: &StateTransitionExecutionContext,
+//     ) -> Result<TxOut, DPPError> {
+//         match self {
+//             AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
+//                 .output()
+//                 .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
+//                 .cloned(),
+//             AssetLockProof::Chain(asset_lock_proof) => {
+//                 let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
+//
+//                 let output_index = out_point.vout as usize;
+//                 let transaction_hash = out_point.txid;
+//
+//                 let transaction_data = state_repository
+//                     .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
+//                     .await
+//                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
+//
+//                 if execution_context.is_dry_run() {
+//                     return Ok(TxOut {
+//                         value: 1000,
+//                         ..Default::default()
+//                     });
+//                 }
+//
+//                 let transaction_data = transaction_data
+//                     .try_into()
+//                     .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
+//
+//                 if let Some(raw_transaction) = transaction_data.data {
+//                     let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
+//                         .map_err(|e| {
+//                             DPPError::CoreMessageCorruption(format!(
+//                                 "could not decode transaction {:?}",
+//                                 e
+//                             ))
+//                         })?;
+//
+//                     transaction
+//                         .output
+//                         .get(output_index)
+//                         .cloned()
+//                         .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
+//                 } else {
+//                     Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
+//                         transaction_hash,
+//                     )))
+//                 }
+//             }
+//         }
+//     }
+// }
 
 impl Default for AssetLockProof {
     fn default() -> Self {

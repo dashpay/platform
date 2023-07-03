@@ -1,6 +1,6 @@
+use crate::block::block_info::BlockInfo;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use crate::block::block_info::BlockInfo;
 
 /// Extended Block information
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
@@ -118,15 +118,15 @@ mod signature_serializer {
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(signature: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         serializer.serialize_bytes(signature)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 96], D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let buf: Vec<u8> = Deserialize::deserialize(deserializer)?;
         if buf.len() != 96 {

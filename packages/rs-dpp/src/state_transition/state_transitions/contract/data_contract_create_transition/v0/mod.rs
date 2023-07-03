@@ -1,11 +1,11 @@
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-pub(super) mod v0_methods;
-mod types;
-mod identity_signed;
 
 use crate::serialization_traits::PlatformSerializable;
 use platform_serialization::PlatformSignable;
@@ -14,10 +14,13 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
@@ -59,7 +62,6 @@ impl Default for DataContractCreateTransitionV0 {
         }
     }
 }
-
 
 impl From<DataContractCreateTransitionV0> for StateTransition {
     fn from(value: DataContractCreateTransitionV0) -> Self {

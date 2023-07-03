@@ -1,8 +1,8 @@
-mod identity;
-mod document;
-mod contract;
 mod common_fields;
+mod contract;
+mod document;
+mod identity;
 
-pub use identity::*;
-pub use document::*;
 pub use contract::*;
+pub use document::*;
+pub use identity::*;

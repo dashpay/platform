@@ -7,7 +7,8 @@ use crate::{
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext, StateTransitionFieldTypes,
+        state_transition_execution_context::StateTransitionExecutionContext,
+        StateTransitionFieldTypes,
     },
     tests::{
         fixtures::{

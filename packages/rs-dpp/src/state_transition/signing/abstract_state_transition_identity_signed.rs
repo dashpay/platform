@@ -9,19 +9,19 @@ use crate::state_transition::errors::{
     StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
 
+use crate::state_transition::signing::sign_external::StateTransitionIdentitySignExternalV0;
+use crate::state_transition::StateTransitionLike;
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
     prelude::*,
     util::hash::ripemd160_sha256,
     BlsModule,
 };
-use crate::state_transition::signing::sign_external::StateTransitionIdentitySignExternalV0;
-use crate::state_transition::StateTransitionLike;
-use crate::version::{FeatureVersion, PlatformVersion};
 
 use super::StateTransitionLike;
 
-pub trait StateTransitionIdentitySignedV0 : StateTransitionIdentitySignExternalV0
+pub trait StateTransitionIdentitySignedV0: StateTransitionIdentitySignExternalV0
 where
     Self: StateTransitionLike,
 {
@@ -33,12 +33,13 @@ where
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
-        protocol_version: u32
+        protocol_version: u32,
     ) -> Result<(), ProtocolError> {
-        match
-        PlatformVersion::get(protocol_version)?.state_transition_signing.sign_external { 0 => {
-            self.sign_external_0(identity_public_key, signer)
-        }
+        match PlatformVersion::get(protocol_version)?
+            .state_transition_signing
+            .sign_external
+        {
+            0 => self.sign_external_0(identity_public_key, signer),
             _ => {}
         }
         Ok(())

@@ -1,7 +1,6 @@
-use crate::block::epoch::v0::Epoch;
+use crate::block::epoch::Epoch;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use crate::block::epoch::Epoch;
 
 // We make this immutable because it should never be changed or updated
 // Extended block info however is not immutable

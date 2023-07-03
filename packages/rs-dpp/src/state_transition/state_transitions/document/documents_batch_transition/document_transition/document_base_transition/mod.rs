@@ -1,10 +1,10 @@
-mod v0;
 mod fields;
+mod v0;
 
 use bincode::{Decode, Encode};
+pub use fields::*;
 use serde::{Deserialize, Serialize};
 pub use v0::*;
-pub use fields::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 pub enum DocumentBaseTransition {

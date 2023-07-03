@@ -7,13 +7,14 @@ pub mod calculate_operation_fees;
 pub mod calculate_state_transition_fee_factory;
 pub mod calculate_state_transition_fee_from_operations_factory;
 pub mod constants;
-pub mod operations;
-pub mod fee_result;
 pub mod default_costs;
 pub mod epoch;
+pub mod fee_result;
+pub mod operations;
 use enum_map::EnumMap;
 
 pub type Credits = u64;
+pub type SignedCredits = i64;
 //
 // #[derive(Debug, Clone, PartialEq, Eq, Default)]
 // pub struct FeeResult {
@@ -38,7 +39,6 @@ pub type Credits = u64;
 //     pub identifier: Identifier,
 //     pub credits_per_epoch: HashMap<String, Credits>,
 // }
-
 
 /// Default original fee multiplier
 pub const DEFAULT_ORIGINAL_FEE_MULTIPLIER: f64 = 2.0;

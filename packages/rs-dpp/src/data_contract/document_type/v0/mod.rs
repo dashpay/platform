@@ -9,15 +9,15 @@ use crate::data_contract::document_type::document_field::v0::{
     DocumentFieldTypeV0, DocumentFieldV0,
 };
 use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
+use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_transition::INITIAL_REVISION;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
-use crate::state_transition::documents_batch_transition::document_transition::INITIAL_REVISION;
 
 pub mod document_factory;
 pub mod random_document;

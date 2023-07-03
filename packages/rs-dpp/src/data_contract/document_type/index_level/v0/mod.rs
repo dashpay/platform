@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use crate::data_contract::document_type::IndexV0;
+use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct IndexLevelV0 {

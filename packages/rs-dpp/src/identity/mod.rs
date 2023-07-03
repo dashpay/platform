@@ -12,7 +12,6 @@ mod identity_facade;
 mod identity_public_key;
 
 pub mod state_transition;
-pub mod validation;
 
 mod credits_converter;
 pub mod errors;

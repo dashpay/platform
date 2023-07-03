@@ -1,8 +1,8 @@
-use serde::Serialize;
 use crate::identity::state_transition::properties::PROPERTY_PROTOCOL_VERSION;
-use crate::ProtocolError;
 use crate::serialization_traits::{PlatformSerializable, Signable};
 use crate::util::cbor_serializer;
+use crate::ProtocolError;
+use serde::Serialize;
 
 /// The trait contains methods related to conversion of StateTransition into different formats
 pub trait StateTransitionCborConvert: Serialize + Signable + PlatformSerializable {

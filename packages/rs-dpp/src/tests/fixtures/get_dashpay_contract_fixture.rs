@@ -13,8 +13,7 @@ use data_contracts::SystemDataContract;
 pub fn get_dashpay_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
     let protocol_version_validator =
         ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
-    let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));
-    let factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
+    let factory = DataContractFactory::new(1, 0, None);
     let dpns_schema = SystemDataContract::Dashpay
         .source()
         .expect("DPNS contract must be defined")

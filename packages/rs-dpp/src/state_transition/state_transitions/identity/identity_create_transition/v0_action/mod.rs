@@ -4,11 +4,11 @@ use crate::consensus::ConsensusError;
 use crate::identifier::Identifier;
 use crate::identity::{IdentityPublicKey, PartialIdentity};
 
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use platform_value::Bytes36;
 use serde::{Deserialize, Serialize};
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

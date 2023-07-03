@@ -12,6 +12,7 @@ use crate::consensus::basic::data_contract::{
 };
 use crate::consensus::ConsensusError;
 use crate::data_contract::data_contract::DataContractV0;
+use crate::mocks::JsonSchemaValidator;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
     consensus::basic::BasicError,
@@ -43,8 +44,10 @@ pub const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: usize = 255;
 pub const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 
 lazy_static! {
-    static ref BASE_DOCUMENT_SCHEMA: JsonValue =
-        serde_json::from_str(include_str!("../../../schema/document/documentBase.json")).unwrap();
+    static ref BASE_DOCUMENT_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+        "../../../../schema/document/documentBase.json"
+    ))
+    .unwrap();
 }
 
 impl DataContractV0 {

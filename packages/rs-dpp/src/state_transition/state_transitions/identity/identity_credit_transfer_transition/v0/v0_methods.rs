@@ -1,4 +1,3 @@
-
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
@@ -14,25 +13,20 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::identity::SecurityLevel::{CRITICAL, MASTER};
+use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionLike,
-        StateTransitionType,
-    },
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     version::LATEST_VERSION,
     ProtocolError,
 };
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::identity::SecurityLevel::{CRITICAL, MASTER};
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use crate::version::FeatureVersion;
-
 
 pub trait IdentityCreditTransferTransitionV0Methods {
-
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreditTransfer

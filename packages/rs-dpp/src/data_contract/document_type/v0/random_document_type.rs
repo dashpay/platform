@@ -97,14 +97,16 @@ impl RandomDocumentTypeParameters {
     }
 }
 
-use crate::data_contract::document_type::{DocumentFieldTypeV0, DocumentFieldV0, DocumentType, Index, IndexLevel, IndexV0};
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::{
+    DocumentFieldTypeV0, DocumentFieldV0, DocumentType, Index, IndexLevel, IndexV0,
+};
 use crate::ProtocolError;
 use platform_value::Identifier;
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 impl DocumentTypeV0 {
     pub fn random_document_type(

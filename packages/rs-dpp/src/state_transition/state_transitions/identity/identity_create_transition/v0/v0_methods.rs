@@ -1,20 +1,21 @@
-
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{BlsModule, Convertible, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    BlsModule, Convertible, NonConsensusError, ProtocolError,
+};
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
+use crate::identity::signer::Signer;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
-use crate::identity::signer::Signer;
 use crate::prelude::AssetLockProof;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
@@ -43,10 +44,7 @@ pub trait IdentityCreateTransitionV0Methods {
     /// Replaces existing set of public keys with a new one
     fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyInCreation>);
     /// Adds public keys to the existing public keys array
-    fn add_public_keys(
-        &mut self,
-        public_keys: &mut Vec<IdentityPublicKeyInCreation>,
-    );
+    fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>);
     /// Returns identity id
     fn get_identity_id(&self) -> &Identifier;
     /// Returns Owner ID
@@ -132,10 +130,7 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
     }
 
     /// Adds public keys to the existing public keys array
-    fn add_public_keys(
-        &mut self,
-        public_keys: &mut Vec<IdentityPublicKeyInCreation>,
-    ) {
+    fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) {
         self.public_keys.append(public_keys);
     }
 

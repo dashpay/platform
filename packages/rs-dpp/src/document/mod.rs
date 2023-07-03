@@ -1,18 +1,12 @@
 pub use document::{property_names, IDENTIFIER_FIELDS};
-pub use state_transition::documents_batch_transition::document_transition;
-pub use state_transition::documents_batch_transition::validation;
-pub use state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 mod document;
 
 mod accessors;
 pub mod action_type;
-pub mod document_facade;
-pub mod document_factory;
 mod document_patch;
 pub mod errors;
 pub mod extended_document;
-pub mod fetch_and_validate_data_contract;
 pub mod generate_document_id;
 mod serde_serialize;
 mod v0;

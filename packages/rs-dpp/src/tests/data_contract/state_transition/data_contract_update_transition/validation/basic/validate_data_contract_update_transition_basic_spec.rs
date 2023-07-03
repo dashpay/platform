@@ -13,7 +13,8 @@ use crate::{
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext, StateTransitionFieldTypes,
+        state_transition_execution_context::StateTransitionExecutionContext,
+        StateTransitionFieldTypes,
     },
     tests::{
         fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture},

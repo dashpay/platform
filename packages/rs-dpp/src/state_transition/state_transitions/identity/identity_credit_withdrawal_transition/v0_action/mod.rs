@@ -2,9 +2,9 @@ use crate::contracts::withdrawals_contract;
 use crate::document::{generate_document_id, Document, DocumentV0};
 use crate::identifier::Identifier;
 use crate::prelude::Revision;
+use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use platform_value::platform_value;
 use serde::{Deserialize, Serialize};
-use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 
 pub const IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION: u32 = 0;
 
@@ -47,7 +47,8 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             revision: Some(1),
             created_at: Some(creation_time_ms),
             updated_at: Some(creation_time_ms),
-        }.into();
+        }
+        .into();
 
         IdentityCreditWithdrawalTransitionActionV0 {
             version: IdentityCreditWithdrawalTransitionActionV0::current_version(),

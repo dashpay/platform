@@ -1,5 +1,5 @@
-use crate::{prelude::TimestampMillis, NonConsensusError};
 use crate::validation::block_time_window::validation_result::TimeWindowValidationResult;
+use crate::{prelude::TimestampMillis, NonConsensusError};
 
 pub const BLOCK_TIME_WINDOW_MINUTES: u64 = 5;
 pub const BLOCK_TIME_WINDOW_MILLIS: u64 = BLOCK_TIME_WINDOW_MINUTES * 60 * 1000;

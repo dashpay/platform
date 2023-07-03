@@ -5,19 +5,22 @@ use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementTyp
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
+use crate::identity::PartialIdentity;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionType::{DataContractUpdate};
+use crate::state_transition::StateTransitionType::DataContractUpdate;
 use crate::version::FeatureVersion;
+use bincode::{config, Decode, Encode};
 
 impl StateTransitionLike for DataContractUpdateTransitionV0 {
     /// Returns ID of the created contract

@@ -1,15 +1,15 @@
 mod action;
-mod v0;
-mod v0_action;
 mod fields;
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod serialize;
+mod state_transition_like;
+mod v0;
+mod v0_action;
+mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-mod v0_methods;
-mod identity_signed;
-mod serialize;
 
 use fields::*;
 
@@ -20,33 +20,46 @@ use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::identity::KeyID;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::{PlatformSerializable, Signable};
-use crate::state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
-use crate::version::{PlatformVersion};
-use crate::{ProtocolError};
+use crate::state_transition::{
+    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
+};
+use crate::version::PlatformVersion;
+use crate::ProtocolError;
 pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
+use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
 use std::fmt;
 pub use v0::*;
 pub use v0_action::*;
-use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformSignable, PlatformVersioned, Encode, Decode, From, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSerdeVersioned,
+    PlatformSignable,
+    PlatformVersioned,
+    Encode,
+    Decode,
+    From,
+    PartialEq,
+)]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.contract_create_state_transition)]
 pub enum DataContractCreateTransition {
     V0(DataContractCreateTransitionV0),
 }
-
 
 impl From<DataContract> for DataContractCreateTransition {
     fn from(value: DataContract) -> Self {
@@ -83,13 +96,13 @@ mod test {
     use integer_encoding::VarInt;
     use platform_value::Bytes32;
 
+    use super::*;
+    use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::util::json_value::JsonValueExt;
     use crate::version::LATEST_PLATFORM_VERSION;
-    use crate::{Convertible, version};
-    use crate::state_transition::state_transitions::common_fields::property_names;
-    use super::*;
+    use crate::{version, Convertible};
 
     pub(crate) struct TestData {
         pub(crate) state_transition: DataContractCreateTransition,
@@ -161,7 +174,6 @@ mod test {
                 .expect("conversion to object shouldn't fail")
         );
     }
-
 
     #[test]
     fn should_return_serialized_state_transition_to_buffer() {

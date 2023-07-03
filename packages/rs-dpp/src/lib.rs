@@ -16,11 +16,11 @@ pub mod contracts;
 pub mod data_contract;
 
 mod convertible;
-pub mod data_trigger;
 pub mod document;
 pub mod identifier;
 pub mod identity;
 pub mod metadata;
+#[cfg(feature = "state-transitions")]
 pub mod state_transition;
 pub mod util;
 pub mod version;
@@ -39,18 +39,17 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod balances;
 pub mod block;
 pub mod serialization_traits;
 pub mod signing;
 pub mod system_data_contracts;
-pub mod balances;
 
 pub use async_trait;
 pub use bls::*;
 
 pub mod prelude {
     pub use crate::data_contract::DataContract;
-    pub use crate::data_trigger::DataTrigger;
     pub use crate::document::document_transition::DocumentTransition;
     pub use crate::document::ExtendedDocument;
     pub use crate::errors::ProtocolError;

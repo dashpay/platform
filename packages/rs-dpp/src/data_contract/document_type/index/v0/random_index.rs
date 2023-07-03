@@ -1,8 +1,8 @@
+use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
 use crate::ProtocolError;
 use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
-use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
 
 impl IndexV0 {
     pub fn random(

@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
-use serde::Serialize;
-use platform_value::{Value, ValueMapHelper};
-use crate::ProtocolError;
 use crate::serialization_traits::{PlatformSerializable, Signable};
 use crate::state_transition::state_transition_helpers;
+use crate::ProtocolError;
+use platform_value::{Value, ValueMapHelper};
+use serde::Serialize;
+use std::collections::BTreeMap;
 
 /// The trait contains methods related to conversion of StateTransition into different formats
 pub trait StateTransitionValueConvert: Serialize {
@@ -49,9 +49,7 @@ pub trait StateTransitionValueConvert: Serialize {
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         self.to_object(skip_signature)
     }
-    fn from_raw_object(
-        raw_object: Value,
-    ) -> Result<Self, ProtocolError>;
+    fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError>;
     fn from_value_map(
         raw_data_contract_create_transition: BTreeMap<String, Value>,
     ) -> Result<Self, ProtocolError>;

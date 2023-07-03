@@ -1,22 +1,26 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
+};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
 use crate::prelude::AssetLockProof;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::identity_topup_transition::fields::*;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
-
+use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for IdentityTopUpTransitionV0 {
     fn from_raw_object(raw_object: Value) -> Result<IdentityTopUpTransitionV0, ProtocolError> {
@@ -42,14 +46,12 @@ impl StateTransitionValueConvert for IdentityTopUpTransitionV0 {
         })
     }
 
-
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
         Ok(())
     }
-
 
     fn from_value_map(
         mut raw_data_contract_topUp_transition: BTreeMap<String, Value>,

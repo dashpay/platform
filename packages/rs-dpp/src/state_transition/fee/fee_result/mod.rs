@@ -35,13 +35,15 @@
 //! for removed data from the state.
 //!
 
+use crate::state_transition::fee::fee_result::refunds::FeeRefunds;
+use crate::state_transition::fee::fee_result::BalanceChange::{
+    AddToBalance, NoBalanceChange, RemoveFromBalance,
+};
+use crate::state_transition::fee::Credits;
+use platform_value::Identifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use platform_value::Identifier;
-use crate::state_transition::fee::Credits;
-use crate::state_transition::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
-use crate::state_transition::fee::fee_result::refunds::FeeRefunds;
 
 pub mod refunds;
 
@@ -57,7 +59,6 @@ pub struct FeeResult {
     /// Removed bytes not needing to be refunded to identities
     pub removed_bytes_from_system: u32,
 }
-
 
 impl TryFrom<Vec<FeeResult>> for FeeResult {
     type Error = Error;

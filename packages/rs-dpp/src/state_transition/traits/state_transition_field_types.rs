@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::serialization_traits::{PlatformSerializable, Signable};
+use serde::Serialize;
 
 /// The trait contains methods related to conversion of StateTransition into different formats
 pub trait StateTransitionFieldTypes: Serialize + Signable + PlatformSerializable {

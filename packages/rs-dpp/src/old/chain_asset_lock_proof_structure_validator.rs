@@ -23,12 +23,6 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::validation::{ConsensusValidationResult, JsonSchemaValidator};
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
-lazy_static! {
-    static ref CHAIN_ASSET_LOCK_PROOF_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../schema/identity/stateTransition/assetLockProof/chainAssetLockProof.json"
-    ))
-    .unwrap();
-}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

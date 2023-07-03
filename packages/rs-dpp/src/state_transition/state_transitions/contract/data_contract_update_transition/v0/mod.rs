@@ -1,12 +1,11 @@
-mod types;
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-pub(super) mod v0_methods;
-mod state_transition_like;
-mod identity_signed;
-
 
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -18,13 +17,14 @@ use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
-use crate::state_transition::StateTransition;
-use crate::{data_contract::DataContract, identity::KeyID, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}, Convertible, ProtocolError, NonConsensusError};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-
+use crate::state_transition::StateTransition;
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 #[derive(
     Debug,

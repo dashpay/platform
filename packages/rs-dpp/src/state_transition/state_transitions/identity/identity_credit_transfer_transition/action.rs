@@ -1,7 +1,7 @@
-use derive_more::From;
-use platform_value::{Bytes36, Identifier};
 use crate::state_transition::fee::Credits;
 use crate::state_transition::identity_credit_transfer_transition::v0_action::IdentityCreditTransferTransitionActionV0;
+use derive_more::From;
+use platform_value::{Bytes36, Identifier};
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreditTransferTransitionAction {
@@ -29,5 +29,4 @@ impl IdentityCreditTransferTransitionAction {
             IdentityCreditTransferTransitionAction::V0(transition) => transition.recipient_id,
         }
     }
-
 }

@@ -10,24 +10,24 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Identifier, Value};
+use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 
 mod action;
 
-mod v0;
-mod v0_action;
 mod fields;
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod serialize;
 mod state_transition_like;
+mod v0;
+mod v0_action;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod identity_signed;
-mod serialize;
 
 pub use fields::*;
 
@@ -36,10 +36,21 @@ pub use action::DataContractUpdateTransitionAction;
 pub use v0::*;
 pub use v0_action::DataContractUpdateTransitionActionV0;
 
-
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSerdeVersioned, PlatformSignable, PlatformVersioned, Encode, Decode, From, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSerdeVersioned,
+    PlatformSignable,
+    PlatformVersioned,
+    Encode,
+    Decode,
+    From,
+    PartialEq,
+)]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.contract_update_state_transition)]
 pub enum DataContractUpdateTransition {
@@ -62,17 +73,19 @@ impl StateTransitionFieldTypes for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
     use crate::util::json_value::JsonValueExt;
     use integer_encoding::VarInt;
+    use std::collections::BTreeMap;
     use std::convert::TryInto;
 
     use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
+    use crate::data_contract::DataContract;
+    use crate::state_transition::{
+        JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
+    };
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::LATEST_PLATFORM_VERSION;
     use crate::{version, Convertible};
-    use crate::data_contract::DataContract;
-    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert};
 
     use super::*;
 

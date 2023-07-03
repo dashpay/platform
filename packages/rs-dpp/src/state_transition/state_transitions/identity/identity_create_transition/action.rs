@@ -1,9 +1,9 @@
+use crate::identity::IdentityPublicKey;
 use crate::prelude::Identity;
+use crate::state_transition::identity_create_transition::v0_action::IdentityCreateTransitionActionV0;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use derive_more::From;
 use platform_value::{Bytes36, Identifier};
-use crate::identity::IdentityPublicKey;
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::identity_create_transition::v0_action::IdentityCreateTransitionActionV0;
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreateTransitionAction {

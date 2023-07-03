@@ -5,6 +5,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
+use crate::data_contract::document_type::array_field::v0::ArrayFieldTypeV0;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -14,7 +15,6 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use crate::data_contract::document_type::array_field::v0::ArrayFieldTypeV0;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentFieldV0 {

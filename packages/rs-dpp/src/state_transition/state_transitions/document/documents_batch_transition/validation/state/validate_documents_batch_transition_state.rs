@@ -21,6 +21,11 @@ use crate::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
 use crate::document::Document;
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentCreateTransitionAction, DocumentReplaceTransitionAction, DocumentTransition,
+    DocumentTransitionAction,
+};
+use crate::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use crate::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
 use crate::NonConsensusError;
 use crate::{
@@ -40,8 +45,6 @@ use crate::{
     validation::ConsensusValidationResult,
     ProtocolError,
 };
-use crate::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction};
-use crate::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 
 use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,

@@ -1,6 +1,6 @@
+use crate::data_contract::DataContract;
 use platform_value::Identifier;
 use std::io::Write;
-use crate::data_contract::DataContract;
 
 use crate::util::hash::hash;
 
@@ -16,4 +16,3 @@ impl DataContract {
         Identifier::from(hash(b))
     }
 }
-

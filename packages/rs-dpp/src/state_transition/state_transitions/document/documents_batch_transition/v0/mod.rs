@@ -5,6 +5,7 @@ use crate::identity::KeyID;
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::StateTransitionType;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
@@ -17,7 +18,6 @@ use platform_value::btreemap_extensions::{
 use platform_value::string_encoding::Encoding;
 use platform_value::{BinaryData, Identifier, Value};
 use std::collections::{BTreeMap, HashMap};
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 
 #[derive(
     Debug,

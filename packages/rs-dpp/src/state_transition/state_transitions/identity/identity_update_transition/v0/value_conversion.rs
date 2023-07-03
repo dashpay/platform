@@ -1,27 +1,31 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
+};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::identity_update_transition::fields::*;
-use crate::state_transition::identity_update_transition::v0::{get_list, IdentityUpdateTransitionV0, remove_integer_list_or_default};
+use crate::state_transition::identity_update_transition::v0::{
+    get_list, remove_integer_list_or_default, IdentityUpdateTransitionV0,
+};
 use crate::state_transition::StateTransitionValueConvert;
-
+use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
-    fn from_raw_object(
-        mut raw_object: Value,
-    ) -> Result<IdentityUpdateTransitionV0, ProtocolError> {
+    fn from_raw_object(mut raw_object: Value) -> Result<IdentityUpdateTransitionV0, ProtocolError> {
         let signature = raw_object
             .get_binary_data(SIGNATURE)
             .map_err(ProtocolError::ValueError)?;
@@ -54,7 +58,6 @@ impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
         })
     }
 
-
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
@@ -62,13 +65,11 @@ impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
         Ok(())
     }
 
-
     fn from_value_map(
         mut raw_data_contract_create_transition: BTreeMap<String, Value>,
     ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
         todo()
     }
-
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         let mut value: Value = platform_value::to_value(self)?;

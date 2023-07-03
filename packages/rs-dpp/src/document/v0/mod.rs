@@ -32,7 +32,6 @@
 //! This module defines the `Document` struct and implements its functions.
 //!
 
-pub mod document_validator;
 pub mod serialize;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -119,8 +118,7 @@ pub trait DocumentV0Methods {
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
     fn from_json_value<S>(document_value: JsonValue) -> Result<Self, ProtocolError>
     where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
-    ;
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>;
     fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError>;
 }
 

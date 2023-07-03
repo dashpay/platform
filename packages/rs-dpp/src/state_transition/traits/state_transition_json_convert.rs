@@ -1,6 +1,6 @@
-use serde::Serialize;
-use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
+use crate::ProtocolError;
+use serde::Serialize;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct JsonSerializationOptions {
@@ -13,10 +13,7 @@ pub trait StateTransitionJsonConvert: Serialize {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
-    fn to_json(
-        &self,
-        options: JsonSerializationOptions,
-    ) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, options: JsonSerializationOptions) -> Result<JsonValue, ProtocolError> {
         if options.into_validating_json {
             self.to_object(options.skip_signature)?
                 .try_into_validating_json()

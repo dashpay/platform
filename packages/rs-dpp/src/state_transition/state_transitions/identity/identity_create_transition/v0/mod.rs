@@ -1,10 +1,10 @@
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-pub(super) mod v0_methods;
-mod types;
 
 use std::convert::{TryFrom, TryInto};
 
@@ -24,25 +24,26 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
 use crate::prelude::Identifier;
 
-use crate::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
+use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::{
+    StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
+};
 use crate::version::FeatureVersion;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-
 
 #[derive(
-Serialize,
-Deserialize,
-Debug,
-Clone,
-PartialEq,
-Encode,
-Decode,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
 )]
 #[serde(rename_all = "camelCase")]
 #[serde(try_from = "IdentityCreateTransitionV0Inner")]

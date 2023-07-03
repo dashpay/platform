@@ -1,8 +1,8 @@
-use platform_value::{BinaryData, Identifier};
+use crate::state_transition::identity_topup_transition::v0::v0_methods::IdentityTopUpTransitionV0Methods;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::state_transition::identity_topup_transition::v0::v0_methods::IdentityTopUpTransitionV0Methods;
 use crate::version::FeatureVersion;
+use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityTopUpTransition {
     /// Returns ID of the topupd contract
@@ -38,17 +38,13 @@ impl StateTransitionLike for IdentityTopUpTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
-            IdentityTopUpTransition::V0(transition) => {
-                transition.set_signature_bytes(signature)
-            }
+            IdentityTopUpTransition::V0(transition) => transition.set_signature_bytes(signature),
         }
     }
 
     fn get_owner_id(&self) -> &Identifier {
         match self {
-            IdentityTopUpTransition::V0(transition) => {
-                transition.get_owner_id()
-            }
+            IdentityTopUpTransition::V0(transition) => transition.get_owner_id(),
         }
     }
 }

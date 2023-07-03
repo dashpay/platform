@@ -331,7 +331,6 @@ pub struct DriveIdentityFetchAttributesMethodVersions {
     pub negative_balance: FeatureVersion,
 }
 
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveIdentityProveMethodVersions {
     pub full_identity: FeatureVersion,

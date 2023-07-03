@@ -86,8 +86,8 @@ const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
-PlatformVersioned,
-From,
+    PlatformVersioned,
+    From,
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.documents_batch_state_transition)]

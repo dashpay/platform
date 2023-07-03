@@ -1,4 +1,3 @@
-
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
@@ -14,21 +13,17 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionLike,
-        StateTransitionType,
-    },
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     version::LATEST_VERSION,
     ProtocolError,
 };
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use crate::version::FeatureVersion;
-
 
 pub trait IdentityUpdateTransitionV0Methods {
     fn try_from_identity_with_signer<S: Signer>(
@@ -53,16 +48,12 @@ pub trait IdentityUpdateTransitionV0Methods {
     fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation];
     fn set_public_key_ids_to_disable(&mut self, disable_public_keys: Vec<KeyID>);
     fn get_public_key_ids_to_disable(&self) -> &[KeyID];
-    fn set_public_keys_disabled_at(
-        &mut self,
-        public_keys_disabled_at: Option<TimestampMillis>,
-    );
+    fn set_public_keys_disabled_at(&mut self, public_keys_disabled_at: Option<TimestampMillis>);
     fn get_public_keys_disabled_at(&self) -> Option<TimestampMillis>;
     fn get_owner_id(&self) -> &Identifier;
 }
 
 impl IdentityUpdateTransitionV0Methods for IdentityUpdateTransitionV0 {
-
     fn try_from_identity_with_signer<S: Signer>(
         identity: &Identity,
         master_public_key_id: &KeyID,
@@ -110,7 +101,7 @@ impl IdentityUpdateTransitionV0Methods for IdentityUpdateTransitionV0 {
                 SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(
                     *master_public_key_id,
                 ))
-                    .into(),
+                .into(),
             )?;
         if master_public_key.security_level != SecurityLevel::MASTER {
             Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
@@ -161,10 +152,7 @@ impl IdentityUpdateTransitionV0Methods for IdentityUpdateTransitionV0 {
         &self.disable_public_keys
     }
 
-    fn set_public_keys_disabled_at(
-        &mut self,
-        public_keys_disabled_at: Option<TimestampMillis>,
-    ) {
+    fn set_public_keys_disabled_at(&mut self, public_keys_disabled_at: Option<TimestampMillis>) {
         self.public_keys_disabled_at = public_keys_disabled_at;
     }
 

@@ -1,5 +1,5 @@
-use crate::identity::{KeyID, SecurityLevel};
 use crate::identity::SecurityLevel::CRITICAL;
+use crate::identity::{KeyID, SecurityLevel};
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionIdentitySigned};
 

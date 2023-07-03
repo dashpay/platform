@@ -1,14 +1,16 @@
-use platform_value::{BinaryData, Identifier};
+use crate::state_transition::identity_credit_withdrawal_transition::v0::v0_methods::IdentityCreditWithdrawalTransitionV0Methods;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::state_transition::identity_credit_withdrawal_transition::v0::v0_methods::IdentityCreditWithdrawalTransitionV0Methods;
 use crate::version::FeatureVersion;
+use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     /// Returns ID of the credit_withdrawalred contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.get_modified_data_ids(),
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.get_modified_data_ids()
+            }
         }
     }
 
@@ -20,7 +22,9 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.state_transition_type(),
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.state_transition_type()
+            }
         }
     }
     /// returns the signature as a byte-array
@@ -32,7 +36,9 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.set_signature(signature),
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_signature(signature)
+            }
         }
     }
 
@@ -46,9 +52,7 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
 
     fn get_owner_id(&self) -> &Identifier {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => {
-                transition.get_owner_id()
-            }
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.get_owner_id(),
         }
     }
 }

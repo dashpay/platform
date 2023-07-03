@@ -1,7 +1,7 @@
 use crate::state_transition::fee::Credits;
+use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

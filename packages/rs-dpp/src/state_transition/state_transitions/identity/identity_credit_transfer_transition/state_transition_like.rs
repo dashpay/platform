@@ -1,8 +1,8 @@
-use platform_value::{BinaryData, Identifier};
+use crate::state_transition::identity_credit_transfer_transition::v0::v0_methods::IdentityCreditTransferTransitionV0Methods;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
-use crate::state_transition::identity_credit_transfer_transition::v0::v0_methods::IdentityCreditTransferTransitionV0Methods;
 use crate::version::FeatureVersion;
+use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for IdentityCreditTransferTransition {
     /// Returns ID of the credit_transferred contract
@@ -46,9 +46,7 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
 
     fn get_owner_id(&self) -> &Identifier {
         match self {
-            IdentityCreditTransferTransition::V0(transition) => {
-                transition.get_owner_id()
-            }
+            IdentityCreditTransferTransition::V0(transition) => transition.get_owner_id(),
         }
     }
 }

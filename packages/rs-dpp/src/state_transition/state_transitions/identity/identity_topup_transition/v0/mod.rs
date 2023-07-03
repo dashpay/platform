@@ -1,10 +1,10 @@
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-pub(super) mod v0_methods;
-mod types;
 
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
@@ -22,7 +22,9 @@ use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
 use crate::serialization_traits::PlatformSerializable;
-use crate::state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
+};
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
@@ -37,16 +39,16 @@ mod property_names {
 }
 
 #[derive(
-Debug,
-Clone,
-Serialize,
-Deserialize,
-Encode,
-Decode,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
-PartialEq,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]

@@ -1,11 +1,11 @@
+mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
+mod state_transition_like;
+mod types;
+pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-mod state_transition_like;
-pub(super) mod v0_methods;
-mod types;
-mod identity_signed;
 
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
@@ -21,10 +21,7 @@ use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionLike,
-        StateTransitionType,
-    },
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     ProtocolError,
 };
 
@@ -36,7 +33,7 @@ use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
 
 #[repr(u8)]
 #[derive(
-Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode, Default,
+    Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode, Default,
 )]
 pub enum Pooling {
     #[default]
@@ -46,16 +43,16 @@ pub enum Pooling {
 }
 
 #[derive(
-Debug,
-Clone,
-Serialize,
-Deserialize,
-Encode,
-Decode,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
-PartialEq,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
@@ -93,6 +90,7 @@ mod test {
     use crate::identity::KeyID;
     use crate::prelude::Revision;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::state_transition::StateTransitionType;
     use crate::ProtocolError;
     use bincode::{config, Decode, Encode};
@@ -100,7 +98,6 @@ mod test {
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
     use std::fmt::Debug;
-    use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
 
     // Structure with 1 property
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]

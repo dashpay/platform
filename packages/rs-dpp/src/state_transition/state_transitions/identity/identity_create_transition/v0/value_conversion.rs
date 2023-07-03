@@ -1,24 +1,28 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
+};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-use crate::{Convertible, data_contract::DataContract, identity::KeyID, NonConsensusError, prelude::Identifier, ProtocolError, state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike,
-    StateTransitionType,
-}};
+use crate::{
+    data_contract::DataContract,
+    identity::KeyID,
+    prelude::Identifier,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    Convertible, NonConsensusError, ProtocolError,
+};
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
 use crate::prelude::AssetLockProof;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::identity_create_transition::fields::*;
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
-
+use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
     fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
@@ -42,15 +46,12 @@ impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
-        if let Some(signature) =
-            transition_map.get_optional_binary_data(SIGNATURE)?
-        {
+        if let Some(signature) = transition_map.get_optional_binary_data(SIGNATURE)? {
             state_transition.set_signature(signature);
         }
 
         Ok(state_transition)
     }
-
 
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
@@ -58,7 +59,6 @@ impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
         Ok(())
     }
-
 
     fn from_value_map(
         mut raw_data_contract_create_transition: BTreeMap<String, Value>,
@@ -80,10 +80,7 @@ impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
             public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        value.insert(
-            PUBLIC_KEYS.to_owned(),
-            Value::Array(public_keys),
-        )?;
+        value.insert(PUBLIC_KEYS.to_owned(), Value::Array(public_keys))?;
 
         Ok(value)
     }
@@ -102,10 +99,7 @@ impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
             public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
         }
 
-        value.insert(
-            PUBLIC_KEYS.to_owned(),
-            Value::Array(public_keys),
-        )?;
+        value.insert(PUBLIC_KEYS.to_owned(), Value::Array(public_keys))?;
 
         Ok(value)
     }

@@ -1,18 +1,32 @@
-use derive_more::From;
-use crate::block::extended_block_info::v0::{ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters};
-use bincode::{Decode, Encode, config};
-use serde::{Deserialize, Serialize};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use crate::block::block_info::BlockInfo;
+use crate::block::extended_block_info::v0::{
+    ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
+};
+use crate::protocol_error::ProtocolError;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
-use crate::protocol_error::ProtocolError;
 use crate::version::FeatureVersion;
+use bincode::{config, Decode, Encode};
+use derive_more::From;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use serde::{Deserialize, Serialize};
 
 pub mod v0;
 
 /// Extended Block information
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize, From)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    PlatformSerialize,
+    PlatformDeserialize,
+    From,
+)]
 #[platform_error_type(ProtocolError)]
 pub enum ExtendedBlockInfo {
     V0(ExtendedBlockInfoV0),
@@ -27,7 +41,6 @@ impl ExtendedBlockInfo {
         }
     }
 }
-
 
 impl ExtendedBlockInfoV0Getters for ExtendedBlockInfo {
     fn basic_info(&self) -> &BlockInfo {
@@ -105,22 +118,22 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ciborium::{de::from_reader, ser::into_writer};
     use crate::block::block_info::BlockInfo;
+    use ciborium::{de::from_reader, ser::into_writer};
 
     #[test]
     fn test_extended_block_info_serde_ciborium() {
-        let block_info : ExtendedBlockInfo = ExtendedBlockInfoV0 {
+        let block_info: ExtendedBlockInfo = ExtendedBlockInfoV0 {
             basic_info: BlockInfo::default(),
             app_hash: [1; 32],
             quorum_hash: [2; 32],
             signature: [3; 96],
             round: 1,
-        }.into();
+        }
+        .into();
 
         // Serialize into a vector
         let mut encoded: Vec<u8> = vec![];
@@ -134,13 +147,14 @@ mod tests {
 
     #[test]
     fn test_extended_block_info_bincode() {
-        let block_info : ExtendedBlockInfo = ExtendedBlockInfoV0 {
+        let block_info: ExtendedBlockInfo = ExtendedBlockInfoV0 {
             basic_info: BlockInfo::default(),
             app_hash: [1; 32],
             quorum_hash: [2; 32],
             signature: [3; 96],
             round: 1,
-        }.into();
+        }
+        .into();
 
         // Serialize into a vector
         let mut encoded: Vec<u8> = block_info.serialize().expect("expected to serialize");
