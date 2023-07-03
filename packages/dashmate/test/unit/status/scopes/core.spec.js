@@ -33,7 +33,7 @@ describe('getCoreScopeFactory', () => {
         getNetworkInfo: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
-      mockDockerCompose = { isServiceRunning: this.sinon.stub() };
+      mockDockerCompose = { isNodeRunning: this.sinon.stub(), isServiceRunning: this.sinon.stub() };
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockGithubProvider = this.sinon.stub(providers.github, 'release');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
@@ -115,7 +115,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should return status stopped if no service is running', async () => {
-      mockDockerCompose.isServiceRunning.resolves(false);
+      mockDockerCompose.isNodeRunning.resolves(false);
 
       const scope = await getCoreScope(config);
 
@@ -126,7 +126,7 @@ describe('getCoreScopeFactory', () => {
         version: null,
         chain: null,
         latestVersion: null,
-        dockerStatus: null,
+        dockerStatus: DockerStatusEnum.not_started,
         serviceStatus: ServiceStatusEnum.stopped,
         peersCount: null,
         p2pPortState: null,
