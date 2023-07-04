@@ -26,10 +26,7 @@ use crate::version::{
 use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionLike,
-        StateTransitionType,
-    },
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
 };
 use platform_value::string_encoding::Encoding;
 
@@ -38,19 +35,19 @@ pub use self::document_transition::{
 };
 use crate::serialization_traits::PlatformSerializable;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
+use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 
 mod action;
 pub mod document_transition;
-mod v0;
-mod v0_action;
-pub mod validation;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
+mod v0;
+mod v0_action;
 mod v0_methods;
+pub mod validation;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
 
@@ -59,24 +56,25 @@ pub use v0_action::*;
 
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 
-
-
 #[derive(
     Debug,
     Encode,
     Decode,
     Clone,
     PartialEq,
+    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
-    PlatformSerdeVersioned,
+    PlatformSerdeVersionedDeserialize,
     PlatformVersioned,
     From,
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.documents_batch_state_transition)]
+#[serde(untagged)]
 pub enum DocumentsBatchTransition {
+    #[versioned(0)]
     V0(DocumentsBatchTransitionV0),
 }
 

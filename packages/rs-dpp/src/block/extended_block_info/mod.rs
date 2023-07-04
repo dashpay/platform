@@ -55,9 +55,9 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfo {
         }
     }
 
-    fn basic_info_owned(&self) -> BlockInfo {
+    fn basic_info_owned(self) -> BlockInfo {
         match self {
-            ExtendedBlockInfo::V0(v0) => v0.basic_info.clone(),
+            ExtendedBlockInfo::V0(v0) => v0.basic_info,
         }
     }
 

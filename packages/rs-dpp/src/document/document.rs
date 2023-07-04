@@ -2,6 +2,7 @@ use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DataContract;
 use crate::document::property_names::FEATURE_VERSION;
 use crate::document::v0::DocumentV0;
+use crate::document::DocumentV0Methods;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use derive_more::From;
@@ -9,7 +10,6 @@ use platform_value::{Identifier, Value};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
-use crate::document::DocumentV0Methods;
 
 #[derive(Clone, Debug, PartialEq, From)]
 pub enum Document {
@@ -76,7 +76,6 @@ impl Document {
         }
     }
 
-
     #[cfg(feature = "platform-value")]
     /// Convert the document to a map value.
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
@@ -108,9 +107,6 @@ impl Document {
             Document::V0(v0) => v0.to_object(),
         }
     }
-
-
-
 
     /// Create a document from a platform value.
     pub fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {

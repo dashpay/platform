@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    NonConsensusError,
-    state_transition::fee::{DummyFeesResult, Refunds},
-};
 use crate::fee::Credits;
+use crate::{
+    state_transition::fee::{DummyFeesResult, Refunds},
+    NonConsensusError,
+};
 
 use super::OperationLike;
 

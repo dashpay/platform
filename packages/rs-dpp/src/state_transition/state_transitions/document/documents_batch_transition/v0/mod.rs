@@ -1,3 +1,5 @@
+#[cfg(feature = "cbor")]
+mod cbor_conversion;
 mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
@@ -6,8 +8,6 @@ mod types;
 pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-#[cfg(feature = "cbor")]
-mod cbor_conversion;
 
 use crate::identity::KeyID;
 use crate::platform_serialization::PlatformSignable;
@@ -22,8 +22,8 @@ use platform_value::btreemap_extensions::{
 };
 use platform_value::string_encoding::Encoding;
 use platform_value::{BinaryData, Identifier, Value};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use serde::{Serialize, Deserialize};
 
 #[derive(
     Debug,

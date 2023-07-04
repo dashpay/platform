@@ -4,6 +4,7 @@ use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::consensus::fee::fee_error::FeeError;
 use crate::data_contract::errors::IdentityNotPresentError;
+use crate::fee::Credits;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use crate::state_transition::fee::FeeResult;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -14,13 +15,12 @@ use crate::{
         convert_duffs_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
     },
-    ProtocolError,
     state_repository::StateRepositoryLike,
     state_transition::{StateTransition, StateTransitionIdentitySignedV0},
     validation::SimpleConsensusValidationResult,
+    ProtocolError,
 };
 use std::sync::Arc;
-use crate::fee::Credits;
 
 pub struct StateTransitionFeeValidator<SR: StateRepositoryLike> {
     state_repository: Arc<SR>,
@@ -228,6 +228,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+    use crate::fee::Credits;
     use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
@@ -251,7 +252,6 @@ mod test {
             utils::get_fee_error_from_result,
         },
     };
-    use crate::fee::Credits;
 
     use super::StateTransitionFeeValidator;
 

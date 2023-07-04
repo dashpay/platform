@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod signature_verification_operation;
-pub use signature_verification_operation::*;
 use crate::fee::Credits;
+pub use signature_verification_operation::*;
 
 use crate::NonConsensusError;
 

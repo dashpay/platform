@@ -186,6 +186,10 @@ fn default_protocol_version() -> u32 {
 #[serde(rename_all = "camelCase")]
 pub struct DataContractV0Inner {
     /// A unique identifier for the data contract.
+    #[serde(rename = "$version")]
+    pub version0: u16,
+
+    /// A unique identifier for the data contract.
     #[serde(rename = "$id")]
     pub id: Identifier,
 
@@ -224,6 +228,7 @@ impl From<DataContractV0> for DataContractV0Inner {
             ..
         } = value;
         DataContractV0Inner {
+            version0: 0,
             id,
             config,
             schema,
@@ -254,6 +259,7 @@ impl TryFrom<DataContractV0Inner> for DataContractV0 {
             owner_id,
             documents,
             defs,
+            ..
         } = value;
 
         let document_types = get_document_types_from_value_array(

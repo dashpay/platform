@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 
-#[derive(Clone,  Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FeatureVersionBounds {
     pub min_version: FeatureVersion,
     pub max_version: FeatureVersion,
@@ -45,7 +45,7 @@ pub struct StateTransitionVersion {
     pub document_delete_state_transition: DocumentFeatureVersionBounds,
 }
 
-#[derive(Clone,  Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct StateTransitionSigningVersion {
     pub sign_external: FeatureVersion,
     pub sign: FeatureVersion,
@@ -53,12 +53,12 @@ pub struct StateTransitionSigningVersion {
     pub verify_public_key_level_and_purpose: FeatureVersion,
 }
 
-#[derive(Clone,  Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct AbciStructureVersion {
     pub extended_block_info: FeatureVersionBounds,
 }
 
-#[derive(Clone,  Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DataContractFactoryVersion {
     /// The bounds that the protocol version supports
     pub bounds: FeatureVersionBounds,
@@ -67,12 +67,12 @@ pub struct DataContractFactoryVersion {
     pub allowed_contract_bounds_mapping: BTreeMap<FeatureVersion, FeatureVersionBounds>,
 }
 
-#[derive(Clone,  Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct PlatformArchitectureVersion {
     pub data_contract_factory: DataContractFactoryVersion,
 }
 
-#[derive(Clone,  Debug)]
+#[derive(Clone, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: u32,
     pub document: FeatureVersionBounds,

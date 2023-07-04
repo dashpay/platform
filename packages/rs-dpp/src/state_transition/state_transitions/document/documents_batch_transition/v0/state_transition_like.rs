@@ -1,8 +1,8 @@
-use platform_value::{BinaryData, Identifier};
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::state_transition::StateTransitionType::DocumentsBatch;
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
+use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for DocumentsBatchTransitionV0 {
     /// Returns ID of the created contract

@@ -37,16 +37,16 @@
 //!
 
 use crate::fee::epoch::{
-    EpochIndex, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS, SignedCreditsPerEpoch,
+    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
 };
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::Ordering;
 
-use std::ops::Mul;
 use crate::balances::credits::Credits;
 use crate::ProtocolError;
+use std::ops::Mul;
 
 // TODO: Should be updated from the doc
 
@@ -83,7 +83,9 @@ pub fn distribute_storage_fee_to_epochs_collection(
             *epoch_credits = epoch_credits
                 .checked_add_unsigned(epoch_fee_share)
                 .ok_or_else(|| {
-                    ProtocolError::Overflow("updated epoch credits are not fitting to credits max size")
+                    ProtocolError::Overflow(
+                        "updated epoch credits are not fitting to credits max size",
+                    )
                 })?;
 
             Ok(())
@@ -109,7 +111,9 @@ pub fn subtract_refunds_from_epoch_credits_collection(
             *epoch_credits = epoch_credits
                 .checked_sub_unsigned(epoch_fee_share)
                 .ok_or_else(|| {
-                    ProtocolError::Overflow("updated epoch credits are not fitting to credits min size")
+                    ProtocolError::Overflow(
+                        "updated epoch credits are not fitting to credits min size",
+                    )
                 })?;
 
             Ok(())
@@ -416,9 +420,9 @@ mod tests {
     }
 
     mod distribute_storage_fee_to_epochs_collection {
+        use super::*;
         use crate::balances::credits::{Creditable, MAX_CREDITS};
         use crate::fee::SignedCredits;
-        use super::*;
 
         #[test]
         fn should_distribute_max_credits_value_without_overflow() {
@@ -561,9 +565,9 @@ mod tests {
     }
 
     mod subtract_refunds_from_epoch_credits_collection {
+        use super::*;
         use crate::balances::credits::Creditable;
         use crate::fee::SignedCredits;
-        use super::*;
 
         #[test]
         fn should_deduct_refunds_from_collection_since_specific_epoch_start_at_genesis() {

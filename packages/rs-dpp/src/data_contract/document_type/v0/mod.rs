@@ -10,9 +10,9 @@ use crate::data_contract::document_type::document_field::v0::{
 };
 use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
 use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
+use crate::document::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
-use crate::document::INITIAL_REVISION;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Identifier, ReplacementType, Value};

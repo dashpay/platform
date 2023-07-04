@@ -1,11 +1,12 @@
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use bincode::{config, BorrowDecode, Decode, Encode};
+use bincode::{config, Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
 
 pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 use platform_value::{Identifier, Value};
+use serde::Serialize;
 use std::collections::BTreeMap;
 
 pub mod errors;
@@ -37,9 +38,9 @@ use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::data_contract::DataContractV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
-use platform_versioning::PlatformSerdeVersioned;
+use platform_versioning::PlatformSerdeVersionedDeserialize;
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -65,7 +66,8 @@ pub trait DataContractLike<'a> {
     PartialEq,
     Encode,
     Decode,
-    PlatformSerdeVersioned,
+    Serialize,
+    PlatformSerdeVersionedDeserialize,
     PlatformSerialize,
     PlatformDeserialize,
     PlatformDeserializeNoLimit,
@@ -74,7 +76,9 @@ pub trait DataContractLike<'a> {
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 #[platform_serialize_limit(15000)]
+#[serde(untagged)]
 pub enum DataContract {
+    #[versioned(0)]
     V0(DataContractV0),
 }
 

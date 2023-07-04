@@ -1,12 +1,21 @@
-use std::convert::TryInto;
+use crate::state_transition::data_contract_update_transition::{
+    SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
+};
+use crate::state_transition::documents_batch_transition::fields::property_names::{
+    STATE_TRANSITION_PROTOCOL_VERSION, TRANSITIONS,
+};
+use crate::state_transition::documents_batch_transition::{
+    document_base_transition, document_create_transition, DocumentTransitionExt,
+    DocumentsBatchTransitionV0,
+};
+use crate::state_transition::{
+    StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert,
+};
+use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
+use crate::ProtocolError;
 use anyhow::Context;
 use ciborium::Value as CborValue;
-use crate::ProtocolError;
-use crate::state_transition::documents_batch_transition::{document_base_transition, document_create_transition, DocumentsBatchTransitionV0, DocumentTransitionExt};
-use crate::state_transition::{StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert};
-use crate::state_transition::data_contract_update_transition::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
-use crate::state_transition::documents_batch_transition::fields::property_names::{STATE_TRANSITION_PROTOCOL_VERSION, TRANSITIONS};
-use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
+use std::convert::TryInto;
 
 impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
@@ -20,9 +29,9 @@ impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
         canonical_map.remove(STATE_TRANSITION_PROTOCOL_VERSION);
 
         // Replace binary fields individually for every transition using respective data contract
-        if let Some(CborValue::Array(ref mut transitions)) = canonical_map.get_mut(
-            &CborValue::Text(TRANSITIONS.to_string()),
-        ) {
+        if let Some(CborValue::Array(ref mut transitions)) =
+            canonical_map.get_mut(&CborValue::Text(TRANSITIONS.to_string()))
+        {
             for (i, cbor_transition) in transitions.iter_mut().enumerate() {
                 let transition = self
                     .transitions
@@ -65,10 +74,7 @@ impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
                 canonical_map.insert(SIGNATURE, CborValue::Null)
             }
             if self.signature_public_key_id.is_none() {
-                canonical_map.insert(
-                    SIGNATURE_PUBLIC_KEY_ID,
-                    CborValue::Null,
-                )
+                canonical_map.insert(SIGNATURE_PUBLIC_KEY_ID, CborValue::Null)
             }
         }
 

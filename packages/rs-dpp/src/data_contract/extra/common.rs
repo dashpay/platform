@@ -79,7 +79,7 @@ pub fn json_document_to_contract(
                         "error decoding contract from document {e}"
                     ))
                 })?;
-            data_contract_v0.into()
+            Ok(data_contract_v0.into())
         }
         version => Err(ProtocolError::UnknownVersionError(format!(
             "version {version} not known for json document to contract"

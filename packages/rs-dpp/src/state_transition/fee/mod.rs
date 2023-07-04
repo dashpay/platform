@@ -7,8 +7,8 @@ pub mod calculate_operation_fees;
 pub mod calculate_state_transition_fee_factory;
 pub mod calculate_state_transition_fee_from_operations_factory;
 pub mod operations;
-use enum_map::EnumMap;
 use crate::fee::fee_result::FeeResult;
+use enum_map::EnumMap;
 //
 // #[derive(Debug, Clone, PartialEq, Eq, Default)]
 // pub struct FeeResult {

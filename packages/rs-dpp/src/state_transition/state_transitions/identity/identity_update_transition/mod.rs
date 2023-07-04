@@ -21,14 +21,16 @@ pub use action::IdentityUpdateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
+use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
+use serde::Serialize;
 
 #[derive(
     Debug,
     Clone,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersioned,
+    Serialize,
+    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
     Encode,
@@ -38,7 +40,9 @@ use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.identity_state_transition)]
+#[serde(untagged)]
 pub enum IdentityUpdateTransition {
+    #[versioned(0)]
     V0(IdentityUpdateTransitionV0),
 }
 

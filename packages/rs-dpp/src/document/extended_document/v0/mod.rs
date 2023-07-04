@@ -18,6 +18,8 @@ use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 
+use crate::document::v0::json_conversion::DocumentV0JsonMethods;
+use platform_value::converter::serde_json::BTreeValueJsonConverter;
 #[cfg(feature = "json-object")]
 use serde_json::Value as JsonValue;
 
@@ -47,13 +49,13 @@ impl ExtendedDocumentV0 {
     #[cfg(feature = "json-object")]
     fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
-            .properties
+            .properties()
             .to_json_value()
             .map_err(ProtocolError::ValueError)
     }
 
     pub fn get_optional_value(&self, key: &str) -> Option<&Value> {
-        self.document.properties.get(key)
+        self.document.properties().get(key)
     }
 
     pub fn properties(&self) -> &BTreeMap<String, Value> {
@@ -61,7 +63,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn properties_as_mut(&mut self) -> &mut BTreeMap<String, Value> {
-        &mut self.document.properties
+        &mut self.document.properties()
     }
 
     pub fn id(&self) -> Identifier {
@@ -89,11 +91,11 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn revision(&self) -> Option<&Revision> {
-        self.document.revision.as_ref()
+        self.document.revision().as_ref()
     }
 
     pub fn created_at(&self) -> Option<&TimestampMillis> {
-        self.document.created_at.as_ref()
+        self.document.created_at().as_ref()
     }
 
     pub fn updated_at(&self) -> Option<&TimestampMillis> {

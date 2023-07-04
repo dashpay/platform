@@ -34,7 +34,6 @@
 
 use nohash_hasher::IntMap;
 
-
 #[cfg(feature = "fee-distribution")]
 pub mod distribution;
 
@@ -42,19 +41,15 @@ pub mod distribution;
 use crate::block::epoch::EpochIndex;
 use crate::fee::{Credits, SignedCredits};
 
-
 /// Genesis epoch index
 //todo move to dpp
 pub const GENESIS_EPOCH_INDEX: EpochIndex = 0;
 
-
 /// Epochs per year
 pub const EPOCHS_PER_YEAR: u16 = 20;
 
-
 /// Years of fees charged for perpetual storage
 pub const PERPETUAL_STORAGE_YEARS: u16 = 50;
-
 
 /// Perpetual storage epochs
 pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_YEAR;

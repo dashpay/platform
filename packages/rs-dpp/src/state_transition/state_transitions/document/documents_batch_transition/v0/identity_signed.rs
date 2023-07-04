@@ -1,8 +1,10 @@
-use std::convert::TryFrom;
 use crate::identity::{KeyID, SecurityLevel};
-use crate::state_transition::documents_batch_transition::{DocumentsBatchTransitionV0, get_security_level_requirement};
 use crate::state_transition::documents_batch_transition::fields::DEFAULT_SECURITY_LEVEL;
+use crate::state_transition::documents_batch_transition::{
+    get_security_level_requirement, DocumentsBatchTransitionV0,
+};
 use crate::state_transition::StateTransitionIdentitySigned;
+use std::convert::TryFrom;
 
 impl StateTransitionIdentitySigned for DocumentsBatchTransitionV0 {
     fn signature_public_key_id(&self) -> Option<KeyID> {

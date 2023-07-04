@@ -7,9 +7,9 @@ use std::collections::BTreeMap;
 
 impl Document {
     /// Returns a reference to the unique document ID.
-    pub fn id(&self) -> &Identifier {
+    pub fn id(&self) -> Identifier {
         match self {
-            Document::V0(v0) => &v0.id,
+            Document::V0(v0) => v0.id,
         }
     }
 
@@ -21,9 +21,9 @@ impl Document {
     }
 
     /// Returns a reference to the ID of the document's owner.
-    pub fn owner_id(&self) -> &Identifier {
+    pub fn owner_id(&self) -> Identifier {
         match self {
-            Document::V0(v0) => &v0.owner_id,
+            Document::V0(v0) => v0.owner_id,
         }
     }
 
@@ -49,9 +49,9 @@ impl Document {
     }
 
     /// Returns a reference to the document revision.
-    pub fn revision(&self) -> &Option<Revision> {
+    pub fn revision(&self) -> Option<Revision> {
         match self {
-            Document::V0(v0) => &v0.revision,
+            Document::V0(v0) => v0.revision,
         }
     }
 
@@ -63,9 +63,9 @@ impl Document {
     }
 
     /// Returns a reference to the document creation time in milliseconds.
-    pub fn created_at(&self) -> &Option<TimestampMillis> {
+    pub fn created_at(&self) -> Option<TimestampMillis> {
         match self {
-            Document::V0(v0) => &v0.created_at,
+            Document::V0(v0) => v0.created_at,
         }
     }
 
@@ -77,9 +77,9 @@ impl Document {
     }
 
     /// Returns a reference to the document update time in milliseconds.
-    pub fn updated_at(&self) -> &Option<TimestampMillis> {
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
         match self {
-            Document::V0(v0) => &v0.updated_at,
+            Document::V0(v0) => v0.updated_at,
         }
     }
 
@@ -87,48 +87,6 @@ impl Document {
     pub fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
         match self {
             Document::V0(v0) => v0.updated_at = updated_at,
-        }
-    }
-
-    /// Returns a mutable reference to the document revision.
-    pub fn revision_mut(&mut self) -> &mut Option<Revision> {
-        match self {
-            Document::V0(v0) => &mut v0.revision,
-        }
-    }
-
-    /// Consumes the `Document` and returns the document revision.
-    pub fn revision_consume(self) -> Option<Revision> {
-        match self {
-            Document::V0(v0) => v0.revision,
-        }
-    }
-
-    /// Returns a mutable reference to the document creation time in milliseconds.
-    pub fn created_at_mut(&mut self) -> &mut Option<TimestampMillis> {
-        match self {
-            Document::V0(v0) => &mut v0.created_at,
-        }
-    }
-
-    /// Consumes the `Document` and returns the document creation time in milliseconds.
-    pub fn created_at_consume(self) -> Option<TimestampMillis> {
-        match self {
-            Document::V0(v0) => v0.created_at,
-        }
-    }
-
-    /// Returns a mutable reference to the document update time in milliseconds.
-    pub fn updated_at_mut(&mut self) -> &mut Option<TimestampMillis> {
-        match self {
-            Document::V0(v0) => &mut v0.updated_at,
-        }
-    }
-
-    /// Consumes the `Document` and returns the document update time in milliseconds.
-    pub fn updated_at_consume(self) -> Option<TimestampMillis> {
-        match self {
-            Document::V0(v0) => v0.updated_at,
         }
     }
 

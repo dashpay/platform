@@ -1,9 +1,9 @@
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::state_transitions::documents_batch_transition::fields::*;
 use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
 use crate::ProtocolError;
 use serde_json::Number;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 impl StateTransitionJsonConvert for DocumentsBatchTransition {
     fn to_json(&self, options: JsonSerializationOptions) -> Result<JsonValue, ProtocolError> {

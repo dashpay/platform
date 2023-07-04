@@ -29,7 +29,7 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
-use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
+use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -44,9 +44,10 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 #[derive(
     Debug,
     Clone,
+    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersioned,
+    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
     Encode,
@@ -56,7 +57,9 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_version_path(state_transitions.contract_create_state_transition)]
+#[serde(untagged)]
 pub enum DataContractCreateTransition {
+    #[versioned(0)]
     V0(DataContractCreateTransitionV0),
 }
 

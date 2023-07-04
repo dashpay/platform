@@ -1,4 +1,3 @@
-
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 mod v0;

@@ -15,15 +15,14 @@ use crate::{
 };
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionObjectLike;
+use crate::state_transition::documents_batch_transition::fields::property_names::TRANSITIONS;
 use crate::state_transition::documents_batch_transition::fields::*;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
-use crate::state_transition::documents_batch_transition::fields::property_names::TRANSITIONS;
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
+use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
-
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map(skip_signature)?.into())
     }
@@ -68,7 +67,6 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
 
         Ok(map)
     }
-    
 
     #[cfg(feature = "json-object")]
     fn from_json_object(
@@ -273,10 +271,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
         for transition in self.transitions.iter() {
             transitions.push(transition.to_object()?)
         }
-        object.insert(
-            String::from(TRANSITIONS),
-            Value::Array(transitions),
-        )?;
+        object.insert(String::from(TRANSITIONS), Value::Array(transitions))?;
 
         Ok(object)
     }
@@ -292,10 +287,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
         for transition in self.transitions.iter() {
             transitions.push(transition.to_cleaned_object()?)
         }
-        object.insert(
-            String::from(TRANSITIONS),
-            Value::Array(transitions),
-        )?;
+        object.insert(String::from(TRANSITIONS), Value::Array(transitions))?;
 
         Ok(object)
     }

@@ -1,4 +1,4 @@
-pub use fields::{IDENTIFIER_FIELDS, property_names};
+pub use fields::{property_names, IDENTIFIER_FIELDS};
 
 mod document;
 
@@ -7,12 +7,12 @@ pub mod action_type;
 mod document_patch;
 pub mod errors;
 pub mod extended_document;
+mod fields;
 pub mod generate_document_id;
-mod serde_serialize;
-mod v0;
 #[cfg(feature = "json-object")]
 mod json_conversion;
-mod fields;
+mod serde_serialize;
+mod v0;
 
 pub use v0::*;
 

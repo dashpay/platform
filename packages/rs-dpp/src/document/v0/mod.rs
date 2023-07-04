@@ -32,8 +32,8 @@
 //! This module defines the `Document` struct and implements its functions.
 //!
 
-pub mod serialize;
 pub(super) mod json_conversion;
+pub mod serialize;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
@@ -115,7 +115,9 @@ pub trait DocumentV0Methods {
     fn to_object(&self) -> Result<Value, ProtocolError>;
     #[cfg(feature = "cbor")]
     fn to_cbor_value(&self) -> Result<CborValue, ProtocolError>;
-    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> where Self: Sized;
+    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 }
 
 impl DocumentV0Methods for DocumentV0 {
@@ -288,7 +290,6 @@ impl DocumentV0Methods for DocumentV0 {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
-
 
     fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
         let mut properties = document_value

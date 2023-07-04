@@ -17,11 +17,11 @@ use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::state_transitions::documents_batch_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 impl StateTransitionValueConvert for DocumentsBatchTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

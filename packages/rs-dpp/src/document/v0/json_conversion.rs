@@ -1,18 +1,18 @@
-use std::convert::TryInto;
-use serde::Deserialize;
-use crate::document::{DocumentV0, DocumentV0Methods};
-use serde_json::{json, Value as JsonValue};
-use platform_value::{Identifier, Value};
 use crate::document::fields::property_names;
+use crate::document::{DocumentV0, DocumentV0Methods};
 use crate::ProtocolError;
+use platform_value::{Identifier, Value};
+use serde::Deserialize;
+use serde_json::{json, Value as JsonValue};
+use std::convert::TryInto;
 
 pub trait DocumentV0JsonMethods {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError>;
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
     fn from_json_value<S>(document_value: JsonValue) -> Result<Self, ProtocolError>
-        where
-                for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>, Self: Sized
-    ;
+    where
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+        Self: Sized;
 }
 
 impl DocumentV0JsonMethods for DocumentV0 {
@@ -51,15 +51,15 @@ impl DocumentV0JsonMethods for DocumentV0 {
 
         Ok(value)
     }
-    
+
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
     fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
-        where
-                for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+    where
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
     {
         let mut document = Self {
             ..Default::default()

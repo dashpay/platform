@@ -2,8 +2,8 @@ use crate::fee::Credits;
 use crate::NonConsensusError;
 
 use super::{
-    DummyFeesResult,
-    operations::{Operation, OperationLike}, Refunds,
+    operations::{Operation, OperationLike},
+    DummyFeesResult, Refunds,
 };
 
 pub fn calculate_operation_fees(

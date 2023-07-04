@@ -8,10 +8,9 @@
 //! and unlocking dash on the payment chain.
 //!
 
-
-use std::convert::TryFrom;
-use integer_encoding::VarInt;
 use crate::ProtocolError;
+use integer_encoding::VarInt;
+use std::convert::TryFrom;
 
 /// Credits type
 
@@ -37,11 +36,12 @@ pub trait Creditable {
     // TODO: Should we implement serialize / unserialize traits instead?
 
     /// Decode bytes to credits
-    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError> where Self: Sized;
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     /// Encode credits to bytes
     fn to_vec_bytes(&self) -> Vec<u8>;
 }
-
 
 impl Creditable for Credits {
     fn to_signed(&self) -> Result<SignedCredits, ProtocolError> {
@@ -54,18 +54,17 @@ impl Creditable for Credits {
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError> {
-        Self::decode_var(vec.as_slice())
-            .map(|(n, _)| n)
-            .ok_or(ProtocolError::CorruptedSerialization(
+        Self::decode_var(vec.as_slice()).map(|(n, _)| n).ok_or(
+            ProtocolError::CorruptedSerialization(
                 "pending refunds epoch index for must be u16".to_string(),
-            ))
+            ),
+        )
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {
         self.encode_var_vec()
     }
 }
-
 
 impl Creditable for SignedCredits {
     fn to_signed(&self) -> Result<SignedCredits, ProtocolError> {
@@ -77,11 +76,11 @@ impl Creditable for SignedCredits {
     }
 
     fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError> {
-        Self::decode_var(vec.as_slice())
-            .map(|(n, _)| n)
-            .ok_or(ProtocolError::CorruptedSerialization(
+        Self::decode_var(vec.as_slice()).map(|(n, _)| n).ok_or(
+            ProtocolError::CorruptedSerialization(
                 "pending refunds epoch index for must be u16".to_string(),
-            ))
+            ),
+        )
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {

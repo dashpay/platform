@@ -69,8 +69,8 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfoV0 {
         &mut self.basic_info
     }
 
-    fn basic_info_owned(&self) -> BlockInfo {
-        self.basic_info.clone()
+    fn basic_info_owned(self) -> BlockInfo {
+        self.basic_info
     }
 
     fn app_hash(&self) -> &[u8; 32] {

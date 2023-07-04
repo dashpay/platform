@@ -2,8 +2,8 @@ use crate::buffer::Buffer;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
 use dpp::fee::Credits;
+use dpp::serialization_traits::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=BalanceIsNotEnoughError)]

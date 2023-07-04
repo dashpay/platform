@@ -7,12 +7,14 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-use platform_versioning::PlatformSerdeVersioned;
+use platform_versioning::PlatformSerdeVersionedDeserialize;
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(
     Debug,
-    PlatformSerdeVersioned,
+    Serialize,
+    PlatformSerdeVersionedDeserialize,
     Encode,
     Decode,
     Clone,
@@ -24,7 +26,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 #[platform_serialize_limit(15000)]
+#[serde(untagged)]
 pub enum Identity {
+    #[versioned(0)]
     V0(IdentityV0),
 }
 

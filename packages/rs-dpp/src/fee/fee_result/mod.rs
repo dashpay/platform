@@ -35,18 +35,16 @@
 //! for removed data from the state.
 //!
 
+use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::consensus::fee::fee_error::FeeError;
 use crate::fee::fee_result::refunds::FeeRefunds;
-use crate::fee::fee_result::BalanceChange::{
-    AddToBalance, NoBalanceChange, RemoveFromBalance,
-};
+use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
 use crate::fee::Credits;
+use crate::ProtocolError;
 use platform_value::Identifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
-use crate::consensus::fee::fee_error::FeeError;
-use crate::ProtocolError;
 
 pub mod refunds;
 
@@ -163,7 +161,13 @@ impl BalanceChangeForIdentity {
                     ))
                 } else {
                     // The user could not pay for required storage space
-                    Err(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(user_balance, required_removed_balance)).into())
+                    Err(
+                        FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(
+                            user_balance,
+                            required_removed_balance,
+                        ))
+                        .into(),
+                    )
                 }
             }
             NoBalanceChange => {
@@ -247,12 +251,10 @@ impl FeeResult {
             .storage_fee
             .checked_add(rhs.storage_fee)
             .ok_or(ProtocolError::Overflow("storage fee overflow error"))?;
-        self.processing_fee =
-            self.processing_fee
-                .checked_add(rhs.processing_fee)
-                .ok_or(ProtocolError::Overflow(
-                    "processing fee overflow error",
-                ))?;
+        self.processing_fee = self
+            .processing_fee
+            .checked_add(rhs.processing_fee)
+            .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
         self.fee_refunds.checked_add_assign(rhs.fee_refunds)?;
         self.removed_bytes_from_system = self
             .removed_bytes_from_system

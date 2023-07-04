@@ -1,5 +1,5 @@
-use crate::{ProtocolError};
 use crate::fee::Credits;
+use crate::ProtocolError;
 
 pub const RATIO: u64 = 1000;
 

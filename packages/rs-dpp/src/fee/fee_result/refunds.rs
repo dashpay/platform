@@ -32,19 +32,19 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
-use std::collections::btree_map::Iter;
 use crate::block::epoch::{Epoch, EpochIndex};
-use crate::fee::Credits;
-use platform_value::Identifier;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use bincode::config;
 use crate::fee::default_costs::EpochCosts;
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::Credits;
 use crate::ProtocolError;
+use bincode::config;
+use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
+use std::collections::btree_map::Iter;
+use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
@@ -231,9 +231,9 @@ mod tests {
     use super::*;
 
     mod from_storage_removal {
-        use std::iter::FromIterator;
-        use nohash_hasher::IntMap;
         use super::*;
+        use nohash_hasher::IntMap;
+        use std::iter::FromIterator;
 
         #[test]
         fn should_filter_out_refunds_under_the_limit() {
