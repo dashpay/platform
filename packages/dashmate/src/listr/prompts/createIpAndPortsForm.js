@@ -87,7 +87,7 @@ async function createIpAndPortsForm(network, options = {}) {
       message: 'Core P2P port',
       initial: initialCoreP2PPort,
       validate: validateCoreP2PPort,
-      disabled: network === PRESET_MAINNET,
+      disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
     },
   ];
 
@@ -102,7 +102,7 @@ async function createIpAndPortsForm(network, options = {}) {
       message: 'Platform P2P port',
       initial: initialPlatformP2PPort,
       validate: validatePlatformP2PPort,
-      disabled: network === PRESET_MAINNET,
+      disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
     });
 
     let initialPlatformHTTPPort;
@@ -115,7 +115,7 @@ async function createIpAndPortsForm(network, options = {}) {
       message: 'Platform HTTP port',
       initial: initialPlatformHTTPPort,
       validate: validatePlatformHTTPPort,
-      disabled: network === PRESET_MAINNET,
+      disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
     });
   }
 

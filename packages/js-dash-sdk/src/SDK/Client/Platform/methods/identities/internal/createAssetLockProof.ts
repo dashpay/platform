@@ -59,7 +59,6 @@ export async function createAssetLockProof(
           cancelObtainCoreChainLockedHeight();
         }
 
-        // @ts-ignore
         return dpp.identity.createInstantAssetLockProof(
           instantLock.toBuffer(),
           assetLockTransaction.toBuffer(),
@@ -98,7 +97,6 @@ export async function createAssetLockProof(
           txIdBuffer.reverse();
           outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
 
-          // @ts-ignore
           return dpp.identity.createChainAssetLockProof(
             // @ts-ignore
             assetLockMetadata.height,

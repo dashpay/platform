@@ -46,14 +46,12 @@ export async function createAssetLockTransaction(
 
   lockTransaction
     .from(selection.utxos)
-    // @ts-ignore
     // eslint-disable-next-line
     .addBurnOutput(output.satoshis, assetLockOneTimePublicKey._getID())
     .change(changeAddress);
 
   const utxoAddresses = selection.utxos.map((utxo: any) => utxo.address.toString());
 
-  // @ts-ignore
   const utxoHDPrivateKey = account.getPrivateKeys(utxoAddresses);
 
   // @ts-ignore

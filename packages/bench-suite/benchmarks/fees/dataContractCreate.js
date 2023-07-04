@@ -1,4 +1,4 @@
-const { signStateTransition } = require('dash/build/src/SDK/Client/Platform/signStateTransition');
+const { signStateTransition } = require('dash/build/SDK/Client/Platform/signStateTransition');
 
 const TYPES = require('../../lib/benchmarks/types');
 const createIndices = require('../../lib/util/createIndices');
@@ -17,7 +17,7 @@ module.exports = {
   stateTransitionsCount: 10,
 
   /**
-   * Define document types
+   * Define document typesK
    *
    * It can be function or object
    *
