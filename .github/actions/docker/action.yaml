@@ -49,6 +49,7 @@ runs:
       uses: docker/setup-buildx-action@v2
       with:
         install: true
+        driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
         config-inline: |
           [worker.oci]
             gc = true
