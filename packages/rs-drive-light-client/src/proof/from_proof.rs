@@ -2,11 +2,19 @@ use std::fmt::Debug;
 
 use crate::Error;
 use dapi_grpc::platform::v0::{self as platform};
-use dpp::prelude::{Identifier, Identity};
+use dpp::document::Document;
+use dpp::prelude::{DataContract, Identifier, Identity, Revision};
+use drive::contract::DocumentType;
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
+use drive::query::DriveQuery;
 
 use super::verify::verify_tenderdash_proof;
+
+type Identities = Vec<Option<Identity>>;
+type DataContracts = Vec<Option<DataContract>>;
+type IdentityBalance = u64;
+type IdentityBalanceAndRevision = (u64, Revision);
 
 // #[cfg(feature = "mockall")]
 
@@ -128,6 +136,317 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
         Ok(maybe_identity)
     }
 }
+
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> for Identities {
+    fn maybe_from_proof(
+        request: &platform::GetIdentitiesRequest,
+        response: &platform::GetIdentitiesResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_identities_response::Result::Proof(p) => p,
+            platform::get_identities_response::Result::Identities(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        let identity_ids = request
+            .ids
+            .iter()
+            .map(|id| {
+                Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let maybe_identities = identity_ids
+            .iter()
+            .map(|id| {
+                // Extract content from proof and verify Drive/GroveDB proofs
+                let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
+                    &proof.grovedb_proof,
+                    false,
+                    id.into_buffer(),
+                )
+                .map_err(|e| Error::DriveError {
+                    error: e.to_string(),
+                })?;
+
+                verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+                Ok(maybe_identity)
+            })
+            .collect::<Result<Identities, Error>>()?;
+
+        Ok(Some(maybe_identities))
+    }
+}
+
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceResponse>
+    for IdentityBalance
+{
+    fn maybe_from_proof(
+        request: &platform::GetIdentityRequest,
+        response: &platform::GetIdentityBalanceResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_identity_balance_response::Result::Proof(p) => p,
+            platform::get_identity_balance_response::Result::Balance(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        // Load some info from request
+        let id = Identifier::from_bytes(&request.id).map_err(|e| Error::ProtocolError {
+            error: e.to_string(),
+        })?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
+            &proof.grovedb_proof,
+            false,
+            id.into_buffer(),
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(maybe_identity.map(|i| i.balance))
+    }
+}
+
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevisionResponse>
+    for IdentityBalanceAndRevision
+{
+    fn maybe_from_proof(
+        request: &platform::GetIdentityRequest,
+        response: &platform::GetIdentityBalanceAndRevisionResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_identity_balance_and_revision_response::Result::Proof(p) => p,
+            platform::get_identity_balance_and_revision_response::Result::BalanceAndRevision(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        // Load some info from request
+        let id = Identifier::from_bytes(&request.id).map_err(|e| Error::ProtocolError {
+            error: e.to_string(),
+        })?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
+            &proof.grovedb_proof,
+            false,
+            id.into_buffer(),
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(maybe_identity.map(|i| (i.balance, i.revision)))
+    }
+}
+
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetDataContractRequest, platform::GetDataContractResponse>
+    for DataContract
+{
+    fn maybe_from_proof(
+        request: &platform::GetDataContractRequest,
+        response: &platform::GetDataContractResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_data_contract_response::Result::Proof(p) => p,
+            platform::get_data_contract_response::Result::DataContract(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        // Load some info from request
+        let id = Identifier::from_bytes(&request.id).map_err(|e| Error::ProtocolError {
+            error: e.to_string(),
+        })?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_contract) =
+            Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer()).map_err(
+                |e| Error::DriveError {
+                    error: e.to_string(),
+                },
+            )?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(maybe_contract)
+    }
+}
+
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResponse>
+    for DataContracts
+{
+    fn maybe_from_proof(
+        request: &platform::GetDataContractsRequest,
+        response: &platform::GetDataContractsResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_data_contracts_response::Result::Proof(p) => p,
+            platform::get_data_contracts_response::Result::DataContracts(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        let contract_ids = request
+            .ids
+            .iter()
+            .map(|id| {
+                Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let maybe_contracts = contract_ids
+            .iter()
+            .map(|id| {
+                // Extract content from proof and verify Drive/GroveDB proofs
+                let (root_hash, maybe_contract) =
+                    Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer())
+                        .map_err(|e| Error::DriveError {
+                            error: e.to_string(),
+                        })?;
+
+                verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+                Ok(maybe_contract)
+            })
+            .collect::<Result<DataContracts, Error>>()?;
+
+        Ok(Some(maybe_contracts))
+    }
+}
+
+// TODO: figure out how to execute a query
+// #[cfg_attr(feature = "mock", mockall::automock)]
+// impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Document {
+//     fn maybe_from_proof(
+//         request: &platform::GetDocumentsRequest,
+//         response: &platform::GetDocumentsResponse,
+//         provider: Box<dyn QuorumInfoProvider>,
+//     ) -> Result<Option<Self>, Error> {
+//         // Parse response to read proof and metadata
+//         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+//             platform::get_documents_response::Result::Proof(p) => p,
+//             platform::get_documents_response::Result::Documents(_) => {
+//                 return Err(Error::EmptyResponseProof)
+//             }
+//         };
+
+//         let mtd = response
+//             .metadata
+//             .as_ref()
+//             .ok_or(Error::EmptyResponseMetadata)?;
+
+//         let data_contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|e| {
+//             Error::ProtocolError {
+//                 error: e.to_string(),
+//             }
+//         })?;
+
+//         // Extract content from proof and verify Drive/GroveDB proofs
+//         let (root_hash, maybe_contract) =
+//             Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer()).map_err(
+//                 |e| Error::DriveError {
+//                     error: e.to_string(),
+//                 },
+//             )?;
+
+//         let data_contract = maybe_contract.ok_or(Error::EmptyResponse)?;
+
+//         let query = DriveQuery {
+//             contract: &data_contract,
+//             document_type: data_contract
+//                 .document_types
+//                 .get(&request.document_type)
+//                 .ok_or(Error::DriveError {
+//                     error: "Invalid document type".to_string(), // TODO: handle error correctly
+//                 })?,
+//             internal_clauses: todo!(),
+//             offset: None,
+//             limit: Some(request.limit as u16), // TODO: handle lowering of the type
+//             order_by: todo!(),
+//             start_at: todo!(),
+//             start_at_included: true,
+//             block_time_ms: todo!(),
+//         };
+
+//         // Load some info from request
+//         // let id = request.ids.map(|id| Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
+//         //     error: e.to_string(),
+//         // })?);
+
+//         // let ids = request.ids.iter().map(|id| {
+//         //     Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
+//         //         error: e.to_string(),
+//         //     })
+//         // });
+
+//         // Extract content from proof and verify Drive/GroveDB proofs
+//         let (root_hash, maybe_contract) =
+//             Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer()).map_err(
+//                 |e| Error::DriveError {
+//                     error: e.to_string(),
+//                 },
+//             )?;
+
+//         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+//         Ok(maybe_contract)
+//     }
+// }
 
 /// Tests
 ///
