@@ -19,7 +19,7 @@ function updateNodeFactory(getServiceList, docker) {
 
     return Promise.all(
       _.uniqBy(services, 'image')
-        .map(async ({ serviceName, image, title }) => new Promise((resolve, reject) => {
+        .map(async ({ name, image, title }) => new Promise((resolve, reject) => {
           docker.pull(image, (err, stream) => {
             if (err) {
               reject(err);
@@ -43,7 +43,7 @@ function updateNodeFactory(getServiceList, docker) {
               });
               stream.on('error', reject);
               stream.on('end', () => resolve({
-                serviceName, title, image, updated,
+                name, title, image, updated,
               }));
             }
           });
