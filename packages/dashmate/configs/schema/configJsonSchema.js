@@ -296,8 +296,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'log', 'reindex', 'logIps', 'indexes'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'sentinel', 'devnet',
+        'log', 'logIps', 'indexes', 'reindex'],
       additionalProperties: false,
     },
     platform: {
