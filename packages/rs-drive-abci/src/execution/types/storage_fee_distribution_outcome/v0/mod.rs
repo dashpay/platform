@@ -1,4 +1,4 @@
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use drive::fee::credits::Credits;
 
 //todo: make this non versioned

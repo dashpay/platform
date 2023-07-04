@@ -1,7 +1,8 @@
 use grovedb::Element::SumItem;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::fee::{calculate_fee, Credits};
+use dpp::fee::Credits;
+use crate::fee::calculate_fee;
 use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::balances::balance_path;

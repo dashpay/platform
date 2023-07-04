@@ -35,15 +35,18 @@
 //! for removed data from the state.
 //!
 
-use crate::state_transition::fee::fee_result::refunds::FeeRefunds;
-use crate::state_transition::fee::fee_result::BalanceChange::{
+use crate::fee::fee_result::refunds::FeeRefunds;
+use crate::fee::fee_result::BalanceChange::{
     AddToBalance, NoBalanceChange, RemoveFromBalance,
 };
-use crate::state_transition::fee::Credits;
+use crate::fee::Credits;
 use platform_value::Identifier;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
+use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::consensus::fee::fee_error::FeeError;
+use crate::ProtocolError;
 
 pub mod refunds;
 
@@ -61,7 +64,7 @@ pub struct FeeResult {
 }
 
 impl TryFrom<Vec<FeeResult>> for FeeResult {
-    type Error = Error;
+    type Error = ProtocolError;
     fn try_from(value: Vec<FeeResult>) -> Result<Self, Self::Error> {
         let mut aggregate_fee_result = FeeResult::default();
         value
@@ -72,7 +75,7 @@ impl TryFrom<Vec<FeeResult>> for FeeResult {
 }
 
 impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
-    type Error = Error;
+    type Error = ProtocolError;
     fn try_from(value: Vec<Option<FeeResult>>) -> Result<Self, Self::Error> {
         let mut aggregate_fee_result = FeeResult::default();
         value.into_iter().try_for_each(|fee_result| {
@@ -139,7 +142,7 @@ impl BalanceChangeForIdentity {
     }
 
     /// The fee result outcome based on user balance
-    pub fn fee_result_outcome(self, user_balance: u64) -> Result<FeeResult, Error> {
+    pub fn fee_result_outcome(self, user_balance: u64) -> Result<FeeResult, ProtocolError> {
         match self.change {
             AddToBalance { .. } => {
                 // when we add balance we are sure that all the storage fee and processing fee has
@@ -160,9 +163,7 @@ impl BalanceChangeForIdentity {
                     ))
                 } else {
                     // The user could not pay for required storage space
-                    Err(Error::Fee(FeeError::InsufficientBalance(
-                        "user does not have enough balance",
-                    )))
+                    Err(FeeError::BalanceIsNotEnoughError(BalanceIsNotEnoughError::new(user_balance, required_removed_balance)).into())
                 }
             }
             NoBalanceChange => {
@@ -189,7 +190,7 @@ impl FeeResult {
     }
 
     /// Convenience method to get required removed balance
-    pub fn into_balance_change(self, identity_id: [u8; 32]) -> BalanceChangeForIdentity {
+    pub fn into_balance_change(self, identity_id: Identifier) -> BalanceChangeForIdentity {
         let storage_credits_returned = self
             .fee_refunds
             .calculate_refunds_amount_for_identity(identity_id)
@@ -241,24 +242,24 @@ impl FeeResult {
     }
 
     /// Adds and self assigns result between two Fee Results
-    pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), Error> {
+    pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), ProtocolError> {
         self.storage_fee = self
             .storage_fee
             .checked_add(rhs.storage_fee)
-            .ok_or(Error::Fee(FeeError::Overflow("storage fee overflow error")))?;
+            .ok_or(ProtocolError::Overflow("storage fee overflow error"))?;
         self.processing_fee =
             self.processing_fee
                 .checked_add(rhs.processing_fee)
-                .ok_or(Error::Fee(FeeError::Overflow(
+                .ok_or(ProtocolError::Overflow(
                     "processing fee overflow error",
-                )))?;
+                ))?;
         self.fee_refunds.checked_add_assign(rhs.fee_refunds)?;
         self.removed_bytes_from_system = self
             .removed_bytes_from_system
             .checked_add(rhs.removed_bytes_from_system)
-            .ok_or(Error::Fee(FeeError::Overflow(
+            .ok_or(ProtocolError::Overflow(
                 "removed_bytes_from_system overflow error",
-            )))?;
+            ))?;
         Ok(())
     }
 }

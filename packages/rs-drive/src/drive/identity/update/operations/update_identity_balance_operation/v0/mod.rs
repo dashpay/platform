@@ -1,5 +1,5 @@
 use grovedb::Element;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use crate::drive::balances::balance_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;

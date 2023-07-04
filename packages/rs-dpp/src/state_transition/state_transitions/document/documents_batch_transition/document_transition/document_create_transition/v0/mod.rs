@@ -19,7 +19,7 @@ use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
 use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransitionV0;
 
-use super::super::INITIAL_REVISION;
+use crate::document::INITIAL_REVISION;
 
 pub(self) mod property_names {
     pub const ENTROPY: &str = "$entropy";

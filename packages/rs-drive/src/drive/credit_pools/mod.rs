@@ -174,7 +174,7 @@ mod tests {
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use grovedb::batch::Op;
         use dpp::block::epoch::EpochIndex;
-        use dpp::state_transition::fee::Credits;
+        use dpp::fee::Credits;
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {

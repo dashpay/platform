@@ -16,7 +16,6 @@ use fields::*;
 use crate::data_contract::property_names::ENTROPY;
 
 use crate::data_contract::DataContract;
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::identity::KeyID;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::{PlatformSerializable, Signable};

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
+    data_contract::DataContract, prelude::Identifier, ProtocolError, util::json_value::JsonValueExt,
 };
 use document_base_transition::DocumentBaseTransition;
 
@@ -36,10 +36,8 @@ pub use document_create_transition_action::DocumentCreateTransitionAction;
 pub use document_delete_transition_action::DocumentDeleteTransitionAction;
 pub use document_replace_transition_action::DocumentReplaceTransitionAction;
 
-pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
+pub use action::{DOCUMENT_TRANSITION_ACTION_VERSION, DocumentTransitionAction};
 
-/// the initial revision of newly created document
-pub const INITIAL_REVISION: u64 = 1;
 pub const PROPERTY_ACTION: &str = "$action";
 
 pub trait DocumentTransitionExt {

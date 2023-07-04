@@ -1,6 +1,6 @@
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::drive::grove_operations::DirectQueryType;

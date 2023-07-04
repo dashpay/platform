@@ -6,7 +6,7 @@ use grovedb::batch::KeyInfoPath;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::fee::calculate_fee;
+use crate::fee::calculate_fee;
 use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::{contract_documents_path, Drive, RootTree};

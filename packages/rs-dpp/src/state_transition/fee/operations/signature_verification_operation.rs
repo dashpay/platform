@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 use super::OperationLike;
 use crate::{
     identity::KeyType,
-    state_transition::fee::{constants::signature_verify_cost, Credits, Refunds},
     NonConsensusError,
+    state_transition::fee::Refunds,
 };
+use crate::fee::Credits;
+use crate::fee::default_costs::constants::signature_verify_cost;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

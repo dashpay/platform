@@ -152,8 +152,8 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
-    use dpp::state_transition::fee::default_costs::EpochCosts;
-    use dpp::state_transition::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::document::Document;

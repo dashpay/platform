@@ -1,8 +1,10 @@
-use crate::consensus::basic::document::InvalidDocumentTypeError;
+
 use thiserror::Error;
 
 use crate::data_contract::DataContract;
+
 use crate::errors::consensus::ConsensusError;
+use crate::consensus::basic::document::InvalidDocumentTypeError;
 
 // @append_only
 #[derive(Error, Debug)]

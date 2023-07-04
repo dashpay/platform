@@ -1,6 +1,8 @@
 use crate::data_contract::document_type::DocumentType;
+#[cfg(feature = "state-transitions")]
 use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 use crate::data_contract::v0::DataContractV0;
+#[cfg(feature = "state-transitions")]
 use crate::data_contract::CreatedDataContract;
 use crate::document::Document;
 use crate::prelude::DataContract;
@@ -85,11 +87,13 @@ pub fn json_document_to_contract(
     }
 }
 
+#[cfg(feature = "state-transitions")]
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
+    version: FeatureVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
-    let data_contract = json_document_to_contract(path)?;
+    let data_contract = json_document_to_contract(path, version)?;
     Ok(CreatedDataContractV0 {
         data_contract,
         entropy_used: Default::default(),

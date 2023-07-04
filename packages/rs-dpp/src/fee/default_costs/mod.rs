@@ -37,6 +37,8 @@ use crate::block::epoch::EpochIndex;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
+pub mod constants;
+
 /// A Known Cost Item is an item that changes costs depending on the Epoch
 #[derive(Eq, PartialEq, Copy, Clone, Hash)]
 pub enum KnownCostItem {

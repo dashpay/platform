@@ -10,24 +10,6 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 use crate::document::DocumentV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::JsonValue;
-
-/// The property names of a document
-pub mod property_names {
-    pub const FEATURE_VERSION: &str = "$version";
-    pub const ID: &str = "$id";
-    pub const DATA_CONTRACT_ID: &str = "$dataContractId";
-    pub const REVISION: &str = "$revision";
-    pub const OWNER_ID: &str = "$ownerId";
-    pub const CREATED_AT: &str = "$createdAt";
-    pub const UPDATED_AT: &str = "$updatedAt";
-}
-
-pub const IDENTIFIER_FIELDS: [&str; 3] = [
-    property_names::ID,
-    property_names::OWNER_ID,
-    property_names::DATA_CONTRACT_ID,
-];
 
 #[derive(Clone, Debug, PartialEq, From)]
 pub enum Document {
@@ -94,13 +76,8 @@ impl Document {
         }
     }
 
-    /// Convert the document to JSON with identifiers using bytes.
-    pub fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
-        match self {
-            Document::V0(v0) => v0.to_json_with_identifiers_using_bytes(),
-        }
-    }
 
+    #[cfg(feature = "platform-value")]
     /// Convert the document to a map value.
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
@@ -108,6 +85,7 @@ impl Document {
         }
     }
 
+    #[cfg(feature = "platform-value")]
     /// Convert the document to a map value consuming the document.
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
@@ -115,6 +93,7 @@ impl Document {
         }
     }
 
+    #[cfg(feature = "platform-value")]
     /// Convert the document to a value consuming the document.
     pub fn into_value(self) -> Result<Value, ProtocolError> {
         match self {
@@ -122,6 +101,7 @@ impl Document {
         }
     }
 
+    #[cfg(feature = "platform-value")]
     /// Convert the document to an object.
     pub fn to_object(&self) -> Result<Value, ProtocolError> {
         match self {
@@ -129,21 +109,8 @@ impl Document {
         }
     }
 
-    /// Convert the document to a JSON value.
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        match self {
-            Document::V0(v0) => v0.to_json(),
-        }
-    }
-    /// Create a document from a JSON value.
-    pub fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
-    where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
-    {
-        Ok(Document::V0(DocumentV0::from_json_value::<S>(
-            document_value,
-        )?))
-    }
+
+
 
     /// Create a document from a platform value.
     pub fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
@@ -155,13 +122,6 @@ impl Document {
             version => Err(ProtocolError::UnknownVersionError(format!(
                 "version {version} not known for document for call from_platform_value"
             ))),
-        }
-    }
-
-    /// Convert the document to a JSON value.
-    pub fn serialize(&self) -> Result<JsonValue, ProtocolError> {
-        match self {
-            Document::V0(v0) => v0.to_json(),
         }
     }
 }

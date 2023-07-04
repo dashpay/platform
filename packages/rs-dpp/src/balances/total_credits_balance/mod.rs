@@ -1,4 +1,5 @@
-use crate::state_transition::fee::{Credits, SignedCredits};
+use crate::balances::credits::{Creditable, MAX_CREDITS};
+use crate::fee::{Credits, SignedCredits};
 use crate::ProtocolError;
 
 /// The outcome of verifying credits

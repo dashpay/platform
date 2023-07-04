@@ -1,4 +1,4 @@
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 
 /// The outcome of adding to a previous balance
 pub(in crate::drive::identity::update) struct AddToPreviousBalanceOutcomeV0 {

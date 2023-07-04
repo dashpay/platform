@@ -7,7 +7,7 @@ use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::Credits;

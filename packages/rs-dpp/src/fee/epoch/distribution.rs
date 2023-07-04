@@ -36,19 +36,17 @@
 //! and masternodes receive payouts for previous epoch.
 //!
 
-use crate::error::fee::FeeError;
-use crate::error::Error;
-use crate::fee::credits::Credits;
 use crate::fee::epoch::{
-    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
+    EpochIndex, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS, SignedCreditsPerEpoch,
 };
-use crate::fee::get_overflow_error;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::cmp::Ordering;
 
 use std::ops::Mul;
+use crate::balances::credits::Credits;
+use crate::ProtocolError;
 
 // TODO: Should be updated from the doc
 
@@ -75,7 +73,7 @@ pub fn distribute_storage_fee_to_epochs_collection(
     credits_per_epochs: &mut SignedCreditsPerEpoch,
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
-) -> Result<DistributionLeftovers, Error> {
+) -> Result<DistributionLeftovers, ProtocolError> {
     distribution_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
@@ -85,7 +83,7 @@ pub fn distribute_storage_fee_to_epochs_collection(
             *epoch_credits = epoch_credits
                 .checked_add_unsigned(epoch_fee_share)
                 .ok_or_else(|| {
-                    get_overflow_error("updated epoch credits are not fitting to credits max size")
+                    ProtocolError::Overflow("updated epoch credits are not fitting to credits max size")
                 })?;
 
             Ok(())
@@ -100,7 +98,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     current_epoch_index: EpochIndex,
-) -> Result<(), Error> {
+) -> Result<(), ProtocolError> {
     let leftovers = refund_storage_fee_to_epochs_map(
         storage_fee,
         start_epoch_index,
@@ -111,7 +109,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
             *epoch_credits = epoch_credits
                 .checked_sub_unsigned(epoch_fee_share)
                 .ok_or_else(|| {
-                    get_overflow_error("updated epoch credits are not fitting to credits min size")
+                    ProtocolError::Overflow("updated epoch credits are not fitting to credits min size")
                 })?;
 
             Ok(())
@@ -125,7 +123,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
         *epoch_credits = epoch_credits
             .checked_sub_unsigned(leftovers)
             .ok_or_else(|| {
-                get_overflow_error("updated epoch credits are not fitting to credits min size")
+                ProtocolError::Overflow("updated epoch credits are not fitting to credits min size")
             })?;
     }
 
@@ -137,7 +135,7 @@ pub fn calculate_storage_fee_refund_amount_and_leftovers(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     current_epoch_index: EpochIndex,
-) -> Result<(DistributionAmount, DistributionLeftovers), Error> {
+) -> Result<(DistributionAmount, DistributionLeftovers), ProtocolError> {
     let mut skipped_amount = 0;
 
     let leftovers = distribution_storage_fee_to_epochs_map(
@@ -189,7 +187,7 @@ fn restore_original_removed_credits_amount(
     refund_amount: Decimal,
     start_epoch_index: EpochIndex,
     start_repayment_from_epoch_index: EpochIndex,
-) -> Result<Decimal, Error> {
+) -> Result<Decimal, ProtocolError> {
     let multiplier = original_removed_credits_multiplier_from(
         start_epoch_index,
         start_repayment_from_epoch_index,
@@ -197,9 +195,9 @@ fn restore_original_removed_credits_amount(
 
     refund_amount
         .checked_mul(multiplier)
-        .ok_or(Error::Fee(FeeError::Overflow(
+        .ok_or(ProtocolError::Overflow(
             "overflow when multiplying with the multiplier (this should be impossible)",
-        )))
+        ))
 }
 
 /// Distributes storage fees to epochs and call function for each epoch.
@@ -208,9 +206,9 @@ fn distribution_storage_fee_to_epochs_map<F>(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     mut map_function: F,
-) -> Result<DistributionLeftovers, Error>
+) -> Result<DistributionLeftovers, ProtocolError>
 where
-    F: FnMut(EpochIndex, Credits) -> Result<(), Error>,
+    F: FnMut(EpochIndex, Credits) -> Result<(), ProtocolError>,
 {
     if storage_fee == 0 {
         return Ok(0);
@@ -232,7 +230,7 @@ where
         let epoch_fee_share: Credits = epoch_fee_share_dec
             .floor()
             .to_u64()
-            .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
+            .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
         let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
 
@@ -241,9 +239,9 @@ where
 
             distribution_leftover_credits = distribution_leftover_credits
                 .checked_sub(epoch_fee_share)
-                .ok_or(Error::Fee(FeeError::CorruptedCodeExecution(
+                .ok_or(ProtocolError::Overflow(
                     "leftovers bigger than initial value",
-                )))?;
+                ))?;
         }
     }
 
@@ -258,9 +256,9 @@ fn refund_storage_fee_to_epochs_map<F>(
     start_epoch_index: EpochIndex,
     skip_until_epoch_index: EpochIndex,
     mut map_function: F,
-) -> Result<DistributionLeftovers, Error>
+) -> Result<DistributionLeftovers, ProtocolError>
 where
-    F: FnMut(EpochIndex, Credits) -> Result<(), Error>,
+    F: FnMut(EpochIndex, Credits) -> Result<(), ProtocolError>,
 {
     if storage_fee == 0 {
         return Ok(0);
@@ -294,7 +292,7 @@ where
         let estimated_epoch_fee_share: Credits = estimated_epoch_fee_share_dec
             .floor()
             .to_u64()
-            .ok_or_else(|| get_overflow_error("storage fees are not fitting in a u64"))?;
+            .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
         let year_start_epoch_index = if year == start_year {
             skip_until_epoch_index
@@ -309,19 +307,17 @@ where
 
             distribution_leftover_credits = distribution_leftover_credits
                 .checked_sub(estimated_epoch_fee_share)
-                .ok_or(Error::Fee(FeeError::CorruptedCodeExecution(
+                .ok_or(ProtocolError::Overflow(
                     "leftovers bigger than initial value",
-                )))?;
+                ))?;
         }
     }
     Ok(distribution_leftover_credits)
 }
 
-#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fee::credits::{SignedCredits, MAX_CREDITS};
     use crate::fee::epoch::GENESIS_EPOCH_INDEX;
     use crate::fee::epoch::PERPETUAL_STORAGE_EPOCHS;
     use rust_decimal::Decimal;
@@ -420,8 +416,9 @@ mod tests {
     }
 
     mod distribute_storage_fee_to_epochs_collection {
+        use crate::balances::credits::{Creditable, MAX_CREDITS};
+        use crate::fee::SignedCredits;
         use super::*;
-        use crate::fee::credits::Creditable;
 
         #[test]
         fn should_distribute_max_credits_value_without_overflow() {
@@ -564,8 +561,9 @@ mod tests {
     }
 
     mod subtract_refunds_from_epoch_credits_collection {
+        use crate::balances::credits::Creditable;
+        use crate::fee::SignedCredits;
         use super::*;
-        use crate::fee::credits::Creditable;
 
         #[test]
         fn should_deduct_refunds_from_collection_since_specific_epoch_start_at_genesis() {

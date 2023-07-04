@@ -39,7 +39,7 @@ use crate::fee_pools::epochs_root_tree_key_constants::{
 use dpp::block::epoch::Epoch;
 use grovedb::batch::GroveDbOp;
 use grovedb::Element;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 
 /// Epochs module
 pub mod epochs;

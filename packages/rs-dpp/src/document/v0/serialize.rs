@@ -1,8 +1,8 @@
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::document::document::property_names;
-use crate::document::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::property_names;
+use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;

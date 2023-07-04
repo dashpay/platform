@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+#[cfg(feature = "state-transitions")]
 use crate::consensus::state::data_trigger::data_trigger_error::{
     DataTriggerActionError, DataTriggerError,
 };
@@ -40,9 +41,11 @@ pub enum StateError {
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 
+    #[cfg(feature = "validation")]
     #[error(transparent)]
     DataTriggerError(DataTriggerError),
 
+    #[cfg(feature = "validation")]
     #[error(transparent)]
     DataTriggerActionError(DataTriggerActionError),
 

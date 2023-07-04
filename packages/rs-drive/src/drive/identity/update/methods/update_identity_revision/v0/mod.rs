@@ -18,7 +18,7 @@ use dpp::prelude::{Revision, TimestampMillis};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::state_transition::fee::calculate_fee;
+use crate::fee::calculate_fee;
 use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 

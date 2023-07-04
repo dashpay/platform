@@ -34,7 +34,6 @@ use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
 use crate::data_contract::errors::DataContractError;
-use crate::version::LATEST_VERSION;
 
 use super::super::property_names;
 

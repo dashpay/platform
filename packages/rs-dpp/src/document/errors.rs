@@ -3,15 +3,18 @@ use thiserror::Error;
 
 use crate::errors::consensus::ConsensusError;
 
+#[cfg(feature = "state-transitions")]
 use super::document_transition::DocumentTransition;
 use crate::document::{Document, ExtendedDocument};
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
+    #[cfg(feature = "state-transitions")]
     #[error("Document already exists")]
     DocumentAlreadyExistsError {
         document_transition: DocumentTransition,
     },
+    #[cfg(feature = "state-transitions")]
     #[error("Document was not provided for apply of state transition")]
     DocumentNotProvidedError {
         document_transition: DocumentTransition,
@@ -20,6 +23,7 @@ pub enum DocumentError {
     InvalidActionError(u8),
     #[error("Invalid Document action submitted")]
     InvalidActionNameError { actions: Vec<String> },
+    #[cfg(feature = "state-transitions")]
     #[error("Invalid Document action '{}'", document_transition.base().action)]
     InvalidDocumentActionError {
         document_transition: DocumentTransition,

@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;

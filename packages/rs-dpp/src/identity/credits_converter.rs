@@ -1,4 +1,5 @@
-use crate::{state_transition::fee::Credits, ProtocolError};
+use crate::{ProtocolError};
+use crate::fee::Credits;
 
 pub const RATIO: u64 = 1000;
 

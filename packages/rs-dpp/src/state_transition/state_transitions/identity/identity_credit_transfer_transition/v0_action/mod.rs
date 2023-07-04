@@ -1,4 +1,4 @@
-use crate::state_transition::fee::Credits;
+use crate::fee::Credits;
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};

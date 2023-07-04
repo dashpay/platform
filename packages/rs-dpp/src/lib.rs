@@ -9,9 +9,11 @@ extern crate core;
 pub use dashcore;
 
 pub use convertible::Convertible;
+#[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 
+#[cfg(feature = "system_contracts")]
 pub mod contracts;
 pub mod data_contract;
 
@@ -31,6 +33,7 @@ pub mod schema;
 #[cfg(feature = "validation")]
 pub mod validation;
 
+#[cfg(feature = "client")]
 mod dash_platform_protocol;
 
 pub mod mocks;
@@ -43,21 +46,24 @@ pub mod tests;
 pub mod balances;
 pub mod block;
 pub mod serialization_traits;
+#[cfg(feature = "validation")]
 pub mod signing;
+#[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+pub mod fee;
 
 pub use async_trait;
 pub use bls::*;
 
 pub mod prelude {
     pub use crate::data_contract::DataContract;
-    pub use crate::document::document_transition::DocumentTransition;
     pub use crate::document::ExtendedDocument;
     pub use crate::errors::ProtocolError;
     pub use crate::identifier::Identifier;
     pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     pub use crate::identity::Identity;
     pub use crate::identity::IdentityPublicKey;
+    #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
 
     pub use super::convertible::Convertible;

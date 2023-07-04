@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Credits
 //!
 //! Credits are Platform native token and used for micro payments
@@ -37,65 +8,57 @@
 //! and unlocking dash on the payment chain.
 //!
 
-// TODO: Should be moved to DPP when integration is done
 
-#[cfg(feature = "full")]
-use crate::error::drive::DriveError;
-#[cfg(feature = "full")]
-use crate::error::Error;
-#[cfg(feature = "full")]
-use crate::fee::get_overflow_error;
-#[cfg(feature = "full")]
+use std::convert::TryFrom;
 use integer_encoding::VarInt;
-#[cfg(feature = "full")]
-use rust_decimal::Decimal;
+use crate::ProtocolError;
 
 /// Credits type
-#[cfg(any(feature = "full", feature = "verify"))]
+
 pub type Credits = u64;
 
 /// Signed Credits type is used for internal computations and total credits
 /// balance verification
-#[cfg(feature = "full")]
+
 pub type SignedCredits = i64;
 
 /// Maximum value of credits
-#[cfg(feature = "full")]
-pub const MAX_CREDITS: Credits = SignedCredits::MAX as Credits;
+
+pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 
 /// Trait for signed and unsigned credits
-#[cfg(feature = "full")]
-pub trait Creditable: Into<Decimal> {
+
+pub trait Creditable {
     /// Convert unsigned credit to singed
-    fn to_signed(&self) -> Result<SignedCredits, Error>;
+    fn to_signed(&self) -> Result<SignedCredits, ProtocolError>;
     /// Convert singed credit to unsigned
     fn to_unsigned(&self) -> Credits;
 
     // TODO: Should we implement serialize / unserialize traits instead?
 
     /// Decode bytes to credits
-    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error>;
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError> where Self: Sized;
     /// Encode credits to bytes
     fn to_vec_bytes(&self) -> Vec<u8>;
 }
 
-#[cfg(feature = "full")]
+
 impl Creditable for Credits {
-    fn to_signed(&self) -> Result<SignedCredits, Error> {
+    fn to_signed(&self) -> Result<SignedCredits, ProtocolError> {
         SignedCredits::try_from(*self)
-            .map_err(|_| get_overflow_error("credits are too big to convert to signed value"))
+            .map_err(|_| ProtocolError::Overflow("credits are too big to convert to signed value"))
     }
 
     fn to_unsigned(&self) -> Credits {
         *self
     }
 
-    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError> {
         Self::decode_var(vec.as_slice())
             .map(|(n, _)| n)
-            .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                "pending refunds epoch index for must be u16",
-            )))
+            .ok_or(ProtocolError::CorruptedSerialization(
+                "pending refunds epoch index for must be u16".to_string(),
+            ))
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {
@@ -103,9 +66,9 @@ impl Creditable for Credits {
     }
 }
 
-#[cfg(feature = "full")]
+
 impl Creditable for SignedCredits {
-    fn to_signed(&self) -> Result<SignedCredits, Error> {
+    fn to_signed(&self) -> Result<SignedCredits, ProtocolError> {
         Ok(*self)
     }
 
@@ -113,12 +76,12 @@ impl Creditable for SignedCredits {
         self.unsigned_abs()
     }
 
-    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, Error> {
+    fn from_vec_bytes(vec: Vec<u8>) -> Result<Self, ProtocolError> {
         Self::decode_var(vec.as_slice())
             .map(|(n, _)| n)
-            .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                "pending refunds epoch index for must be u16",
-            )))
+            .ok_or(ProtocolError::CorruptedSerialization(
+                "pending refunds epoch index for must be u16".to_string(),
+            ))
     }
 
     fn to_vec_bytes(&self) -> Vec<u8> {

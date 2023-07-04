@@ -1,6 +1,6 @@
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::ConsensusError;
-use crate::state_transition::fee::Credits;
+use crate::fee::Credits;
 use thiserror::Error;
 
 use serde::{Deserialize, Serialize};

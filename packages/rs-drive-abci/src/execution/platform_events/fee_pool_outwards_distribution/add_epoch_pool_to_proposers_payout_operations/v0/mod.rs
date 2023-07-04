@@ -7,7 +7,7 @@ use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::batch::DriveOperation;

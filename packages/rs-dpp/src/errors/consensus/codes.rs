@@ -1,4 +1,5 @@
 use crate::consensus::signature::SignatureError;
+#[cfg(feature = "state-transitions")]
 use crate::consensus::state::data_trigger::data_trigger_error::{
     DataTriggerActionError, DataTriggerError,
 };
@@ -170,6 +171,7 @@ impl ErrorWithCode for StateError {
     }
 }
 
+#[cfg(feature = "state-transitions")]
 impl ErrorWithCode for DataTriggerError {
     fn code(&self) -> u32 {
         match self {
@@ -180,6 +182,7 @@ impl ErrorWithCode for DataTriggerError {
     }
 }
 
+#[cfg(feature = "state-transitions")]
 impl ErrorWithCode for DataTriggerActionError {
     fn code(&self) -> u32 {
         match *self {

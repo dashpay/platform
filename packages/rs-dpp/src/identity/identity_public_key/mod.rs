@@ -28,6 +28,7 @@ use crate::Convertible;
 use bincode::{config, Decode, Encode};
 use dashcore::hashes::Hash;
 
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::util::vec;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
@@ -68,6 +69,7 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
+#[cfg(feature = "state-transitions")]
 impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
     fn into(self) -> IdentityPublicKeyInCreation {
         IdentityPublicKeyInCreation {
@@ -83,10 +85,12 @@ impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
 }
 
 impl Convertible for IdentityPublicKey {
+    #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
         if self.disabled_at.is_none() {
@@ -97,16 +101,19 @@ impl Convertible for IdentityPublicKey {
         Ok(value)
     }
 
+    #[cfg(feature = "platform-value")]
     fn into_object(self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "json-object")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
@@ -182,10 +189,12 @@ impl IdentityPublicKey {
         vec::vec_to_array::<33>(self.data.as_slice())
     }
 
+    #[cfg(feature = "platform-value")]
     pub fn from_value(value: Value) -> Result<IdentityPublicKey, ProtocolError> {
         value.try_into().map_err(ProtocolError::ValueError)
     }
 
+    #[cfg(feature = "json-object")]
     pub fn from_json_object(raw_object: JsonValue) -> Result<IdentityPublicKey, ProtocolError> {
         let mut value: Value = raw_object.into();
         value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;

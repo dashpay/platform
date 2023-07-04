@@ -118,6 +118,7 @@ pub mod verify;
 #[cfg(feature = "full")]
 mod operations;
 mod open;
+pub(crate) mod fee;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DataContractCache;

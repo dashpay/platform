@@ -1,15 +1,16 @@
 use crate::{fee::dummy_fee_result::DummyFeesResultWasm, utils::Inner};
 use dpp::platform_value::Error as PlatformValueError;
 use dpp::{
+    ProtocolError,
     state_transition::fee::{
         operations::{OperationLike, PreCalculatedOperation},
-        Credits, Refunds,
+        Refunds,
     },
-    ProtocolError,
 };
 use js_sys::{Array, BigInt};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
+use dpp::fee::Credits;
 
 use crate::errors::value_error::PlatformValueErrorWasm;
 use crate::utils::ToSerdeJSONExt;

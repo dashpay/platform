@@ -1,8 +1,10 @@
-use crate::{prelude::Identifier, NonConsensusError};
+use crate::{NonConsensusError, prelude::Identifier};
+use crate::fee::default_costs::constants::DEFAULT_USER_TIP;
+use crate::fee::fee_result::FeeResult;
 
 use super::{
-    calculate_operation_fees::calculate_operation_fees, constants::DEFAULT_USER_TIP,
-    operations::Operation, DummyFeesResult, FeeResult,
+    calculate_operation_fees::calculate_operation_fees,
+    DummyFeesResult, FeeResult, operations::Operation,
 };
 
 pub fn calculate_state_transition_fee_from_operations(
@@ -76,12 +78,13 @@ mod test {
         PreCalculatedOperation, SignatureVerificationOperation,
     };
     use crate::{
+        NonConsensusError,
         state_transition::fee::{
-            operations::Operation, Credits, DummyFeesResult, FeeResult, Refunds,
+            DummyFeesResult, FeeResult, operations::Operation, Refunds,
         },
         tests::utils::generate_random_identifier_struct,
-        NonConsensusError,
     };
+    use crate::fee::Credits;
 
     use super::calculate_state_transition_fee_from_operations_with_custom_calculator;
 

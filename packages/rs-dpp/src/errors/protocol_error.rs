@@ -7,6 +7,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
@@ -58,6 +59,7 @@ pub enum ProtocolError {
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     StateTransitionError(#[from] StateTransitionError),
 
@@ -74,16 +76,22 @@ pub enum ProtocolError {
     Generic(String),
 
     // State Transition Errors
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     PublicKeyMismatchError(PublicKeyMismatchError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
@@ -112,6 +120,7 @@ pub enum ProtocolError {
     #[error(transparent)]
     InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
 
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     MissingDataContractIdError(MissingDataContractIdError),
 
@@ -156,6 +165,9 @@ pub enum ProtocolError {
 
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
+
+    #[error("corrupted serialization: {0}")]
+    CorruptedSerialization(String),
 
     #[error("critical corrupted credits code execution: {0}")]
     CriticalCorruptedCreditsCodeExecution(String),

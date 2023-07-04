@@ -1,6 +1,6 @@
 use crate::identity::KeyType;
 
-use super::Credits;
+use crate::fee::Credits;
 
 pub const BASE_ST_PROCESSING_FEE: Credits = 10000; // 84000
 pub const FEE_MULTIPLIER: Credits = 2;

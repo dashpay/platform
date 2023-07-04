@@ -1,5 +1,5 @@
 use grovedb::Element;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use crate::drive::Drive;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::fee::op::LowLevelDriveOperation;

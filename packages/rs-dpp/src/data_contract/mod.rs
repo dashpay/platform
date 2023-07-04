@@ -13,6 +13,7 @@ pub mod extra;
 
 mod generate_data_contract;
 
+#[cfg(feature = "state-transitions")]
 pub mod created_data_contract;
 pub mod document_type;
 
@@ -25,6 +26,7 @@ pub use factory::*;
 #[cfg(feature = "client")]
 mod data_contract_facade;
 
+#[cfg(feature = "state-transitions")]
 pub use created_data_contract::CreatedDataContract;
 pub use v0::*;
 

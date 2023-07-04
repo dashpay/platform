@@ -1,4 +1,3 @@
-use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
@@ -17,7 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
-use crate::document::document_transition::DocumentTransitionObjectLike;
 
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
@@ -29,7 +27,7 @@ use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
-        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionLike,
         StateTransitionType,
     },
 };
@@ -39,43 +37,29 @@ pub use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
 };
 use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_versioning::{PlatformSerdeVersioned, PlatformVersioned};
 
 mod action;
 pub mod document_transition;
 mod v0;
 mod v0_action;
 pub mod validation;
+mod fields;
+mod identity_signed;
+#[cfg(feature = "json-object")]
+mod json_conversion;
+mod state_transition_like;
+mod v0_methods;
+#[cfg(feature = "platform-value")]
+mod value_conversion;
 
 pub use v0::*;
 pub use v0_action::*;
 
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 
-pub mod property_names {
-    pub const STATE_TRANSITION_PROTOCOL_VERSION: &str = "$version";
-    pub const TRANSITION_TYPE: &str = "type";
-    pub const DATA_CONTRACT_ID: &str = "$dataContractId";
-    pub const DOCUMENT_TYPE: &str = "$type";
-    pub const TRANSITIONS: &str = "transitions";
-    pub const TRANSITIONS_ID: &str = "transitions[].$id";
-    pub const TRANSITIONS_DATA_CONTRACT_ID: &str = "transitions[].$dataContractId";
-    pub const OWNER_ID: &str = "ownerId";
-    pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
-    pub const SIGNATURE: &str = "signature";
-    pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
-    pub const CREATED_AT: &str = "$createdAt";
-    pub const UPDATED_AT: &str = "$updatedAt";
-}
 
-pub const IDENTIFIER_FIELDS: [&str; 3] = [
-    property_names::OWNER_ID,
-    property_names::TRANSITIONS_ID,
-    property_names::TRANSITIONS_DATA_CONTRACT_ID,
-];
-pub const U16_FIELDS: [&str; 1] = [property_names::STATE_TRANSITION_PROTOCOL_VERSION];
-
-const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 
 #[derive(
     Debug,
@@ -86,6 +70,7 @@ const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
+    PlatformSerdeVersioned,
     PlatformVersioned,
     From,
 )]

@@ -7,7 +7,7 @@ use crate::execution::platform_events::core_subsidy::{
 };
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::fee::credits::Credits;
 use lazy_static::lazy_static;

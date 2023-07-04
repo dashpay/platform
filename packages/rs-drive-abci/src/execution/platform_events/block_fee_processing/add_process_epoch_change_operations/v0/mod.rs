@@ -36,7 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use dpp::state_transition::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
+use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;

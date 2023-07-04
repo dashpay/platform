@@ -57,7 +57,7 @@ use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
-use dpp::state_transition::fee::calculate_fee;
+use crate::fee::calculate_fee;
 use dpp::state_transition::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 

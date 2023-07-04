@@ -1,4 +1,4 @@
-use crate::state_transition::fee::Credits;
+use crate::fee::Credits;
 use crate::state_transition::identity_credit_transfer_transition::v0_action::IdentityCreditTransferTransitionActionV0;
 use derive_more::From;
 use platform_value::{Bytes36, Identifier};

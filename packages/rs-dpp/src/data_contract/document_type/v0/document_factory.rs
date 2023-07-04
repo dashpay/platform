@@ -6,7 +6,7 @@ use chrono::Utc;
 use platform_value::Value;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::state_transition::documents_batch_transition::document_transition::INITIAL_REVISION;
+use crate::document::INITIAL_REVISION;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

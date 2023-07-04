@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
 use crate::fee::get_overflow_error;
 use dpp::block::epoch::Epoch;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;

@@ -1,4 +1,4 @@
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 use crate::drive::identity::update::structs::add_to_previous_balance_outcome::v0::{AddToPreviousBalanceOutcomeV0, AddToPreviousBalanceOutcomeV0Methods};
 
 mod v0;

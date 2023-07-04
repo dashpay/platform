@@ -1,5 +1,6 @@
 use crate::identity::KeyType;
 
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
 use platform_value::Value;
@@ -40,6 +41,7 @@ pub trait ValueConvertible {
         Self: Sized;
 }
 
+#[cfg(feature = "validation")]
 pub trait PlatformMessageSignable {
     fn verify_signature(
         &self,

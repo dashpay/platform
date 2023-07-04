@@ -29,9 +29,9 @@ use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
 #[cfg(feature = "full")]
-use dpp::state_transition::fee::default_costs::EpochCosts;
+use dpp::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
-use dpp::state_transition::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
+use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -63,7 +63,7 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
-use dpp::state_transition::fee::Credits;
+use dpp::fee::Credits;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting

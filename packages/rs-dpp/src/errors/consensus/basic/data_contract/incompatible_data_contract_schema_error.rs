@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::prelude::Identifier;
+use serde_json::Value as JsonValue;
 
 use bincode::{Decode, Encode};
 

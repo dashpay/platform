@@ -1,4 +1,5 @@
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
+#[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
@@ -9,7 +10,7 @@ use std::collections::BTreeMap;
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone,  Debug, Default)]
 pub struct FeatureVersionBounds {
     pub min_version: FeatureVersion,
     pub max_version: FeatureVersion,
@@ -28,7 +29,7 @@ pub struct DocumentFeatureVersionBounds {
     pub base_version_mapping: BTreeMap<FeatureVersion, FeatureVersion>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct StateTransitionVersion {
     pub identity_create_state_transition: FeatureVersionBounds,
     pub identity_update_state_transition: FeatureVersionBounds,
@@ -44,7 +45,7 @@ pub struct StateTransitionVersion {
     pub document_delete_state_transition: DocumentFeatureVersionBounds,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone,  Debug, Default)]
 pub struct StateTransitionSigningVersion {
     pub sign_external: FeatureVersion,
     pub sign: FeatureVersion,
@@ -52,12 +53,12 @@ pub struct StateTransitionSigningVersion {
     pub verify_public_key_level_and_purpose: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone,  Debug, Default)]
 pub struct AbciStructureVersion {
     pub extended_block_info: FeatureVersionBounds,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone,  Debug, Default)]
 pub struct DataContractFactoryVersion {
     /// The bounds that the protocol version supports
     pub bounds: FeatureVersionBounds,
@@ -66,12 +67,12 @@ pub struct DataContractFactoryVersion {
     pub allowed_contract_bounds_mapping: BTreeMap<FeatureVersion, FeatureVersionBounds>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone,  Debug, Default)]
 pub struct PlatformArchitectureVersion {
     pub data_contract_factory: DataContractFactoryVersion,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone,  Debug)]
 pub struct PlatformVersion {
     pub protocol_version: u32,
     pub document: FeatureVersionBounds,
@@ -111,176 +112,5 @@ impl PlatformVersion {
         PLATFORM_VERSIONS
             .last()
             .expect("expected to have a platform version")
-    }
-
-    pub fn validate_contract_version(&self, version: u16) -> SimpleConsensusValidationResult {
-        if self.contract.check_version(version) {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.contract.min_version,
-                    self.contract.max_version,
-                )
-                .into(),
-            )
-        }
-    }
-
-    pub fn validate_identity_create_state_transition_version(
-        &self,
-        version: u16,
-    ) -> SimpleConsensusValidationResult {
-        if self
-            .state_transitions
-            .identity_create_state_transition
-            .check_version(version)
-        {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.state_transitions
-                        .identity_create_state_transition
-                        .min_version,
-                    self.state_transitions
-                        .identity_create_state_transition
-                        .max_version,
-                )
-                .into(),
-            )
-        }
-    }
-
-    pub fn validate_identity_top_up_state_transition_version(
-        &self,
-        version: u16,
-    ) -> SimpleConsensusValidationResult {
-        if self
-            .state_transitions
-            .identity_top_up_state_transition
-            .check_version(version)
-        {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.state_transitions
-                        .identity_top_up_state_transition
-                        .min_version,
-                    self.state_transitions
-                        .identity_top_up_state_transition
-                        .max_version,
-                )
-                .into(),
-            )
-        }
-    }
-
-    pub fn validate_identity_update_state_transition_version(
-        &self,
-        version: u16,
-    ) -> SimpleConsensusValidationResult {
-        if self
-            .state_transitions
-            .identity_update_state_transition
-            .check_version(version)
-        {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.state_transitions
-                        .identity_update_state_transition
-                        .min_version,
-                    self.state_transitions
-                        .identity_update_state_transition
-                        .max_version,
-                )
-                .into(),
-            )
-        }
-    }
-
-    pub fn validate_identity_credit_withdrawal_state_transition_version(
-        &self,
-        version: u16,
-    ) -> SimpleConsensusValidationResult {
-        if self
-            .state_transitions
-            .identity_credit_withdrawal_state_transition
-            .check_version(version)
-        {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.state_transitions
-                        .identity_credit_withdrawal_state_transition
-                        .min_version,
-                    self.state_transitions
-                        .identity_credit_withdrawal_state_transition
-                        .max_version,
-                )
-                .into(),
-            )
-        }
-    }
-
-    pub fn validate_contract_create_state_transition_version(
-        &self,
-        version: u16,
-    ) -> SimpleConsensusValidationResult {
-        if self
-            .state_transitions
-            .contract_create_state_transition
-            .check_version(version)
-        {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.state_transitions
-                        .contract_create_state_transition
-                        .min_version,
-                    self.state_transitions
-                        .contract_create_state_transition
-                        .max_version,
-                )
-                .into(),
-            )
-        }
-    }
-
-    pub fn validate_contract_update_state_transition_version(
-        &self,
-        version: u16,
-    ) -> SimpleConsensusValidationResult {
-        if self
-            .state_transitions
-            .contract_update_state_transition
-            .check_version(version)
-        {
-            SimpleConsensusValidationResult::default()
-        } else {
-            SimpleConsensusValidationResult::new_with_error(
-                UnsupportedVersionError::new(
-                    version,
-                    self.state_transitions
-                        .contract_update_state_transition
-                        .min_version,
-                    self.state_transitions
-                        .contract_update_state_transition
-                        .max_version,
-                )
-                .into(),
-            )
-        }
     }
 }

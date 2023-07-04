@@ -32,16 +32,24 @@
 //! Fee refunds are calculated based on removed bytes per epoch.
 //!
 
+use std::collections::btree_map::Iter;
 use crate::block::epoch::{Epoch, EpochIndex};
-use crate::state_transition::fee::Credits;
+use crate::fee::Credits;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
+use bincode::config;
+use crate::fee::default_costs::EpochCosts;
+use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
+use crate::ProtocolError;
 
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
 /// a dust refund limit is used
-const MIN_REFUND_LIMIT_BYTES: u32 = 32;
+const MIN_REFUND_LIMIT_BYTES: u64 = 32;
 
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
@@ -53,9 +61,9 @@ pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
     pub fn from_storage_removal(
-        storage_removal: StorageRemovalPerEpochByIdentifier,
+        storage_removal: CreditsPerEpochByIdentifier,
         current_epoch_index: EpochIndex,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ProtocolError> {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
             .map(|(identifier, bytes_per_epochs)| {
@@ -81,16 +89,16 @@ impl FeeRefunds {
 
                         Ok((epoch_index, amount))
                     })
-                    .collect::<Result<CreditsPerEpoch, Error>>()
+                    .collect::<Result<CreditsPerEpoch, ProtocolError>>()
                     .map(|credits_per_epochs| (identifier, credits_per_epochs))
             })
-            .collect::<Result<CreditsPerEpochByIdentifier, Error>>()?;
+            .collect::<Result<CreditsPerEpochByIdentifier, ProtocolError>>()?;
 
         Ok(Self(refunds_per_epoch_by_identifier))
     }
 
     /// Adds and self assigns result between two Fee Results
-    pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), Error> {
+    pub fn checked_add_assign(&mut self, rhs: Self) -> Result<(), ProtocolError> {
         for (identifier, mut int_map_b) in rhs.0.into_iter() {
             let to_insert_int_map = if let Some(sint_map_a) = self.0.remove(&identifier) {
                 // other has an int_map with the same identifier
@@ -99,13 +107,13 @@ impl FeeRefunds {
                     .map(|(k, v)| {
                         let combined = if let Some(value_b) = int_map_b.remove(&k) {
                             v.checked_add(value_b)
-                                .ok_or(Error::Fee(FeeError::Overflow("storage fee overflow error")))
+                                .ok_or(ProtocolError::Overflow("storage fee overflow error"))
                         } else {
                             Ok(v)
                         };
                         combined.map(|c| (k, c))
                     })
-                    .collect::<Result<CreditsPerEpoch, Error>>()?;
+                    .collect::<Result<CreditsPerEpoch, ProtocolError>>()?;
                 intersection.into_iter().chain(int_map_b).collect()
             } else {
                 int_map_b
@@ -181,7 +189,7 @@ impl FeeRefunds {
     }
 
     /// Serialize the structure
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
         let config = config::standard().with_big_endian().with_no_limit();
         bincode::encode_to_vec(&self.0, config).map_err(|_| {
             Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
@@ -196,7 +204,7 @@ impl FeeRefunds {
     }
 
     /// Deserialized struct from bytes
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
         let config = config::standard().with_big_endian().with_limit::<15000>();
         let refund = bincode::decode_from_slice(bytes, config)
             .map_err(|_e| {
@@ -223,8 +231,9 @@ mod tests {
     use super::*;
 
     mod from_storage_removal {
+        use std::iter::FromIterator;
+        use nohash_hasher::IntMap;
         use super::*;
-        use intmap::IntMap;
 
         #[test]
         fn should_filter_out_refunds_under_the_limit() {
