@@ -3,17 +3,12 @@
 
 ### Features
 
-* **dashmate:** report pulled images during update ([#1186](https://github.com/dashpay/platform/issues/1186))
-
-
-### Bug Fixes
-
-* **dashmate:** invalid variable name ([#1213](https://github.com/dashpay/platform/issues/1213))
+* **dashmate:** report pulled images during update ([#1186](https://github.com/dashpay/platform/issues/1186), [#1213](https://github.com/dashpay/platform/issues/1213))
 
 
 ### Miscellaneous Chores
 
-* **dashmate:** bump dashcore version to 19.2.0 ([#1211](https://github.com/dashpay/platform/issues/1211))
+* **dashmate:** bump Core version to 19.2.0 ([#1211](https://github.com/dashpay/platform/issues/1211))
 
 ### [0.24.13](https://github.com/dashpay/platform/compare/v0.24.12...v0.24.13) (2023-06-29)
 
