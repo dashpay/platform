@@ -111,6 +111,30 @@ runs:
               .map((platform) => `linux/${platform.trim()}`)
               .join(',')
 
+    - name: Configure docker layer cache
+      uses: actions/github-script@v6
+      id: layer_cache_settings
+      with:
+        result-encoding: string
+        script: |
+          const manifestNames = [
+            '${{ inputs.image }}_sha_${{ github.sha }}',
+            '${{ inputs.image }}_tag_${{ inputs.image_tag }}',
+            '${{ inputs.image }}'
+          ];
+          
+          const settings = {
+            type: 's3',
+            region: 'eu-west-1',
+            bucket: 'platform-runner-cache',
+            prefix: 'cache-layers/',
+            name: manifestNames.join(';'),
+          };
+          
+          return Object.entries(settings)
+            .map(([key, value]) => `${key}=${value}`)
+            .join(',');
+
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v4.0.0
@@ -125,8 +149,8 @@ runs:
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
         platforms: ${{ steps.platforms.outputs.result }}
         push: ${{ fromJSON(inputs.push) }}
-        cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=${{ inputs.target }}_${{ github.sha }};${{ inputs.target}}
-        cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max,prefix=cache-layer/,name=${{ inputs.target }}_${{ github.sha }};${{ inputs.target}}
+        cache-from: ${{ steps.layer_cache_settings.outputs.result }}
+        cache-to: ${{ steps.layer_cache_settings.outputs.result }},mode=max
 
     - name: Save Docker mount cache
       uses: dcginfra/buildkit-cache-dance/extract@main
