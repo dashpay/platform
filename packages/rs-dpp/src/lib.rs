@@ -61,7 +61,6 @@ pub mod prelude {
     pub use super::convertible::Convertible;
     pub type TimestampMillis = u64;
     pub type Revision = u64;
-    pub type Test = u64;
 }
 
 pub use jsonschema;
