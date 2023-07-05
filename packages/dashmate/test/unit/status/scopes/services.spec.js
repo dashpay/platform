@@ -7,6 +7,7 @@ describe('getServicesScopeFactory', () => {
 
     let config;
     let configFile;
+    let getServiceList;
     let getServicesScope;
 
     beforeEach(async function it() {
@@ -16,7 +17,11 @@ describe('getServicesScopeFactory', () => {
 
       configFile = { getProjectId: this.sinon.stub() };
 
-      getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile);
+      getServiceList = this.sinon.stub();
+
+      getServiceList.returns([{ name: 'mock', title: 'Mock service', image: 'fakeImageId' }]);
+
+      getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile, getServiceList);
     });
 
     it('should just work', async () => {
