@@ -55,3 +55,10 @@ runs:
         sudo apt update -qq
         sudo apt install -qq --yes clang
         sudo update-alternatives --set cc /usr/bin/clang
+
+    - name: Install llvm
+      id: deps-llvm
+      shell: bash
+      run: |
+        sudo apt update -qq
+        sudo apt install -qq --yes llvm
