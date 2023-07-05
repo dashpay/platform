@@ -1,4 +1,4 @@
-use crate::data_contract::{contract_config, property_names, DataContract};
+use crate::data_contract::{contract_config, property_names, DataContract, DataContractV0Methods};
 use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
@@ -11,19 +11,22 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use crate::data_contract::data_contract::DataContractV0;
+use crate::version::PlatformVersion;
 
-impl DataContract {
+impl DataContractV0 {
     pub fn from_cbor_with_id(
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut data_contract = Self::from_cbor(cbor_bytes)?;
+        let mut data_contract = Self::from_cbor(cbor_bytes, platform_version)?;
         if let Some(id) = contract_id {
             data_contract.id = id;
         }
         Ok(data_contract)
     }
-    pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
+    pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,
             protocol_version_size,
@@ -55,20 +58,20 @@ impl DataContract {
             .get_inner_str_json_value_map("documents")
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = DataContract::get_contract_configuration_properties(&data_contract_map)
+        let mutability = Self::get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-        let definition_references = DataContract::get_definitions(&data_contract_map)?;
+        let definition_references = DataContract::get_definitions(&data_contract_map, platform_version)?;
         let document_types = DataContract::get_document_types_from_contract(
             contract_id,
             &data_contract_map,
             &definition_references,
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
+            platform_version,
         )
         .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
         let mut data_contract = Self {
-            data_contract_protocol_version: protocol_version,
             id: contract_id,
             schema,
             version,

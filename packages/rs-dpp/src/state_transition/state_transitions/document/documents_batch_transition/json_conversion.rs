@@ -1,4 +1,4 @@
-use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
+use serde_json::Value as JsonValue;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::state_transitions::documents_batch_transition::fields::*;
 use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};

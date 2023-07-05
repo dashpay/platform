@@ -33,6 +33,17 @@ pub struct DocumentFeatureVersionBounds {
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
     pub document_type_versions: DocumentTypeVersions,
+    pub contract_class_method_versions: ContractClassMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ContractClassMethodVersions {
+    pub get_property_definition_by_path: FeatureVersion,
+    pub get_binary_properties_from_schema: FeatureVersion,
+    pub get_definitions: FeatureVersion,
+    pub get_document_types_from_contract: FeatureVersion,
+    pub get_document_types_from_value: FeatureVersion,
+    pub get_document_types_from_value_array: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

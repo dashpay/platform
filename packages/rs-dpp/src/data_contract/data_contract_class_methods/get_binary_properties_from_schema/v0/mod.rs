@@ -1,6 +1,8 @@
+
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value as JsonValue};
+use crate::prelude::DataContract;
 
 use crate::util::json_schema::JsonSchemaExt;
 
@@ -8,20 +10,24 @@ const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_ITEMS: &str = "items";
 const PROPERTY_TYPE: &str = "type";
 
-///  Construct and get all properties with `contentEncoding` keyword
-pub fn get_binary_properties(schema: &JsonValue) -> BTreeMap<String, JsonValue> {
-    let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
-    if let Some(JsonValue::Object(schema_properties)) = schema.get(PROPERTY_PROPERTIES) {
-        for (property_name, property_value) in schema_properties {
-            build_binary_properties_map(
-                property_value,
-                Some(property_name.to_string()),
-                &mut binary_properties,
-            );
+impl DataContract {
+    ///  Construct and get all properties with `contentEncoding` keyword
+    pub(super) fn get_binary_properties_v0(schema: &JsonValue) -> BTreeMap<String, JsonValue> {
+        let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
+        if let Some(JsonValue::Object(schema_properties)) = schema.get(PROPERTY_PROPERTIES) {
+            for (property_name, property_value) in schema_properties {
+                build_binary_properties_map(
+                    property_value,
+                    Some(property_name.to_string()),
+                    &mut binary_properties,
+                );
+            }
         }
+        binary_properties
     }
-    binary_properties
 }
+
+
 /// Recursively build properties map
 fn build_binary_properties_map(
     schema: &JsonValue,

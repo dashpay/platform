@@ -16,7 +16,6 @@ use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::document::Document;
 use crate::prelude::Revision;
 use crate::ProtocolError;
-use crate::version::dpp_versions::DocumentTypeVersions;
 use crate::version::PlatformVersion;
 
 pub(self) mod property_names {

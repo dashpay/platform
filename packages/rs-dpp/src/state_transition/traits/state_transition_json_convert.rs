@@ -1,4 +1,4 @@
-use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
+use serde_json::Value as JsonValue;
 use crate::ProtocolError;
 use serde::Serialize;
 

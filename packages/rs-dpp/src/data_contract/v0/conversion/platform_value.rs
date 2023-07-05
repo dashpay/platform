@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::{DataContract, get_contract_configuration_properties, get_definitions, get_document_types_from_contract, property_names};
-use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
+use crate::data_contract::{DataContract, property_names};
 use crate::ProtocolError;
+use crate::version::PlatformVersion;
 
 impl DataContractV0 {
-    pub fn from_raw_object(raw_object: Value) -> Result<DataContractV0, ProtocolError> {
+    pub fn from_raw_object(raw_object: Value, platform_version: &PlatformVersion) -> Result<DataContractV0, ProtocolError> {
         let mut data_contract_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
@@ -16,14 +16,15 @@ impl DataContractV0 {
             .remove_identifier(property_names::ID)
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = get_contract_configuration_properties(&data_contract_map)?;
-        let definition_references = DataContract::get_definitions(&data_contract_map)?;
-        let document_types = get_document_types_from_contract(
+        let mutability = Self::get_contract_configuration_properties(&data_contract_map)?;
+        let definition_references = DataContract::get_definitions(&data_contract_map, platform_version)?;
+        let document_types = DataContract::get_document_types_from_contract(
             id,
             &data_contract_map,
             &definition_references,
             mutability.documents_keep_history_contract_default,
             mutability.documents_mutable_contract_default,
+            platform_version,
         )?;
 
         let documents = data_contract_map
@@ -32,7 +33,7 @@ impl DataContractV0 {
             .transpose()?
             .unwrap_or_default();
 
-        let mutability = get_contract_configuration_properties(&data_contract_map)?;
+        let mutability = Self::get_contract_configuration_properties(&data_contract_map)?;
 
         // Defs
         let defs =
@@ -40,7 +41,7 @@ impl DataContractV0 {
 
         let binary_properties = documents
             .iter()
-            .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
+            .map(|(doc_type, schema)| (String::from(doc_type), DataContract::get_binary_properties(schema, platform_version)))
             .collect();
 
         let data_contract = DataContractV0 {

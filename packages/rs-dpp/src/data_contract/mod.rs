@@ -26,6 +26,7 @@ mod factory;
 pub use factory::*;
 #[cfg(feature = "client")]
 mod data_contract_facade;
+mod data_contract_class_methods;
 
 #[cfg(feature = "state-transitions")]
 pub use created_data_contract::CreatedDataContract;
