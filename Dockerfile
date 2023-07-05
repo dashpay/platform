@@ -80,7 +80,8 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
 # Configure Node.js
-RUN npm install -g npm@9.6.6 && \
+RUN npm config set audit false && \
+    npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
     corepack prepare yarn@3.3.0 --activate && \
     corepack enable
