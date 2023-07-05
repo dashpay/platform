@@ -49,6 +49,17 @@ runs:
       with:
         platforms: ${{ inputs.platforms }}
 
+    - name: Format platforms for docker
+      uses: actions/github-script@v6
+      id: platforms
+      with:
+        result-encoding: string
+        script: |
+          return '${{inputs.platforms}}'
+             .split(',')
+             .map((platform) => `linux/${platform.trim()}`)
+             .join(',')
+
     - name: Set up Docker BuildX
       id: buildx
       uses: docker/setup-buildx-action@v2
@@ -56,6 +67,7 @@ runs:
         install: true
         driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
         cleanup: false
+        platforms: ${{ steps.platforms.outputs.result }}
         config-inline: |
           [worker.oci]
             gc = true
@@ -99,17 +111,6 @@ runs:
         flavor: |
           suffix=${{ steps.suffix.outputs.result }},onlatest=true
           latest=${{ github.event_name == 'release' }}
-
-    - name: Format platforms for docker
-      uses: actions/github-script@v6
-      id: platforms
-      with:
-        result-encoding: string
-        script: |
-           return '${{inputs.platforms}}'
-              .split(',')
-              .map((platform) => `linux/${platform.trim()}`)
-              .join(',')
 
     - name: Configure docker layer cache
       uses: actions/github-script@v6
