@@ -1,9 +1,8 @@
-use crate::data_contract::document_type::index::v0::IndexWithRawPropertiesV0;
-use crate::data_contract::document_type::Index;
 use anyhow::{anyhow, bail, Error};
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
+use crate::data_contract::document_type::index::{Index, IndexWithRawProperties};
 
 use crate::identifier;
 
@@ -93,7 +92,7 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
-        let indices_with_raw_properties: Vec<IndexWithRawPropertiesV0> = match self.get("indices") {
+        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
             Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
 
             None => vec![],
@@ -115,7 +114,7 @@ impl JsonSchemaExt for JsonValue {
     }
 
     fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, Error> {
-        let indices_with_raw_properties: Vec<IndexWithRawPropertiesV0> = match self.get("indices") {
+        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
             Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
 
             None => vec![],

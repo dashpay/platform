@@ -50,8 +50,8 @@ use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
+use crate::data_contract::document_type::document_field::DocumentFieldType;
 
-use crate::data_contract::document_type::document_field::v0::DocumentFieldType;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;

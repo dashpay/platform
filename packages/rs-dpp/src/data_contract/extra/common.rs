@@ -8,7 +8,7 @@ use crate::document::Document;
 use crate::prelude::DataContract;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
-use crate::version::FeatureVersion;
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::convert::TryInto;
@@ -127,6 +127,7 @@ pub fn json_document_to_document(
     path: impl AsRef<Path>,
     owner_id: Option<Identifier>,
     document_type: &DocumentTypeRef,
+    platform_version: &PlatformVersion,
 ) -> Result<Document, ProtocolError> {
     let mut value = json_document_to_platform_value(path)?;
     if let Some(owner_id) = owner_id {
@@ -135,18 +136,5 @@ pub fn json_document_to_document(
             platform_value::Value::Identifier(owner_id.into_buffer()),
         )?;
     }
-    document_type.convert_value_to_document(value)
-}
-
-/// Makes sure the protocol version is correct given the version as a u8.
-pub fn check_protocol_version_bytes(version_bytes: &[u8]) -> bool {
-    if version_bytes.len() != 4 {
-        false
-    } else {
-        let version_set_bytes: [u8; 4] = version_bytes
-            .try_into()
-            .expect("slice with incorrect length");
-        let version = u32::from_be_bytes(version_set_bytes);
-        check_protocol_version(version)
-    }
+    document_type.convert_value_to_document(value, platform_version)
 }

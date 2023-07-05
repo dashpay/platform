@@ -28,7 +28,7 @@ impl DataContract {
             protocol_version,
             protocol_version_size,
             main_message_bytes: contract_cbor_bytes,
-        } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
+        } = deserializer::split_cbor_protocol_version(cbor_bytes.as_ref())?;
 
         let data_contract_cbor_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(contract_cbor_bytes).map_err(|_| {
@@ -55,10 +55,10 @@ impl DataContract {
             .get_inner_str_json_value_map("documents")
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = data_contract::get_contract_configuration_properties(&data_contract_map)
+        let mutability = DataContract::get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-        let definition_references = data_contract::get_definitions(&data_contract_map)?;
-        let document_types = data_contract::get_document_types_from_contract(
+        let definition_references = DataContract::get_definitions(&data_contract_map)?;
+        let document_types = DataContract::get_document_types_from_contract(
             contract_id,
             &data_contract_map,
             &definition_references,

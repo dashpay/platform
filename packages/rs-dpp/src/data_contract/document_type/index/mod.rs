@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use crate::data_contract::document_type::Index;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Eq)]
 pub enum OrderBy {
@@ -64,7 +63,7 @@ pub struct IndexProperty {
 //todo: remove this intermediate structure that serves no purpose
 // The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct IndexWithRawPropertiesV0 {
+pub struct IndexWithRawProperties {
     pub name: String,
     pub properties: Vec<BTreeMap<String, String>>,
     #[serde(default)]
@@ -100,10 +99,10 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
     }
 }
 
-impl TryFrom<IndexWithRawPropertiesV0> for Index {
+impl TryFrom<IndexWithRawProperties> for Index {
     type Error = anyhow::Error;
 
-    fn try_from(index: IndexWithRawPropertiesV0) -> Result<Self, Self::Error> {
+    fn try_from(index: IndexWithRawProperties) -> Result<Self, Self::Error> {
         let properties = index
             .properties
             .into_iter()

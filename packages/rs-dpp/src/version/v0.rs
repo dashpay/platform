@@ -1,12 +1,13 @@
 use crate::version::drive_versions::DriveStructureVersion;
 use crate::version::protocol_version::{
-    FeatureVersionBounds, PlatformVersion, StateTransitionVersion,
+    FeatureVersionBounds, PlatformVersion,
 };
 use crate::version::{
-    AbciStructureVersion, DataContractFactoryVersion, DocumentFeatureVersionBounds,
+    AbciStructureVersion, DataContractFactoryVersion,
     PlatformArchitectureVersion,
 };
 use std::collections::BTreeMap;
+use crate::version::dpp_versions::{DocumentFeatureVersionBounds, DPPVersion, StateTransitionVersions};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 0,
@@ -41,61 +42,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         default_current_version: 0,
     },
     state_transition_signing: Default::default(),
-    state_transitions: StateTransitionVersion {
-        identity_create_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        identity_update_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        identity_top_up_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        identity_credit_withdrawal_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        identity_credit_transfer_state_transition: Default::default(),
-        contract_create_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        contract_update_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        documents_batch_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        document_base_state_transition: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        document_create_state_transition: DocumentFeatureVersionBounds {
-            bounds: Default::default(),
-            base_version_mapping: Default::default(),
-        },
-        document_replace_state_transition: DocumentFeatureVersionBounds {
-            bounds: Default::default(),
-            base_version_mapping: Default::default(),
-        },
-        document_delete_state_transition: DocumentFeatureVersionBounds {
-            bounds: Default::default(),
-            base_version_mapping: Default::default(),
-        },
-    },
     drive: Default::default(),
     abci_structure: AbciStructureVersion {
         extended_block_info: FeatureVersionBounds {
@@ -123,4 +69,63 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     drive_abci: Default::default(),
+    dpp: DPPVersion {
+        state_transition_versions: StateTransitionVersions {
+            identity_create_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            identity_update_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            identity_top_up_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            identity_credit_withdrawal_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            identity_credit_transfer_state_transition: Default::default(),
+            contract_create_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            contract_update_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            documents_batch_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            document_base_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            document_create_state_transition: DocumentFeatureVersionBounds {
+                bounds: Default::default(),
+                base_version_mapping: Default::default(),
+            },
+            document_replace_state_transition: DocumentFeatureVersionBounds {
+                bounds: Default::default(),
+                base_version_mapping: Default::default(),
+            },
+            document_delete_state_transition: DocumentFeatureVersionBounds {
+                bounds: Default::default(),
+                base_version_mapping: Default::default(),
+            },
+        },
+        contract_versions: Default::default(),
+        document_versions: Default::default(),
+    }
 };

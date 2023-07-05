@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::{get_contract_configuration_properties, get_definitions, get_document_types_from_contract, property_names};
+use crate::data_contract::{DataContract, get_contract_configuration_properties, get_definitions, get_document_types_from_contract, property_names};
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 use crate::ProtocolError;
 
@@ -17,7 +17,7 @@ impl DataContractV0 {
             .map_err(ProtocolError::ValueError)?;
 
         let mutability = get_contract_configuration_properties(&data_contract_map)?;
-        let definition_references = get_definitions(&data_contract_map)?;
+        let definition_references = DataContract::get_definitions(&data_contract_map)?;
         let document_types = get_document_types_from_contract(
             id,
             &data_contract_map,

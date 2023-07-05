@@ -37,8 +37,14 @@ pub struct ContractVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeVersions {
-    // This is for the overall structure of the document type, like DocumentTypeV0
+    /// This is for the overall structure of the document type, like DocumentTypeV0
     pub document_type_structure_version: FeatureVersion,
+    /// Class based method
+    pub find_identifier_and_binary_paths: FeatureVersion,
+    /// Class based method
+    pub insert_values: FeatureVersion,
+    /// Class based method
+    pub insert_values_nested: FeatureVersion,
     pub index_for_types: FeatureVersion,
     pub unique_id_for_storage: FeatureVersion,
     pub unique_id_for_document_field: FeatureVersion,

@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use platform_value::Value;
 use crate::data_contract::document_type::v0::{DEFAULT_HASH_SIZE, DocumentTypeV0, MAX_INDEX_SIZE};
 use crate::data_contract::errors::DataContractError;

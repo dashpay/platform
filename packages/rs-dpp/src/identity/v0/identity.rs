@@ -297,7 +297,7 @@ impl IdentityV0 {
             protocol_version,
             main_message_bytes: identity_cbor_bytes,
             ..
-        } = deserializer::split_protocol_version(identity_cbor)?;
+        } = deserializer::split_cbor_protocol_version(identity_cbor)?;
 
         // Deserialize the contract
         let identity_map: BTreeMap<String, CborValue> =

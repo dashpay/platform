@@ -320,7 +320,7 @@ impl ExtendedDocumentV0 {
             protocol_version,
             main_message_bytes: document_cbor_bytes,
             ..
-        } = deserializer::split_protocol_version(cbor_bytes.as_ref())?;
+        } = deserializer::split_cbor_protocol_version(cbor_bytes.as_ref())?;
 
         let document_cbor_map: BTreeMap<String, CborValue> =
             ciborium::de::from_reader(document_cbor_bytes)

@@ -7,9 +7,7 @@ use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
-use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
 
 #[derive(Clone, Debug, PartialEq, From)]
 pub enum Document {

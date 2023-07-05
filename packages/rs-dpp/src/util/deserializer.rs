@@ -6,6 +6,8 @@ use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::data_contract::errors::StructureError;
 use crate::errors::ProtocolError;
+use crate::version::drive_versions::DriveVersion;
+use crate::version::PlatformVersion;
 
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],
@@ -43,7 +45,8 @@ pub struct SplitProtocolVersionOutcome<'a> {
     pub main_message_bytes: &'a [u8],
 }
 
-pub fn split_protocol_version(
+#[cfg(feature = "cbor")]
+pub fn split_cbor_protocol_version(
     message_bytes: &[u8],
 ) -> Result<SplitProtocolVersionOutcome, ProtocolError> {
     let (protocol_version, protocol_version_size) =
@@ -54,11 +57,7 @@ pub fn split_protocol_version(
         ))?;
     let (_, main_message_bytes) = message_bytes.split_at(protocol_version_size);
 
-    if !check_protocol_version(protocol_version) {
-        return Err(ProtocolError::StructureError(
-            StructureError::InvalidProtocolVersion("invalid protocol version"),
-        ));
-    }
+    PlatformVersion::get(protocol_version)?;
 
     Ok(SplitProtocolVersionOutcome {
         protocol_version,

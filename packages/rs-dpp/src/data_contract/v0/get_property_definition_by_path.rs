@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
+use crate::tests::utils::SerdeTestExtension;
 use crate::util::{json_schema::JsonSchemaExt, json_value::JsonValueExt};
 
 lazy_static! {

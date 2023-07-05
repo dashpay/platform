@@ -2,7 +2,7 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-use crate::data_contract::document_type::{property_names, ArrayFieldType};
+use crate::data_contract::document_type::{property_names};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::document::INITIAL_REVISION;
@@ -13,6 +13,8 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::index::{Index, IndexProperty};
+use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::{DEFAULT_HASH_SIZE, DocumentTypeV0, MAX_INDEX_SIZE};
 use crate::version::PlatformVersion;
 
@@ -60,7 +62,7 @@ pub trait DocumentTypeV0Methods {
     fn requires_revision(&self) -> bool;
 
     /// Non versioned
-    fn top_level_indices(&self) -> Vec<&IndexPropertyV0>;
+    fn top_level_indices(&self) -> Vec<&IndexProperty>;
 
     /// Non versioned
     fn document_field_for_property(&self, property: &str) -> Option<DocumentField>;
@@ -97,7 +99,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
 
     fn convert_value_to_document(&self, data: Value, platform_version: &PlatformVersion) -> Result<Document, ProtocolError> {
         match platform_version.dpp.contract_versions.document_type_versions.convert_value_to_document {
-            0 => self.convert_value_to_document_v0(data),
+            0 => self.convert_value_to_document_v0(data, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "convert_value_to_document".to_string(),
                 known_versions: vec![0],
