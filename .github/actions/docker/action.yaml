@@ -55,6 +55,7 @@ runs:
       with:
         install: true
         driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
+        cleanup: false
         config-inline: |
           [worker.oci]
             gc = true
@@ -124,8 +125,8 @@ runs:
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
         platforms: ${{ steps.platforms.outputs.result }}
         push: ${{ fromJSON(inputs.push) }}
-        cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
-        cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
+        cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=${{ inputs.target}};${{ inputs.target }}_${{ github.sha }}
+        cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max,prefix=cache-layer/,name=${{ inputs.target}};${{ inputs.target }}_${{ github.sha }}
 
     - name: Save Docker mount cache
       uses: dcginfra/buildkit-cache-dance/extract@main
