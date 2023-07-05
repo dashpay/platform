@@ -4,10 +4,8 @@ use crate::Error;
 use dapi_grpc::platform::v0::{self as platform};
 use dpp::document::Document;
 use dpp::prelude::{DataContract, Identifier, Identity, Revision};
-use drive::contract::DocumentType;
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
-use drive::query::DriveQuery;
 
 use super::verify::verify_tenderdash_proof;
 
@@ -16,6 +14,7 @@ type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
 type DataContracts = Vec<Option<DataContract>>;
 type IdentityBalance = u64;
 type IdentityBalanceAndRevision = (u64, Revision);
+type Documents = Vec<Document>;
 
 // #[cfg(feature = "mockall")]
 
@@ -468,84 +467,38 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
     }
 }
 
-// TODO: figure out how to execute a query
-// #[cfg_attr(feature = "mock", mockall::automock)]
-// impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Document {
-//     fn maybe_from_proof(
-//         request: &platform::GetDocumentsRequest,
-//         response: &platform::GetDocumentsResponse,
-//         provider: Box<dyn QuorumInfoProvider>,
-//     ) -> Result<Option<Self>, Error> {
-//         // Parse response to read proof and metadata
-//         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
-//             platform::get_documents_response::Result::Proof(p) => p,
-//             platform::get_documents_response::Result::Documents(_) => {
-//                 return Err(Error::EmptyResponseProof)
-//             }
-//         };
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Documents {
+    fn maybe_from_proof(
+        request: &platform::GetDocumentsRequest,
+        response: &platform::GetDocumentsResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_documents_response::Result::Proof(p) => p,
+            platform::get_documents_response::Result::Documents(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
 
-//         let mtd = response
-//             .metadata
-//             .as_ref()
-//             .ok_or(Error::EmptyResponseMetadata)?;
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
 
-//         let data_contract_id = Identifier::from_bytes(&request.data_contract_id).map_err(|e| {
-//             Error::ProtocolError {
-//                 error: e.to_string(),
-//             }
-//         })?;
+        // Extract content from proof and verify Drive/GroveDB proofs
+        // TODO: figure out how to verify proof statically
+        let (root_hash, maybe_documents) =
+            Drive::verify_proof(&proof.grovedb_proof).map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
 
-//         // Extract content from proof and verify Drive/GroveDB proofs
-//         let (root_hash, maybe_contract) =
-//             Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer()).map_err(
-//                 |e| Error::DriveError {
-//                     error: e.to_string(),
-//                 },
-//             )?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-//         let data_contract = maybe_contract.ok_or(Error::EmptyResponse)?;
-
-//         let query = DriveQuery {
-//             contract: &data_contract,
-//             document_type: data_contract
-//                 .document_types
-//                 .get(&request.document_type)
-//                 .ok_or(Error::DriveError {
-//                     error: "Invalid document type".to_string(), // TODO: handle error correctly
-//                 })?,
-//             internal_clauses: todo!(),
-//             offset: None,
-//             limit: Some(request.limit as u16), // TODO: handle lowering of the type
-//             order_by: todo!(),
-//             start_at: todo!(),
-//             start_at_included: true,
-//             block_time_ms: todo!(),
-//         };
-
-//         // Load some info from request
-//         // let id = request.ids.map(|id| Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
-//         //     error: e.to_string(),
-//         // })?);
-
-//         // let ids = request.ids.iter().map(|id| {
-//         //     Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
-//         //         error: e.to_string(),
-//         //     })
-//         // });
-
-//         // Extract content from proof and verify Drive/GroveDB proofs
-//         let (root_hash, maybe_contract) =
-//             Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer()).map_err(
-//                 |e| Error::DriveError {
-//                     error: e.to_string(),
-//                 },
-//             )?;
-
-//         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-//         Ok(maybe_contract)
-//     }
-// }
+        Ok(maybe_documents)
+    }
+}
 
 /// Tests
 ///
