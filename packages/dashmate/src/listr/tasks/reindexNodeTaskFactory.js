@@ -2,7 +2,7 @@ const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 const DockerStatusEnum = require('../../status/enums/dockerStatus');
 const generateEnvs = require('../../util/generateEnvs');
-const CoreService = require("../../core/CoreService");
+const CoreService = require('../../core/CoreService');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -28,7 +28,7 @@ function reindexNodeTaskFactory(
   configFileRepository,
   configFile,
   getConnectionHost,
-  storage
+  storage,
 ) {
   /**
    * @typedef {reindexNodeTask}
@@ -49,20 +49,18 @@ function reindexNodeTaskFactory(
       {
         title: 'Check reindex is running',
         task: async (ctx) => {
-          const {docker} = dockerCompose
+          const { docker } = dockerCompose;
 
-          const containerId = await storage.getItem('containerId')
+          const containerId = await storage.getItem('containerId');
 
           if (containerId) {
             try {
               const info = await docker.getContainer(containerId).inspect();
-              const {State} = info
-
-              console.log(info)
+              const { State } = info;
 
               switch (State) {
                 case DockerStatusEnum.running:
-                  ctx.containerId = containerId
+                  ctx.containerId = containerId;
                   ctx.coreService = new CoreService(
                     config,
                     createRpcClient(
@@ -75,13 +73,14 @@ function reindexNodeTaskFactory(
                     ),
                     docker.getContainer(containerId),
                   );
+                  break;
                 case DockerStatusEnum.exited:
                   // todo check exit code
                   // remove from db and exit
-                  await storage.setItem('containerId', null)
+                  await storage.setItem('containerId', null);
                   break;
                 default:
-                  throw new Error('Unexpected reindex container status')
+                  throw new Error('Unexpected reindex container status');
               }
             } catch (e) {
               if (e.reason !== 'no such container') {
@@ -96,7 +95,7 @@ function reindexNodeTaskFactory(
         enabled: (ctx) => !ctx.containerId,
         task: async (ctx) => {
           ctx.coreService = await startCore(config, { reindex: true });
-          ctx.containerId = ctx.coreService.dockerContainer.id
+          ctx.containerId = ctx.coreService.dockerContainer.id;
         },
       },
       {
@@ -123,7 +122,7 @@ function reindexNodeTaskFactory(
       {
         title: 'Stop services',
         enabled: (ctx) => !ctx.detach,
-        task: async () => {
+        task: async (ctx) => {
           const container = dockerCompose.docker.getContainer(ctx.containerId);
 
           await container.stop();

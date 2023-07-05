@@ -20,7 +20,6 @@ const systemConfigs = require('../configs/system');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
 const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
 
-const Storage = require('./storage/Storage');
 const DockerCompose = require('./docker/DockerCompose');
 const StartedContainers = require('./docker/StartedContainers');
 const stopAllContainersFactory = require('./docker/stopAllContainersFactory');
@@ -115,13 +114,6 @@ async function createDIContainer() {
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
-  });
-
-  /**
-   * Storage
-   */
-  container.register({
-    storage: asClass(Storage).singleton(),
   });
 
   /**

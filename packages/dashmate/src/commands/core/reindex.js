@@ -59,7 +59,7 @@ ReindexCommand.flags = {
   detach: Flags.boolean({
     char: 'd',
     description: 'detach from the process and keep reindexing in the background',
-    default: false
+    default: false,
   }),
 };
 
