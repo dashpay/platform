@@ -12,6 +12,7 @@ use drive::query::DriveQuery;
 use super::verify::verify_tenderdash_proof;
 
 type Identities = Vec<Option<Identity>>;
+type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
 type DataContracts = Vec<Option<DataContract>>;
 type IdentityBalance = u64;
 type IdentityBalanceAndRevision = (u64, Revision);
@@ -137,6 +138,54 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
     }
 }
 
+// TODO: figure out how to deal with mock::automock
+impl
+    FromProof<
+        platform::GetIdentityByPublicKeyHashesRequest,
+        platform::GetIdentityByPublicKeyHashesResponse,
+    > for Identity
+{
+    fn maybe_from_proof(
+        request: &platform::GetIdentityByPublicKeyHashesRequest,
+        response: &platform::GetIdentityByPublicKeyHashesResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_identity_by_public_key_hashes_response::Result::Proof(p) => p,
+            platform::get_identity_by_public_key_hashes_response::Result::Identity(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        // Load some info from request
+        let public_key_hash: [u8; 20] =
+            request
+                .public_key_hash
+                .clone()
+                .try_into()
+                .map_err(|_| Error::DriveError {
+                    error: "Ivalid public key hash length".to_string(),
+                })?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_identity) =
+            Drive::verify_full_identity_by_public_key_hash(&proof.grovedb_proof, public_key_hash)
+                .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(maybe_identity)
+    }
+}
+
 #[cfg_attr(feature = "mock", mockall::automock)]
 impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> for Identities {
     fn maybe_from_proof(
@@ -187,6 +236,56 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
             .collect::<Result<Identities, Error>>()?;
 
         Ok(Some(maybe_identities))
+    }
+}
+
+// TODO: figure out how to deal with mock::automock
+impl
+    FromProof<
+        platform::GetIdentitiesByPublicKeyHashesRequest,
+        platform::GetIdentitiesByPublicKeyHashesResponse,
+    > for IdentitiesByPublicKeyHashes
+{
+    fn maybe_from_proof(
+        request: &platform::GetIdentitiesByPublicKeyHashesRequest,
+        response: &platform::GetIdentitiesByPublicKeyHashesResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_identities_by_public_key_hashes_response::Result::Proof(p) => p,
+            platform::get_identities_by_public_key_hashes_response::Result::Identities(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        let identity_public_key_hashes = request
+            .public_key_hashes
+            .iter()
+            .map(|pk_hash| {
+                pk_hash.to_vec().try_into().map_err(|_| Error::DriveError {
+                    error: "Ivalid public key hash length".to_string(),
+                })
+            })
+            .collect::<Result<Vec<[u8; 20]>, Error>>()?;
+
+        let (root_hash, maybe_identities_with_public_key_hashes) =
+            Drive::verify_full_identities_by_public_key_hashes(
+                &proof.grovedb_proof,
+                &identity_public_key_hashes,
+            )
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok(Some(maybe_identities_with_public_key_hashes))
     }
 }
 
