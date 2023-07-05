@@ -97,10 +97,10 @@ impl RandomDocumentTypeParameters {
     }
 }
 
-use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
+use crate::data_contract::document_type::index_level::v0::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{
-    DocumentFieldTypeV0, DocumentFieldV0, DocumentType, IndexV0,
+    DocumentFieldType, DocumentField, DocumentTypeRef, Index,
 };
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -108,6 +108,7 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
+use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
 
 impl DocumentTypeV0 {
     pub fn random_document_type(
@@ -127,7 +128,7 @@ impl DocumentTypeV0 {
             + field_weights.boolean_weight
             + field_weights.byte_array_weight;
 
-        let random_field = |required: bool, rng: &mut StdRng| -> DocumentFieldV0 {
+        let random_field = |required: bool, rng: &mut StdRng| -> DocumentField {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
@@ -142,22 +143,22 @@ impl DocumentTypeV0 {
                 } else {
                     None
                 };
-                DocumentFieldTypeV0::String(min_len, max_len)
+                DocumentFieldType::String(min_len, max_len)
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentFieldTypeV0::Integer
+                DocumentFieldType::Integer
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentFieldTypeV0::Number
+                DocumentFieldType::Number
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
                     + field_weights.date_weight
             {
-                DocumentFieldTypeV0::Date
+                DocumentFieldType::Date
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
@@ -165,7 +166,7 @@ impl DocumentTypeV0 {
                     + field_weights.date_weight
                     + field_weights.boolean_weight
             {
-                DocumentFieldTypeV0::Boolean
+                DocumentFieldType::Boolean
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
@@ -182,10 +183,10 @@ impl DocumentTypeV0 {
                     None
                 };
 
-                DocumentFieldTypeV0::ByteArray(min_len, max_len)
+                DocumentFieldType::ByteArray(min_len, max_len)
             };
 
-            DocumentFieldV0 {
+            DocumentField {
                 document_type,
                 required,
             }
@@ -215,7 +216,7 @@ impl DocumentTypeV0 {
         let mut indices = Vec::with_capacity(index_count as usize);
 
         for _ in 0..index_count {
-            match IndexV0::random(&field_names, &indices, rng) {
+            match Index::random(&field_names, &indices, rng) {
                 Ok(index) => indices.push(index),
                 Err(_) => break,
             }
@@ -224,9 +225,9 @@ impl DocumentTypeV0 {
         let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
 
-        let index_structure = IndexLevelV0::from(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
         let (identifier_paths, binary_paths) =
-            DocumentType::find_identifier_and_binary_paths(&properties);
+            DocumentTypeRef::find_identifier_and_binary_paths(&properties);
         Ok(DocumentTypeV0 {
             name: format!("doc_type_{}", rng.gen::<u16>()),
             indices,

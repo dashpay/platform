@@ -9,6 +9,7 @@ pub mod drive_versions;
 mod v0;
 #[cfg(feature = "validation")]
 mod validation;
+pub mod dpp_versions;
 
 pub const LATEST_VERSION: u32 = 1;
 

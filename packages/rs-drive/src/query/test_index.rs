@@ -1,7 +1,7 @@
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+    use dpp::data_contract::document_type::{DocumentTypeRef, Index, IndexProperty};
     use dpp::platform_value::Identifier;
     use dpp::util::cbor_serializer;
     use serde_json::json;
@@ -11,8 +11,8 @@ mod tests {
     use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;
 
-    fn construct_indexed_document_type() -> DocumentType {
-        DocumentType::new(
+    fn construct_indexed_document_type() -> DocumentTypeRef {
+        DocumentTypeRef::new(
             Identifier::default(),
             "a".to_string(),
             vec![

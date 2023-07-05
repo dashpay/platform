@@ -7,7 +7,7 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::extended_block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
@@ -39,7 +39,7 @@ pub struct DocumentOperationsForContractDocumentType<'a> {
     /// Contract
     pub contract: &'a DataContract,
     /// Document type
-    pub document_type: &'a DocumentType<'a>,
+    pub document_type: &'a DocumentTypeRef<'a>,
 }
 
 /// Operations on Documents
@@ -128,7 +128,7 @@ pub enum DocumentOperationType<'a> {
         /// The contract
         contract: &'a DataContract,
         /// The name of the document type
-        document_type: &'a DocumentType<'a>,
+        document_type: &'a DocumentTypeRef<'a>,
     },
     /// Updates a serialized document and returns the associated fee.
     UpdateSerializedDocumentForContract {

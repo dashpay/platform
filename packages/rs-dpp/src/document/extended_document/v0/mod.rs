@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::extended_document::property_names;
 use crate::document::Document;
@@ -6,13 +6,16 @@ use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
 use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
+#[cfg(feature = "cbor")]
+use ciborium::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash_to_vec;
 use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
-use ciborium::Value as CborValue;
+
 use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
@@ -59,7 +62,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn properties(&self) -> &BTreeMap<String, Value> {
-        &self.document.properties
+        &self.document.properties()
     }
 
     pub fn properties_as_mut(&mut self) -> &mut BTreeMap<String, Value> {
@@ -67,14 +70,14 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn id(&self) -> Identifier {
-        self.document.id
+        self.document.id()
     }
 
     pub fn owner_id(&self) -> Identifier {
-        self.document.owner_id
+        self.document.owner_id()
     }
 
-    pub fn document_type(&self) -> Result<&DocumentType, ProtocolError> {
+    pub fn document_type(&self) -> Result<&DocumentTypeRef, ProtocolError> {
         // We can unwrap because the Document can not be created without a valid Document Type
         self.data_contract
             .document_type_for_name(self.document_type_name.as_str())
@@ -82,12 +85,12 @@ impl ExtendedDocumentV0 {
 
     pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable)
+            .map(|document_type| document_type.documents_mutable())
     }
 
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable)
+            .map(|document_type| document_type.documents_mutable())
     }
 
     pub fn revision(&self) -> Option<&Revision> {
@@ -99,7 +102,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn updated_at(&self) -> Option<&TimestampMillis> {
-        self.document.updated_at.as_ref()
+        self.document.updated_at().as_ref()
     }
 
     /// Create an extended document with additional information.
@@ -116,7 +119,7 @@ impl ExtendedDocumentV0 {
     ) -> Self {
         Self {
             document_type_name,
-            data_contract_id: data_contract.id,
+            data_contract_id: data_contract.id(),
             document,
             data_contract,
             metadata: None,

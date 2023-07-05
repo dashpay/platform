@@ -137,7 +137,7 @@ impl Convertible for IdentityV0 {
 impl IdentityV0 {
     /// Get Identity protocol version
     pub fn get_feature_version(&self) -> u16 {
-        self.feature_version
+        0
     }
 
     /// Returns Identity id
@@ -362,10 +362,7 @@ impl IdentityV0 {
         raw_object.try_into()
     }
 
-    /// Computes the hash of an identity
-    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
-    }
+
 
     /// Convenience method to get Partial Identity Info
     pub fn into_partial_identity_info(self) -> PartialIdentity {

@@ -50,7 +50,7 @@ use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::document_type::document_field::v0::{
-    encode_unsigned_integer, DocumentFieldTypeV0,
+    encode_unsigned_integer, DocumentFieldType,
 };
 use dpp::document::Document;
 use dpp::prelude::Identifier;
@@ -149,7 +149,7 @@ impl Drive {
                 drive_operations,
                 drive_version,
             )?;
-            let encoded_time = DocumentFieldTypeV0::encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = DocumentFieldType::encode_unsigned_integer(block_info.time_ms)?;
             let path_key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
                     DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {

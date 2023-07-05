@@ -66,7 +66,7 @@ use dpp::block::extended_block_info::BlockInfo;
 
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -280,7 +280,7 @@ pub struct DriveQuery<'a> {
     /// Contract
     pub contract: &'a Contract,
     /// Document type
-    pub document_type: &'a DocumentType<'a>,
+    pub document_type: &'a DocumentTypeRef<'a>,
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset
@@ -302,7 +302,7 @@ pub struct DriveQuery<'a> {
 impl<'a> DriveQuery<'a> {
     #[cfg(feature = "full")]
     /// Returns any item
-    pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentType) -> Self {
+    pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentTypeRef) -> Self {
         DriveQuery {
             contract,
             document_type,
@@ -338,7 +338,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_cbor(
         query_cbor: &[u8],
         contract: &'a Contract,
-        document_type: &'a DocumentType,
+        document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
@@ -354,7 +354,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_value(
         query_value: Value,
         contract: &'a Contract,
-        document_type: &'a DocumentType,
+        document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
@@ -366,7 +366,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_btree_map_value(
         mut query_document: BTreeMap<String, Value>,
         contract: &'a Contract,
-        document_type: &'a DocumentType,
+        document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let maybe_limit: Option<u16> = query_document
@@ -495,7 +495,7 @@ impl<'a> DriveQuery<'a> {
         start_at_included: bool,
         block_time_ms: Option<u64>,
         contract: &'a Contract,
-        document_type: &'a DocumentType,
+        document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let _limit = maybe_limit
@@ -1068,7 +1068,7 @@ impl<'a> DriveQuery<'a> {
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(Document, &DocumentTypeRef, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Query {
         // We only need items after the start at document
@@ -1119,7 +1119,7 @@ impl<'a> DriveQuery<'a> {
     // The index property (borrowed)
     // if the element itself should be included. ie StartAt vs StartAfter
     fn inner_query_from_starts_at(
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
+        starts_at_document: &Option<(Document, &DocumentTypeRef, &IndexProperty, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {
         let mut inner_query = Query::new_with_direction(left_to_right);
@@ -1161,7 +1161,7 @@ impl<'a> DriveQuery<'a> {
         query: Option<&mut Query>,
         left_over_index_properties: &[&IndexProperty],
         unique: bool,
-        starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>, //for key level, included
+        starts_at_document: &Option<(Document, &DocumentTypeRef, &IndexProperty, bool)>, //for key level, included
         default_left_to_right: bool,
         order_by: Option<&IndexMap<String, OrderClause>>,
     ) -> Result<Option<Query>, Error> {
@@ -1670,7 +1670,7 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
-    use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contract::extra::common::json_document_to_contract;
 
     use dpp::util::cbor_serializer;
@@ -1735,7 +1735,7 @@ mod tests {
             ]
         });
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1762,7 +1762,7 @@ mod tests {
             "invalid": 0,
         });
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1790,7 +1790,7 @@ mod tests {
         });
 
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1818,7 +1818,7 @@ mod tests {
         });
 
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1845,7 +1845,7 @@ mod tests {
             ],
         });
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2099,7 +2099,7 @@ mod tests {
         });
 
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2125,7 +2125,7 @@ mod tests {
         });
 
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2151,7 +2151,7 @@ mod tests {
         });
 
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2177,7 +2177,7 @@ mod tests {
         });
 
         let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");

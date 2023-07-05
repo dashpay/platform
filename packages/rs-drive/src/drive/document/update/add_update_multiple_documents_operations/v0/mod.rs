@@ -1,5 +1,5 @@
 use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use crate::drive::batch::drive_op_batch::{DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo};
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
@@ -10,7 +10,7 @@ impl Drive {
     pub(super) fn add_update_multiple_documents_operations_v0<'a>(
         documents: &'a [Document],
         data_contract: &'a DataContract,
-        document_type: &'a DocumentType<'a>,
+        document_type: &'a DocumentTypeRef<'a>,
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
     ) {
         let operations: Vec<DocumentOperation> = documents

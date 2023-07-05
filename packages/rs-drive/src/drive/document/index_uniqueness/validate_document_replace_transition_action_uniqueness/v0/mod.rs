@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
@@ -25,7 +25,7 @@ impl Drive {
     pub(super) fn validate_document_replace_transition_action_uniqueness_v0(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         document_replace_transition: &DocumentReplaceTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,

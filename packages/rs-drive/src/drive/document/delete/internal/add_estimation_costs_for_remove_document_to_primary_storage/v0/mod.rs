@@ -6,7 +6,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-use dpp::data_contract::document_type::{DocumentType, IndexLevel};
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
@@ -49,7 +49,7 @@ use dpp::block::epoch::Epoch;
 impl Drive {
     pub(super) fn add_estimation_costs_for_remove_document_to_primary_storage_v0(
         primary_key_path: [&[u8]; 5],
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         // we just have the elements

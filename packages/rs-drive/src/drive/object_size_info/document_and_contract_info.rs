@@ -1,4 +1,4 @@
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use crate::drive::object_size_info::OwnedDocumentInfo;
 
@@ -10,5 +10,5 @@ pub struct DocumentAndContractInfo<'a> {
     /// Contract
     pub contract: &'a Contract,
     /// Document type
-    pub document_type: &'a DocumentType<'a>,
+    pub document_type: &'a DocumentTypeRef<'a>,
 }

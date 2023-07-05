@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use grovedb::batch::key_info::KeyInfo;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
@@ -39,13 +39,13 @@ pub trait DocumentInfoV0Methods {
     fn get_estimated_size_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<u16, Error>;
     /// Gets the raw path for the given document type
     fn get_raw_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
     ) -> Result<Option<DriveKeyInfo>, Error>;
@@ -100,7 +100,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn get_estimated_size_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<u16, Error> {
         match key_path {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
@@ -129,7 +129,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn get_raw_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
     ) -> Result<Option<DriveKeyInfo>, Error> {

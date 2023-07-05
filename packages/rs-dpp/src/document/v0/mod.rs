@@ -42,6 +42,7 @@ use std::fmt;
 
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
+use dashcore::SchnorrSighashType::Default;
 use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::DataContract;
@@ -50,8 +51,10 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::document_field::v0::DocumentFieldTypeV0;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::document_field::v0::DocumentFieldType;
+use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::errors::DocumentError;
@@ -86,7 +89,7 @@ pub trait DocumentV0Methods {
     fn get_raw_for_document_type<'a>(
         &'a self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError>;
     /// Return a value given the path to its key and the document type for a contract.
@@ -102,7 +105,7 @@ pub trait DocumentV0Methods {
     fn hash(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError>;
     fn increment_revision(&mut self) -> Result<(), ProtocolError>;
     fn get_identifiers_and_binary_paths<'a>(
@@ -125,7 +128,7 @@ impl DocumentV0Methods for DocumentV0 {
     fn get_raw_for_document_type<'a>(
         &'a self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         // todo: maybe merge with document_type.serialize_value_for_key() because we use different
@@ -141,12 +144,12 @@ impl DocumentV0Methods for DocumentV0 {
                 "$createdAt" => {
                     return Ok(self
                         .created_at
-                        .map(|time| DocumentFieldTypeV0::encode_date_timestamp(time).unwrap()))
+                        .map(|time| DocumentFieldType::encode_date_timestamp(time).unwrap()))
                 }
                 "$updatedAt" => {
                     return Ok(self
                         .updated_at
-                        .map(|time| DocumentFieldTypeV0::encode_date_timestamp(time).unwrap()))
+                        .map(|time| DocumentFieldType::encode_date_timestamp(time).unwrap()))
                 }
                 _ => {}
             }
@@ -165,7 +168,7 @@ impl DocumentV0Methods for DocumentV0 {
         contract: &DataContract,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
-        let document_type = contract.document_types.get(document_type_name).ok_or({
+        let document_type = contract.document_types().get(document_type_name).ok_or({
             ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
                 "document type should exist for name",
             ))
@@ -178,10 +181,10 @@ impl DocumentV0Methods for DocumentV0 {
     fn hash(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = contract.id.to_vec();
-        buf.extend(document_type.name.as_bytes());
+        let mut buf = contract.id().to_vec();
+        buf.extend(document_type.name().as_bytes());
         buf.extend(self.serialize(document_type)?);
         Ok(hash_to_vec(buf))
     }
@@ -295,17 +298,15 @@ impl DocumentV0Methods for DocumentV0 {
         let mut properties = document_value
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
-        let mut document = Self {
-            ..Default::default()
-        };
 
-        document.id = properties.remove_identifier(super::property_names::ID)?;
-        document.owner_id = properties.remove_identifier(super::property_names::OWNER_ID)?;
-        document.revision = properties.remove_optional_integer(super::property_names::REVISION)?;
-        document.created_at =
-            properties.remove_optional_integer(super::property_names::CREATED_AT)?;
-        document.updated_at =
-            properties.remove_optional_integer(super::property_names::UPDATED_AT)?;
+        let mut document = DocumentV0 {
+            id: properties.remove_identifier(super::property_names::ID)?,
+            owner_id: properties.remove_identifier(super::property_names::OWNER_ID)?,
+            properties: BTreeMap::new(),
+            revision: properties.remove_optional_integer(super::property_names::REVISION)?,
+            created_at: properties.remove_optional_integer(super::property_names::CREATED_AT)?,
+            updated_at: properties.remove_optional_integer(super::property_names::UPDATED_AT)?,
+        };
 
         document.properties = properties;
         Ok(document)

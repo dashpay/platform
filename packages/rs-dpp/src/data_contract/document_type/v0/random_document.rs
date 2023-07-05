@@ -114,7 +114,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             let identity = identities.get(identity_num).unwrap().clone();
             let entropy = Bytes32::random_with_rng(rng);
             vec.push((
-                self.random_document_with_params(identity.id, entropy, time_ms, rng),
+                self.random_document_with_params(identity.id(), entropy, time_ms, rng),
                 identity,
                 entropy,
             ));

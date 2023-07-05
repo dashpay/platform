@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::ArrayFieldTypeV0::Identifier;
+use dpp::data_contract::document_type::ArrayFieldType::Identifier;
 use dpp::state_transition::fee::fee_result::FeeResult;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};

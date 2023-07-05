@@ -6,6 +6,7 @@ use crate::version::drive_versions::DriveVersion;
 use crate::version::v0::PLATFORM_V1;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
+use crate::version::dpp_versions::DPPVersion;
 
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
@@ -22,27 +23,6 @@ impl FeatureVersionBounds {
     pub fn check_version(&self, version: FeatureVersion) -> bool {
         version >= self.min_version && version <= self.max_version
     }
-}
-
-pub struct DocumentFeatureVersionBounds {
-    pub bounds: FeatureVersionBounds,
-    pub base_version_mapping: BTreeMap<FeatureVersion, FeatureVersion>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct StateTransitionVersion {
-    pub identity_create_state_transition: FeatureVersionBounds,
-    pub identity_update_state_transition: FeatureVersionBounds,
-    pub identity_top_up_state_transition: FeatureVersionBounds,
-    pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
-    pub identity_credit_transfer_state_transition: FeatureVersionBounds,
-    pub contract_create_state_transition: FeatureVersionBounds,
-    pub contract_update_state_transition: FeatureVersionBounds,
-    pub documents_batch_state_transition: FeatureVersionBounds,
-    pub document_base_state_transition: FeatureVersionBounds,
-    pub document_create_state_transition: DocumentFeatureVersionBounds,
-    pub document_replace_state_transition: DocumentFeatureVersionBounds,
-    pub document_delete_state_transition: DocumentFeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -82,7 +62,7 @@ pub struct PlatformVersion {
     pub proofs: FeatureVersionBounds,
     pub costs: FeatureVersionBounds,
     pub state_transition_signing: StateTransitionSigningVersion,
-    pub state_transitions: StateTransitionVersion,
+    pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,
     pub abci_structure: AbciStructureVersion,

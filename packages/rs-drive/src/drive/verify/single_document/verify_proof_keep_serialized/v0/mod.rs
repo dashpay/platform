@@ -3,7 +3,7 @@ use crate::drive::verify::RootHash;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 
 use grovedb::GroveDb;

@@ -2,7 +2,7 @@ mod v0;
 
 
 use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::batch::drive_op_batch::{DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo};
@@ -39,7 +39,7 @@ impl Drive {
         &self,
         documents: &'a [Document],
         data_contract: &'a DataContract,
-        document_type: &'a DocumentType<'a>,
+        document_type: &'a DocumentTypeRef<'a>,
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

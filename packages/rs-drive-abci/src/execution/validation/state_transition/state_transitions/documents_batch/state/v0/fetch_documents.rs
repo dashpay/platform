@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
@@ -100,7 +100,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
 pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
     drive: &Drive,
     contract: &DataContract,
-    document_type: &DocumentType,
+    document_type: &DocumentTypeRef,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {

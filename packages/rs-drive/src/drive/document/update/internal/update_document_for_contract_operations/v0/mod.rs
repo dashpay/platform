@@ -5,7 +5,7 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::data_contract::DataContract;

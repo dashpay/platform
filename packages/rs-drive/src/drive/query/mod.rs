@@ -42,7 +42,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::DriveQuery;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 
 use dpp::document::Document;
 
@@ -246,7 +246,7 @@ impl Drive {
     pub fn query_documents_cbor_from_contract(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
@@ -272,7 +272,7 @@ impl Drive {
     pub fn query_documents_from_contract(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
@@ -298,7 +298,7 @@ impl Drive {
     pub(crate) fn query_documents_for_cbor_query_internal(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -355,7 +355,7 @@ impl Drive {
     pub fn query_proof_of_documents_using_cbor_encoded_query_with_cost(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
@@ -383,7 +383,7 @@ impl Drive {
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -397,7 +397,7 @@ impl Drive {
     pub fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
@@ -425,7 +425,7 @@ impl Drive {
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         query_cbor: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,

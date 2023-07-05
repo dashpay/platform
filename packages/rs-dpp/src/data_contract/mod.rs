@@ -33,7 +33,7 @@ pub use v0::*;
 
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::data_contract::DataContractV0;
 #[cfg(feature = "validation")]
@@ -41,6 +41,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
+use crate::util::hash::hash_to_vec;
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -57,7 +58,7 @@ pub trait DataContractLike<'a> {
     fn id() -> Identifier;
     fn owner_id() -> Identifier;
     fn contract_version() -> u32;
-    fn document_types() -> BTreeMap<DocumentName, DocumentType<'a>>;
+    fn document_types() -> BTreeMap<DocumentName, DocumentTypeRef<'a>>;
 }
 
 #[derive(
@@ -89,6 +90,12 @@ impl Default for DataContract {
 }
 
 impl DataContract {
+
+    // Returns hash from Data Contract
+    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash_to_vec(self.serialize()?))
+    }
+
     pub fn id(&self) -> Identifier {
         match self {
             DataContract::V0(v0) => v0.id,

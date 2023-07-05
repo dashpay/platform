@@ -6,7 +6,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-use dpp::data_contract::document_type::{DocumentType, IndexLevel};
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
@@ -52,7 +52,7 @@ impl Drive {
     pub(super) fn remove_document_from_primary_storage_v0(
         &self,
         document_id: [u8; 32],
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         contract_documents_primary_key_path: [&[u8]; 5],
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

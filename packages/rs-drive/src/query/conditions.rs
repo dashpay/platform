@@ -42,7 +42,7 @@ use WhereOperator::{
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::platform_value::Value;
 
@@ -641,7 +641,7 @@ impl<'a> WhereClause {
 
     fn split_value_for_between(
         &self,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
         let in_values = match &self.value {
             Value::Array(array) => Some(array),
@@ -671,7 +671,7 @@ impl<'a> WhereClause {
     // left_to_right: should we be going left to right or right to left?
     pub(crate) fn to_path_query(
         &self,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         start_at_document: &Option<(Document, bool)>,
         left_to_right: bool,
     ) -> Result<Query, Error> {

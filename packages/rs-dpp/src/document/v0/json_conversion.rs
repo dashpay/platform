@@ -5,6 +5,7 @@ use platform_value::{Identifier, Value};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
+use crate::util::json_value::JsonValueExt;
 
 pub trait DocumentV0JsonMethods {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError>;

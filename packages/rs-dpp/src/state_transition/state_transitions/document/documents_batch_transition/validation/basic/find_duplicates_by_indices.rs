@@ -126,7 +126,7 @@ mod test {
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
-    use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::document_type::DocumentTypeRef;
     use crate::prelude::*;
 
     use super::find_duplicates_by_indices;
@@ -188,7 +188,7 @@ mod test {
 
         let document_def_value: Value = document_def.clone().into();
 
-        let document_type = DocumentType::from_platform_value(
+        let document_type = DocumentTypeRef::from_platform_value(
             Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
@@ -314,7 +314,7 @@ mod test {
 
         let document_def_value: Value = document_def.clone().into();
 
-        let document_type = DocumentType::from_platform_value(
+        let document_type = DocumentTypeRef::from_platform_value(
             Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
@@ -441,7 +441,7 @@ mod test {
 
         let document_def_value: Value = document_def.clone().into();
 
-        let document_type = DocumentType::from_platform_value(
+        let document_type = DocumentTypeRef::from_platform_value(
             Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),

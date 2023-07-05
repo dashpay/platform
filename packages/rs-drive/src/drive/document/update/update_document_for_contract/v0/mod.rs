@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::data_contract::DataContract;
 use crate::drive::Drive;
@@ -21,7 +21,7 @@ impl Drive {
         &self,
         document: &Document,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,

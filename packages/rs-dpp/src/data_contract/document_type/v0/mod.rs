@@ -2,14 +2,8 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-use crate::data_contract::document_type::{property_names, ArrayFieldTypeV0};
+use crate::data_contract::document_type::{property_names};
 use crate::data_contract::errors::{DataContractError, StructureError};
-
-use crate::data_contract::document_type::document_field::v0::{
-    DocumentFieldTypeV0, DocumentFieldV0,
-};
-use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
-use crate::data_contract::document_type::index_level::v0::IndexLevelV0;
 use crate::document::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
@@ -17,10 +11,16 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
+use crate::data_contract::document_type::array_field::ArrayFieldType;
+use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 
 pub mod document_factory;
 pub mod random_document;
 pub mod random_document_type;
+pub(crate) mod v0_methods;
 
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32
@@ -39,14 +39,14 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 #[serde(rename_all = "camelCase")]
 pub struct DocumentTypeV0 {
     pub name: String,
-    pub indices: Vec<IndexV0>,
+    pub indices: Vec<Index>,
     #[serde(skip)]
-    pub index_structure: IndexLevelV0,
+    pub index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
-    pub flattened_properties: BTreeMap<String, DocumentFieldV0>,
+    pub flattened_properties: BTreeMap<String, DocumentField>,
     /// Document field can contain sub objects.
-    pub properties: BTreeMap<String, DocumentFieldV0>,
+    pub properties: BTreeMap<String, DocumentField>,
     #[serde(skip)]
     pub identifier_paths: BTreeSet<String>,
     #[serde(skip)]
@@ -62,13 +62,13 @@ impl DocumentTypeV0 {
     pub fn new(
         data_contract_id: Identifier,
         name: String,
-        indices: Vec<IndexV0>,
-        properties: BTreeMap<String, DocumentFieldV0>,
+        indices: Vec<Index>,
+        properties: BTreeMap<String, DocumentField>,
         required_fields: BTreeSet<String>,
         documents_keep_history: bool,
         documents_mutable: bool,
     ) -> Self {
-        let index_structure = IndexLevelV0::from(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
         let (identifier_paths, binary_paths) = Self::find_identifier_and_binary_paths(&properties);
         DocumentTypeV0 {
             name,
@@ -84,112 +84,9 @@ impl DocumentTypeV0 {
             data_contract_id,
         }
     }
-    // index_names can be in any order
-    // in field name must be in the last two indexes.
-    pub fn index_for_types(
-        &self,
-        index_names: &[&str],
-        in_field_name: Option<&str>,
-        order_by: &[&str],
-    ) -> Option<(&IndexV0, u16)> {
-        let mut best_index: Option<(&IndexV0, u16)> = None;
-        let mut best_difference = u16::MAX;
-        for index in self.indices.iter() {
-            let difference_option = index.matches(index_names, in_field_name, order_by);
-            if let Some(difference) = difference_option {
-                if difference == 0 {
-                    return Some((index, 0));
-                } else if difference < best_difference {
-                    best_difference = difference;
-                    best_index = Some((index, best_difference));
-                }
-            }
-        }
-        best_index
-    }
 
-    pub fn unique_id_for_storage(&self) -> [u8; 32] {
-        rand::random::<[u8; 32]>()
-    }
 
-    /// Unique id that combines the index_level and the base event id
-    pub fn unique_id_for_document_field(
-        &self,
-        index_level: &IndexLevelV0,
-        base_event: [u8; 32],
-    ) -> Vec<u8> {
-        let mut bytes = index_level.level_identifier.to_be_bytes().to_vec();
-        bytes.extend_from_slice(&base_event);
-        bytes
-    }
-
-    pub fn serialize_value_for_key(
-        &self,
-        key: &str,
-        value: &Value,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        match key {
-            "$ownerId" | "$id" => {
-                let bytes = value
-                    .to_identifier_bytes()
-                    .map_err(ProtocolError::ValueError)?;
-                if bytes.len() != DEFAULT_HASH_SIZE {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet(
-                            "expected system value to be 32 bytes long",
-                        ),
-                    ))
-                } else {
-                    Ok(bytes)
-                }
-            }
-            _ => {
-                let field_type = self.flattened_properties.get(key).ok_or_else(|| {
-                    DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))
-                })?;
-                let bytes = field_type.document_type.encode_value_for_tree_keys(value)?;
-                if bytes.len() > MAX_INDEX_SIZE {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::FieldRequirementUnmet(
-                            "value must be less than 256 bytes long",
-                        ),
-                    ))
-                } else {
-                    Ok(bytes)
-                }
-            }
-        }
-    }
-
-    pub fn convert_value_to_document(&self, mut data: Value) -> Result<Document, ProtocolError> {
-        let mut document: Document = DocumentV0 {
-            id: data.remove_identifier("$id")?,
-            owner_id: data.remove_identifier("$ownerId")?,
-            properties: Default::default(),
-            revision: data.remove_optional_integer("$revision")?,
-            created_at: data.remove_optional_integer("$createdAt")?,
-            updated_at: data.remove_optional_integer("$updatedAt")?,
-        }
-        .into();
-
-        data.replace_at_paths(
-            self.identifier_paths.iter().map(|s| s.as_str()),
-            ReplacementType::Identifier,
-        )?;
-
-        data.replace_at_paths(
-            self.binary_paths.iter().map(|s| s.as_str()),
-            ReplacementType::BinaryBytes,
-        )?;
-
-        document.properties = data
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-
-        Ok(document)
-    }
-
-    pub fn from_platform_value(
+    pub(crate) fn from_platform_value(
         data_contract_id: Identifier,
         name: &str,
         document_type_value_map: &[(Value, Value)],
@@ -197,8 +94,8 @@ impl DocumentTypeV0 {
         default_keeps_history: bool,
         default_mutability: bool,
     ) -> Result<Self, ProtocolError> {
-        let mut flattened_document_properties: BTreeMap<String, DocumentFieldV0> = BTreeMap::new();
-        let mut document_properties: BTreeMap<String, DocumentFieldV0> = BTreeMap::new();
+        let mut flattened_document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
+        let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
@@ -216,7 +113,7 @@ impl DocumentTypeV0 {
             document_type_value_map,
             property_names::INDICES,
         )?;
-        let indices: Vec<IndexV0> = index_values
+        let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
                     .iter()
@@ -231,7 +128,7 @@ impl DocumentTypeV0 {
                             .as_slice()
                             .try_into()
                     })
-                    .collect::<Result<Vec<IndexV0>, ProtocolError>>()
+                    .collect::<Result<Vec<Index>, ProtocolError>>()
             })
             .transpose()?
             .unwrap_or_default();
@@ -249,7 +146,7 @@ impl DocumentTypeV0 {
         );
         // Based on the property name, determine the type
         for (property_key, property_value) in property_values {
-            insert_values(
+            Self::insert_values(
                 &mut flattened_document_properties,
                 &required_fields,
                 None,
@@ -258,7 +155,7 @@ impl DocumentTypeV0 {
                 definition_references,
             )?;
 
-            insert_values_nested(
+            Self::insert_values_nested(
                 &mut document_properties,
                 &required_fields,
                 property_key,
@@ -270,15 +167,15 @@ impl DocumentTypeV0 {
         if required_fields.contains(property_names::CREATED_AT) {
             flattened_document_properties.insert(
                 String::from(property_names::CREATED_AT),
-                DocumentFieldV0 {
-                    document_type: DocumentFieldTypeV0::Date,
+                DocumentField {
+                    document_type: DocumentFieldType::Date,
                     required: true,
                 },
             );
             document_properties.insert(
                 String::from(property_names::CREATED_AT),
-                DocumentFieldV0 {
-                    document_type: DocumentFieldTypeV0::Date,
+                DocumentField {
+                    document_type: DocumentFieldType::Date,
                     required: true,
                 },
             );
@@ -287,21 +184,21 @@ impl DocumentTypeV0 {
         if required_fields.contains(property_names::UPDATED_AT) {
             flattened_document_properties.insert(
                 String::from(property_names::UPDATED_AT),
-                DocumentFieldV0 {
-                    document_type: DocumentFieldTypeV0::Date,
+                DocumentField {
+                    document_type: DocumentFieldType::Date,
                     required: true,
                 },
             );
             document_properties.insert(
                 String::from(property_names::UPDATED_AT),
-                DocumentFieldV0 {
-                    document_type: DocumentFieldTypeV0::Date,
+                DocumentField {
+                    document_type: DocumentFieldType::Date,
                     required: true,
                 },
             );
         }
 
-        let index_structure = IndexLevelV0::from(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
 
         let (identifier_paths, binary_paths) =
             Self::find_identifier_and_binary_paths(&document_properties);
@@ -320,88 +217,8 @@ impl DocumentTypeV0 {
         })
     }
 
-    pub fn max_size(&self) -> u16 {
-        let mut iter = self
-            .flattened_properties
-            .iter()
-            .filter_map(|(_, document_field_type)| {
-                document_field_type.document_type.max_byte_size()
-            });
-        let first = Some(iter.next().unwrap_or_default());
-
-        iter.fold(first, |acc, item| acc.and_then(|acc| acc.checked_add(item)))
-            .unwrap_or(u16::MAX)
-    }
-
-    /// The estimated size uses the middle ceil size of all attributes
-    pub fn estimated_size(&self) -> u16 {
-        let mut iter = self
-            .flattened_properties
-            .iter()
-            .filter_map(|(_, document_field_type)| {
-                document_field_type.document_type.middle_byte_size_ceil()
-            });
-        let first = Some(iter.next().unwrap_or_default());
-
-        iter.fold(first, |acc, item| acc.and_then(|acc| acc.checked_add(item)))
-            .unwrap_or(u16::MAX)
-    }
-
-    pub fn top_level_indices(&self) -> Vec<&IndexPropertyV0> {
-        let mut index_properties: Vec<&IndexPropertyV0> = Vec::with_capacity(self.indices.len());
-        for index in &self.indices {
-            if let Some(property) = index.properties.get(0) {
-                index_properties.push(property);
-            }
-        }
-        index_properties
-    }
-
-    pub fn document_field_for_property(&self, property: &str) -> Option<DocumentFieldV0> {
-        self.flattened_properties.get(property).cloned()
-    }
-
-    pub fn document_field_type_for_property(&self, property: &str) -> Option<DocumentFieldTypeV0> {
-        match property {
-            "$id" => Some(DocumentFieldTypeV0::ByteArray(
-                Some(DEFAULT_HASH_SIZE as u16),
-                Some(DEFAULT_HASH_SIZE as u16),
-            )),
-            "$ownerId" => Some(DocumentFieldTypeV0::ByteArray(
-                Some(DEFAULT_HASH_SIZE as u16),
-                Some(DEFAULT_HASH_SIZE as u16),
-            )),
-            "$createdAt" => Some(DocumentFieldTypeV0::Date),
-            "$updatedAt" => Some(DocumentFieldTypeV0::Date),
-            &_ => self
-                .document_field_for_property(property)
-                .map(|document_field| document_field.document_type),
-        }
-    }
-
-    pub fn field_can_be_null(&self, name: &str) -> bool {
-        !self.required_fields.contains(name)
-    }
-
-    pub fn initial_revision(&self) -> Option<Revision> {
-        if self.documents_mutable {
-            Some(INITIAL_REVISION)
-        } else {
-            None
-        }
-    }
-
-    pub fn requires_revision(&self) -> bool {
-        self.documents_mutable
-    }
-
-    pub(crate) fn find_identifier_and_binary_paths(
-        properties: &BTreeMap<String, DocumentFieldV0>,
-    ) -> (BTreeSet<String>, BTreeSet<String>) {
-        Self::find_identifier_and_binary_paths_inner(properties, "")
-    }
     fn find_identifier_and_binary_paths_inner(
-        properties: &BTreeMap<String, DocumentFieldV0>,
+        properties: &BTreeMap<String, DocumentField>,
         current_path: &str,
     ) -> (BTreeSet<String>, BTreeSet<String>) {
         let mut identifier_paths = BTreeSet::new();
@@ -415,39 +232,39 @@ impl DocumentTypeV0 {
             };
 
             match &value.document_type {
-                DocumentFieldTypeV0::Identifier => {
+                DocumentFieldType::Identifier => {
                     identifier_paths.insert(new_path);
                 }
-                DocumentFieldTypeV0::ByteArray(_, _) => {
+                DocumentFieldType::ByteArray(_, _) => {
                     binary_paths.insert(new_path);
                 }
-                DocumentFieldTypeV0::Object(inner_properties) => {
+                DocumentFieldType::Object(inner_properties) => {
                     let (inner_identifier_paths, inner_binary_paths) =
                         Self::find_identifier_and_binary_paths_inner(inner_properties, &new_path);
 
                     identifier_paths.extend(inner_identifier_paths);
                     binary_paths.extend(inner_binary_paths);
                 }
-                DocumentFieldTypeV0::Array(array_field_type) => {
+                DocumentFieldType::Array(array_field_type) => {
                     let new_path = format!("{}[]", new_path);
                     match array_field_type {
-                        ArrayFieldTypeV0::Identifier => {
+                        ArrayFieldType::Identifier => {
                             identifier_paths.insert(new_path.clone());
                         }
-                        ArrayFieldTypeV0::ByteArray(_, _) => {
+                        ArrayFieldType::ByteArray(_, _) => {
                             binary_paths.insert(new_path.clone());
                         }
                         _ => {}
                     }
                 }
-                DocumentFieldTypeV0::VariableTypeArray(array_field_types) => {
+                DocumentFieldType::VariableTypeArray(array_field_types) => {
                     for (i, array_field_type) in array_field_types.iter().enumerate() {
                         let new_path = format!("{}[{}]", new_path, i);
                         match array_field_type {
-                            ArrayFieldTypeV0::Identifier => {
+                            ArrayFieldType::Identifier => {
                                 identifier_paths.insert(new_path.clone());
                             }
-                            ArrayFieldTypeV0::ByteArray(_, _) => {
+                            ArrayFieldType::ByteArray(_, _) => {
                                 binary_paths.insert(new_path.clone());
                             }
                             _ => {}
@@ -460,193 +277,17 @@ impl DocumentTypeV0 {
 
         (identifier_paths, binary_paths)
     }
-}
 
-pub fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldTypeV0> {
-    match field_type_name {
-        "integer" => Some(DocumentFieldTypeV0::Integer),
-        "number" => Some(DocumentFieldTypeV0::Number),
-        "boolean" => Some(DocumentFieldTypeV0::Boolean),
-        "date" => Some(DocumentFieldTypeV0::Date),
-        _ => None,
-    }
-}
 
-fn insert_values_nested(
-    document_properties: &mut BTreeMap<String, DocumentFieldV0>,
-    known_required: &BTreeSet<String>,
-    property_key: String,
-    property_value: &Value,
-    definition_references: &BTreeMap<String, &Value>,
-) -> Result<(), ProtocolError> {
-    let mut inner_properties = property_value.to_btree_ref_string_map()?;
-
-    let type_value = inner_properties
-        .remove_optional_string(property_names::TYPE)
-        .map_err(ProtocolError::ValueError)?;
-    let type_value = match type_value {
-        None => {
-            let ref_value = inner_properties
-                .get_str(property_names::REF)
-                .map_err(ProtocolError::ValueError)?;
-            let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
-                return Err(ProtocolError::DataContractError(
-                    DataContractError::InvalidContractStructure("malformed reference"),
-                ));
-            };
-            inner_properties = definition_references
-                .get_inner_borrowed_str_value_map(ref_value)
-                .map_err(ProtocolError::ValueError)?;
-
-            inner_properties.get_string(property_names::TYPE)?
-        }
-        Some(type_value) => type_value,
-    };
-    let is_required = known_required.contains(&property_key);
-    let field_type: DocumentFieldTypeV0;
-
-    match type_value.as_str() {
-        "integer" => {
-            field_type = DocumentFieldTypeV0::Integer;
-        }
-        "number" => {
-            field_type = DocumentFieldTypeV0::Number;
-        }
-        "string" => {
-            field_type = DocumentFieldTypeV0::String(
-                inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-                inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-            );
-        }
-        "array" => {
-            // Only handling bytearrays for v1
-            // Return an error if it is not a byte array
-            field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
-                Some(inner_bool) => {
-                    if inner_bool {
-                        match inner_properties
-                            .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
-                        {
-                            Some(content_media_type)
-                                if content_media_type == "application/x.dash.dpp.identifier" =>
-                            {
-                                DocumentFieldTypeV0::Identifier
-                            }
-                            Some(_) | None => DocumentFieldTypeV0::ByteArray(
-                                inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                            ),
-                        }
-                    } else {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "byteArray should always be true if defined",
-                            ),
-                        ));
-                    }
-                }
-                // TODO: Contract indices and new encoding format don't support arrays
-                //   but we still can use them as document fields with current cbor encoding
-                //   This is a temporary workaround to bring back v0.22 behavior and should be
-                //   replaced with a proper array support in future versions
-                None => DocumentFieldTypeV0::Array(ArrayFieldTypeV0::Boolean),
-            };
-        }
-        "object" => {
-            let mut nested_properties = BTreeMap::new();
-            if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
-                let properties =
-                    properties_as_value
-                        .as_map()
-                        .ok_or(ProtocolError::StructureError(
-                            StructureError::ValueWrongType("properties must be a map"),
-                        ))?;
-
-                // Create a new set with the prefix removed from the keys
-                let stripped_required: BTreeSet<String> = known_required
-                    .iter()
-                    .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                // Create a new set with the prefix removed from the keys
-                let inner_definition_references: BTreeMap<String, &Value> = definition_references
-                    .iter()
-                    .filter_map(|(key, value)| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some((key[property_key.len() + 1..].to_string(), *value))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                for (object_property_key, object_property_value) in properties.iter() {
-                    let object_property_string = object_property_key
-                        .as_text()
-                        .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                            "property key must be a string",
-                        )))?
-                        .to_string();
-
-                    insert_values_nested(
-                        &mut nested_properties,
-                        &stripped_required,
-                        object_property_string,
-                        object_property_value,
-                        &inner_definition_references,
-                    )?;
-                }
-            }
-            field_type = DocumentFieldTypeV0::Object(nested_properties);
-            document_properties.insert(
-                property_key,
-                DocumentFieldV0 {
-                    document_type: field_type,
-                    required: is_required,
-                },
-            );
-            return Ok(());
-        }
-        _ => {
-            field_type = string_to_field_type(type_value.as_str())
-                .ok_or(DataContractError::ValueWrongType("invalid type"))?;
-        }
-    }
-
-    document_properties.insert(
-        property_key,
-        DocumentFieldV0 {
-            document_type: field_type,
-            required: is_required,
-        },
-    );
-
-    Ok(())
-}
-
-fn insert_values(
-    document_properties: &mut BTreeMap<String, DocumentFieldV0>,
-    known_required: &BTreeSet<String>,
-    prefix: Option<String>,
-    property_key: String,
-    property_value: &Value,
-    definition_references: &BTreeMap<String, &Value>,
-) -> Result<(), ProtocolError> {
-    let mut to_visit: Vec<(Option<String>, String, &Value)> =
-        vec![(prefix, property_key, property_value)];
-
-    while let Some((prefix, property_key, property_value)) = to_visit.pop() {
-        let prefixed_property_key = match prefix {
-            None => property_key,
-            Some(prefix) => [prefix, property_key].join(".").to_owned(),
-        };
+    fn insert_values_nested(
+        document_properties: &mut BTreeMap<String, DocumentField>,
+        known_required: &BTreeSet<String>,
+        property_key: String,
+        property_value: &Value,
+        definition_references: &BTreeMap<String, &Value>,
+    ) -> Result<(), ProtocolError> {
         let mut inner_properties = property_value.to_btree_ref_string_map()?;
+
         let type_value = inner_properties
             .remove_optional_string(property_names::TYPE)
             .map_err(ProtocolError::ValueError)?;
@@ -668,10 +309,22 @@ fn insert_values(
             }
             Some(type_value) => type_value,
         };
-        let is_required = known_required.contains(&prefixed_property_key);
-        let field_type: DocumentFieldTypeV0;
+        let is_required = known_required.contains(&property_key);
+        let field_type: DocumentFieldType;
 
         match type_value.as_str() {
+            "integer" => {
+                field_type = DocumentFieldType::Integer;
+            }
+            "number" => {
+                field_type = DocumentFieldType::Number;
+            }
+            "string" => {
+                field_type = DocumentFieldType::String(
+                    inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+                    inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+                );
+            }
             "array" => {
                 // Only handling bytearrays for v1
                 // Return an error if it is not a byte array
@@ -682,16 +335,13 @@ fn insert_values(
                                 .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
                             {
                                 Some(content_media_type)
-                                    if content_media_type
-                                        == "application/x.dash.dpp.identifier" =>
-                                {
-                                    DocumentFieldTypeV0::Identifier
-                                }
-                                Some(_) | None => DocumentFieldTypeV0::ByteArray(
-                                    inner_properties
-                                        .get_optional_integer(property_names::MIN_ITEMS)?,
-                                    inner_properties
-                                        .get_optional_integer(property_names::MAX_ITEMS)?,
+                                if content_media_type == "application/x.dash.dpp.identifier" =>
+                                    {
+                                        DocumentFieldType::Identifier
+                                    }
+                                Some(_) | None => DocumentFieldType::ByteArray(
+                                    inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
+                                    inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
                                 ),
                             }
                         } else {
@@ -706,26 +356,42 @@ fn insert_values(
                     //   but we still can use them as document fields with current cbor encoding
                     //   This is a temporary workaround to bring back v0.22 behavior and should be
                     //   replaced with a proper array support in future versions
-                    None => DocumentFieldTypeV0::Array(ArrayFieldTypeV0::Boolean),
+                    None => DocumentFieldType::Array(ArrayFieldType::Boolean),
                 };
-
-                document_properties.insert(
-                    prefixed_property_key,
-                    DocumentFieldV0 {
-                        document_type: field_type,
-                        required: is_required,
-                    },
-                );
             }
             "object" => {
-                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
-                {
+                let mut nested_properties = BTreeMap::new();
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
                     let properties =
                         properties_as_value
                             .as_map()
                             .ok_or(ProtocolError::StructureError(
                                 StructureError::ValueWrongType("properties must be a map"),
                             ))?;
+
+                    // Create a new set with the prefix removed from the keys
+                    let stripped_required: BTreeSet<String> = known_required
+                        .iter()
+                        .filter_map(|key| {
+                            if key.starts_with(&property_key) && key.len() > property_key.len() {
+                                Some(key[property_key.len() + 1..].to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    // Create a new set with the prefix removed from the keys
+                    let inner_definition_references: BTreeMap<String, &Value> = definition_references
+                        .iter()
+                        .filter_map(|(key, value)| {
+                            if key.starts_with(&property_key) && key.len() > property_key.len() {
+                                Some((key[property_key.len() + 1..].to_string(), *value))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
 
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key
@@ -734,42 +400,202 @@ fn insert_values(
                                 "property key must be a string",
                             )))?
                             .to_string();
-                        to_visit.push((
-                            Some(prefixed_property_key.clone()),
+
+                        Self::insert_values_nested(
+                            &mut nested_properties,
+                            &stripped_required,
                             object_property_string,
                             object_property_value,
-                        ));
+                            &inner_definition_references,
+                        )?;
                     }
                 }
-            }
-
-            "string" => {
-                field_type = DocumentFieldTypeV0::String(
-                    inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
-                    inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
-                );
+                field_type = DocumentFieldType::Object(nested_properties);
                 document_properties.insert(
-                    prefixed_property_key,
-                    DocumentFieldV0 {
+                    property_key,
+                    DocumentField {
                         document_type: field_type,
                         required: is_required,
                     },
                 );
+                return Ok(());
             }
-
             _ => {
-                field_type = string_to_field_type(type_value.as_str())
+                field_type = Self::string_to_field_type(type_value.as_str())
                     .ok_or(DataContractError::ValueWrongType("invalid type"))?;
-                document_properties.insert(
-                    prefixed_property_key,
-                    DocumentFieldV0 {
-                        document_type: field_type,
-                        required: is_required,
-                    },
-                );
             }
+        }
+
+        document_properties.insert(
+            property_key,
+            DocumentField {
+                document_type: field_type,
+                required: is_required,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn insert_values(
+        document_properties: &mut BTreeMap<String, DocumentField>,
+        known_required: &BTreeSet<String>,
+        prefix: Option<String>,
+        property_key: String,
+        property_value: &Value,
+        definition_references: &BTreeMap<String, &Value>,
+    ) -> Result<(), ProtocolError> {
+        let mut to_visit: Vec<(Option<String>, String, &Value)> =
+            vec![(prefix, property_key, property_value)];
+
+        while let Some((prefix, property_key, property_value)) = to_visit.pop() {
+            let prefixed_property_key = match prefix {
+                None => property_key,
+                Some(prefix) => [prefix, property_key].join(".").to_owned(),
+            };
+            let mut inner_properties = property_value.to_btree_ref_string_map()?;
+            let type_value = inner_properties
+                .remove_optional_string(property_names::TYPE)
+                .map_err(ProtocolError::ValueError)?;
+            let type_value = match type_value {
+                None => {
+                    let ref_value = inner_properties
+                        .get_str(property_names::REF)
+                        .map_err(ProtocolError::ValueError)?;
+                    let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure("malformed reference"),
+                        ));
+                    };
+                    inner_properties = definition_references
+                        .get_inner_borrowed_str_value_map(ref_value)
+                        .map_err(ProtocolError::ValueError)?;
+
+                    inner_properties.get_string(property_names::TYPE)?
+                }
+                Some(type_value) => type_value,
+            };
+            let is_required = known_required.contains(&prefixed_property_key);
+            let field_type: DocumentFieldType;
+
+            match type_value.as_str() {
+                "array" => {
+                    // Only handling bytearrays for v1
+                    // Return an error if it is not a byte array
+                    field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
+                        Some(inner_bool) => {
+                            if inner_bool {
+                                match inner_properties
+                                    .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                                {
+                                    Some(content_media_type)
+                                    if content_media_type
+                                        == "application/x.dash.dpp.identifier" =>
+                                        {
+                                            DocumentFieldType::Identifier
+                                        }
+                                    Some(_) | None => DocumentFieldType::ByteArray(
+                                        inner_properties
+                                            .get_optional_integer(property_names::MIN_ITEMS)?,
+                                        inner_properties
+                                            .get_optional_integer(property_names::MAX_ITEMS)?,
+                                    ),
+                                }
+                            } else {
+                                return Err(ProtocolError::DataContractError(
+                                    DataContractError::InvalidContractStructure(
+                                        "byteArray should always be true if defined",
+                                    ),
+                                ));
+                            }
+                        }
+                        // TODO: Contract indices and new encoding format don't support arrays
+                        //   but we still can use them as document fields with current cbor encoding
+                        //   This is a temporary workaround to bring back v0.22 behavior and should be
+                        //   replaced with a proper array support in future versions
+                        None => DocumentFieldType::Array(ArrayFieldType::Boolean),
+                    };
+
+                    document_properties.insert(
+                        prefixed_property_key,
+                        DocumentField {
+                            document_type: field_type,
+                            required: is_required,
+                        },
+                    );
+                }
+                "object" => {
+                    if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                    {
+                        let properties =
+                            properties_as_value
+                                .as_map()
+                                .ok_or(ProtocolError::StructureError(
+                                    StructureError::ValueWrongType("properties must be a map"),
+                                ))?;
+
+                        for (object_property_key, object_property_value) in properties.iter() {
+                            let object_property_string = object_property_key
+                                .as_text()
+                                .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
+                                    "property key must be a string",
+                                )))?
+                                .to_string();
+                            to_visit.push((
+                                Some(prefixed_property_key.clone()),
+                                object_property_string,
+                                object_property_value,
+                            ));
+                        }
+                    }
+                }
+
+                "string" => {
+                    field_type = DocumentFieldType::String(
+                        inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+                        inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+                    );
+                    document_properties.insert(
+                        prefixed_property_key,
+                        DocumentField {
+                            document_type: field_type,
+                            required: is_required,
+                        },
+                    );
+                }
+
+                _ => {
+                    field_type = Self::string_to_field_type(type_value.as_str())
+                        .ok_or(DataContractError::ValueWrongType("invalid type"))?;
+                    document_properties.insert(
+                        prefixed_property_key,
+                        DocumentField {
+                            document_type: field_type,
+                            required: is_required,
+                        },
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
+        match field_type_name {
+            "integer" => Some(DocumentFieldType::Integer),
+            "number" => Some(DocumentFieldType::Number),
+            "boolean" => Some(DocumentFieldType::Boolean),
+            "date" => Some(DocumentFieldType::Date),
+            _ => None,
         }
     }
 
-    Ok(())
+    fn find_identifier_and_binary_paths(
+        properties: &BTreeMap<String, DocumentField>,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        Self::find_identifier_and_binary_paths_inner(properties, "")
+    }
 }
+
+

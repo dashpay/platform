@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::document::property_names;
@@ -77,7 +77,7 @@ impl DocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    pub fn serialize(&self, document_type: &DocumentType) -> Result<Vec<u8>, ProtocolError> {
+    pub fn serialize(&self, document_type: &DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
         if let Some(revision) = self.revision {
@@ -86,7 +86,7 @@ impl DocumentV0 {
             buffer.extend((1 as Revision).encode_var_vec())
         }
         document_type
-            .properties
+            .properties()
             .iter()
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
@@ -179,7 +179,7 @@ impl DocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     pub fn serialize_consume(
         mut self,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = self.id.to_vec();
         let mut owner_id = self.owner_id.to_vec();
@@ -189,7 +189,7 @@ impl DocumentV0 {
             buffer.extend(revision.to_be_bytes())
         }
         document_type
-            .flattened_properties
+            .flattened_properties()
             .iter()
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
@@ -247,7 +247,7 @@ impl DocumentV0 {
     /// Reads a serialized document and creates a Document from it.
     pub fn from_bytes(
         serialized_document: &[u8],
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<Self, ProtocolError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
@@ -283,7 +283,7 @@ impl DocumentV0 {
         let mut created_at = None;
         let mut updated_at = None;
         let properties = document_type
-            .properties
+            .properties()
             .iter()
             .filter_map(|(key, field)| {
                 if key == CREATED_AT {

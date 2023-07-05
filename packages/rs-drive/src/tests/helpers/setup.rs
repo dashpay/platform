@@ -38,7 +38,7 @@ use dpp::block::extended_block_info::BlockInfo;
 
 use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use grovedb::TransactionArg;
@@ -100,7 +100,7 @@ pub fn setup_document(
     drive: &Drive,
     document: &Document,
     data_contract: &DataContract,
-    document_type: &DocumentType,
+    document_type: &DocumentTypeRef,
     transaction: TransactionArg,
 ) {
     let drive_version = DriveVersion::latest();

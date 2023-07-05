@@ -13,7 +13,7 @@ use dpp::consensus::state::document::document_timestamp_window_violation_error::
 use dpp::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::document_transition::{
     DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition,
@@ -268,7 +268,7 @@ fn validate_transition(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     contract: &DataContract,
-    document_type: &DocumentType,
+    document_type: &DocumentTypeRef,
     transition: &DocumentTransition,
     fetched_documents: &[Document],
     owner_id: &Identifier,

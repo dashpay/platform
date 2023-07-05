@@ -1,7 +1,5 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::consensus::Decodable;
-use dashcore::hashes::hex::ToHex;
 use dashcore::{OutPoint, Transaction, TxOut};
 
 use serde::{Deserialize, Serialize};
@@ -11,10 +9,9 @@ pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
 
-use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::{DPPError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
 pub mod chain;
 pub mod instant;

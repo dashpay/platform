@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::contract_config;
+use crate::data_contract::{contract_config, DataContract};
 use crate::data_contract::contract_config::{
     ContractConfigV0, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
@@ -26,7 +26,7 @@ use crate::data_contract::contract_config::{
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
 use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
@@ -109,7 +109,7 @@ impl Convertible for DataContractV0 {
 ///
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(try_from = "DataContractV0Inner")]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractV0 {
@@ -130,7 +130,7 @@ pub struct DataContractV0 {
 
     /// A mapping of document names to their corresponding document types.
     #[serde(skip)]
-    pub document_types: BTreeMap<DocumentName, DocumentTypeV0>,
+    pub document_types: BTreeMap<DocumentName, DocumentType>,
 
     /// Optional metadata associated with the contract.
     #[serde(skip)]
@@ -313,89 +313,6 @@ impl TryFrom<DataContractV0Inner> for DataContractV0 {
 }
 
 impl DataContractV0 {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[cfg(feature = "platform-value")]
-    pub fn from_raw_object(raw_object: Value) -> Result<DataContractV0, ProtocolError> {
-        let mut data_contract_map = raw_object
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-
-        let id = data_contract_map
-            .remove_identifier(property_names::ID)
-            .map_err(ProtocolError::ValueError)?;
-
-        let mutability = get_contract_configuration_properties(&data_contract_map)?;
-        let definition_references = get_definitions(&data_contract_map)?;
-        let document_types = get_document_types_from_contract(
-            id,
-            &data_contract_map,
-            &definition_references,
-            mutability.documents_keep_history_contract_default,
-            mutability.documents_mutable_contract_default,
-        )?;
-
-        let documents = data_contract_map
-            .remove(property_names::DOCUMENTS)
-            .map(|value| value.try_into_validating_btree_map_json())
-            .transpose()?
-            .unwrap_or_default();
-
-        let mutability = get_contract_configuration_properties(&data_contract_map)?;
-
-        // Defs
-        let defs =
-            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
-
-        let binary_properties = documents
-            .iter()
-            .map(|(doc_type, schema)| (String::from(doc_type), get_binary_properties(schema)))
-            .collect();
-
-        let data_contract = DataContractV0 {
-            id,
-            schema: data_contract_map
-                .remove_string(property_names::SCHEMA)
-                .map_err(ProtocolError::ValueError)?,
-            version: data_contract_map
-                .remove_integer(property_names::VERSION)
-                .map_err(ProtocolError::ValueError)?,
-            owner_id: data_contract_map
-                .remove_identifier(property_names::OWNER_ID)
-                .map_err(ProtocolError::ValueError)?,
-            document_types,
-            metadata: None,
-            config: mutability,
-            documents,
-            defs,
-            binary_properties,
-        };
-
-        Ok(data_contract)
-    }
-
-    #[cfg(feature = "json-object")]
-    pub fn from_json_object(json_value: JsonValue) -> Result<DataContractV0, ProtocolError> {
-        let mut value: Value = json_value.into();
-        value.replace_at_paths(DATA_CONTRACT_BINARY_FIELDS_V0, ReplacementType::BinaryBytes)?;
-        value.replace_at_paths(
-            DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
-            ReplacementType::Identifier,
-        )?;
-        Self::from_raw_object(value)
-    }
-
-    #[cfg(feature = "cbor")]
-    pub fn from_cbor_buffer(b: impl AsRef<[u8]>) -> Result<DataContractV0, ProtocolError> {
-        Self::from_cbor(b)
-    }
-
-    // Returns hash from Data Contract
-    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(PlatformSerializable::serialize(self)?))
-    }
 
     /// Increments version of Data Contract
     pub fn increment_version(&mut self) {
@@ -426,7 +343,7 @@ impl DataContractV0 {
             )));
         };
 
-        let document_type = DocumentType::from_platform_value(
+        let document_type = DocumentTypeV0::from_platform_value(
             self.id,
             &doc_type,
             document_type_value_map,
@@ -435,7 +352,7 @@ impl DataContractV0 {
             self.config.documents_mutable_contract_default,
         )?;
 
-        self.document_types.insert(doc_type, document_type);
+        self.document_types.insert(doc_type, document_type.into());
 
         Ok(())
     }
@@ -581,23 +498,23 @@ impl DataContractV0 {
     pub fn optional_document_type_for_name<'a>(
         &self,
         document_type_name: &str,
-    ) -> Option<DocumentType<'a>> {
+    ) -> Option<DocumentTypeRef<'a>> {
         self.document_types
             .get(document_type_name)
-            .map(|a| DocumentType::V0(Cow::Borrowed(a)))
+            .map(|document_type| document_type.as_ref())
     }
 
     pub fn document_type_for_name<'a>(
         &self,
         document_type_name: &str,
-    ) -> Result<DocumentType<'a>, ProtocolError> {
-        Ok(DocumentType::V0(Cow::Borrowed(
+    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+        Ok(
             self.document_types.get(document_type_name).ok_or({
                 ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
                     "can not get document type from contract",
                 ))
-            })?,
-        )))
+            })?.as_ref(),
+        )
     }
 
     pub fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
@@ -695,13 +612,13 @@ pub fn get_contract_configuration_properties(
     })
 }
 
-pub fn get_document_types_from_value<'a>(
+pub fn get_document_types_from_value(
     data_contract_id: Identifier,
-    documents_value: &'a Value,
-    definition_references: &'a BTreeMap<String, &'a Value>,
+    documents_value: & Value,
+    definition_references: & BTreeMap<String, & Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType<'a>>, ProtocolError> {
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
     let contract_document_types_raw =
         documents_value
             .as_map()
@@ -724,14 +641,14 @@ pub fn get_document_types_from_value<'a>(
     )
 }
 
-pub fn get_document_types_from_value_array<'a>(
+pub fn get_document_types_from_value_array(
     data_contract_id: Identifier,
-    contract_document_types_raw: &'a Vec<(&str, &Value)>,
-    definition_references: &BTreeMap<String, &'a Value>,
+    contract_document_types_raw: &Vec<(&str, &Value)>,
+    definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType<'a>>, ProtocolError> {
-    let mut contract_document_types: BTreeMap<String, DocumentType<'a>> = BTreeMap::new();
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
     for (type_key_str, document_type_value) in contract_document_types_raw {
         // Make sure the document_type_value is a map
         let Some(document_type_value_map) = document_type_value.as_map() else {
@@ -740,27 +657,27 @@ pub fn get_document_types_from_value_array<'a>(
             )));
         };
 
-        let document_type = DocumentType::V0(Cow::Owned(DocumentTypeV0::from_platform_value(
+        let document_type = DocumentType::V0(DocumentTypeV0::from_platform_value(
             data_contract_id,
             type_key_str,
             document_type_value_map,
             definition_references,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
-        )?));
+        )?);
 
         contract_document_types.insert(type_key_str.to_string(), document_type);
     }
     Ok(contract_document_types)
 }
 
-pub fn get_document_types_from_contract<'a>(
+pub fn get_document_types_from_contract(
     data_contract_id: Identifier,
-    contract: &'a BTreeMap<String, Value>,
-    definition_references: &'a BTreeMap<String, &'a Value>,
+    contract: &BTreeMap<String, Value>,
+    definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
     documents_mutable_contract_default: bool,
-) -> Result<BTreeMap<String, DocumentType<'a>>, ProtocolError> {
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
     let Some(documents_value) =
         contract
             .get("documents") else {

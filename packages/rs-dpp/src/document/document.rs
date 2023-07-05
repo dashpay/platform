@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::property_names::FEATURE_VERSION;
 use crate::document::v0::DocumentV0;
@@ -20,7 +20,7 @@ impl Document {
     pub fn get_raw_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         match self {
@@ -48,7 +48,7 @@ impl Document {
     pub fn hash(
         &self,
         contract: &DataContract,
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             Document::V0(v0) => v0.hash(contract, document_type),

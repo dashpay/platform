@@ -10,6 +10,7 @@ use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use crate::util::hash;
 
 #[derive(
     Debug,
@@ -41,4 +42,11 @@ pub struct PartialIdentity {
     pub revision: Option<Revision>,
     /// These are keys that were requested but didn't exist
     pub not_found_public_keys: BTreeSet<KeyID>,
+}
+
+impl Identity {
+    /// Computes the hash of an identity
+    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+    }
 }

@@ -61,7 +61,7 @@ pub use update_document_with_serialization_for_contract::*;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;

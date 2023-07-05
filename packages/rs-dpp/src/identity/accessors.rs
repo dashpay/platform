@@ -193,9 +193,9 @@ impl Identity {
     /// # Returns
     ///
     /// The identifier as an `Identifier`.
-    pub fn id(&self) -> &Identifier {
+    pub fn id(&self) -> Identifier {
         match self {
-            Identity::V0(identity) => &identity.id,
+            Identity::V0(identity) => identity.id,
         }
     }
 

@@ -3,7 +3,7 @@ mod v0;
 use std::collections::HashMap;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES,
@@ -30,7 +30,7 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn add_estimation_costs_for_remove_document_to_primary_storage(
         primary_key_path: [&[u8]; 5],
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

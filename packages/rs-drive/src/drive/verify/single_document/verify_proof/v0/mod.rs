@@ -3,7 +3,7 @@ use crate::drive::verify::RootHash;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 
 use grovedb::GroveDb;
@@ -35,7 +35,7 @@ impl SingleDocumentDriveQuery {
         &self,
         is_subset: bool,
         proof: &[u8],
-        document_type: &DocumentType,
+        document_type: &DocumentTypeRef,
     ) -> Result<(RootHash, Option<Document>), Error> {
         self.verify_proof_keep_serialized(is_subset, proof)
             .map(|(root_hash, serialized)| {

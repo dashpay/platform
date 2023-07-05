@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transitions")]
 use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 use crate::data_contract::v0::DataContractV0;
@@ -15,6 +15,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 
 /// Reads a JSON file and converts it to serde_value.
 pub fn json_document_to_json_value(
@@ -125,7 +126,7 @@ pub fn json_document_to_contract_with_ids(
 pub fn json_document_to_document(
     path: impl AsRef<Path>,
     owner_id: Option<Identifier>,
-    document_type: &DocumentType,
+    document_type: &DocumentTypeRef,
 ) -> Result<Document, ProtocolError> {
     let mut value = json_document_to_platform_value(path)?;
     if let Some(owner_id) = owner_id {

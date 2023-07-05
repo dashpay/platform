@@ -1,13 +1,13 @@
-use crate::data_contract::document_type::index::v0::{IndexPropertyV0, IndexV0};
 use crate::ProtocolError;
 use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
+use crate::data_contract::document_type::index::{Index, IndexProperty};
 
-impl IndexV0 {
+impl Index {
     pub fn random(
         field_names: &[String],
-        existing_indices: &[IndexV0],
+        existing_indices: &[Index],
         rng: &mut StdRng,
     ) -> Result<Self, ProtocolError> {
         let index_name = format!("index_{}", rng.gen::<u16>());
@@ -25,7 +25,7 @@ impl IndexV0 {
 
             properties = selected_fields
                 .drain(..)
-                .map(|field_name| IndexPropertyV0 {
+                .map(|field_name| IndexProperty {
                     name: field_name,
                     ascending: rng.gen(),
                 })
@@ -48,7 +48,7 @@ impl IndexV0 {
 
         let unique = rng.gen();
 
-        Ok(IndexV0 {
+        Ok(Index {
             name: index_name,
             properties,
             unique,

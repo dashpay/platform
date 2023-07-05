@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
@@ -24,7 +24,7 @@ use crate::error::drive::DriveError;
 // Which is an okay trade off as this should seldom ever be changed
 pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequestV0<'a> {
     pub contract: &'a DataContract,
-    pub document_type: &'a DocumentType<'a>,
+    pub document_type: &'a DocumentTypeRef<'a>,
     pub owner_id: &'a Identifier,
     pub document_id: &'a Identifier,
     pub allow_original: bool,

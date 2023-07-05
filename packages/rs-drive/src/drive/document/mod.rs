@@ -40,7 +40,7 @@ use crate::drive::flags::StorageFlags;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::{defaults, RootTree};
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "full")]
 use dpp::document::Document;
 #[cfg(feature = "full")]
@@ -126,7 +126,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
 /// Returns the path to a contract document when the document id isn't known.
 fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
     contract_id: &[u8],
-    document_type: &DocumentType,
+    document_type: &DocumentTypeRef,
 ) -> KeyInfoPath {
     let mut key_info_path = KeyInfoPath::from_known_path(contract_documents_primary_key_path(
         contract_id,
@@ -161,7 +161,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
-    document_type: &DocumentType,
+    document_type: &DocumentTypeRef,
     storage_flags: Option<&StorageFlags>,
 ) -> Element {
     // we need to construct the reference from the split height of the contract document
@@ -194,7 +194,7 @@ fn make_document_reference(
 
 #[cfg(feature = "full")]
 /// size of a document reference.
-fn document_reference_size(document_type: &DocumentType) -> u32 {
+fn document_reference_size(document_type: &DocumentTypeRef) -> u32 {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage

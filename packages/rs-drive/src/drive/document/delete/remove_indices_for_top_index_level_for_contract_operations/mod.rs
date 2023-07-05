@@ -5,7 +5,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use dpp::data_contract::document_type::{DocumentType, IndexLevel};
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 use dpp::data_contract::DataContract;

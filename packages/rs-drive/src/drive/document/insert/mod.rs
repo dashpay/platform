@@ -134,7 +134,7 @@ use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::document_type::document_field::v0::{
-    encode_unsigned_integer, DocumentFieldTypeV0,
+    encode_unsigned_integer, DocumentFieldType,
 };
 use dpp::document::Document;
 use dpp::prelude::Identifier;

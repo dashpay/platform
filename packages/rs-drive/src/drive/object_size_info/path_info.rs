@@ -6,7 +6,7 @@ use grovedb::Element;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use dpp::data_contract::document_type::{DocumentType, IndexLevel};
+use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
