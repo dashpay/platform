@@ -61,10 +61,7 @@ RUN apk add --no-cache \
         unzip \
         wget \
         xz \
-        tree \
         zeromq-dev
-
-# TODO: Remove tree
 
 SHELL ["/bin/bash", "-c"]
 

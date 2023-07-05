@@ -22,7 +22,7 @@ inputs:
     default: ${{ github.head_ref || github.ref_name }}
   platforms:
     description: Docker image platform to build
-    default: amd64
+    default: amd64,arm64
   cache_mounts:
     description: Load cache mounts cache
   cargo_profile:
