@@ -108,7 +108,7 @@ runs:
           latest=${{ github.event_name == 'release' }}
 
     - name: Configure docker layer cache
-      uses: ./.github/actions/docker/s3-layer-cache-settings
+      uses: ./.github/actions/s3-layer-cache-settings
       id: layer_cache_settings
       with:
         name: ${{ inputs.image }}
