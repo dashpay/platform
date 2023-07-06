@@ -601,11 +601,10 @@ module.exports = {
       });
     return configFile;
   },
-  '0.24.14': (configFile) => {
+  '0.24.15': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        // Remove reindex from the config
-        delete config.core.reindex;
+        delete config.core.reindex.containerId;
       });
     return configFile;
   },
