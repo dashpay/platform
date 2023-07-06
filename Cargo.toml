@@ -18,4 +18,5 @@ members = [
     "packages/rs-drive-verify-c-binding",
     "packages/rs-drive-light-client",
     "packages/rs-drive-light-client-bindings",
+    "packages/rs-dapi-client",
 ]

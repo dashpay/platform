@@ -50,11 +50,12 @@ fn generate1(
     proto_includes: &[PathBuf],
     out_dir: &PathBuf,
 ) -> Result<(), std::io::Error> {
-    let mut pb = prost_build::Config::new();
-    pb.out_dir(out_dir);
-    pb.format(true);
-    pb.protoc_arg("--experimental_allow_proto3_optional");
-    pb.compile_protos(files, proto_includes)
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(false)
+        .out_dir(out_dir)
+        .compile(files, proto_includes)?;
+    Ok(())
 }
 
 fn abs_path(path: &PathBuf) -> PathBuf {
