@@ -30,6 +30,17 @@ function reindexNodeTaskFactory(
   configFile,
   getConnectionHost,
 ) {
+  async function getCoreContainerId(config) {
+    const [containerId] = await dockerCompose
+      .getContainersList(generateEnvs(configFile, config), {
+        quiet: true,
+        all: true,
+        filterServiceNames: 'core',
+      });
+
+    return containerId;
+  }
+
   /**
    * @typedef {reindexNodeTask}
    * @param {Config} config
@@ -38,16 +49,45 @@ function reindexNodeTaskFactory(
     return new Listr([
       {
         title: 'Check services are not running',
-        task: async () => {
-          const isRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
+        task: async (ctx, task) => {
+          const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
-          if (isRunning) {
-            throw new Error('Services is running, stop your nodes first');
+          if (isNodeRunning) {
+            ctx.coreContainer = await getCoreContainerId(config);
+
+            const info = await ctx.coreContainer.inspect();
+
+            if (info.State.Status !== 'exited') {
+              const agreement = await task.prompt({
+                type: 'select',
+                message: 'Dash Core found running on your node, but it must be stopped before we proceed',
+                choices: [
+                  {
+                    name: 'true',
+                    message: 'Stop Dash Core and proceed to reindex',
+                  }, {
+                    name: 'false',
+                    message: 'Cancel operation',
+                  },
+                ],
+                initial: 'true',
+              });
+
+              const agreed = agreement === 'true';
+
+              if (agreed) {
+                await ctx.coreContainer.stop();
+              } else {
+                // eslint-disable-next-line no-param-reassign
+                task.title = 'Cancelled';
+                ctx.cancel = true;
+              }
+            }
           }
         },
       },
       {
-        enabled: () => true,
+        enabled: (ctx) => !ctx.cancel,
         task: async () => {
           config.set('core.reindex.enable', 1);
 
@@ -58,13 +98,19 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        title: 'Start node',
-        enabled: () => true,
-        task: async () => startNodeTask(config),
+        title: 'Start core',
+        enabled: (ctx) => !ctx.cancel,
+        task: async (ctx) => {
+          if (ctx.coreContainer) {
+            return ctx.coreContainer.start();
+          }
+
+          return startNodeTask(config);
+        },
       },
       {
         title: 'Wait for Core start',
-        enabled: () => true,
+        enabled: (ctx) => !ctx.cancel,
         task: async (ctx) => {
           const { docker } = dockerCompose;
 
@@ -75,20 +121,16 @@ function reindexNodeTaskFactory(
             host: await getConnectionHost(config, 'core'),
           });
 
-          const [containerId] = await dockerCompose
-            .getContainersList(generateEnvs(configFile, config), {
-              quiet: true,
-              filterServiceNames: 'core',
-            });
-
+          const containerId = await getCoreContainerId(config);
           const container = docker.getContainer(containerId);
+
           ctx.coreService = new CoreService(config, rpcClient, container);
 
           await waitForCoreStart(ctx.coreService);
         },
       },
       {
-        enabled: () => true,
+        enabled: (ctx) => !ctx.cancel,
         task: async () => {
           config.set('core.reindex.enable', 0);
 
@@ -99,7 +141,7 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        enabled: (ctx) => !ctx.detach,
+        enabled: (ctx) => !ctx.cancel && !ctx.detach,
         task: async (ctx) => new Observable(async (observer) => {
           observer.next(`Reindexing Core for ${config.getName()}`);
 
