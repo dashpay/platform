@@ -108,28 +108,11 @@ runs:
           latest=${{ github.event_name == 'release' }}
 
     - name: Configure docker layer cache
-      uses: actions/github-script@v6
+      uses: ./.github/actions/docker/s3-layer-cache-settings
       id: layer_cache_settings
       with:
-        result-encoding: string
-        script: |
-          const manifestNames = [
-            '${{ inputs.image }}_sha_${{ github.sha }}',
-            '${{ inputs.image }}_tag_${{ inputs.image_tag }}',
-            '${{ inputs.image }}'
-          ];
-          
-          const settings = {
-            type: 's3',
-            region: 'eu-west-1',
-            bucket: 'platform-runner-cache',
-            prefix: 'cache-layers/',
-            name: manifestNames.join(';'),
-          };
-          
-          return Object.entries(settings)
-            .map(([key, value]) => `${key}=${value}`)
-            .join(',');
+        name: ${{ inputs.image }}
+        head_ref: ${{ inputs.image_tag }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -145,8 +128,8 @@ runs:
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
         platforms: ${{ steps.platforms.outputs.result }}
         push: ${{ fromJSON(inputs.push) }}
-        cache-from: ${{ steps.layer_cache_settings.outputs.result }}
-        cache-to: ${{ steps.layer_cache_settings.outputs.result }},mode=max
+        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
+        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
 
     - name: Save Docker mount cache
       uses: dcginfra/buildkit-cache-dance/extract@main

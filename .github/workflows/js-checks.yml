@@ -129,20 +129,50 @@ jobs:
         run: yarn configure
         if: ${{ inputs.start-local-network }}
 
+      - name: Configure Drive ABCI layer cache
+        uses: ./.github/actions/docker/s3-layer-cache-settings
+        id: drive_abci_layer_cache_settings
+        with:
+          name: dashpay/drive
+
+      - name: Configure DAPI layer cache
+        uses: ./.github/actions/docker/s3-layer-cache-settings
+        id: dapi_layer_cache_settings
+        with:
+          name: dashpay/dapi
+
+      - name: Configure Dashmate Helper layer cache
+        uses: ./.github/actions/docker/s3-layer-cache-settings
+        id: dashmate_helper_layer_cache_settings
+        with:
+          name: dashpay/dashmate-helper
+
+      - name: Configure Deps layer cache
+        uses: ./.github/actions/docker/s3-layer-cache-settings
+        id: envoy_layer_cache_settings
+        with:
+          name: dashpay/envoy
+
+      - name: Configure Envoy layer cache
+        uses: ./.github/actions/docker/s3-layer-cache-settings
+        id: deps_layer_cache_settings
+        with:
+          name: dashpay/deps
+
       - name: Start local network
         if: ${{ inputs.start-local-network }}
         run: yarn start
         env:
-          CACHE_DRIVE_ABCI_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/drive_${{ github.sha }};dashpay/drive_${{ github.head_ref }};dashpay/drive
-          CACHE_DRIVE_ABCI_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/drive_${{ github.sha }};dashpay/drive_${{ github.head_ref }};dashpay/drive,mode=max
-          CACHE_DAPI_API_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/dapi_${{ github.sha }};dashpay/dapi_${{ github.head_ref }};dashpay/dapi
-          CACHE_DAPI_API_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/dapi_${{ github.sha }};dashpay/dapi_${{ github.head_ref }};dashpay/dapi,mode=max
-          CACHE_DASHMATE_HELPER_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/dashmate-helper_${{ github.sha }};dashpay/dashmate-helper_${{ github.head_ref }};dashpay/dashmate-helper
-          CACHE_DASHMATE_HELPER_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/dashmate-helper_${{ github.sha }};dashpay/dashmate-helper_${{ github.head_ref }};dashpay/dashmate-helper,mode=max
-          CACHE_ENVOY_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/envoy_${{ github.sha }};dashpay/envoy_${{ github.head_ref }};dashpay/envoy
-          CACHE_ENVOY_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/envoy_${{ github.sha }};dashpay/envoy_${{ github.head_ref }};dashpay/envoy,mode=max
-          CACHE_DEPS_FROM: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/deps_${{ github.sha }};dashpay/deps_${{ github.head_ref }};dashpay/deps
-          CACHE_DEPS_TO: type=s3,region=eu-west-1,bucket=platform-runner-cache,prefix=cache-layers/,name=dashpay/deps_${{ github.sha }};dashpay/deps_${{ github.head_ref }};dashpay/deps,mode=max
+          CACHE_DRIVE_ABCI_FROM: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_from }}
+          CACHE_DRIVE_ABCI_TO: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_to }}
+          CACHE_DAPI_API_FROM: ${{ steps.dapi_layer_cache_settings.outputs.cache_from }}
+          CACHE_DAPI_API_TO: ${{ steps.dapi_layer_cache_settings.outputs.cache_to }}
+          CACHE_DASHMATE_HELPER_FROM: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_from }}
+          CACHE_DASHMATE_HELPER_TO: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_to }}
+          CACHE_ENVOY_FROM: ${{ steps.envoy_layer_cache_settings.outputs.cache_from }}
+          CACHE_ENVOY_TO: ${{ steps.envoy_layer_cache_settings.outputs.cache_to }}
+          CACHE_DEPS_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
+          CACHE_DEPS_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
 
       - name: Store Docker mount cache
         if: ${{ inputs.start-local-network }}
