@@ -1,6 +1,5 @@
-const {Listr} = require('listr2');
-const {Observable} = require('rxjs');
-const DockerStatusEnum = require('../../status/enums/dockerStatus');
+const { Listr } = require('listr2');
+const { Observable } = require('rxjs');
 const generateEnvs = require('../../util/generateEnvs');
 const CoreService = require('../../core/CoreService');
 
@@ -60,16 +59,14 @@ function reindexNodeTaskFactory(
       },
       {
         title: 'Start node',
-        enabled: (ctx) => true,
-        task: async (ctx) => {
-          return startNodeTask(config)
-        },
+        enabled: () => true,
+        task: async () => startNodeTask(config),
       },
       {
         title: 'Wait for Core start',
-        enabled: (ctx) => true,
+        enabled: () => true,
         task: async (ctx) => {
-          const {docker} = dockerCompose;
+          const { docker } = dockerCompose;
 
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -81,13 +78,13 @@ function reindexNodeTaskFactory(
           const [containerId] = await dockerCompose
             .getContainersList(generateEnvs(configFile, config), {
               quiet: true,
-              filterServiceNames: 'core'
-            })
+              filterServiceNames: 'core',
+            });
 
-          const container = docker.getContainer(containerId)
-          ctx.coreService = new CoreService(config, rpcClient, container)
+          const container = docker.getContainer(containerId);
+          ctx.coreService = new CoreService(config, rpcClient, container);
 
-          await waitForCoreStart(ctx.coreService)
+          await waitForCoreStart(ctx.coreService);
         },
       },
       {
@@ -107,7 +104,7 @@ function reindexNodeTaskFactory(
           observer.next(`Reindexing Core for ${config.getName()}`);
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
-            const {percent, blocks, headers} = verificationProgress;
+            const { percent, blocks, headers } = verificationProgress;
 
             observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`);
           });
@@ -116,7 +113,7 @@ function reindexNodeTaskFactory(
 
           observer.complete();
         }),
-      }
+      },
     ]);
   }
 
