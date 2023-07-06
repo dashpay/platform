@@ -39,11 +39,6 @@ runs:
         password: ${{ inputs.dockerhub_token }}
       if: ${{ inputs.dockerhub_token != '' }}
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-region: eu-west-1
-
     - name: Set up QEMU
       uses: docker/setup-qemu-action@master
       with:
