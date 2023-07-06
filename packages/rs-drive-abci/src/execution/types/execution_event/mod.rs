@@ -6,13 +6,13 @@ use crate::execution::types::execution_event::ExecutionEvent::{
     PaidDriveEvent, PaidFromAssetLockDriveEvent,
 };
 use dpp::block::epoch::Epoch;
+use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::StateTransitionAction;
 
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
-use drive::fee::credits::Credits;
 
 /// An execution event
 #[derive(Clone)]

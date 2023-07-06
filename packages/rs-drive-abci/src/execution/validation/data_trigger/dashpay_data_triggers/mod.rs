@@ -10,6 +10,7 @@ use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::{get_from_transition_action, ProtocolError};
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -141,6 +142,7 @@ mod test {
     use dpp::platform_value;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
+    use dpp::state_transition::documents_batch_transition::document_transition::DocumentCreateTransitionAction;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_contact_request_document_fixture, get_dashpay_contract_fixture,

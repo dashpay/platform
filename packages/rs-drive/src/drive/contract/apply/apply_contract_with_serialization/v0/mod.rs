@@ -7,7 +7,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 use dpp::serialization_traits::PlatformDeserializable;
 use crate::fee::calculate_fee;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;

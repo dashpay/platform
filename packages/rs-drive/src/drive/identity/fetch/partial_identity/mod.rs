@@ -14,7 +14,7 @@ use grovedb::TransactionArg;
 
 use dpp::fee::default_costs::EpochCosts;
 use std::collections::{BTreeMap, BTreeSet};
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {

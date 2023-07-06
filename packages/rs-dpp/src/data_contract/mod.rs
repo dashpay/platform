@@ -1,10 +1,10 @@
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization_traits::{PlatformDeserializableFromVersionedStructure, PlatformSerializableIntoStructureVersion};
 use bincode::{config, Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
 
 pub use generate_data_contract::*;
-use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
+use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize, PlatformVersionedDeserialize, PlatformVersionedSerialize};
 use platform_value::{Identifier, Value};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -27,6 +27,7 @@ pub use factory::*;
 #[cfg(feature = "client")]
 mod data_contract_facade;
 mod data_contract_class_methods;
+mod serialized_version;
 
 #[cfg(feature = "state-transitions")]
 pub use created_data_contract::CreatedDataContract;
@@ -43,6 +44,7 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use crate::util::hash::hash_to_vec;
+use serde_json::Value as JsonValue;
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -54,6 +56,11 @@ pub mod property_names {
     pub const DEFINITIONS: &str = "$defs";
     pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
 }
+
+pub type JsonSchema = JsonValue;
+type DefinitionName = String;
+pub type DocumentName = String;
+type PropertyPath = String;
 
 pub trait DataContractLike<'a> {
     fn id() -> Identifier;
@@ -70,8 +77,8 @@ pub trait DataContractLike<'a> {
     Decode,
     Serialize,
     PlatformSerdeVersionedDeserialize,
-    PlatformSerialize,
-    PlatformDeserialize,
+    PlatformVersionedSerialize,
+    PlatformVersionedDeserialize,
     PlatformDeserializeNoLimit,
     From,
 )]

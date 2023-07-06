@@ -1,4 +1,4 @@
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use crate::drive::identity::update::structs::apply_balance_change_outcome::v0::{ApplyBalanceChangeOutcomeV0, ApplyBalanceChangeOutcomeV0Methods};
 
 mod v0;

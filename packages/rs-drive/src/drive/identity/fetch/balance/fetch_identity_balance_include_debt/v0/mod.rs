@@ -1,7 +1,7 @@
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use crate::fee::calculate_fee;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

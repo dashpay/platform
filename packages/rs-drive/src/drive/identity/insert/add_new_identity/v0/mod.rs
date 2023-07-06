@@ -14,7 +14,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 use crate::fee::calculate_fee;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {

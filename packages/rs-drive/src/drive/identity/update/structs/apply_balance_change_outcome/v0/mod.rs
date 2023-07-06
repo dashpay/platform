@@ -1,4 +1,4 @@
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 
 /// The outcome of paying for a fee
 pub(in crate::drive::identity::update) struct ApplyBalanceChangeOutcomeV0 {

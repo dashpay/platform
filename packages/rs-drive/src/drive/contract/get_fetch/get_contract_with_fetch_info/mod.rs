@@ -4,7 +4,7 @@ mod v0;
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::epoch::Epoch;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::contract::ContractFetchInfo;
 use crate::drive::Drive;
@@ -155,7 +155,7 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::prelude::Identifier;
-    use dpp::state_transition::fee::fee_result::FeeResult;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::version::drive_versions::DriveVersion;
     use crate::drive::flags::StorageFlags;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

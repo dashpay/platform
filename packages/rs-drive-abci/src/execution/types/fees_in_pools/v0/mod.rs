@@ -1,5 +1,5 @@
-use drive::fee::credits::Credits;
 use serde::{Deserialize, Serialize};
+use dpp::fee::Credits;
 
 /// Struct containing the amount of processing and storage fees in the distribution pools
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]

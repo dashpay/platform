@@ -7,7 +7,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::Revision;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     /// Fetches the Identity's revision from the backing store

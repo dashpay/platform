@@ -1,5 +1,5 @@
 use costs::OperationCost;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use crate::drive::flags::StorageFlags;
 
 #[cfg(any(feature = "full", feature = "verify"))]

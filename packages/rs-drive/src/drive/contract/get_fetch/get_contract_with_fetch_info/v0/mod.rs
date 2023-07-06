@@ -2,7 +2,7 @@ use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::epoch::Epoch;
 use crate::fee::calculate_fee;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::contract::ContractFetchInfo;
 use crate::drive::Drive;

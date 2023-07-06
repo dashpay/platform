@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use crate::version::PlatformVersion;
 
 impl DataContract {
-    pub(super) fn get_document_types_from_value_array_v0(
+    pub(in crate::data_contract) fn get_document_types_from_value_array_v0(
         data_contract_id: Identifier,
         contract_document_types_raw: &Vec<(&str, &Value)>,
         definition_references: &BTreeMap<String, &Value>,

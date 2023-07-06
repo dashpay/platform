@@ -7,7 +7,7 @@ use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::fee::result::FeeResult;
 use drive::grovedb::TransactionArg;

@@ -1,6 +1,6 @@
-use drive::fee::epoch::CreditsPerEpoch;
-use drive::fee::result::FeeResult;
 use serde::{Deserialize, Serialize};
+use dpp::fee::epoch::CreditsPerEpoch;
+use dpp::fee::fee_result::FeeResult;
 
 /// Aggregated fees after block execution
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]

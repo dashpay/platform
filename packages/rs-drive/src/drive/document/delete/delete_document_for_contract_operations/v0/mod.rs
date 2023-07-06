@@ -92,7 +92,8 @@ impl Drive {
             Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
                 contract,
                 estimated_costs_only_with_layer_info,
-            );
+                drive_version,
+            )?;
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums: false,
                 query_target: QueryTargetValue(document_type.estimated_size() as u32),

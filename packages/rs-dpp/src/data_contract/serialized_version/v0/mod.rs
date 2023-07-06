@@ -1,0 +1,134 @@
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
+use serde::{Deserialize, Serialize};
+use platform_value::{Identifier, Value};
+use crate::data_contract::contract_config::ContractConfigV0;
+use crate::data_contract::{DataContract, DefinitionName, DocumentName};
+use crate::data_contract::v0::DataContractV0;
+use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use crate::ProtocolError;
+use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
+
+#[derive(Encode, Decode)]
+pub struct DataContractSerializationFormatV0 {
+    /// A unique identifier for the data contract.
+    pub id: Identifier,
+
+    /// Internal configuration for the contract.
+    pub config: ContractConfigV0,
+
+    /// A reference to the JSON schema that defines the contract.
+    pub schema: String,
+
+    /// The version of this data contract.
+    pub version: u32,
+
+    /// The identifier of the contract owner.
+    pub owner_id: Identifier,
+
+    /// A mapping of document names to their corresponding JSON values.
+    pub documents: BTreeMap<DocumentName, Value>,
+
+    /// Optional mapping of definition names to their corresponding JSON values.
+    pub defs: Option<BTreeMap<DefinitionName, Value>>,
+}
+
+impl From<DataContract> for DataContractSerializationFormatV0 {
+    fn from(value: DataContract) -> Self {
+        match value {
+            DataContract::V0(v0) => {
+                let DataContractV0 {
+                    id,
+                    config,
+                    schema,
+                    version,
+                    owner_id,
+                    documents,
+                    defs,
+                    ..
+                } = v0;
+                DataContractSerializationFormatV0 {
+                    id,
+                    config,
+                    schema,
+                    version,
+                    owner_id,
+                    documents: documents
+                        .into_iter()
+                        .map(|(key, value)| (key, value.into()))
+                        .collect(),
+                    defs: defs.map(|defs| {
+                        defs.into_iter()
+                            .map(|(key, value)| (key, value.into()))
+                            .collect()
+                    }),
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<DataContractSerializationFormatV0> for DataContractV0 {
+    type Error = ProtocolError;
+
+    fn try_from(value: DataContractSerializationFormatV0) -> Result<Self, Self::Error> {
+        let DataContractSerializationFormatV0 {
+            id,
+            config,
+            schema,
+            version,
+            owner_id,
+            documents,
+            defs,
+            ..
+        } = value;
+
+        let document_types = DataContract::get_document_types_from_value_array_v0(
+            id,
+            &documents
+                .iter()
+                .map(|(key, value)| (key.as_str(), value))
+                .collect(),
+            &defs
+                .as_ref()
+                .map(|defs| {
+                    defs.iter()
+                        .map(|(key, value)| Ok((key.clone(), value)))
+                        .collect::<Result<BTreeMap<String, &Value>, ProtocolError>>()
+                })
+                .transpose()?
+                .unwrap_or_default(),
+            config.documents_keep_history_contract_default,
+            config.documents_mutable_contract_default,
+        )?;
+
+        let binary_properties = documents
+            .iter()
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), get_binary_properties(&schema.clone().try_into()?))))
+            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
+
+        let data_contract = DataContractV0 {
+            id,
+            schema,
+            version,
+            owner_id,
+            document_types,
+            metadata: None,
+            config,
+            documents: documents
+                .into_iter()
+                .map(|(key, value)| Ok((key, value.try_into()?)))
+                .collect::<Result<BTreeMap<DocumentName, JsonSchema>, ProtocolError>>()?,
+            defs: defs
+                .map(|defs| {
+                    defs.into_iter()
+                        .map(|(key, value)| Ok((key, value.try_into()?)))
+                        .collect::<Result<BTreeMap<DefinitionName, JsonSchema>, ProtocolError>>()
+                })
+                .transpose()?,
+            binary_properties,
+        };
+
+        Ok(data_contract)
+    }
+}

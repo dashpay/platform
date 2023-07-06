@@ -13,7 +13,7 @@ use dpp::prelude::Revision;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 use crate::fee::calculate_fee;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {

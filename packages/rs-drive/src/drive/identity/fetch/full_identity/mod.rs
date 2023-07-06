@@ -13,7 +13,7 @@ use dpp::identity::Identity;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use crate::fee::calculate_fee;
-use dpp::state_transition::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {

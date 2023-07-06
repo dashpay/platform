@@ -4,9 +4,9 @@ use crate::execution::types::block_fees::v0::{
     BlockFeesV0, BlockFeesV0Getters, BlockFeesV0Methods, BlockFeesV0Setters,
 };
 use derive_more::From;
-use drive::fee::epoch::CreditsPerEpoch;
 
 use serde::{Deserialize, Serialize};
+use dpp::fee::epoch::CreditsPerEpoch;
 
 /// The versioned block fees
 #[derive(Serialize, Deserialize, Clone, Debug, From)]

@@ -2,11 +2,9 @@ use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
-use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::PlatformSerializable;
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Identifier;
@@ -32,14 +30,10 @@ use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::property_names::{SYSTEM_VERSION, VERSION};
 use crate::version::PlatformVersion;
 
 use super::super::property_names;
-
-pub type JsonSchema = JsonValue;
-type DefinitionName = String;
-pub type DocumentName = String;
-type PropertyPath = String;
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
     "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
@@ -51,12 +45,14 @@ pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 impl Convertible for DataContractV0 {
     #[cfg(feature = "platform-value")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        value.set_into_value(SYSTEM_VERSION, 0u16)?;
+        Ok(value)
     }
 
     #[cfg(feature = "platform-value")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        let mut value = self.to_object()?;
         if self.defs.is_none() {
             value.remove(property_names::DEFINITIONS)?;
         }
@@ -65,7 +61,9 @@ impl Convertible for DataContractV0 {
 
     #[cfg(feature = "platform-value")]
     fn into_object(self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        value.set_into_value(SYSTEM_VERSION, 0u16)?;
+        Ok(value)
     }
 
     #[cfg(feature = "json-object")]
@@ -261,7 +259,7 @@ impl TryFrom<DataContractV0Inner> for DataContractV0 {
             ..
         } = value;
 
-        let document_types = DataContract::get_document_types_from_value_array(
+        let document_types = DataContract::get_document_types_from_value_array_v0(
             id,
             &documents
                 .iter()
@@ -625,7 +623,7 @@ impl DataContractV0Methods for DataContractV0 {
             })
             .unwrap_or_default())
     }
-    
+
 
 
 
@@ -633,65 +631,65 @@ impl DataContractV0Methods for DataContractV0 {
 
 
 }
-
-#[cfg(feature = "json-object")]
-impl TryFrom<JsonValue> for DataContractV0 {
-    type Error = ProtocolError;
-    fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
-        DataContractV0::from_json_object(v)
-    }
-}
-
-#[cfg(feature = "platform-value")]
-impl TryFrom<Value> for DataContractV0 {
-    type Error = ProtocolError;
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        DataContractV0::from_raw_object(value)
-    }
-}
-
-impl TryFrom<DataContractV0> for Value {
-    type Error = ProtocolError;
-
-    fn try_from(value: DataContractV0) -> Result<Self, Self::Error> {
-        value.into_object()
-    }
-}
-
-impl TryFrom<&DataContractV0> for Value {
-    type Error = ProtocolError;
-
-    fn try_from(value: &DataContractV0) -> Result<Self, Self::Error> {
-        value.to_object()
-    }
-}
-
-#[cfg(feature = "platform-value")]
-impl TryFrom<&str> for DataContractV0 {
-    type Error = ProtocolError;
-    fn try_from(v: &str) -> Result<Self, Self::Error> {
-        let data_contract: DataContractV0 = serde_json::from_str(v)?;
-        //todo: there's a better to do this, find it
-        let value = data_contract.to_object()?;
-        DataContractV0::from_raw_object(value)
-    }
-}
-
-impl<'a> TryFrom<&'a [u8]> for DataContractV0 {
-    type Error = ProtocolError;
-
-    fn try_from(_v: &[u8]) -> Result<Self, Self::Error> {
-        todo!()
-    }
-}
-
-impl TryFrom<Vec<u8>> for DataContractV0 {
-    type Error = ProtocolError;
-
-    fn try_from(_v: Vec<u8>) -> Result<Self, Self::Error> {
-        todo!()
-    }
-}
+//
+// #[cfg(feature = "json-object")]
+// impl TryFrom<JsonValue> for DataContractV0 {
+//     type Error = ProtocolError;
+//     fn try_from(v: JsonValue) -> Result<Self, Self::Error> {
+//         DataContractV0::from_json_object(v)
+//     }
+// }
+//
+// #[cfg(feature = "platform-value")]
+// impl TryFrom<Value> for DataContractV0 {
+//     type Error = ProtocolError;
+//     fn try_from(value: Value) -> Result<Self, Self::Error> {
+//         DataContractV0::from_raw_object(value)
+//     }
+// }
+//
+// impl TryFrom<DataContractV0> for Value {
+//     type Error = ProtocolError;
+//
+//     fn try_from(value: DataContractV0) -> Result<Self, Self::Error> {
+//         value.into_object()
+//     }
+// }
+//
+// impl TryFrom<&DataContractV0> for Value {
+//     type Error = ProtocolError;
+//
+//     fn try_from(value: &DataContractV0) -> Result<Self, Self::Error> {
+//         value.to_object()
+//     }
+// }
+//
+// #[cfg(feature = "platform-value")]
+// impl TryFrom<&str> for DataContractV0 {
+//     type Error = ProtocolError;
+//     fn try_from(v: &str) -> Result<Self, Self::Error> {
+//         let data_contract: DataContractV0 = serde_json::from_str(v)?;
+//         //todo: there's a better to do this, find it
+//         let value = data_contract.to_object()?;
+//         DataContractV0::from_raw_object(value)
+//     }
+// }
+//
+// impl<'a> TryFrom<&'a [u8]> for DataContractV0 {
+//     type Error = ProtocolError;
+//
+//     fn try_from(_v: &[u8]) -> Result<Self, Self::Error> {
+//         todo!()
+//     }
+// }
+//
+// impl TryFrom<Vec<u8>> for DataContractV0 {
+//     type Error = ProtocolError;
+//
+//     fn try_from(_v: Vec<u8>) -> Result<Self, Self::Error> {
+//         todo!()
+//     }
+// }
 
 
 #[cfg(test)]
