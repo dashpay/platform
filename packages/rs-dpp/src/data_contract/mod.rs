@@ -69,6 +69,30 @@ pub trait DataContractLike<'a> {
     fn document_types() -> BTreeMap<DocumentName, DocumentTypeRef<'a>>;
 }
 
+/// Understanding Data Contract versioning
+/// Data contract versioning is both for the code structure and for serialization.
+///
+/// The code structure is what is used in code to verify documents and is used in memory
+/// There is generally only one code structure running at any given time, except in the case we
+/// are switching protocol versions.
+///
+/// There can be a lot of serialization versions that are active, and serialization versions
+/// should generally always be supported. This is because when we store something as version 1.
+/// 10 years down the line when we unserialize this contract it will still be in version 1.
+/// Deserialization of a data contract serialized in that version should be translated to the
+/// current code structure version.
+///
+/// There are some scenarios to consider,
+///
+/// One such scenario is that the serialization version does not contain enough information for the
+/// current code structure version.
+///
+/// Depending on the situation one of the following occurs:
+/// - the contract structure can imply missing parts based on default behavior
+/// - the contract structure can disable certain features dependant on missing information
+/// - the contract might be unusable until it is updated by the owner
+///
+
 #[derive(
     Debug,
     Clone,

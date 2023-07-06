@@ -3,11 +3,12 @@ use std::convert::{TryFrom, TryInto};
 use serde::{Deserialize, Serialize};
 use platform_value::{Identifier, Value};
 use crate::data_contract::contract_config::ContractConfigV0;
-use crate::data_contract::{DataContract, DefinitionName, DocumentName};
+use crate::data_contract::{DataContract, DataContractV0Methods, DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::data_contract::v0::DataContractV0;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
+use crate::version::PlatformVersion;
 
 #[derive(Encode, Decode)]
 pub struct DataContractSerializationFormatV0 {
@@ -68,10 +69,14 @@ impl From<DataContract> for DataContractSerializationFormatV0 {
     }
 }
 
-impl TryFrom<DataContractSerializationFormatV0> for DataContractV0 {
-    type Error = ProtocolError;
+impl DataContractSerializationFormatV0 {
+    pub(in crate::data_contract) fn try_into(self, platform_version: &PlatformVersion) -> Result<DataContractV0, ProtocolError> {
+        DataContractV0::try_from(self, platform_version)
+    }
+}
 
-    fn try_from(value: DataContractSerializationFormatV0) -> Result<Self, Self::Error> {
+impl DataContractV0 {
+    pub(in crate::data_contract) fn try_from(value: DataContractSerializationFormatV0, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let DataContractSerializationFormatV0 {
             id,
             config,
@@ -83,7 +88,7 @@ impl TryFrom<DataContractSerializationFormatV0> for DataContractV0 {
             ..
         } = value;
 
-        let document_types = DataContract::get_document_types_from_value_array_v0(
+        let document_types = DataContract::get_document_types_from_value_array(
             id,
             &documents
                 .iter()
@@ -100,11 +105,12 @@ impl TryFrom<DataContractSerializationFormatV0> for DataContractV0 {
                 .unwrap_or_default(),
             config.documents_keep_history_contract_default,
             config.documents_mutable_contract_default,
+            platform_version,
         )?;
 
         let binary_properties = documents
             .iter()
-            .map(|(doc_type, schema)| Ok((String::from(doc_type), get_binary_properties(&schema.clone().try_into()?))))
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version))))
             .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
 
         let data_contract = DataContractV0 {

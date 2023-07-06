@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::{contract_config, DataContract};
+use crate::data_contract::{contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::data_contract::contract_config::{
     ContractConfigV0, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
@@ -31,6 +31,7 @@ use platform_value::string_encoding::Encoding;
 
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::property_names::{SYSTEM_VERSION, VERSION};
+use crate::data_contract::serialized_version::DataContractSerializationFormat;
 use crate::version::PlatformVersion;
 
 use super::super::property_names;
@@ -151,14 +152,14 @@ pub struct DataContractV0 {
 
 impl Encode for DataContractV0 {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        let inner: DataContractV0Inner = self.clone().into();
+        let inner: DataContractSerializationFormat = self.clone().into();
         inner.encode(encoder)
     }
 }
 
 impl Decode for DataContractV0 {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let inner = DataContractV0Inner::decode(decoder)?;
+        let inner = DataContractSerializationFormat::decode(decoder)?;
         inner
             .try_into()
             .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
