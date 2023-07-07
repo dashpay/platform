@@ -1,12 +1,9 @@
 //! `GetIdentity` requests.
 
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
-use futures::{future::BoxFuture, FutureExt, TryFutureExt};
-use tonic::IntoRequest;
 
-use crate::{settings::AppliedSettings, DapiRequest, GrpcRequestError, Settings};
-
-use super::PlatformGrpcClient;
+use super::IncompleteMessage;
+use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// Request Identity bytes.
 pub struct GetIdentity {
@@ -27,45 +24,34 @@ impl DapiRequest for GetIdentity {
 
     const SETTINGS_OVERRIDES: Settings = Settings::empty();
 
-    type Transport = PlatformGrpcClient;
+    type Error = IncompleteMessage;
 
-    type Error = GrpcRequestError;
+    type TransportRequest = platform_proto::GetIdentityRequest;
 
-    fn prepare<'c>(
-        &self,
-        client: &'c mut Self::Transport,
-        settings: AppliedSettings,
-    ) -> BoxFuture<'c, Result<Self::DapiResponse, Self::Error>> {
-        let mut grpc_request = platform_proto::GetIdentityRequest {
+    fn to_transport_request(&self) -> Self::TransportRequest {
+        platform_proto::GetIdentityRequest {
             id: self.id.clone(),
             prove: false,
         }
-        .into_request();
-        grpc_request.set_timeout(settings.timeout);
+    }
 
-        async {
-            let fetch_response = client
-                .get_identity(grpc_request)
-                .map_ok(tonic::Response::<platform_proto::GetIdentityResponse>::into_inner)
-                .map_err(Into::<Self::Error>::into)
-                .await?;
+    fn try_from_transport_response(
+        transport_response: <Self::TransportRequest as TransportRequest>::Response,
+    ) -> Result<Self::DapiResponse, Self::Error> {
+        use platform_proto::get_identity_response::Result as GrpcResponseBody;
+        use platform_proto::GetIdentityResponse as GrpcResponse;
 
-            use platform_proto::get_identity_response::Result as GrpcResponseBody;
-            use platform_proto::GetIdentityResponse as GrpcResponse;
-
-            match fetch_response {
-                GrpcResponse { result: None, .. } => Ok(None),
-                GrpcResponse {
-                    result: Some(GrpcResponseBody::Identity(identity_bytes)),
-                    metadata: Some(metadata),
-                } => Ok(Some(GetIdentityResponse {
-                    identity_bytes,
-                    metadata,
-                })),
-                _ => Err(Self::Error::IncompleteResponse),
-            }
+        match transport_response {
+            GrpcResponse { result: None, .. } => Ok(None),
+            GrpcResponse {
+                result: Some(GrpcResponseBody::Identity(identity_bytes)),
+                metadata: Some(metadata),
+            } => Ok(Some(GetIdentityResponse {
+                identity_bytes,
+                metadata,
+            })),
+            _ => Err(IncompleteMessage),
         }
-        .boxed()
     }
 }
 
@@ -88,40 +74,29 @@ impl DapiRequest for GetIdentityProof {
 
     const SETTINGS_OVERRIDES: Settings = Settings::empty();
 
-    type Transport = PlatformGrpcClient;
+    type Error = IncompleteMessage;
 
-    type Error = GrpcRequestError;
+    type TransportRequest = platform_proto::GetIdentityRequest;
 
-    fn prepare<'c>(
-        &self,
-        client: &'c mut Self::Transport,
-        settings: AppliedSettings,
-    ) -> BoxFuture<'c, Result<Self::DapiResponse, Self::Error>> {
-        let mut grpc_request = platform_proto::GetIdentityRequest {
+    fn to_transport_request(&self) -> Self::TransportRequest {
+        platform_proto::GetIdentityRequest {
             id: self.id.clone(),
             prove: true,
         }
-        .into_request();
-        grpc_request.set_timeout(settings.timeout);
+    }
 
-        async {
-            let fetch_response = client
-                .get_identity(grpc_request)
-                .map_ok(tonic::Response::<platform_proto::GetIdentityResponse>::into_inner)
-                .map_err(Into::<Self::Error>::into)
-                .await?;
+    fn try_from_transport_response(
+        transport_response: <Self::TransportRequest as TransportRequest>::Response,
+    ) -> Result<Self::DapiResponse, Self::Error> {
+        use platform_proto::get_identity_response::Result as GrpcResponseBody;
+        use platform_proto::GetIdentityResponse as GrpcResponse;
 
-            use platform_proto::get_identity_response::Result as GrpcResponseBody;
-            use platform_proto::GetIdentityResponse as GrpcResponse;
-
-            match fetch_response {
-                GrpcResponse {
-                    result: Some(GrpcResponseBody::Proof(proof)),
-                    metadata: Some(metadata),
-                } => Ok(GetIdentityProofResponse { proof, metadata }),
-                _ => Err(Self::Error::IncompleteResponse),
-            }
+        match transport_response {
+            GrpcResponse {
+                result: Some(GrpcResponseBody::Proof(proof)),
+                metadata: Some(metadata),
+            } => Ok(GetIdentityProofResponse { proof, metadata }),
+            _ => Err(IncompleteMessage),
         }
-        .boxed()
     }
 }

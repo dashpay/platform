@@ -4,13 +4,12 @@
 
 mod platform;
 mod settings;
+mod transport;
 
-use dapi_grpc::platform::v0::platform_client::PlatformClient;
-use futures::future::BoxFuture;
+use backon::{ExponentialBuilder, Retryable};
+use transport::{grpc::PlatformGrpcClient, TransportRequest};
 
-use settings::AppliedSettings;
 pub use settings::Settings;
-use tonic::transport::Channel;
 
 /// DAPI request.
 pub trait DapiRequest {
@@ -20,18 +19,21 @@ pub trait DapiRequest {
     /// Settings that will override [DapiClient]'s ones each time the request is executed.
     const SETTINGS_OVERRIDES: Settings;
 
-    /// Error type for the request.
+    /// Error that may happen during conversion from transport-specific response to the
+    /// DAPI response.
     type Error;
 
-    /// Transport that is used to execute the request.
-    type Transport;
+    /// 1 to 1 mapping from the DAPI request to a type that represents a way for the data
+    /// to be fetched.
+    type TransportRequest: TransportRequest;
 
-    /// Converts the DAPI request to it's transport-specific [Future].
-    fn prepare<'c>(
-        &self,
-        client: &'c mut Self::Transport,
-        settings: AppliedSettings,
-    ) -> BoxFuture<'c, Result<Self::DapiResponse, Self::Error>>;
+    /// Get the transport layer request.
+    fn to_transport_request(&self) -> Self::TransportRequest;
+
+    /// Attempts to build DAPI response specific to this DAPI request from transport layer data.
+    fn try_from_transport_response(
+        transport_response: <Self::TransportRequest as TransportRequest>::Response,
+    ) -> Result<Self::DapiResponse, Self::Error>;
 }
 
 /// DAPI error variants when using gRPC transport.
@@ -51,55 +53,91 @@ pub struct DapiClient {
     settings: Settings,
 }
 
+/// DAPI request error type that wraps either transport or domain (DAPI response parsing) errors.
+#[derive(Debug, thiserror::Error)]
+pub enum DapiError<TE, PE> {
+    /// The error happened on transport layer
+    #[error("transport error: {0}")]
+    Transport(TE),
+    /// Successful transport execution, but was unable to make a conversion from
+    /// transport request to DAPI request.
+    #[error("response parse error: {0}")]
+    ParseResponse(PE),
+}
+
 impl DapiClient {
-    /// Execute the [Request] handling
-    pub async fn execute<'c, R: DapiRequest>(
+    /// Execute the [Request] handling.
+    pub async fn execute<'c, R>(
         &'c mut self,
         request: R,
         settings: Settings,
-    ) -> Result<R::DapiResponse, R::Error>
+    ) -> Result<
+        R::DapiResponse,
+        DapiError<<R::TransportRequest as TransportRequest>::Error, R::Error>,
+    >
+    // require the existence of transport client from this DAPI client required for the request:
     where
-        DapiClient: GetTransport<<R as DapiRequest>::Transport>,
+        DapiClient:
+            GetTransport<<<R as DapiRequest>::TransportRequest as TransportRequest>::Client>,
+        R: DapiRequest,
     {
+        // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
             .settings
             .override_by(R::SETTINGS_OVERRIDES)
             .override_by(settings)
             .finalize();
 
-        let mut result = request
-            .prepare(
-                GetTransport::<R::Transport>::get_transport(self),
-                applied_settings,
-            )
-            .await;
+        // Setup retry policy:
+        let retry_settings = ExponentialBuilder::default().with_max_times(applied_settings.retries);
 
-        // TODO: exp/fib ?
-        for _ in 0..applied_settings.retries {
-            if result.is_ok() {
-                break;
+        // Setup DAPI request execution routine future. It's a closure that will be called more than
+        // once to build new future on each retry:
+        let routine = || {
+            // Get a transport client requried by the DAPI request from this DAPI client:
+            let mut transport_client = GetTransport::<
+                <R::TransportRequest as TransportRequest>::Client,
+            >::get_transport(self);
+
+            let transport_request = request.to_transport_request();
+
+            async move {
+                // On a lower layer DAPI requests should be fulfilled as a transport request first:
+                let transport_response = transport_request
+                    .execute(&mut transport_client, &applied_settings)
+                    .await
+                    .map_err(|e| DapiError::<_, <R as DapiRequest>::Error>::Transport(e))?;
+
+                // Next try to build a proper DAPI response if possible:
+                let dapi_response =
+                    R::try_from_transport_response(transport_response).map_err(|e| {
+                        DapiError::<
+                            <<R as DapiRequest>::TransportRequest as TransportRequest>::Error,
+                            _,
+                        >::ParseResponse(e)
+                    })?;
+
+                Ok::<_, DapiError<_, _>>(dapi_response)
             }
+        };
 
-            result = request
-                .prepare(
-                    GetTransport::<R::Transport>::get_transport(self),
-                    applied_settings,
-                )
-                .await;
-        }
-
-        result
+        // Start the routine with retry policy applied:
+        routine.retry(&retry_settings).await
     }
 }
 
 /// A mean for [DapiClient] to get a transport required for a request.
+/// This is done as a separate trait because currently we cannot share
+/// common request execution logic with specific transport logic unless
+/// we introduce any trait bound (and we cannot say "there exists method
+/// with a type parameter applied" -- but a trait can do).
 pub trait GetTransport<T> {
     /// Get suitable transport.
-    fn get_transport(&mut self) -> &mut T;
+    fn get_transport(&mut self) -> T;
 }
 
-impl GetTransport<PlatformClient<Channel>> for DapiClient {
-    fn get_transport(&mut self) -> &mut PlatformClient<Channel> {
+impl GetTransport<PlatformGrpcClient> for DapiClient {
+    fn get_transport(&mut self) -> PlatformGrpcClient {
         todo!()
     }
 }
