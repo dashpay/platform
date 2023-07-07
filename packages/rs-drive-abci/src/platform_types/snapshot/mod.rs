@@ -11,16 +11,23 @@ const DEFAULT_FREQ: i64 = 1000;
 
 const DEFAULT_NUMBER_OF_SNAPSHOTS: usize = 10;
 
+/// Snapshot entity
 #[derive(Clone, Encode, Decode, PartialEq, Debug)]
 pub struct Snapshot {
+    /// Block height
     pub height: i64,
+    /// Version
     pub version: u16,
+    /// Path to the checkpoint
     pub path: String,
+    /// Hash of the checkpoint
     pub hash: [u8; 32],
+    /// Metadata
     pub metadata: Vec<u8>,
 }
 
-/// Manager ...
+/// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
+/// number of snapshots and remove the old ones
 pub struct Manager {
     freq: i64,
     number_stored_snapshots: usize,

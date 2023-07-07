@@ -245,7 +245,7 @@ impl<C> Platform<C> {
         })
     }
 
-    // Create a snapshot of the current state for the height
+    /// Create a snapshot of the current state for the height
     pub fn create_snapshot(&self, height: i64) -> Result<(), Error> {
         match self.snapshot_manager {
             Some(ref snapshot_manager) => {
