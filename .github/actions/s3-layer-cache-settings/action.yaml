@@ -29,9 +29,39 @@ inputs:
 outputs:
   cache_to:
     description: 'String with s3-based cache configuration for docker buildx cache-to option'
+    value: ${{ steps.script.outputs.cache_to }}
   cache_from:
     description: 'String with s3-based cache configuration for docker buildx cache-from option'
+    value: ${{ steps.script.outputs.cache_from }}
 
 runs:
-  using: 'node16'
-  main: 'index.js'
+  using: composite
+  steps:
+    - uses: actions/github-script@v6
+      id: script
+      with:
+        script: |
+          const image = core.getInput('image');
+          const tag = core.getInput('tag');
+
+          const manifestNames = [
+            `${image}_sha_${context.sha}`,
+            `${image}_tag_${tag}`,
+            `${image}`
+          ];
+
+          const settings = {
+            type: 's3',
+            region: core.getInput('region'),
+            bucket: core.getInput('bucket'),
+            prefix: core.getInput('prefix'),
+            name: manifestNames.join(';'),
+          };
+
+          const settingsString = Object.entries(settings)
+            .filter(([,value]) => value !== '')
+            .map(([key, value]) => `${key}=${value}`)
+            .join(',');
+
+          core.setOutput('cache_from', settingsString);
+          core.setOutput('cache_to', `${settingsString},mode=${core.getInput('mode')}`);
