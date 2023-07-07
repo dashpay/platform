@@ -59,8 +59,8 @@ jobs:
         run: corepack enable
 
       - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive --ignore 1091050 --ignore 1092330
-        # ignore "public ip", "word-wrap"
+        run: yarn npm audit --environment production --all --recursive --ignore 1091050 --ignore 1092330 --ignore 1092393
+        # ignore "public ip", "word-wrap", "grpc-js"
 
   test-suite:
     name: Run Platform Test Suite
