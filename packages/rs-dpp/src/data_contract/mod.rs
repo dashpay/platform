@@ -14,6 +14,8 @@ use platform_serialization::{
 use platform_value::{Identifier, Value};
 use serde::Serialize;
 use std::collections::BTreeMap;
+use bincode::enc::Encoder;
+use bincode::error::EncodeError;
 
 pub mod errors;
 pub mod extra;
@@ -104,8 +106,6 @@ pub trait DataContractLike<'a> {
     Debug,
     Clone,
     PartialEq,
-    Encode,
-    Decode,
     Serialize,
     PlatformSerdeVersionedDeserialize,
     PlatformSerialize,
@@ -115,8 +115,7 @@ pub trait DataContractLike<'a> {
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
-#[platform_serialize_limit(15000)]
-#[platform_serialize_untagged]
+#[platform_serialize(passthrough, allow_nested)]
 #[serde(untagged)]
 pub enum DataContract {
     #[versioned(0)]

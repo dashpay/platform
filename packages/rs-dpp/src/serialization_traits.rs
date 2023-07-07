@@ -22,6 +22,19 @@ pub trait PlatformSerializable {
     }
 }
 
+pub trait PlatformSerializableWithPrefixVersion {
+    fn serialize_with_prefix_version(&self, feature_version: FeatureVersion) -> Result<Vec<u8>, ProtocolError>;
+
+    /// If the trait is not used just do a simple serialize
+    fn serialize_consume_with_prefix_version(self, feature_version: FeatureVersion) -> Result<Vec<u8>, ProtocolError>
+        where
+            Self: Sized,
+    {
+        self.serialize_with_prefix_version(feature_version)
+    }
+}
+
+
 pub trait PlatformDeserializable {
     fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
     where

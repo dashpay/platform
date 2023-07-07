@@ -108,7 +108,7 @@ macro_rules! call_static_method {
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(100000)]
-#[platform_serialize_limit(100000)]
+#[platform_serialize(limit=100000, nested)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
