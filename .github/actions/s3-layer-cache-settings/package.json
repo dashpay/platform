@@ -1,0 +1,19 @@
+{
+  "name": "s3-layer-cache-settings",
+  "version": "0.0.1",
+  "description": "This action generates string with s3-based cache configuration for docker buildx",
+  "main": "index.js",
+  "keywords": [],
+  "contributors": [
+    {
+      "name": "Ivan Shumkov",
+      "email": "shumkov@dash.org",
+      "url": "https://github.com/shumkov"
+    }
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^5.1.1"
+  }
+}
