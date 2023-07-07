@@ -1,12 +1,12 @@
 import DAPIClient from '@dashevo/dapi-client';
 import { Identifier } from '@dashevo/wasm-dpp/dist';
-import {
-  GetDataContractResponse,
-  GetIdentityResponse,
-} from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
+import { GetDataContractResponse, GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
 
 import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
 import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
+import {
+  GetDataContractHistoryResponse,
+} from '@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse';
 import withRetry from './withRetry';
 import { QueryOptions } from '../types';
 
@@ -129,6 +129,27 @@ class Fetcher {
       }
       return result;
     };
+
+    // Define retry attempts.
+    // In case we acknowledged this identifier, we want to retry to mitigate
+    // state transition propagation lag. Otherwise, we want to try only once.
+    const retryAttempts = this.hasIdentifier(id) ? this.maxAttempts : 1;
+    return withRetry(query, retryAttempts, this.delayMulMs);
+  }
+
+  /**
+   * Fetches data contract by it's ID
+   * @param id
+   * @param startAMs
+   * @param limit
+   * @param offset
+   */
+  public async fetchDataContractHistory(
+    id: Identifier, startAMs: number, limit: number, offset: number,
+  ): Promise<GetDataContractHistoryResponse> {
+    // Define query
+    const query = async (): Promise<GetDataContractHistoryResponse> => await this
+      .dapiClient.platform.getDataContractHistory(id, startAMs, limit, offset);
 
     // Define retry attempts.
     // In case we acknowledged this identifier, we want to retry to mitigate
