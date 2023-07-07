@@ -526,6 +526,8 @@ where
             ),
         ))?;
 
+        let height = request.height;
+
         let block_finalization_outcome = self
             .platform
             .finalize_block_proposal(request.try_into()?, transaction)?;
@@ -547,6 +549,8 @@ where
         drop(transaction_guard);
 
         self.commit_transaction()?;
+
+        self.platform.create_snapshot(height)?;
 
         Ok(ResponseFinalizeBlock {
             events: vec![],

@@ -58,3 +58,5 @@ pub mod validator;
 pub mod validator_set;
 /// Withdrawal types
 pub mod withdrawal;
+/// Snapshot module
+pub mod snapshot;
