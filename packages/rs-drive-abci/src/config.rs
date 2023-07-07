@@ -168,6 +168,9 @@ pub struct PlatformConfig {
     /// Path to data storage
     pub db_path: PathBuf,
 
+    /// Path to checkpoints
+    pub checkpoints_path: PathBuf,
+
     // todo: put this in tests like #[cfg(test)]
     /// This should be None, except in the case of Testing platform
     #[serde(skip)]
@@ -236,6 +239,7 @@ impl Default for PlatformConfig {
             abci: Default::default(),
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            checkpoints_path: PathBuf::from("/var/lib/dash-platform/checkpoints"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
         }
