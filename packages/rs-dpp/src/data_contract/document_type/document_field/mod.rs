@@ -5,6 +5,7 @@ use std::io::{BufReader, Read};
 
 use crate::data_contract::errors::DataContractError;
 
+use crate::data_contract::document_type::array_field::ArrayFieldType;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -14,7 +15,6 @@ use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use crate::data_contract::document_type::array_field::ArrayFieldType;
 
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -139,9 +139,7 @@ impl DocumentFieldType {
     /// The middle size rounded down halfway between min and max size
     pub fn middle_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
-                return None
-            }
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
             _ => {}
         }
         let min_size = self.min_size().unwrap();
@@ -152,9 +150,7 @@ impl DocumentFieldType {
     /// The middle size rounded up halfway between min and max size
     pub fn middle_size_ceil(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
-                return None
-            }
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
             _ => {}
         }
         let min_size = self.min_size().unwrap();
@@ -165,9 +161,7 @@ impl DocumentFieldType {
     /// The middle size rounded down halfway between min and max byte size
     pub fn middle_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
-                return None
-            }
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
             _ => {}
         }
         let min_size = self.min_byte_size().unwrap();
@@ -178,9 +172,7 @@ impl DocumentFieldType {
     /// The middle size rounded up halfway between min and max byte size
     pub fn middle_byte_size_ceil(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
-                return None
-            }
+            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
             _ => {}
         }
         let min_size = self.min_byte_size().unwrap() as u32;

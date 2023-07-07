@@ -1,13 +1,12 @@
-use crate::version::drive_versions::DriveStructureVersion;
-use crate::version::protocol_version::{
-    FeatureVersionBounds, PlatformVersion,
+use crate::version::dpp_versions::{
+    DPPVersion, DocumentFeatureVersionBounds, StateTransitionVersions,
 };
+use crate::version::drive_versions::DriveStructureVersion;
+use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{
-    AbciStructureVersion, DataContractFactoryVersion,
-    PlatformArchitectureVersion,
+    AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion,
 };
 use std::collections::BTreeMap;
-use crate::version::dpp_versions::{DocumentFeatureVersionBounds, DPPVersion, StateTransitionVersions};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 0,
@@ -127,5 +126,5 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         contract_versions: Default::default(),
         document_versions: Default::default(),
-    }
+    },
 };

@@ -4,6 +4,7 @@ use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::bls_signatures;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::FeeResult;
 use dpp::validation::SimpleValidationResult;
 use drive::{
     drive::{batch::DriveOperation, Drive},
@@ -15,7 +16,6 @@ use tenderdash_abci::proto::{
     types::{VoteExtension, VoteExtensionType},
 };
 use tenderdash_abci::signatures::SignDigest;
-use dpp::fee::fee_result::FeeResult;
 
 const MAX_WITHDRAWAL_TXS: u16 = 16;
 

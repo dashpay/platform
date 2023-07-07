@@ -2,21 +2,21 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-use crate::data_contract::document_type::{DocumentType, property_names};
-use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::document::INITIAL_REVISION;
-use crate::document::{Document, DocumentV0};
-use crate::prelude::Revision;
-use crate::ProtocolError;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Identifier, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
 use crate::data_contract::document_type::array_field::ArrayFieldType;
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::{property_names, DocumentType};
+use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::document::INITIAL_REVISION;
+use crate::document::{Document, DocumentV0};
+use crate::prelude::Revision;
 use crate::version::dpp_versions::DocumentTypeVersions;
+use crate::ProtocolError;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::{Identifier, ReplacementType, Value};
+use serde::{Deserialize, Serialize};
 
 pub mod document_factory;
 pub mod random_document;
@@ -71,7 +71,8 @@ impl DocumentTypeV0 {
         document_type_version: &DocumentTypeVersions,
     ) -> Self {
         let index_structure = IndexLevel::from(indices.as_slice());
-        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(&properties, document_type_version);
+        let (identifier_paths, binary_paths) =
+            DocumentType::find_identifier_and_binary_paths(&properties, document_type_version);
         DocumentTypeV0 {
             name,
             indices,
@@ -86,7 +87,6 @@ impl DocumentTypeV0 {
             data_contract_id,
         }
     }
-
 
     pub(crate) fn from_platform_value(
         data_contract_id: Identifier,
@@ -205,8 +205,10 @@ impl DocumentTypeV0 {
 
         let index_structure = IndexLevel::from(indices.as_slice());
 
-        let (identifier_paths, binary_paths) =
-            DocumentType::find_identifier_and_binary_paths(&document_properties, document_type_version);
+        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
+            &document_properties,
+            document_type_version,
+        );
         Ok(DocumentTypeV0 {
             name: String::from(name),
             indices,
@@ -222,5 +224,3 @@ impl DocumentTypeV0 {
         })
     }
 }
-
-

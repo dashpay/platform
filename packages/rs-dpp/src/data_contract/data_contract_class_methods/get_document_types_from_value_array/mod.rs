@@ -1,11 +1,11 @@
 mod v0;
 
-use std::collections::BTreeMap;
-use platform_value::{Identifier, Value};
 use crate::data_contract::document_type::DocumentType;
 use crate::prelude::DataContract;
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::{Identifier, Value};
+use std::collections::BTreeMap;
 
 impl DataContract {
     /// Retrieve document types from a value array.
@@ -39,7 +39,12 @@ impl DataContract {
         documents_mutable_contract_default: bool,
         platform_version: &'a PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-        match platform_version.dpp.contract_versions.contract_class_method_versions.get_document_types_from_value_array {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_class_method_versions
+            .get_document_types_from_value_array
+        {
             0 => Self::get_document_types_from_value_array_v0(
                 data_contract_id,
                 contract_document_types_raw,
@@ -52,7 +57,7 @@ impl DataContract {
                 method: "get_document_types_from_value_array".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })
+            }),
         }
     }
 }

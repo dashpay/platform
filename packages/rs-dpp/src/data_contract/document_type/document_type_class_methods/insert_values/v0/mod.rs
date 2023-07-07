@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Value;
-use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
-use crate::data_contract::document_type::{DocumentType, property_names};
 use crate::data_contract::document_type::array_field::ArrayFieldType;
+use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentType {
     pub(super) fn insert_values_v0(
@@ -53,39 +53,40 @@ impl DocumentType {
                 "array" => {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
-                    field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
-                        Some(inner_bool) => {
-                            if inner_bool {
-                                match inner_properties
-                                    .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
-                                {
-                                    Some(content_media_type)
-                                    if content_media_type
-                                        == "application/x.dash.dpp.identifier" =>
+                    field_type =
+                        match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
+                            Some(inner_bool) => {
+                                if inner_bool {
+                                    match inner_properties
+                                        .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                                    {
+                                        Some(content_media_type)
+                                            if content_media_type
+                                                == "application/x.dash.dpp.identifier" =>
                                         {
                                             DocumentFieldType::Identifier
                                         }
-                                    Some(_) | None => DocumentFieldType::ByteArray(
-                                        inner_properties
-                                            .get_optional_integer(property_names::MIN_ITEMS)?,
-                                        inner_properties
-                                            .get_optional_integer(property_names::MAX_ITEMS)?,
-                                    ),
+                                        Some(_) | None => DocumentFieldType::ByteArray(
+                                            inner_properties
+                                                .get_optional_integer(property_names::MIN_ITEMS)?,
+                                            inner_properties
+                                                .get_optional_integer(property_names::MAX_ITEMS)?,
+                                        ),
+                                    }
+                                } else {
+                                    return Err(ProtocolError::DataContractError(
+                                        DataContractError::InvalidContractStructure(
+                                            "byteArray should always be true if defined",
+                                        ),
+                                    ));
                                 }
-                            } else {
-                                return Err(ProtocolError::DataContractError(
-                                    DataContractError::InvalidContractStructure(
-                                        "byteArray should always be true if defined",
-                                    ),
-                                ));
                             }
-                        }
-                        // TODO: Contract indices and new encoding format don't support arrays
-                        //   but we still can use them as document fields with current cbor encoding
-                        //   This is a temporary workaround to bring back v0.22 behavior and should be
-                        //   replaced with a proper array support in future versions
-                        None => DocumentFieldType::Array(ArrayFieldType::Boolean),
-                    };
+                            // TODO: Contract indices and new encoding format don't support arrays
+                            //   but we still can use them as document fields with current cbor encoding
+                            //   This is a temporary workaround to bring back v0.22 behavior and should be
+                            //   replaced with a proper array support in future versions
+                            None => DocumentFieldType::Array(ArrayFieldType::Boolean),
+                        };
 
                     document_properties.insert(
                         prefixed_property_key,
@@ -96,7 +97,8 @@ impl DocumentType {
                     );
                 }
                 "object" => {
-                    if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                    if let Some(properties_as_value) =
+                        inner_properties.get(property_names::PROPERTIES)
                     {
                         let properties =
                             properties_as_value
@@ -108,9 +110,9 @@ impl DocumentType {
                         for (object_property_key, object_property_value) in properties.iter() {
                             let object_property_string = object_property_key
                                 .as_text()
-                                .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
-                                    "property key must be a string",
-                                )))?
+                                .ok_or(ProtocolError::StructureError(
+                                    StructureError::KeyWrongType("property key must be a string"),
+                                ))?
                                 .to_string();
                             to_visit.push((
                                 Some(prefixed_property_key.clone()),

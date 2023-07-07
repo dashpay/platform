@@ -4,12 +4,12 @@ use lazy_static::lazy_static;
 
 mod protocol_version;
 pub use protocol_version::*;
+pub mod dpp_versions;
 pub mod drive_abci_versions;
 pub mod drive_versions;
 mod v0;
 #[cfg(feature = "validation")]
 mod validation;
-pub mod dpp_versions;
 
 pub const LATEST_VERSION: u32 = 1;
 

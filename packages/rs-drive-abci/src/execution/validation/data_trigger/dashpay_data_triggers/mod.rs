@@ -9,8 +9,8 @@ use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionEr
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
-use dpp::{get_from_transition_action, ProtocolError};
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
+use dpp::{get_from_transition_action, ProtocolError};
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {

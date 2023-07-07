@@ -1,6 +1,6 @@
-use serde_json::Value as JsonValue;
 use crate::ProtocolError;
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct JsonSerializationOptions {

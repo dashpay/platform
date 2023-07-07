@@ -1,8 +1,8 @@
-use itertools::Itertools;
-use platform_value::Value;
-use crate::data_contract::document_type::v0::{DEFAULT_HASH_SIZE, DocumentTypeV0, MAX_INDEX_SIZE};
+use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
+use itertools::Itertools;
+use platform_value::Value;
 
 // If another document type (like V1) ever were to exist we would need to implement serialize_value_for_key_v0 again
 

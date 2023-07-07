@@ -75,7 +75,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
         }
     };
 
-    eprintln!("Processing variant: {}", &output);
+    //eprintln!("Processing variant: {}", &output);
 
     TokenStream::from(output)
 }

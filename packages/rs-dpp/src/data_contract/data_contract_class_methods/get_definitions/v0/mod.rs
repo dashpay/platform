@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::Value;
 use crate::prelude::DataContract;
 use crate::ProtocolError;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::Value;
+use std::collections::BTreeMap;
 
 impl DataContract {
     pub(super) fn get_definitions_v0(

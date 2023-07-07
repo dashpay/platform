@@ -1,12 +1,20 @@
-use platform_value::{ReplacementType, Value};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::{Document, DocumentV0};
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::{ReplacementType, Value};
 
 impl DocumentTypeV0 {
-    pub(in crate::data_contract::document_type) fn convert_value_to_document_v0(&self, mut data: Value, platform_version: &PlatformVersion) -> Result<Document, ProtocolError> {
-        match platform_version.dpp.document_versions.document_structure_version {
+    pub(in crate::data_contract::document_type) fn convert_value_to_document_v0(
+        &self,
+        mut data: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
             0 => {
                 let mut document: DocumentV0 = DocumentV0 {
                     id: data.remove_identifier("$id")?,

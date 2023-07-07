@@ -6,13 +6,13 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{data_contract, ProtocolError};
 use ciborium::Value as CborValue;
 
+use crate::data_contract::data_contract::DataContractV0;
+use crate::version::PlatformVersion;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use crate::data_contract::data_contract::DataContractV0;
-use crate::version::PlatformVersion;
 
 impl DataContractV0 {
     pub fn from_cbor_with_id(
@@ -26,7 +26,10 @@ impl DataContractV0 {
         }
         Ok(data_contract)
     }
-    pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+    pub fn from_cbor(
+        cbor_bytes: impl AsRef<[u8]>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,
             protocol_version_size,
@@ -60,7 +63,8 @@ impl DataContractV0 {
 
         let mutability = Self::get_contract_configuration_properties(&data_contract_map)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-        let definition_references = DataContract::get_definitions(&data_contract_map, platform_version)?;
+        let definition_references =
+            DataContract::get_definitions(&data_contract_map, platform_version)?;
         let document_types = DataContract::get_document_types_from_contract(
             contract_id,
             &data_contract_map,

@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use dpp::fee::epoch::CreditsPerEpoch;
 use dpp::fee::fee_result::FeeResult;
+use serde::{Deserialize, Serialize};
 
 /// Aggregated fees after block execution
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]

@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Value;
-use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
-use crate::data_contract::document_type::{DocumentType, property_names};
 use crate::data_contract::document_type::array_field::ArrayFieldType;
+use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentType {
     pub(super) fn insert_values_nested_v0(
@@ -64,13 +64,16 @@ impl DocumentType {
                                 .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
                             {
                                 Some(content_media_type)
-                                if content_media_type == "application/x.dash.dpp.identifier" =>
-                                    {
-                                        DocumentFieldType::Identifier
-                                    }
+                                    if content_media_type
+                                        == "application/x.dash.dpp.identifier" =>
+                                {
+                                    DocumentFieldType::Identifier
+                                }
                                 Some(_) | None => DocumentFieldType::ByteArray(
-                                    inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                    inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
+                                    inner_properties
+                                        .get_optional_integer(property_names::MIN_ITEMS)?,
+                                    inner_properties
+                                        .get_optional_integer(property_names::MAX_ITEMS)?,
                                 ),
                             }
                         } else {
@@ -90,7 +93,8 @@ impl DocumentType {
             }
             "object" => {
                 let mut nested_properties = BTreeMap::new();
-                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                {
                     let properties =
                         properties_as_value
                             .as_map()
@@ -111,16 +115,18 @@ impl DocumentType {
                         .collect();
 
                     // Create a new set with the prefix removed from the keys
-                    let inner_definition_references: BTreeMap<String, &Value> = definition_references
-                        .iter()
-                        .filter_map(|(key, value)| {
-                            if key.starts_with(&property_key) && key.len() > property_key.len() {
-                                Some((key[property_key.len() + 1..].to_string(), *value))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
+                    let inner_definition_references: BTreeMap<String, &Value> =
+                        definition_references
+                            .iter()
+                            .filter_map(|(key, value)| {
+                                if key.starts_with(&property_key) && key.len() > property_key.len()
+                                {
+                                    Some((key[property_key.len() + 1..].to_string(), *value))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
 
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key

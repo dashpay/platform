@@ -8,13 +8,13 @@ use crate::prelude::Revision;
 use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
-#[cfg(feature = "cbor")]
-use ciborium::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash_to_vec;
 use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
+#[cfg(feature = "cbor")]
+use ciborium::Value as CborValue;
 
 use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};

@@ -224,12 +224,12 @@ impl DataContractV0 {
                 let indices_fingerprint = serde_json::to_string(&index_definition.properties)
                     .expect("fingerprint creation shouldn't fail");
                 if indices_fingerprints.contains(&indices_fingerprint) {
-                    result.add_error(ConsensusError::BasicError(
-                        BasicError::DuplicateIndexError(DuplicateIndexError::new(
+                    result.add_error(ConsensusError::BasicError(BasicError::DuplicateIndexError(
+                        DuplicateIndexError::new(
                             document_type.to_owned(),
                             index_definition.name.to_owned(),
-                        )),
-                    ));
+                        ),
+                    )));
                 }
                 indices_fingerprints.push(indices_fingerprint)
             }
@@ -389,10 +389,7 @@ impl DataContractV0 {
         let mut result = SimpleConsensusValidationResult::default();
         for duplicate_index in indices.iter().map(|i| &i.name).duplicates() {
             result.add_error(BasicError::DuplicateIndexNameError(
-                DuplicateIndexNameError::new(
-                    document_type.to_owned(),
-                    duplicate_index.to_owned(),
-                ),
+                DuplicateIndexNameError::new(document_type.to_owned(), duplicate_index.to_owned()),
             ))
         }
         result

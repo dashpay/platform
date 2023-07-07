@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use platform_value::{Identifier, Value};
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::prelude::DataContract;
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::{Identifier, Value};
+use std::collections::BTreeMap;
 
 impl DataContract {
     pub(super) fn get_document_types_from_value_v0(

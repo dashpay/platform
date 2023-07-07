@@ -2,21 +2,21 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
-use crate::data_contract::document_type::{property_names};
+use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
+use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::index::{Index, IndexProperty};
+use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
 use crate::document::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
-use crate::data_contract::document_type::index::{Index, IndexProperty};
-use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::v0::{DEFAULT_HASH_SIZE, DocumentTypeV0, MAX_INDEX_SIZE};
-use crate::version::PlatformVersion;
 
 pub trait DocumentTypeV0Methods {
     fn index_for_types(
@@ -34,13 +34,21 @@ pub trait DocumentTypeV0Methods {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
-    fn convert_value_to_document(&self, data: Value, platform_version: &PlatformVersion) -> Result<Document, ProtocolError>;
+    fn convert_value_to_document(
+        &self,
+        data: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError>;
 
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError>;
 
     fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError>;
 
-    fn document_field_type_for_property(&self, property: &str, platform_version: &PlatformVersion) -> Result<Option<DocumentFieldType>, ProtocolError>;
+    fn document_field_type_for_property(
+        &self,
+        property: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<DocumentFieldType>, ProtocolError>;
 
     /// Non versioned
     fn unique_id_for_storage(&self) -> [u8; 32];
@@ -76,7 +84,12 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         order_by: &[&str],
         platform_version: &PlatformVersion,
     ) -> Result<Option<(&Index, u16)>, ProtocolError> {
-        match platform_version.dpp.contract_versions.document_type_versions.index_for_types {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .index_for_types
+        {
             0 => Ok(self.index_for_types_v0(index_names, in_field_name, order_by)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "store_ephemeral_state".to_string(),
@@ -86,8 +99,18 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
-    fn serialize_value_for_key(&self, key: &str, value: &Value, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        match platform_version.dpp.contract_versions.document_type_versions.serialize_value_for_key {
+    fn serialize_value_for_key(
+        &self,
+        key: &str,
+        value: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .serialize_value_for_key
+        {
             0 => self.serialize_value_for_key_v0(key, value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "serialize_value_for_key".to_string(),
@@ -97,8 +120,17 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
-    fn convert_value_to_document(&self, data: Value, platform_version: &PlatformVersion) -> Result<Document, ProtocolError> {
-        match platform_version.dpp.contract_versions.document_type_versions.convert_value_to_document {
+    fn convert_value_to_document(
+        &self,
+        data: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .convert_value_to_document
+        {
             0 => self.convert_value_to_document_v0(data, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "convert_value_to_document".to_string(),
@@ -109,7 +141,12 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        match platform_version.dpp.contract_versions.document_type_versions.max_size {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .max_size
+        {
             0 => Ok(self.max_size_v0()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "max_size".to_string(),
@@ -120,7 +157,12 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
     }
 
     fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        match platform_version.dpp.contract_versions.document_type_versions.estimated_size {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .estimated_size
+        {
             0 => Ok(self.estimated_size_v0()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "estimated_size".to_string(),
@@ -130,8 +172,17 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
-    fn document_field_type_for_property(&self, property: &str, platform_version: &PlatformVersion) -> Result<Option<DocumentFieldType>, ProtocolError> {
-        match platform_version.dpp.contract_versions.document_type_versions.document_field_type_for_property {
+    fn document_field_type_for_property(
+        &self,
+        property: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<DocumentFieldType>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .document_field_type_for_property
+        {
             0 => Ok(self.document_field_type_for_property_v0(property)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "document_field_type_for_property".to_string(),
@@ -185,7 +236,3 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         self.flattened_properties.get(property).cloned()
     }
 }
-
-
-
-

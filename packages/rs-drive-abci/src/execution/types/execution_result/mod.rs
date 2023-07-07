@@ -5,9 +5,9 @@ use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::validation::SimpleConsensusValidationResult;
 
 use dpp::fee::fee_result::FeeResult;
-use tenderdash_abci::proto::abci::ExecTxResult;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::SignedCredits;
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 /// The Fee Result for a Dry Run (without state)
 pub type DryRunFeeResult = FeeResult;

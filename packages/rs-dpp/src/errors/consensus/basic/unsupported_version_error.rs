@@ -1,11 +1,11 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use thiserror::Error;
-use bincode::{Decode, Encode};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 #[error("version {received_version:?} is not supported. Supported versions are {min_version:?} to {max_version:?}")]

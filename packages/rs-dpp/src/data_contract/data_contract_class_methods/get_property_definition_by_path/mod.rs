@@ -1,7 +1,7 @@
 use crate::data_contract::DataContract;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use serde_json::Value as JsonValue;
-use crate::version::PlatformVersion;
 
 mod v0;
 
@@ -11,17 +11,21 @@ impl DataContract {
         path: &str,
         platform_version: &PlatformVersion,
     ) -> Result<&'a JsonValue, ProtocolError> {
-        match platform_version.dpp.contract_versions.contract_class_method_versions.get_property_definition_by_path {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_class_method_versions
+            .get_property_definition_by_path
+        {
             0 => Self::get_property_definition_by_path_v0(document_definition, path),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "get_property_definition_by_path".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })
+            }),
         }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -35,7 +39,11 @@ mod test {
     fn test_get_system_properties() {
         let schema = get_schema();
         let platform_version = PlatformVersion::latest();
-        let result = DataContract::get_property_definition_by_path(&schema, "$protocolVersion", platform_version);
+        let result = DataContract::get_property_definition_by_path(
+            &schema,
+            "$protocolVersion",
+            platform_version,
+        );
         let expect = json!({
             "type": "integer",
             "$comment": "Maximum is the latest protocol version"
@@ -47,7 +55,8 @@ mod test {
     fn test_top_level_property_not_found() {
         let schema = get_schema();
         let platform_version = PlatformVersion::latest();
-        let result = DataContract::get_property_definition_by_path(&schema, "nope", platform_version);
+        let result =
+            DataContract::get_property_definition_by_path(&schema, "nope", platform_version);
         assert_error_contains!(result, "the top-level property 'nope' cannot be found");
     }
 
@@ -63,7 +72,8 @@ mod test {
     fn test_return_nested_def_from_array() {
         let schema = get_schema();
         let platform_version = PlatformVersion::latest();
-        let result = DataContract::get_property_definition_by_path(&schema, "b.inner", platform_version);
+        let result =
+            DataContract::get_property_definition_by_path(&schema, "b.inner", platform_version);
         let expect = json!({
                 "type": "object",
                 "properties": {
@@ -79,7 +89,8 @@ mod test {
     fn should_return_nested_definition_from_object() {
         let schema = get_schema();
         let platform_version = PlatformVersion::latest();
-        let result = DataContract::get_property_definition_by_path(&schema, "c.inner", platform_version);
+        let result =
+            DataContract::get_property_definition_by_path(&schema, "c.inner", platform_version);
         let expect = json!({
                 "type": "object",
                 "patternProperties": {
@@ -96,7 +107,11 @@ mod test {
     fn test_should_return_error_if_not_match_pattern() {
         let schema = get_schema();
         let platform_version = PlatformVersion::latest();
-        let result = DataContract::get_property_definition_by_path(&schema, "c.inner.NOPE", platform_version);
+        let result = DataContract::get_property_definition_by_path(
+            &schema,
+            "c.inner.NOPE",
+            platform_version,
+        );
         assert_error_contains!(result, "Couldn't find 'properties'");
     }
 
@@ -104,7 +119,8 @@ mod test {
     fn test_error_if_top_level_not_array_or_object() {
         let schema = get_schema();
         let platform_version = PlatformVersion::latest();
-        let result = DataContract::get_property_definition_by_path(&schema, "a.someOther", platform_version);
+        let result =
+            DataContract::get_property_definition_by_path(&schema, "a.someOther", platform_version);
         assert_error_contains!(result, "the 'someOther' is not array or object");
     }
 

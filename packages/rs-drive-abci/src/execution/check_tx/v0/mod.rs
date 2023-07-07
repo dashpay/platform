@@ -10,8 +10,8 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformDeserializable;
 use dpp::fee::fee_result::FeeResult;
+use dpp::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
 use dpp::validation::SimpleConsensusValidationResult;

@@ -4,10 +4,10 @@ use crate::data_contract::validation::multi_validator::{
     byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
 };
 use crate::data_contract::validation::validate_data_contract_max_depth::validate_data_contract_max_depth;
+use crate::mocks::JsonSchemaValidator;
 use crate::prelude::DataContract;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::{Convertible, ProtocolError};
-use crate::mocks::JsonSchemaValidator;
 
 impl DataContract {
     pub fn validate_structure(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {

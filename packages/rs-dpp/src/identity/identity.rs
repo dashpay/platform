@@ -2,6 +2,7 @@ use crate::identity::v0::identity::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::util::hash;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
@@ -10,7 +11,6 @@ use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use crate::util::hash;
 
 #[derive(
     Debug,

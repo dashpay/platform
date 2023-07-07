@@ -1,14 +1,16 @@
-use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
-use serde::{Deserialize, Serialize};
-use platform_value::{Identifier, Value};
 use crate::data_contract::contract_config::ContractConfigV0;
-use crate::data_contract::{DataContract, DataContractV0Methods, DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::{
+    DataContract, DataContractV0Methods, DefinitionName, DocumentName, JsonSchema, PropertyPath,
+};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::{Identifier, Value};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Encode, Decode)]
 pub struct DataContractSerializationFormatV0 {
@@ -70,13 +72,19 @@ impl From<DataContract> for DataContractSerializationFormatV0 {
 }
 
 impl DataContractSerializationFormatV0 {
-    pub(in crate::data_contract) fn try_into(self, platform_version: &PlatformVersion) -> Result<DataContractV0, ProtocolError> {
+    pub(in crate::data_contract) fn try_into(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractV0, ProtocolError> {
         DataContractV0::try_from(self, platform_version)
     }
 }
 
 impl DataContractV0 {
-    pub(in crate::data_contract) fn try_from(value: DataContractSerializationFormatV0, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+    pub(in crate::data_contract) fn try_from(
+        value: DataContractSerializationFormatV0,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let DataContractSerializationFormatV0 {
             id,
             config,

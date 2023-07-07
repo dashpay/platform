@@ -1,9 +1,9 @@
-use serde_json::Value as JsonValue;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;
 use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
 use crate::ProtocolError;
 use serde_json::Number;
+use serde_json::Value as JsonValue;
 
 impl StateTransitionJsonConvert for IdentityCreditTransferTransition {
     fn to_json(&self, options: JsonSerializationOptions) -> Result<JsonValue, ProtocolError> {

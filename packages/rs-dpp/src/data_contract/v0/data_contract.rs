@@ -14,11 +14,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::{contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::data_contract::contract_config::{
     ContractConfigV0, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
+};
+use crate::data_contract::{
+    contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath,
 };
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -415,7 +417,6 @@ pub trait DataContractV0Methods {
 }
 
 impl DataContractV0Methods for DataContractV0 {
-
     /// Increments version of Data Contract
     fn increment_version(&mut self) {
         self.version += 1;
@@ -439,13 +440,15 @@ impl DataContractV0Methods for DataContractV0 {
         &self,
         document_type_name: &str,
     ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
-        Ok(
-            self.document_types.get(document_type_name).ok_or({
+        Ok(self
+            .document_types
+            .get(document_type_name)
+            .ok_or({
                 ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
                     "can not get document type from contract",
                 ))
-            })?.as_ref(),
-        )
+            })?
+            .as_ref())
     }
 
     fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
@@ -479,7 +482,10 @@ impl DataContractV0Methods for DataContractV0 {
             &BTreeMap::new(),
             self.config.documents_keep_history_contract_default,
             self.config.documents_mutable_contract_default,
-            &platform_version.dpp.contract_versions.document_type_versions
+            &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions,
         )?;
 
         self.document_types.insert(doc_type, document_type.into());
@@ -569,7 +575,12 @@ impl DataContractV0Methods for DataContractV0 {
         self.binary_properties = self
             .documents
             .iter()
-            .map(|(doc_type, schema)| (String::from(doc_type), DataContract::get_binary_properties(schema, platform_version)))
+            .map(|(doc_type, schema)| {
+                (
+                    String::from(doc_type),
+                    DataContract::get_binary_properties(schema, platform_version),
+                )
+            })
             .collect();
     }
 
@@ -624,13 +635,6 @@ impl DataContractV0Methods for DataContractV0 {
             })
             .unwrap_or_default())
     }
-
-
-
-
-
-
-
 }
 //
 // #[cfg(feature = "json-object")]
@@ -691,7 +695,6 @@ impl DataContractV0Methods for DataContractV0 {
 //         todo!()
 //     }
 // }
-
 
 #[cfg(test)]
 mod test {

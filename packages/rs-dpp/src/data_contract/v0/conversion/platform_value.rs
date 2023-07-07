@@ -1,13 +1,16 @@
-use std::collections::BTreeMap;
+use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::{property_names, DataContract};
+use crate::version::PlatformVersion;
+use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
-use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::{DataContract, property_names};
-use crate::ProtocolError;
-use crate::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 impl DataContractV0 {
-    pub fn from_raw_object(raw_object: Value, platform_version: &PlatformVersion) -> Result<DataContractV0, ProtocolError> {
+    pub fn from_raw_object(
+        raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractV0, ProtocolError> {
         let mut data_contract_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
@@ -17,7 +20,8 @@ impl DataContractV0 {
             .map_err(ProtocolError::ValueError)?;
 
         let mutability = Self::get_contract_configuration_properties(&data_contract_map)?;
-        let definition_references = DataContract::get_definitions(&data_contract_map, platform_version)?;
+        let definition_references =
+            DataContract::get_definitions(&data_contract_map, platform_version)?;
         let document_types = DataContract::get_document_types_from_contract(
             id,
             &data_contract_map,
@@ -41,7 +45,12 @@ impl DataContractV0 {
 
         let binary_properties = documents
             .iter()
-            .map(|(doc_type, schema)| (String::from(doc_type), DataContract::get_binary_properties(schema, platform_version)))
+            .map(|(doc_type, schema)| {
+                (
+                    String::from(doc_type),
+                    DataContract::get_binary_properties(schema, platform_version),
+                )
+            })
             .collect();
 
         let data_contract = DataContractV0 {

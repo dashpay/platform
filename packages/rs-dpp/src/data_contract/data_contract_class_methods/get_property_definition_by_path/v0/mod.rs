@@ -1,4 +1,3 @@
-
 use std::include_str;
 
 use anyhow::anyhow;
@@ -37,10 +36,10 @@ impl DataContract {
             .ok_or_else(|| anyhow!("the path '{}' is empty", path))?;
         current_value = current_value.get(top_level_property).ok_or_else(|| {
             anyhow!(
-            "the top-level property '{}' cannot be found in {:?}",
-            top_level_property,
-            current_value
-        )
+                "the top-level property '{}' cannot be found in {:?}",
+                top_level_property,
+                current_value
+            )
         })?;
 
         for path in path_components {
@@ -50,10 +49,10 @@ impl DataContract {
                     let properties = current_value.get_schema_properties()?;
                     current_value = properties.get(path).ok_or_else(|| {
                         anyhow!(
-                        "unable to find the property '{}' in '{:?}'",
-                        path,
-                        properties
-                    )
+                            "unable to find the property '{}' in '{:?}'",
+                            path,
+                            properties
+                        )
                     })?;
                 }
 

@@ -1,8 +1,7 @@
-
 use std::collections::BTreeMap;
 
-use serde_json::{Map, Value as JsonValue};
 use crate::prelude::DataContract;
+use serde_json::{Map, Value as JsonValue};
 
 use crate::util::json_schema::JsonSchemaExt;
 
@@ -26,7 +25,6 @@ impl DataContract {
         binary_properties
     }
 }
-
 
 /// Recursively build properties map
 fn build_binary_properties_map(

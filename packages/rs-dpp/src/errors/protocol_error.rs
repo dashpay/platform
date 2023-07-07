@@ -20,8 +20,8 @@ use crate::{
 
 use dashcore::consensus::encode::Error as DashCoreError;
 
-use platform_value::{Error as ValueError, Value};
 use crate::version::FeatureVersion;
+use platform_value::{Error as ValueError, Value};
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -44,8 +44,10 @@ pub enum ProtocolError {
     FileNotFound(String),
 
     /// Platform expected some specific versions
-    #[error("dpp unknown version on {method}, known versions: {known_versions}, received: {received}")]
-    UnknownVersionMismatch{
+    #[error(
+        "dpp unknown version on {method}, known versions: {known_versions}, received: {received}"
+    )]
+    UnknownVersionMismatch {
         /// method
         method: String,
         /// the allowed versions for this method

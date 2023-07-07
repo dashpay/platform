@@ -1,8 +1,8 @@
+use crate::data_contract::document_type::index::{Index, IndexWithRawProperties};
 use anyhow::{anyhow, bail, Error};
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
-use crate::data_contract::document_type::index::{Index, IndexWithRawProperties};
 
 use crate::identifier;
 

@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use crate::version::{FeatureVersion, FeatureVersionBounds};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPVersion {

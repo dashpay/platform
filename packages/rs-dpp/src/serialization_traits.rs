@@ -2,9 +2,9 @@ use crate::identity::KeyType;
 
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
+use crate::version::FeatureVersion;
 use crate::{BlsModule, ProtocolError};
 use platform_value::Value;
-use crate::version::FeatureVersion;
 
 pub trait Signable {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError>;
@@ -36,12 +36,18 @@ pub trait PlatformSerializableIntoStructureVersion {
     /// which are the different ways to serialize the concept of a data contract.
     /// The data contract would call versioned_serialize. There should be a converted for each
     /// Data contract Version towards each DataContractSerializationFormat
-    fn versioned_serialize(&self, structure_version: FeatureVersion) -> Result<Vec<u8>, ProtocolError>;
+    fn versioned_serialize(
+        &self,
+        structure_version: FeatureVersion,
+    ) -> Result<Vec<u8>, ProtocolError>;
 
     /// If the trait is not used just do a simple serialize
-    fn versioned_serialize_consume(self, structure_version: FeatureVersion) -> Result<Vec<u8>, ProtocolError>
-        where
-            Self: Sized,
+    fn versioned_serialize_consume(
+        self,
+        structure_version: FeatureVersion,
+    ) -> Result<Vec<u8>, ProtocolError>
+    where
+        Self: Sized,
     {
         self.versioned_serialize(structure_version)
     }
@@ -57,9 +63,12 @@ pub trait PlatformDeserializableFromVersionedStructure {
     /// So from the bytes we could get DataContractSerializationFormatV0.
     /// Then the system_version given will tell to transform DataContractSerializationFormatV0 into
     /// DataContractV1 (if system version is 1)
-    fn versioned_deserialize(data: &[u8], system_version: FeatureVersion) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
+    fn versioned_deserialize(
+        data: &[u8],
+        system_version: FeatureVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 }
 
 pub trait ValueConvertible {

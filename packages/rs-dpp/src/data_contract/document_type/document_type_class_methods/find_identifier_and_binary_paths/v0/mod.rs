@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
 use crate::data_contract::document_type::array_field::ArrayFieldType;
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
 use crate::data_contract::document_type::DocumentType;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentType {
     pub(super) fn find_identifier_and_binary_paths_v0(

@@ -1,10 +1,16 @@
-use crate::serialization_traits::{PlatformDeserializableFromVersionedStructure, PlatformSerializableIntoStructureVersion};
+use crate::serialization_traits::{
+    PlatformDeserializableFromVersionedStructure, PlatformSerializable,
+    PlatformSerializableIntoStructureVersion,
+};
 use bincode::{config, Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
 
 pub use generate_data_contract::*;
-use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize, PlatformVersionedDeserialize, PlatformVersionedSerialize};
+use platform_serialization::{
+    PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize,
+    PlatformVersionedDeserialize, PlatformVersionedSerialize,
+};
 use platform_value::{Identifier, Value};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -24,9 +30,9 @@ mod v0;
 mod factory;
 #[cfg(feature = "client")]
 pub use factory::*;
+mod data_contract_class_methods;
 #[cfg(feature = "client")]
 mod data_contract_facade;
-mod data_contract_class_methods;
 mod serialized_version;
 
 #[cfg(feature = "state-transitions")]
@@ -38,12 +44,12 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::v0::data_contract::DataContractV0;
+use crate::util::hash::hash_to_vec;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
-use crate::util::hash::hash_to_vec;
 use serde_json::Value as JsonValue;
 
 pub mod property_names {
@@ -93,6 +99,7 @@ pub trait DataContractLike<'a> {
 /// - the contract might be unusable until it is updated by the owner
 ///
 
+/// Here we use PlatformSerialize, because
 #[derive(
     Debug,
     Clone,
@@ -101,7 +108,7 @@ pub trait DataContractLike<'a> {
     Decode,
     Serialize,
     PlatformSerdeVersionedDeserialize,
-    PlatformVersionedSerialize,
+    PlatformSerialize,
     PlatformVersionedDeserialize,
     PlatformDeserializeNoLimit,
     From,
@@ -109,6 +116,7 @@ pub trait DataContractLike<'a> {
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 #[platform_serialize_limit(15000)]
+#[platform_serialize_untagged]
 #[serde(untagged)]
 pub enum DataContract {
     #[versioned(0)]
@@ -122,7 +130,6 @@ impl Default for DataContract {
 }
 
 impl DataContract {
-
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash_to_vec(self.serialize()?))

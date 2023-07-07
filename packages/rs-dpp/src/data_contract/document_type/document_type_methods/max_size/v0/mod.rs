@@ -16,4 +16,3 @@ impl DocumentTypeV0 {
             .unwrap_or(u16::MAX)
     }
 }
-

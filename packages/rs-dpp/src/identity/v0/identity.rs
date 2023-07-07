@@ -362,8 +362,6 @@ impl IdentityV0 {
         raw_object.try_into()
     }
 
-
-
     /// Convenience method to get Partial Identity Info
     pub fn into_partial_identity_info(self) -> PartialIdentity {
         let Self {
