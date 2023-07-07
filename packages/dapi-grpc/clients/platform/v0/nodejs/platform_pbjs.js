@@ -351,6 +351,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDataContractHistory}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getDataContractHistoryCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse} [response] GetDataContractHistoryResponse
+                         */
+
+                        /**
+                         * Calls getDataContractHistory.
+                         * @function getDataContractHistory
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest} request GetDataContractHistoryRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getDataContractHistoryCallback} callback Node-style callback called with the error, if any, and GetDataContractHistoryResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getDataContractHistory = function getDataContractHistory(request, callback) {
+                            return this.rpcCall(getDataContractHistory, $root.org.dash.platform.dapi.v0.GetDataContractHistoryRequest, $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse, request, callback);
+                        }, "name", { value: "getDataContractHistory" });
+
+                        /**
+                         * Calls getDataContractHistory.
+                         * @function getDataContractHistory
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDataContractHistoryRequest} request GetDataContractHistoryRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetDataContractHistoryResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDataContracts}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getDataContractsCallback
@@ -10333,7 +10366,7 @@ $root.org = (function() {
                          * @property {Uint8Array|null} [id] GetDataContractHistoryRequest id
                          * @property {number|null} [limit] GetDataContractHistoryRequest limit
                          * @property {number|null} [offset] GetDataContractHistoryRequest offset
-                         * @property {number|Long|null} [startAtSeconds] GetDataContractHistoryRequest startAtSeconds
+                         * @property {number|Long|null} [startAtMs] GetDataContractHistoryRequest startAtMs
                          * @property {boolean|null} [prove] GetDataContractHistoryRequest prove
                          */
 
@@ -10377,12 +10410,12 @@ $root.org = (function() {
                         GetDataContractHistoryRequest.prototype.offset = 0;
 
                         /**
-                         * GetDataContractHistoryRequest startAtSeconds.
-                         * @member {number|Long} startAtSeconds
+                         * GetDataContractHistoryRequest startAtMs.
+                         * @member {number|Long} startAtMs
                          * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
                          * @instance
                          */
-                        GetDataContractHistoryRequest.prototype.startAtSeconds = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+                        GetDataContractHistoryRequest.prototype.startAtMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                         /**
                          * GetDataContractHistoryRequest prove.
@@ -10422,8 +10455,8 @@ $root.org = (function() {
                                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
                             if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
                                 writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.offset);
-                            if (message.startAtSeconds != null && Object.hasOwnProperty.call(message, "startAtSeconds"))
-                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtSeconds);
+                            if (message.startAtMs != null && Object.hasOwnProperty.call(message, "startAtMs"))
+                                writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtMs);
                             if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                 writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
                             return writer;
@@ -10470,7 +10503,7 @@ $root.org = (function() {
                                     message.offset = reader.uint32();
                                     break;
                                 case 4:
-                                    message.startAtSeconds = reader.uint64();
+                                    message.startAtMs = reader.uint64();
                                     break;
                                 case 5:
                                     message.prove = reader.bool();
@@ -10519,9 +10552,9 @@ $root.org = (function() {
                             if (message.offset != null && message.hasOwnProperty("offset"))
                                 if (!$util.isInteger(message.offset))
                                     return "offset: integer expected";
-                            if (message.startAtSeconds != null && message.hasOwnProperty("startAtSeconds"))
-                                if (!$util.isInteger(message.startAtSeconds) && !(message.startAtSeconds && $util.isInteger(message.startAtSeconds.low) && $util.isInteger(message.startAtSeconds.high)))
-                                    return "startAtSeconds: integer|Long expected";
+                            if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
+                                if (!$util.isInteger(message.startAtMs) && !(message.startAtMs && $util.isInteger(message.startAtMs.low) && $util.isInteger(message.startAtMs.high)))
+                                    return "startAtMs: integer|Long expected";
                             if (message.prove != null && message.hasOwnProperty("prove"))
                                 if (typeof message.prove !== "boolean")
                                     return "prove: boolean expected";
@@ -10549,15 +10582,15 @@ $root.org = (function() {
                                 message.limit = object.limit >>> 0;
                             if (object.offset != null)
                                 message.offset = object.offset >>> 0;
-                            if (object.startAtSeconds != null)
+                            if (object.startAtMs != null)
                                 if ($util.Long)
-                                    (message.startAtSeconds = $util.Long.fromValue(object.startAtSeconds)).unsigned = true;
-                                else if (typeof object.startAtSeconds === "string")
-                                    message.startAtSeconds = parseInt(object.startAtSeconds, 10);
-                                else if (typeof object.startAtSeconds === "number")
-                                    message.startAtSeconds = object.startAtSeconds;
-                                else if (typeof object.startAtSeconds === "object")
-                                    message.startAtSeconds = new $util.LongBits(object.startAtSeconds.low >>> 0, object.startAtSeconds.high >>> 0).toNumber(true);
+                                    (message.startAtMs = $util.Long.fromValue(object.startAtMs)).unsigned = true;
+                                else if (typeof object.startAtMs === "string")
+                                    message.startAtMs = parseInt(object.startAtMs, 10);
+                                else if (typeof object.startAtMs === "number")
+                                    message.startAtMs = object.startAtMs;
+                                else if (typeof object.startAtMs === "object")
+                                    message.startAtMs = new $util.LongBits(object.startAtMs.low >>> 0, object.startAtMs.high >>> 0).toNumber(true);
                             if (object.prove != null)
                                 message.prove = Boolean(object.prove);
                             return message;
@@ -10588,9 +10621,9 @@ $root.org = (function() {
                                 object.offset = 0;
                                 if ($util.Long) {
                                     var long = new $util.Long(0, 0, true);
-                                    object.startAtSeconds = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    object.startAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                 } else
-                                    object.startAtSeconds = options.longs === String ? "0" : 0;
+                                    object.startAtMs = options.longs === String ? "0" : 0;
                                 object.prove = false;
                             }
                             if (message.id != null && message.hasOwnProperty("id"))
@@ -10599,11 +10632,11 @@ $root.org = (function() {
                                 object.limit = message.limit;
                             if (message.offset != null && message.hasOwnProperty("offset"))
                                 object.offset = message.offset;
-                            if (message.startAtSeconds != null && message.hasOwnProperty("startAtSeconds"))
-                                if (typeof message.startAtSeconds === "number")
-                                    object.startAtSeconds = options.longs === String ? String(message.startAtSeconds) : message.startAtSeconds;
+                            if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
+                                if (typeof message.startAtMs === "number")
+                                    object.startAtMs = options.longs === String ? String(message.startAtMs) : message.startAtMs;
                                 else
-                                    object.startAtSeconds = options.longs === String ? $util.Long.prototype.toString.call(message.startAtSeconds) : options.longs === Number ? new $util.LongBits(message.startAtSeconds.low >>> 0, message.startAtSeconds.high >>> 0).toNumber(true) : message.startAtSeconds;
+                                    object.startAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startAtMs) : options.longs === Number ? new $util.LongBits(message.startAtMs.low >>> 0, message.startAtMs.high >>> 0).toNumber(true) : message.startAtMs;
                             if (message.prove != null && message.hasOwnProperty("prove"))
                                 object.prove = message.prove;
                             return object;
@@ -10893,202 +10926,6 @@ $root.org = (function() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
-                        GetDataContractHistoryResponse.DataContractValue = (function() {
-
-                            /**
-                             * Properties of a DataContractValue.
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
-                             * @interface IDataContractValue
-                             * @property {Uint8Array|null} [value] DataContractValue value
-                             */
-
-                            /**
-                             * Constructs a new DataContractValue.
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
-                             * @classdesc Represents a DataContractValue.
-                             * @implements IDataContractValue
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue=} [properties] Properties to set
-                             */
-                            function DataContractValue(properties) {
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * DataContractValue value.
-                             * @member {Uint8Array} value
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @instance
-                             */
-                            DataContractValue.prototype.value = $util.newBuffer([]);
-
-                            /**
-                             * Creates a new DataContractValue instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue instance
-                             */
-                            DataContractValue.create = function create(properties) {
-                                return new DataContractValue(properties);
-                            };
-
-                            /**
-                             * Encodes the specified DataContractValue message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue} message DataContractValue message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            DataContractValue.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.value);
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified DataContractValue message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue} message DataContractValue message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            DataContractValue.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a DataContractValue message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            DataContractValue.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        message.value = reader.bytes();
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a DataContractValue message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            DataContractValue.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a DataContractValue message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            DataContractValue.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                if (message.value != null && message.hasOwnProperty("value"))
-                                    if (!(message.value && typeof message.value.length === "number" || $util.isString(message.value)))
-                                        return "value: buffer expected";
-                                return null;
-                            };
-
-                            /**
-                             * Creates a DataContractValue message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} DataContractValue
-                             */
-                            DataContractValue.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue();
-                                if (object.value != null)
-                                    if (typeof object.value === "string")
-                                        $util.base64.decode(object.value, message.value = $util.newBuffer($util.base64.length(object.value)), 0);
-                                    else if (object.value.length >= 0)
-                                        message.value = object.value;
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a DataContractValue message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue} message DataContractValue
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            DataContractValue.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.defaults)
-                                    if (options.bytes === String)
-                                        object.value = "";
-                                    else {
-                                        object.value = [];
-                                        if (options.bytes !== Array)
-                                            object.value = $util.newBuffer(object.value);
-                                    }
-                                if (message.value != null && message.hasOwnProperty("value"))
-                                    object.value = options.bytes === String ? $util.base64.encode(message.value, 0, message.value.length) : options.bytes === Array ? Array.prototype.slice.call(message.value) : message.value;
-                                return object;
-                            };
-
-                            /**
-                             * Converts this DataContractValue to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            DataContractValue.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            return DataContractValue;
-                        })();
-
                         GetDataContractHistoryResponse.DataContractHistoryEntry = (function() {
 
                             /**
@@ -11096,7 +10933,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse
                              * @interface IDataContractHistoryEntry
                              * @property {number|Long|null} [date] DataContractHistoryEntry date
-                             * @property {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue|null} [value] DataContractHistoryEntry value
+                             * @property {Uint8Array|null} [value] DataContractHistoryEntry value
                              */
 
                             /**
@@ -11124,11 +10961,11 @@ $root.org = (function() {
 
                             /**
                              * DataContractHistoryEntry value.
-                             * @member {org.dash.platform.dapi.v0.GetDataContractHistoryResponse.IDataContractValue|null|undefined} value
+                             * @member {Uint8Array} value
                              * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry
                              * @instance
                              */
-                            DataContractHistoryEntry.prototype.value = null;
+                            DataContractHistoryEntry.prototype.value = $util.newBuffer([]);
 
                             /**
                              * Creates a new DataContractHistoryEntry instance using the specified properties.
@@ -11157,7 +10994,7 @@ $root.org = (function() {
                                 if (message.date != null && Object.hasOwnProperty.call(message, "date"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.date);
                                 if (message.value != null && Object.hasOwnProperty.call(message, "value"))
-                                    $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.encode(message.value, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.value);
                                 return writer;
                             };
 
@@ -11196,7 +11033,7 @@ $root.org = (function() {
                                         message.date = reader.uint64();
                                         break;
                                     case 2:
-                                        message.value = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.decode(reader, reader.uint32());
+                                        message.value = reader.bytes();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -11236,11 +11073,9 @@ $root.org = (function() {
                                 if (message.date != null && message.hasOwnProperty("date"))
                                     if (!$util.isInteger(message.date) && !(message.date && $util.isInteger(message.date.low) && $util.isInteger(message.date.high)))
                                         return "date: integer|Long expected";
-                                if (message.value != null && message.hasOwnProperty("value")) {
-                                    var error = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.verify(message.value);
-                                    if (error)
-                                        return "value." + error;
-                                }
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    if (!(message.value && typeof message.value.length === "number" || $util.isString(message.value)))
+                                        return "value: buffer expected";
                                 return null;
                             };
 
@@ -11265,11 +11100,11 @@ $root.org = (function() {
                                         message.date = object.date;
                                     else if (typeof object.date === "object")
                                         message.date = new $util.LongBits(object.date.low >>> 0, object.date.high >>> 0).toNumber(true);
-                                if (object.value != null) {
-                                    if (typeof object.value !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractHistoryEntry.value: object expected");
-                                    message.value = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.fromObject(object.value);
-                                }
+                                if (object.value != null)
+                                    if (typeof object.value === "string")
+                                        $util.base64.decode(object.value, message.value = $util.newBuffer($util.base64.length(object.value)), 0);
+                                    else if (object.value.length >= 0)
+                                        message.value = object.value;
                                 return message;
                             };
 
@@ -11292,7 +11127,13 @@ $root.org = (function() {
                                         object.date = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                                     } else
                                         object.date = options.longs === String ? "0" : 0;
-                                    object.value = null;
+                                    if (options.bytes === String)
+                                        object.value = "";
+                                    else {
+                                        object.value = [];
+                                        if (options.bytes !== Array)
+                                            object.value = $util.newBuffer(object.value);
+                                    }
                                 }
                                 if (message.date != null && message.hasOwnProperty("date"))
                                     if (typeof message.date === "number")
@@ -11300,7 +11141,7 @@ $root.org = (function() {
                                     else
                                         object.date = options.longs === String ? $util.Long.prototype.toString.call(message.date) : options.longs === Number ? new $util.LongBits(message.date.low >>> 0, message.date.high >>> 0).toNumber(true) : message.date;
                                 if (message.value != null && message.hasOwnProperty("value"))
-                                    object.value = $root.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.DataContractValue.toObject(message.value, options);
+                                    object.value = options.bytes === String ? $util.base64.encode(message.value, 0, message.value.length) : options.bytes === Array ? Array.prototype.slice.call(message.value) : message.value;
                                 return object;
                             };
 

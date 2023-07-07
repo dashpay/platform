@@ -2501,7 +2501,9 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["levelup", "npm:4.4.0"],\
             ["memdown", "npm:5.1.0"],\
             ["mocha", "npm:9.2.2"],\
-            ["should", "npm:13.2.3"]\
+            ["should", "npm:13.2.3"],\
+            ["sinon", "npm:11.1.2"],\
+            ["wasm-x11-hash", "npm:0.0.2"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -8228,6 +8230,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["hasbin", "npm:1.2.3"],\
             ["is-wsl", "npm:2.2.0"],\
             ["jayson", "npm:3.6.5"],\
+            ["js-yaml", "npm:4.1.0"],\
             ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:5.0.7"],\
             ["lodash", "npm:4.17.21"],\
             ["memory-streams", "npm:0.1.3"],\

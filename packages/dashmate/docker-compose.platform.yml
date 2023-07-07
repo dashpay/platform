@@ -40,6 +40,7 @@ services:
     ports:
       - ${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err} # P2P
       - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err} # RPC
+      - 127.0.0.1:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err}:${PLATFORM_DRIVE_TENDERDASH_PPROF_PORT:?err} # pprof
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro

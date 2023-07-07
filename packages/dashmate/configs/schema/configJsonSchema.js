@@ -296,8 +296,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'log', 'reindex', 'logIps', 'indexes'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'sentinel', 'devnet',
+        'log', 'logIps', 'indexes', 'reindex'],
       additionalProperties: false,
     },
     platform: {
@@ -511,6 +511,19 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
+                pprof: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  required: ['enabled', 'port'],
+                  additionalProperties: false,
+                },
                 node: {
                   type: 'object',
                   properties: {
@@ -530,7 +543,7 @@ module.exports = {
                   type: 'object',
                 },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus', 'node', 'moniker', 'genesis'],
+              required: ['docker', 'p2p', 'rpc', 'pprof', 'consensus', 'node', 'moniker', 'genesis'],
               additionalProperties: false,
             },
           },

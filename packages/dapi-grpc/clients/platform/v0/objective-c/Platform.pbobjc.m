@@ -35,7 +35,6 @@ GPBObjCClassDeclaration(GPBUInt64Value);
 GPBObjCClassDeclaration(GetDataContractHistoryResponse);
 GPBObjCClassDeclaration(GetDataContractHistoryResponse_DataContractHistory);
 GPBObjCClassDeclaration(GetDataContractHistoryResponse_DataContractHistoryEntry);
-GPBObjCClassDeclaration(GetDataContractHistoryResponse_DataContractValue);
 GPBObjCClassDeclaration(GetDataContractsResponse);
 GPBObjCClassDeclaration(GetDataContractsResponse_DataContractEntry);
 GPBObjCClassDeclaration(GetDataContractsResponse_DataContractValue);
@@ -2690,9 +2689,9 @@ typedef struct GetDataContractsResponse_DataContracts__storage_ {
 @implementation GetDataContractHistoryRequest
 
 @dynamic id_p;
-@dynamic hasLimit, limit;
-@dynamic hasOffset, offset;
-@dynamic hasStartAtSeconds, startAtSeconds;
+@dynamic limit;
+@dynamic offset;
+@dynamic startAtMs;
 @dynamic prove;
 
 typedef struct GetDataContractHistoryRequest__storage_ {
@@ -2700,7 +2699,7 @@ typedef struct GetDataContractHistoryRequest__storage_ {
   uint32_t limit;
   uint32_t offset;
   NSData *id_p;
-  uint64_t startAtSeconds;
+  uint64_t startAtMs;
 } GetDataContractHistoryRequest__storage_;
 
 // This method is threadsafe because it is initially called
@@ -2724,7 +2723,7 @@ typedef struct GetDataContractHistoryRequest__storage_ {
         .number = GetDataContractHistoryRequest_FieldNumber_Limit,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, limit),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
@@ -2733,16 +2732,16 @@ typedef struct GetDataContractHistoryRequest__storage_ {
         .number = GetDataContractHistoryRequest_FieldNumber_Offset,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, offset),
-        .flags = GPBFieldOptional,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
       {
-        .name = "startAtSeconds",
+        .name = "startAtMs",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetDataContractHistoryRequest_FieldNumber_StartAtSeconds,
+        .number = GetDataContractHistoryRequest_FieldNumber_StartAtMs,
         .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, startAtSeconds),
-        .flags = GPBFieldOptional,
+        .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, startAtMs),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },
       {
@@ -2852,62 +2851,16 @@ void GetDataContractHistoryResponse_ClearResultOneOfCase(GetDataContractHistoryR
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetDataContractHistoryResponse_DataContractValue
-
-@implementation GetDataContractHistoryResponse_DataContractValue
-
-@dynamic value;
-
-typedef struct GetDataContractHistoryResponse_DataContractValue__storage_ {
-  uint32_t _has_storage_[1];
-  NSData *value;
-} GetDataContractHistoryResponse_DataContractValue__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "value",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDataContractHistoryResponse_DataContractValue_FieldNumber_Value,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetDataContractHistoryResponse_DataContractValue__storage_, value),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDataContractHistoryResponse_DataContractValue class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDataContractHistoryResponse_DataContractValue__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDataContractHistoryResponse)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
 #pragma mark - GetDataContractHistoryResponse_DataContractHistoryEntry
 
 @implementation GetDataContractHistoryResponse_DataContractHistoryEntry
 
 @dynamic date;
-@dynamic hasValue, value;
+@dynamic value;
 
 typedef struct GetDataContractHistoryResponse_DataContractHistoryEntry__storage_ {
   uint32_t _has_storage_[1];
-  GetDataContractHistoryResponse_DataContractValue *value;
+  NSData *value;
   uint64_t date;
 } GetDataContractHistoryResponse_DataContractHistoryEntry__storage_;
 
@@ -2928,12 +2881,12 @@ typedef struct GetDataContractHistoryResponse_DataContractHistoryEntry__storage_
       },
       {
         .name = "value",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDataContractHistoryResponse_DataContractValue),
+        .dataTypeSpecific.clazz = Nil,
         .number = GetDataContractHistoryResponse_DataContractHistoryEntry_FieldNumber_Value,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetDataContractHistoryResponse_DataContractHistoryEntry__storage_, value),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
