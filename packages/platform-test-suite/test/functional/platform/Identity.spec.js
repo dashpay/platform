@@ -324,8 +324,6 @@ describe('Platform', () => {
       before(async () => {
         dataContractFixture = await getDataContractFixture(identity.getId());
 
-        console.log(dataContractFixture);
-
         await client.platform.contracts.publish(dataContractFixture, identity);
 
         // Additional wait time to mitigate testnet latency

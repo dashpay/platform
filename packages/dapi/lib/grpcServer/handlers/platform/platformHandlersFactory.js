@@ -18,6 +18,7 @@ const {
     BroadcastStateTransitionRequest,
     GetIdentityRequest,
     GetDataContractRequest,
+    GetDataContractHistoryRequest,
     GetDocumentsRequest,
     GetIdentitiesByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
@@ -37,6 +38,8 @@ const {
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
+      GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
+      GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -56,6 +59,9 @@ const getDocumentsHandlerFactory = require(
 );
 const getDataContractHandlerFactory = require(
   './getDataContractHandlerFactory',
+);
+const getDataContractHistoryHandlerFactory = require(
+  './getDataContractHistoryHandlerFactory',
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',
@@ -155,6 +161,22 @@ function platformHandlersFactory(
     wrapInErrorHandler(getDataContractHandler),
   );
 
+  // getDataContractHistory
+  const getDataContractHistoryHandler = getDataContractHistoryHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetDataContractHistory = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetDataContractHistoryRequest,
+      PBJSGetDataContractHistoryRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetDataContractHistoryResponse,
+    ),
+    wrapInErrorHandler(getDataContractHistoryHandler),
+  );
+
   // getIdentitiesByPublicKeyHashes
   const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
     driveClient,
@@ -222,6 +244,7 @@ function platformHandlersFactory(
     getIdentity: wrappedGetIdentity,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
+    getDataContractHistory: wrappedGetDataContractHistory,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
