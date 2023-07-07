@@ -74,6 +74,10 @@ class Config {
    * @return {Config}
    */
   set(path, value) {
+    if (lodashGet(this.options, path) === undefined) {
+      throw new InvalidOptionPathError(path);
+    }
+
     const clonedOptions = lodashCloneDeep(this.options);
 
     lodashSet(clonedOptions, path, lodashCloneDeep(value));
@@ -81,10 +85,6 @@ class Config {
     const isValid = Config.ajv.validate(configJsonSchema, clonedOptions);
 
     if (!isValid) {
-      if (Config.ajv.errors[0].keyword === 'additionalProperties') {
-        throw new InvalidOptionPathError(path);
-      }
-
       const message = Config.ajv.errorsText(undefined, { dataVar: 'config' });
 
       throw new InvalidOptionError(
