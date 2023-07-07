@@ -97,6 +97,7 @@ module.exports = {
             },
             bindIp: {
               type: 'string',
+              format: 'ipv4',
             },
           },
           additionalProperties: false,
