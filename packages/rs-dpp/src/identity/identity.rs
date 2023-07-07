@@ -16,7 +16,6 @@ use std::collections::{BTreeMap, BTreeSet};
     Debug,
     Serialize,
     PlatformSerdeVersionedDeserialize,
-    Encode,
     Decode,
     Clone,
     PartialEq,

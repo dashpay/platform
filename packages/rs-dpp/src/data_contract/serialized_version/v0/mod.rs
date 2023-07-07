@@ -4,13 +4,13 @@ use crate::data_contract::{
     DataContract, DataContractV0Methods, DefinitionName, DocumentName, JsonSchema, PropertyPath,
 };
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use crate::state_transition::documents_batch_transition::document_base_transition::JsonValue;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
+use serde_json::Value as JsonValue;
 
 #[derive(Encode, Decode)]
 pub struct DataContractSerializationFormatV0 {

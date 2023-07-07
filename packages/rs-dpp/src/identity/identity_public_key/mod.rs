@@ -42,7 +42,6 @@ pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
     Debug,
     Serialize,
     Deserialize,
-    Encode,
     Decode,
     PlatformDeserialize,
     PlatformSerialize,
@@ -56,7 +55,7 @@ pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(2000)]
-#[platform_serialize(limit=2000, nested)]
+#[platform_serialize(limit=2000, allow_nested)]
 pub struct IdentityPublicKey {
     pub id: KeyID,
     pub purpose: Purpose,

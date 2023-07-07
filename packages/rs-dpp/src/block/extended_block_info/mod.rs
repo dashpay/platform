@@ -19,7 +19,6 @@ pub mod v0;
     Debug,
     PartialEq,
     Eq,
-    Encode,
     Decode,
     Serialize,
     Deserialize,
@@ -28,6 +27,7 @@ pub mod v0;
     From,
 )]
 #[platform_error_type(ProtocolError)]
+#[platform_serialize(allow_nested)]
 pub enum ExtendedBlockInfo {
     V0(ExtendedBlockInfoV0),
 }

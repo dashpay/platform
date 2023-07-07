@@ -378,14 +378,12 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
 
 
     let bincode_encode_body = quote! {
-    impl #impl_generics bincode::Encode for #name #ty_generics #where_clause {
-            fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        {
-            #encode_body
-        }
-    }
+        impl #impl_generics bincode::Encode for #name #ty_generics #where_clause {
+            fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
+                #encode_body
             }
-};
+        }
+    };
 
     let mut expanded = quote! {};
 

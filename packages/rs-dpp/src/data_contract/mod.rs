@@ -9,7 +9,7 @@ use derive_more::From;
 pub use generate_data_contract::*;
 use platform_serialization::{
     PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize,
-    PlatformVersionedDeserialize, PlatformVersionedSerialize,
+    PlatformVersionedDeserialize,
 };
 use platform_value::{Identifier, Value};
 use serde::Serialize;
@@ -121,6 +121,7 @@ pub enum DataContract {
     #[versioned(0)]
     V0(DataContractV0),
 }
+
 
 impl Default for DataContract {
     fn default() -> Self {
