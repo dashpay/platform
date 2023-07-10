@@ -574,4 +574,24 @@ module.exports = {
       });
     return configFile;
   },
+  '0.24.12': (configFile) => {
+    let i = 0;
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        // Update dashmate helper port
+        config.dashmate.helper.api.port = systemConfigs.base.dashmate.helper.api.port;
+
+        // Add pprof config
+        config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
+          .drive.tenderdash.pprof;
+
+        // Set different ports for local netwrok if exists
+        if (config.group === 'local') {
+          config.platform.drive.tenderdash.pprof.port += i * 100;
+
+          i++;
+        }
+      });
+    return configFile;
+  },
 };
