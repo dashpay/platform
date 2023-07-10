@@ -604,6 +604,8 @@ module.exports = {
   '0.24.15': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
+
         // eslint-disable-next-line max-len
         config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
         // eslint-disable-next-line max-len
