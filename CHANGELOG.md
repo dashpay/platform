@@ -5,15 +5,10 @@
 
 * **dashmate:** interface binding configuration ([#1220](https://github.com/dashpay/platform/issues/1220))
 
-
-### Miscellaneous Chores
-
-* test
-
-
 ### Continuous Integration
 
 * temporary ignore gRPC JS vulnerability ([#1221](https://github.com/dashpay/platform/issues/1221))
+
 
 ### [0.24.14](https://github.com/dashpay/platform/compare/v0.24.13...v0.24.14) (2023-07-05)
 
