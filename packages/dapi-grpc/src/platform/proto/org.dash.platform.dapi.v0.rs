@@ -139,11 +139,10 @@ pub mod get_identity_balance_response {
 pub struct GetIdentityBalanceAndRevisionResponse {
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<ResponseMetadata>,
-    #[prost(
-        oneof = "get_identity_balance_and_revision_response::Result",
-        tags = "1, 2"
-    )]
-    pub result: ::core::option::Option<get_identity_balance_and_revision_response::Result>,
+    #[prost(oneof = "get_identity_balance_and_revision_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<
+        get_identity_balance_and_revision_response::Result,
+    >,
 }
 /// Nested message and enum types in `GetIdentityBalanceAndRevisionResponse`.
 pub mod get_identity_balance_and_revision_response {
@@ -209,7 +208,17 @@ pub struct SecurityLevelMap {
 }
 /// Nested message and enum types in `SecurityLevelMap`.
 pub mod security_level_map {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
     #[repr(i32)]
     pub enum KeyKindRequestType {
         CurrentKeyOfKindRequest = 0,
@@ -222,7 +231,9 @@ pub mod security_level_map {
         /// (if the ProtoBuf definition does not change) and safe for programmatic use.
         pub fn as_str_name(&self) -> &'static str {
             match self {
-                KeyKindRequestType::CurrentKeyOfKindRequest => "CURRENT_KEY_OF_KIND_REQUEST",
+                KeyKindRequestType::CurrentKeyOfKindRequest => {
+                    "CURRENT_KEY_OF_KIND_REQUEST"
+                }
                 KeyKindRequestType::AllKeysOfKindRequest => "ALL_KEYS_OF_KIND_REQUEST",
             }
         }
@@ -303,7 +314,15 @@ pub mod get_identities_keys_request {
     /// Nested message and enum types in `SecurityLevelMap`.
     pub mod security_level_map {
         #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+            PartialOrd,
+            Ord,
+            ::prost::Enumeration
         )]
         #[repr(i32)]
         pub enum KeyKindRequestType {
@@ -316,7 +335,9 @@ pub mod get_identities_keys_request {
             /// (if the ProtoBuf definition does not change) and safe for programmatic use.
             pub fn as_str_name(&self) -> &'static str {
                 match self {
-                    KeyKindRequestType::CurrentKeyOfKindRequest => "CURRENT_KEY_OF_KIND_REQUEST",
+                    KeyKindRequestType::CurrentKeyOfKindRequest => {
+                        "CURRENT_KEY_OF_KIND_REQUEST"
+                    }
                 }
             }
             /// Creates an enum from field names used in the ProtoBuf definition.
@@ -403,7 +424,15 @@ pub mod get_proofs_request {
     /// Nested message and enum types in `IdentityRequest`.
     pub mod identity_request {
         #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration,
+            Clone,
+            Copy,
+            Debug,
+            PartialEq,
+            Eq,
+            Hash,
+            PartialOrd,
+            Ord,
+            ::prost::Enumeration
         )]
         #[repr(i32)]
         pub enum Type {
@@ -528,12 +557,12 @@ pub mod get_data_contracts_response {
 pub struct GetDataContractHistoryRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, optional, tag = "2")]
-    pub limit: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "3")]
-    pub offset: ::core::option::Option<u32>,
-    #[prost(uint64, optional, tag = "4")]
-    pub start_at_seconds: ::core::option::Option<u64>,
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+    #[prost(uint32, tag = "3")]
+    pub offset: u32,
+    #[prost(uint64, tag = "4")]
+    pub start_at_ms: u64,
     #[prost(bool, tag = "5")]
     pub prove: bool,
 }
@@ -549,17 +578,11 @@ pub struct GetDataContractHistoryResponse {
 pub mod get_data_contract_history_response {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct DataContractValue {
-        #[prost(bytes = "vec", tag = "1")]
-        pub value: ::prost::alloc::vec::Vec<u8>,
-    }
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContractHistoryEntry {
         #[prost(uint64, tag = "1")]
         pub date: u64,
-        #[prost(message, optional, tag = "2")]
-        pub value: ::core::option::Option<DataContractValue>,
+        #[prost(bytes = "vec", tag = "2")]
+        pub value: ::prost::alloc::vec::Vec<u8>,
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -647,7 +670,9 @@ pub struct GetIdentitiesByPublicKeyHashesResponse {
         oneof = "get_identities_by_public_key_hashes_response::Result",
         tags = "1, 2"
     )]
-    pub result: ::core::option::Option<get_identities_by_public_key_hashes_response::Result>,
+    pub result: ::core::option::Option<
+        get_identities_by_public_key_hashes_response::Result,
+    >,
 }
 /// Nested message and enum types in `GetIdentitiesByPublicKeyHashesResponse`.
 pub mod get_identities_by_public_key_hashes_response {
@@ -679,11 +704,10 @@ pub struct GetIdentityByPublicKeyHashesRequest {
 pub struct GetIdentityByPublicKeyHashesResponse {
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<ResponseMetadata>,
-    #[prost(
-        oneof = "get_identity_by_public_key_hashes_response::Result",
-        tags = "1, 2"
-    )]
-    pub result: ::core::option::Option<get_identity_by_public_key_hashes_response::Result>,
+    #[prost(oneof = "get_identity_by_public_key_hashes_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<
+        get_identity_by_public_key_hashes_response::Result,
+    >,
 }
 /// Nested message and enum types in `GetIdentityByPublicKeyHashesResponse`.
 pub mod get_identity_by_public_key_hashes_response {
@@ -709,11 +733,10 @@ pub struct WaitForStateTransitionResultRequest {
 pub struct WaitForStateTransitionResultResponse {
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<ResponseMetadata>,
-    #[prost(
-        oneof = "wait_for_state_transition_result_response::Result",
-        tags = "1, 2"
-    )]
-    pub result: ::core::option::Option<wait_for_state_transition_result_response::Result>,
+    #[prost(oneof = "wait_for_state_transition_result_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<
+        wait_for_state_transition_result_response::Result,
+    >,
 }
 /// Nested message and enum types in `WaitForStateTransitionResultResponse`.
 pub mod wait_for_state_transition_result_response {
@@ -765,8 +788,8 @@ pub struct GetConsensusParamsResponse {
 /// Generated client implementations.
 pub mod platform_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct PlatformClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -810,8 +833,9 @@ pub mod platform_client {
                     <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
             >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + Send + Sync,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + Send + Sync,
         {
             PlatformClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -853,110 +877,145 @@ pub mod platform_client {
             tonic::Response<super::BroadcastStateTransitionResponse>,
             tonic::Status,
         > {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "broadcastStateTransition",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "broadcastStateTransition",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_identity(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIdentityRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetIdentityResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentity",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentity",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("org.dash.platform.dapi.v0.Platform", "getIdentity"),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_identities(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIdentitiesRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetIdentitiesResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentitiesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentities",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentities",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentities",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_identity_keys(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIdentityKeysRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetIdentityKeysResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityKeysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentityKeys",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentityKeys",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityKeys",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         ///  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
         pub async fn get_identity_balance(
             &mut self,
             request: impl tonic::IntoRequest<super::GetIdentityRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetIdentityBalanceResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityBalanceResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentityBalance",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentityBalance",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityBalance",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_identity_balance_and_revision(
@@ -966,132 +1025,203 @@ pub mod platform_client {
             tonic::Response<super::GetIdentityBalanceAndRevisionResponse>,
             tonic::Status,
         > {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentityBalanceAndRevision",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityBalanceAndRevision",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_proofs(
             &mut self,
             request: impl tonic::IntoRequest<super::GetProofsRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetProofsResponse>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetProofsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getProofs",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getProofs",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("org.dash.platform.dapi.v0.Platform", "getProofs"),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_data_contract(
             &mut self,
             request: impl tonic::IntoRequest<super::GetDataContractRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetDataContractResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetDataContractResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getDataContract",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getDataContract",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getDataContract",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_data_contract_history(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetDataContractHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDataContractHistoryResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getDataContractHistory",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getDataContractHistory",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_data_contracts(
             &mut self,
             request: impl tonic::IntoRequest<super::GetDataContractsRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetDataContractsResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetDataContractsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getDataContracts",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getDataContracts",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getDataContracts",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_documents(
             &mut self,
             request: impl tonic::IntoRequest<super::GetDocumentsRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetDocumentsResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetDocumentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getDocuments",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getDocuments",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("org.dash.platform.dapi.v0.Platform", "getDocuments"),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_identities_by_public_key_hashes(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetIdentitiesByPublicKeyHashesRequest>,
+            request: impl tonic::IntoRequest<
+                super::GetIdentitiesByPublicKeyHashesRequest,
+            >,
         ) -> std::result::Result<
             tonic::Response<super::GetIdentitiesByPublicKeyHashesResponse>,
             tonic::Status,
         > {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentitiesByPublicKeyHashes",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentitiesByPublicKeyHashes",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentitiesByPublicKeyHashes",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_identity_by_public_key_hashes(
@@ -1101,21 +1231,27 @@ pub mod platform_client {
             tonic::Response<super::GetIdentityByPublicKeyHashesResponse>,
             tonic::Status,
         > {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHashes",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getIdentityByPublicKeyHashes",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getIdentityByPublicKeyHashes",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn wait_for_state_transition_result(
@@ -1125,43 +1261,57 @@ pub mod platform_client {
             tonic::Response<super::WaitForStateTransitionResultResponse>,
             tonic::Status,
         > {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "waitForStateTransitionResult",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "waitForStateTransitionResult",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
         pub async fn get_consensus_params(
             &mut self,
             request: impl tonic::IntoRequest<super::GetConsensusParamsRequest>,
-        ) -> std::result::Result<tonic::Response<super::GetConsensusParamsResponse>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::GetConsensusParamsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/org.dash.platform.dapi.v0.Platform/getConsensusParams",
             );
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new(
-                "org.dash.platform.dapi.v0.Platform",
-                "getConsensusParams",
-            ));
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getConsensusParams",
+                    ),
+                );
             self.inner.unary(req, path, codec).await
         }
     }
