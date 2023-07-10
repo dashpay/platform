@@ -602,7 +602,6 @@ module.exports = {
     return configFile;
   },
   '0.24.15': (configFile) => {
-    console.log('aaa')
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         // eslint-disable-next-line max-len
