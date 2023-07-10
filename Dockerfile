@@ -83,7 +83,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 RUN npm config set audit false && \
     npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
-    corepack prepare yarn@3.3.0 --activate && \
     corepack enable
 
 # Switch to clang
