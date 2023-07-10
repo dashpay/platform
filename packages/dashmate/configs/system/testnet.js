@@ -79,7 +79,7 @@ module.exports = lodashMerge({}, baseConfig, {
         genesis: {
           genesis_time: '2023-04-26T10:43:20.921Z',
           chain_id: 'dash-testnet-21',
-          initial_core_chain_locked_height: 879249,
+          initial_core_chain_locked_height: 854281,
           consensus_params: {
             timeout: {
               propose: '50000000000',
