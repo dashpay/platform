@@ -21,7 +21,7 @@ function getServicesScopeFactory(dockerCompose, configFile, getServiceList) {
 
     const scope = {};
 
-    for (const { serviceName, title } of services) {
+    for (const { name, title } of services) {
       let containerId;
       let status;
       let image;
@@ -35,9 +35,9 @@ function getServicesScopeFactory(dockerCompose, configFile, getServiceList) {
           Config: {
             Image: image,
           },
-        } = await dockerCompose.inspectService(generateEnvs(configFile, config), serviceName));
+        } = await dockerCompose.inspectService(generateEnvs(configFile, config), name));
 
-        scope[serviceName] = {
+        scope[name] = {
           title,
           containerId: containerId ? containerId.slice(0, 12) : null,
           image,
@@ -53,7 +53,7 @@ function getServicesScopeFactory(dockerCompose, configFile, getServiceList) {
           console.error(e);
         }
 
-        scope[serviceName] = {
+        scope[name] = {
           title,
           containerId: null,
           image: null,
