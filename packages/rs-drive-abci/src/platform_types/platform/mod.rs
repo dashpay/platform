@@ -17,11 +17,11 @@ use dpp::serialization_traits::PlatformDeserializable;
 
 use crate::execution::types::block_execution_context;
 use crate::platform_types::platform_state::v0::PlatformState;
+use crate::platform_types::snapshot::{Manager, Snapshot};
 use drive::error::Error::GroveDB;
-use serde_json::json;
 use drive::grovedb::batch::Op;
 use drive::query::GroveDb;
-use crate::platform_types::snapshot::{Manager, Snapshot};
+use serde_json::json;
 
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure
 /// configuration of the Platform struct to another without a software upgrade
@@ -102,11 +102,11 @@ impl Platform<DefaultCoreRPC> {
             config.core.rpc.username.clone(),
             config.core.rpc.password.clone(),
         )
-            .map_err(|_e| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "Could not setup Dash Core RPC client",
-                ))
-            })?;
+        .map_err(|_e| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "Could not setup Dash Core RPC client",
+            ))
+        })?;
         Self::open_with_client(path, Some(config), core_rpc, None)
     }
 }
@@ -123,7 +123,7 @@ impl Platform<MockCoreRPCLike> {
             Ok(BlockHash::from_hex(
                 "0000000000000000000000000000000000000000000000000000000000000000",
             )
-                .unwrap())
+            .unwrap())
         });
 
         core_rpc_mock.expect_get_block_json().returning(|_| {
@@ -160,8 +160,8 @@ impl<C> Platform<C> {
         core_rpc: C,
         snapshot_manager: Option<Manager>,
     ) -> Result<Platform<C>, Error>
-        where
-            C: CoreRPCLike,
+    where
+        C: CoreRPCLike,
     {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
@@ -201,8 +201,8 @@ impl<C> Platform<C> {
         config: PlatformConfig,
         serialized_platform_state: Vec<u8>,
     ) -> Result<Platform<C>, Error>
-        where
-            C: CoreRPCLike,
+    where
+        C: CoreRPCLike,
     {
         let platform_state = PlatformState::deserialize(&serialized_platform_state)?;
 
@@ -227,8 +227,8 @@ impl<C> Platform<C> {
         current_protocol_version_in_consensus: u32,
         next_epoch_protocol_version: u32,
     ) -> Result<Platform<C>, Error>
-        where
-            C: CoreRPCLike,
+    where
+        C: CoreRPCLike,
     {
         let state = PlatformState::default_with_protocol_versions(
             current_protocol_version_in_consensus,
@@ -250,7 +250,7 @@ impl<C> Platform<C> {
         match self.snapshot_manager {
             Some(ref snapshot_manager) => {
                 snapshot_manager.create_snapshot(&self.drive.grove, height)
-            },
+            }
             None => Ok(()),
         }
     }

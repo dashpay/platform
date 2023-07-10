@@ -1,13 +1,13 @@
-use std::path::Path;
+use crate::error::Error;
 use bincode::{config, Decode, Encode};
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
-use crate::error::Error;
+use std::path::Path;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
-const DEFAULT_FREQ: i64 = 1000;
+const DEFAULT_FREQ: i64 = 3;
 
 const DEFAULT_NUMBER_OF_SNAPSHOTS: usize = 10;
 
@@ -20,7 +20,7 @@ pub struct Snapshot {
     pub version: u16,
     /// Path to the checkpoint
     pub path: String,
-    /// Hash of the checkpoint
+    /// Root hash of the checkpoint
     pub hash: [u8; 32],
     /// Metadata
     pub metadata: Vec<u8>,
@@ -35,12 +35,8 @@ pub struct Manager {
 }
 
 impl Manager {
-    /// Create a new instance of snapshot Manager
-    pub fn new(
-        db_path: String,
-        number_stored_snapshots: Option<usize>,
-        freq: Option<i64>,
-    ) -> Self {
+    /// Create a new instance of snapshot manager
+    pub fn new(db_path: String, number_stored_snapshots: Option<usize>, freq: Option<i64>) -> Self {
         let mut manager = Self {
             freq: DEFAULT_FREQ,
             number_stored_snapshots: DEFAULT_NUMBER_OF_SNAPSHOTS,
@@ -57,10 +53,10 @@ impl Manager {
 
     /// Return a persisted list of snapshots
     pub fn get_snapshots(&self, grove: &GroveDb) -> Result<Vec<Snapshot>, Error> {
-        let data = grove.
-            get_aux(SNAPSHOT_KEY, None).
-            unwrap().
-            map_err(|e| Error::Drive(GroveDB(e)))?;
+        let data = grove
+            .get_aux(SNAPSHOT_KEY, None)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         match data {
             Some(data) => {
@@ -84,9 +80,9 @@ impl Manager {
         let mut checkpoint_path = self.checkpoints_path.to_owned();
         checkpoint_path.push_str("/");
         checkpoint_path.push_str(height.to_string().as_str());
-        grove.
-            create_checkpoint(checkpoint_path.to_string()).
-            map_err(|e| Error::Drive(GroveDB(e)))?;
+        grove
+            .create_checkpoint(checkpoint_path.to_string())
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         let root_hash = grove
             .root_hash(None)
@@ -125,8 +121,8 @@ impl Manager {
         let conf = config::standard();
         let data: Vec<u8> = bincode::encode_to_vec(snapshots, conf)
             .map_err(|e| Error::Drive(Drive(DriveError::Snapshot(e.to_string()))))?;
-        grove.
-            put_aux(SNAPSHOT_KEY, data.as_slice(), None, None)
+        grove
+            .put_aux(SNAPSHOT_KEY, data.as_slice(), None, None)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
         Ok(())
@@ -135,8 +131,8 @@ impl Manager {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use super::*;
+    use std::fs;
 
     #[test]
     fn test_create_snapshot() {

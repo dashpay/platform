@@ -1,6 +1,7 @@
 //! This module implements ABCI application server.
 //!
 use crate::error::execution::ExecutionError;
+use crate::platform_types::snapshot::Manager;
 use crate::{
     config::PlatformConfig, error::Error, platform_types::platform::Platform,
     rpc::core::CoreRPCLike,
@@ -9,7 +10,6 @@ use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use crate::platform_types::snapshot::Manager;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -32,19 +32,14 @@ pub fn start<C: CoreRPCLike>(
 ) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
-    let  snapshot_manager = Manager::new(
-        config.db_path.to_str().unwrap().to_string(),
-        None,
-        None,
-    );
+    let snapshot_manager = Manager::new(config.db_path.to_str().unwrap().to_string(), None, None);
 
-    let platform: Platform<C> =
-        Platform::open_with_client(
-            &config.db_path,
-            Some(config.clone()),
-            core_rpc,
-            Some(snapshot_manager),
-        )?;
+    let platform: Platform<C> = Platform::open_with_client(
+        &config.db_path,
+        Some(config.clone()),
+        core_rpc,
+        Some(snapshot_manager),
+    )?;
 
     let abci = AbciApplication::new(&platform)?;
 

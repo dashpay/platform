@@ -49,6 +49,8 @@ pub mod platform_state;
 pub mod query;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
+/// Snapshot module
+pub mod snapshot;
 /// System identity public keys
 pub mod system_identity_public_keys;
 /// The validator module
@@ -58,5 +60,3 @@ pub mod validator;
 pub mod validator_set;
 /// Withdrawal types
 pub mod withdrawal;
-/// Snapshot module
-pub mod snapshot;
