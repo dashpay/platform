@@ -81,7 +81,13 @@ class Config {
     const isValid = Config.ajv.validate(configJsonSchema, clonedOptions);
 
     if (!isValid) {
-      if (Config.ajv.errors[0].keyword === 'additionalProperties') {
+      const [error] = Config.ajv.errors;
+
+      const pathSegments = path.split('.');
+      pathSegments.pop();
+      const parentPath = `/${pathSegments.join('/')}`;
+
+      if (error.keyword === 'additionalProperties' && error.instancePath === parentPath) {
         throw new InvalidOptionPathError(path);
       }
 
