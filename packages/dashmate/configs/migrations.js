@@ -601,4 +601,15 @@ module.exports = {
       });
     return configFile;
   },
+  '0.24.15': (configFile) => {
+    console.log('aaa')
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        // eslint-disable-next-line max-len
+        config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
+        // eslint-disable-next-line max-len
+        config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+      });
+    return configFile;
+  },
 };
