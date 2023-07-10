@@ -235,18 +235,13 @@ impl DataContractFactory {
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        let raw_object = BTreeMap::from([
-            (
-                st_prop::PROTOCOL_VERSION.to_string(),
-                Value::U32(self.protocol_version),
-            ),
-            (
-                st_prop::DATA_CONTRACT.to_string(),
-                data_contract.try_into()?,
-            ),
-        ]);
-
-        DataContractUpdateTransition::from_value_map(raw_object)
+        Ok(DataContractUpdateTransition {
+            protocol_version: self.protocol_version,
+            transition_type: StateTransitionType::DataContractUpdate,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+            data_contract,
+        })
     }
 }
 

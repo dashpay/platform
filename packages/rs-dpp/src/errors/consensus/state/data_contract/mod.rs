@@ -1,2 +1,3 @@
 pub mod data_contract_already_present_error;
+pub mod data_contract_config_update_error;
 pub mod data_contract_is_readonly_error;

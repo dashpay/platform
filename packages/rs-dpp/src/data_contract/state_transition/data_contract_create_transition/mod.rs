@@ -422,4 +422,26 @@ mod test {
         assert!(!data.state_transition.is_document_state_transition());
         assert!(!data.state_transition.is_identity_state_transition());
     }
+
+    mod platform_serializable {
+        use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+        use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+
+        #[test]
+        fn should_serialize_config() {
+            let mut data = super::get_test_data();
+            data.state_transition.data_contract.config.keeps_history = true;
+            let state_transition_bytes = data
+                .state_transition
+                .serialize()
+                .expect("state transition should be serialized");
+
+            assert!(data.state_transition.data_contract.config.keeps_history);
+
+            let restored = DataContractCreateTransition::deserialize(&state_transition_bytes)
+                .expect("state transition should be deserialized");
+
+            assert!(restored.data_contract.config.keeps_history);
+        }
+    }
 }

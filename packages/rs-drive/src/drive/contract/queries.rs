@@ -93,7 +93,7 @@ impl Drive {
     /// This function returns an error if the limit is out of the allowed range.
     pub fn fetch_contract_history_query(
         contract_id: [u8; 32],
-        start_at_date: u64,
+        start_at_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<PathQuery, Error> {
@@ -106,7 +106,7 @@ impl Drive {
 
         let query = Query::new_single_query_item_with_direction(
             QueryItem::RangeAfter(std::ops::RangeFrom {
-                start: encode_u64(start_at_date),
+                start: encode_u64(start_at_ms),
             }),
             false,
         );
