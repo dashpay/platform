@@ -601,4 +601,12 @@ module.exports = {
       });
     return configFile;
   },
+  '0.24.15': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
+      });
+
+    return configFile;
+  },
 };

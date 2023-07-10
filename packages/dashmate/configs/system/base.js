@@ -40,6 +40,7 @@ module.exports = {
   docker: {
     network: {
       subnet: '172.24.24.0/24',
+      bindIp: '0.0.0.0',
     },
   },
   core: {
