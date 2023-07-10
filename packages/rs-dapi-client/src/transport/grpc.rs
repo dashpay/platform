@@ -49,15 +49,63 @@ pub trait GrpcTransportRequest: Sized + Clone {
     fn get_grpc_method() -> GrpcMethod<Self, Self::GrpcTransportResponse>;
 }
 
-impl GrpcTransportRequest for platform_proto::GetIdentityRequest {
-    type GrpcTransportResponse = platform_proto::GetIdentityResponse;
+/// A shortcut to link between gRPC request type, response type and the mehod of
+/// [PlatformClient] in order to represent it in a form of types and data.
+macro_rules! link_grpc_method {
+    ($request:ty, $response:ty, $($method:tt)+) => {
+        impl GrpcTransportRequest for $request {
+            type GrpcTransportResponse = $response;
 
-    fn get_grpc_method() -> GrpcMethod<Self, Self::GrpcTransportResponse> {
-        Box::new(|client, request| {
-            client
-                .get_identity(request)
-                .map_ok(tonic::Response::into_inner)
-                .boxed()
-        })
-    }
+            fn get_grpc_method() -> GrpcMethod<Self, Self::GrpcTransportResponse> {
+                Box::new(|client, request| {
+                    client
+                        .$($method)+(request)
+                        .map_ok(tonic::Response::into_inner)
+                        .boxed()
+                })
+            }
+        }
+    };
 }
+
+link_grpc_method!(
+    platform_proto::GetIdentityRequest,
+    platform_proto::GetIdentityResponse,
+    get_identity
+);
+
+link_grpc_method!(
+    platform_proto::GetDocumentsRequest,
+    platform_proto::GetDocumentsResponse,
+    get_documents
+);
+
+link_grpc_method!(
+    platform_proto::GetDataContractRequest,
+    platform_proto::GetDataContractResponse,
+    get_data_contract
+);
+
+link_grpc_method!(
+    platform_proto::GetConsensusParamsRequest,
+    platform_proto::GetConsensusParamsResponse,
+    get_consensus_params
+);
+
+link_grpc_method!(
+    platform_proto::BroadcastStateTransitionRequest,
+    platform_proto::BroadcastStateTransitionResponse,
+    broadcast_state_transition
+);
+
+link_grpc_method!(
+    platform_proto::WaitForStateTransitionResultRequest,
+    platform_proto::WaitForStateTransitionResultResponse,
+    wait_for_state_transition_result
+);
+
+link_grpc_method!(
+    platform_proto::GetIdentitiesByPublicKeyHashesRequest,
+    platform_proto::GetIdentitiesByPublicKeyHashesResponse,
+    get_identities_by_public_key_hashes
+);
