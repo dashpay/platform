@@ -5,6 +5,14 @@
 
 * **dashmate:** interface binding configuration ([#1220](https://github.com/dashpay/platform/issues/1220))
 
+### Bug Fixes
+
+* **dashmate:** service name variable name ([#1225](https://github.com/dashpay/platform/issues/1225))
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash genesis for testnet ([#1223](https://github.com/dashpay/platform/issues/1223))
+
 ### Continuous Integration
 
 * temporary ignore gRPC JS vulnerability ([#1221](https://github.com/dashpay/platform/issues/1221))
