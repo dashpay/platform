@@ -11,6 +11,7 @@ module.exports = lodashMerge({}, baseConfig, {
   docker: {
     network: {
       subnet: '172.24.24.0/24',
+      bindIp: '127.0.0.1',
     },
   },
   core: {
