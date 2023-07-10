@@ -11,7 +11,6 @@ module.exports = lodashMerge({}, baseConfig, {
   docker: {
     network: {
       subnet: '172.24.24.0/24',
-      bindIp: '127.0.0.1',
     },
   },
   core: {
@@ -49,14 +48,6 @@ module.exports = lodashMerge({}, baseConfig, {
       },
     },
   },
-  dashmate: {
-    helper: {
-      api: {
-        port: 9100,
-      },
-    },
-  },
-  externalIp: null,
   environment: 'development',
   network: NETWORK_LOCAL,
 });
