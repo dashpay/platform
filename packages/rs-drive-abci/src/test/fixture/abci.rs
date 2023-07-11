@@ -55,7 +55,7 @@ pub fn static_init_chain_request() -> RequestInitChain {
 }
 
 /// Creates static system identity public keys fixture
-pub fn static_system_identity_public_keys_v0() -> SystemIdentityPublicKeysV0 {
+pub(super) fn static_system_identity_public_keys_v0() -> SystemIdentityPublicKeysV0 {
     SystemIdentityPublicKeysV0 {
         masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
             master: vec![

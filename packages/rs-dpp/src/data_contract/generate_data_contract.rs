@@ -6,7 +6,7 @@ use crate::util::hash::hash;
 
 impl DataContract {
     /// Generate data contract id based on owner id and entropy
-    pub fn generate_data_contract_id_v0(
+    pub(super) fn generate_data_contract_id_v0(
         owner_id: impl AsRef<[u8]>,
         entropy: impl AsRef<[u8]>,
     ) -> Identifier {

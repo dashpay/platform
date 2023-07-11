@@ -8,7 +8,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an empty sum tree in groveDB to `drive_operations`.
-    pub fn grove_insert_empty_sum_tree_v0<B: AsRef<[u8]>>(
+    pub(super) fn grove_insert_empty_sum_tree_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],

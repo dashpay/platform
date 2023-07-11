@@ -24,7 +24,7 @@ use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Disable identity keys
-    pub fn disable_identity_keys_v0(
+    pub(super) fn disable_identity_keys_v0(
         &self,
         identity_id: [u8; 32],
         keys_ids: Vec<KeyID>,
@@ -64,7 +64,7 @@ impl Drive {
         Ok(fees)
     }
 
-    pub fn disable_identity_keys_operations_v0(
+    pub(super) fn disable_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,
