@@ -11,7 +11,7 @@ use anyhow::anyhow;
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
-use platform_value::{BinaryData, Bytes20, ReplacementType, Value, ValueMapHelper};
+use platform_value::{BinaryData, Bytes20, ReplacementType, Value};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -55,7 +55,7 @@ pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(2000)]
-#[platform_serialize(limit=2000, allow_nested)]
+#[platform_serialize(limit = 2000, allow_nested)]
 pub struct IdentityPublicKey {
     pub id: KeyID,
     pub purpose: Purpose,

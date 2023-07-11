@@ -1,7 +1,6 @@
 use crate::version::dpp_versions::{
-    DPPVersion, DocumentFeatureVersionBounds, StateTransitionVersions,
+    DPPVersion, DocumentFeatureVersionBounds, StateTransitionSerializationVersions,
 };
-use crate::version::drive_versions::DriveStructureVersion;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{
     AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion,
@@ -69,7 +68,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     },
     drive_abci: Default::default(),
     dpp: DPPVersion {
-        state_transition_versions: StateTransitionVersions {
+        state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_create_state_transition: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,

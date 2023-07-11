@@ -34,6 +34,7 @@ pub enum ExtendedDocument {
 }
 
 impl ExtendedDocument {
+    #[cfg(feature = "json-object")]
     /// Returns the properties of the document as a JSON value.
     ///
     /// # Errors

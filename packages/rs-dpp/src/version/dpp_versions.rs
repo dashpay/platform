@@ -3,13 +3,17 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPVersion {
-    pub state_transition_versions: StateTransitionVersions,
+    pub state_transition_serialization_versions: StateTransitionSerializationVersions,
+    /// This is how we serialize and unserialize a contract
+    pub contract_serialization_version: FeatureVersionBounds,
+    /// This is the structure of the Contract as it is defined for code paths
+    pub contract_structure_version: FeatureVersion,
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct StateTransitionVersions {
+pub struct StateTransitionSerializationVersions {
     pub identity_create_state_transition: FeatureVersionBounds,
     pub identity_update_state_transition: FeatureVersionBounds,
     pub identity_top_up_state_transition: FeatureVersionBounds,
@@ -75,4 +79,6 @@ pub struct DocumentTypeVersions {
 pub struct DocumentVersions {
     // This is for the overall structure of the document, like DocumentV0
     pub document_structure_version: FeatureVersion,
+    pub document_serialization_version: FeatureVersionBounds,
+    pub extended_document_structure_version: FeatureVersionBounds,
 }

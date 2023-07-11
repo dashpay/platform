@@ -50,7 +50,7 @@ pub struct ExtendedDocumentV0 {
 
 impl ExtendedDocumentV0 {
     #[cfg(feature = "json-object")]
-    fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
+    pub(super) fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
             .properties()
             .to_json_value()

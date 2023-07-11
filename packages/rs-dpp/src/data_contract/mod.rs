@@ -1,11 +1,10 @@
-use crate::serialization_traits::{
-    PlatformDeserializableFromVersionedStructure, PlatformSerializable,
-    PlatformSerializableIntoStructureVersion,
-};
+use crate::serialization_traits::{PlatformDeserializableFromVersionedStructure, PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable, PlatformSerializableIntoStructureVersion, PlatformSerializableWithPlatformVersion};
 use bincode::{config, Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
 
+use bincode::enc::Encoder;
+use bincode::error::EncodeError;
 pub use generate_data_contract::*;
 use platform_serialization::{
     PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize,
@@ -14,8 +13,7 @@ use platform_serialization::{
 use platform_value::{Identifier, Value};
 use serde::Serialize;
 use std::collections::BTreeMap;
-use bincode::enc::Encoder;
-use bincode::error::EncodeError;
+use std::convert::TryInto;
 
 pub mod errors;
 pub mod extra;
@@ -53,6 +51,8 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde_json::Value as JsonValue;
+use crate::data_contract::serialized_version::{CONTRACT_DESERIALIZATION_LIMIT, DataContractSerializationFormat};
+use crate::ProtocolError::PlatformDeserializationError;
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -108,20 +108,43 @@ pub trait DataContractLike<'a> {
     PartialEq,
     Serialize,
     PlatformSerdeVersionedDeserialize,
-    PlatformSerialize,
-    PlatformVersionedDeserialize,
-    PlatformDeserializeNoLimit,
     From,
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_deserialize_limit(15000)]
-#[platform_serialize(passthrough, allow_nested)]
 #[serde(untagged)]
 pub enum DataContract {
     #[versioned(0)]
     V0(DataContractV0),
 }
 
+impl PlatformSerializableWithPlatformVersion for DataContract {
+    fn serialize_with_platform_version(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+        let serialization_format = self.to_serialization_format_based_on_default_current_version(platform_version)?;
+        let config = config::standard().with_big_endian().with_no_limit();
+        bincode::encode_to_vec(serialization_format, config).map_err(|e| ProtocolError::new(e))
+    }
+
+    fn serialize_consume_with_platform_version(self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+        let serialization_format = self.into_serialization_format_based_on_default_current_version(platform_version)?;
+        let config = config::standard().with_big_endian().with_no_limit();
+        bincode::encode_to_vec(serialization_format, config).map_err(|e| ProtocolError::new(e))
+    }
+}
+
+impl PlatformDeserializableFromVersionedStructure for DataContract {
+    fn versioned_deserialize(data: &[u8], platform_version: &PlatformVersion) -> Result<Self, ProtocolError> where Self: Sized {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let data_contract_in_serialization_format : DataContractSerializationFormat = bincode::decode_from_slice(data, config).map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e)))?.0;
+        DataContract::from_serialization_format(data_contract_in_serialization_format, platform_version)
+    }
+}
+
+impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
+    fn versioned_limit_deserialize(data: &[u8], platform_version: &PlatformVersion) -> Result<Self, ProtocolError> where Self: Sized {
+        let config = config::standard().with_big_endian().with_limit::<CONTRACT_DESERIALIZATION_LIMIT>();
+        let data_contract_in_serialization_format : DataContractSerializationFormat = bincode::decode_from_slice(data, config).map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e)))?.0;
+        DataContract::from_serialization_format(data_contract_in_serialization_format, platform_version)
+    }
+}
 
 impl Default for DataContract {
     fn default() -> Self {
@@ -239,5 +262,31 @@ impl DataContract {
                 )),
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::data_contract::v0::DataContractV0;
+    use crate::data_contract::DataContract;
+    use crate::system_data_contracts::load_system_data_contract;
+    use crate::version::PlatformVersion;
+    use data_contracts::SystemDataContract::Dashpay;
+    use serde::Serialize;
+
+    #[test]
+    fn test_contract_serialization() {
+        let data_contract = load_system_data_contract(Dashpay).expect("expected dashpay contract");
+        let platform_version = PlatformVersion::latest();
+        let serialized = data_contract
+            .serialize_with_platform_version(platform_version)
+            .expect("expected to serialize data contract");
+        assert_eq!(
+            serialized[0],
+            platform_version.contract.default_current_version
+        );
+
+        let unserialized = DataContract::deserialize_with_platform_version(platform_version);
+        assert_eq!(data_contract, unserialized);
     }
 }

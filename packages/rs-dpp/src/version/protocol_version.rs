@@ -55,9 +55,6 @@ pub struct PlatformArchitectureVersion {
 #[derive(Clone, Debug)]
 pub struct PlatformVersion {
     pub protocol_version: u32,
-    pub document: FeatureVersionBounds,
-    pub extended_document: FeatureVersionBounds,
-    pub contract: FeatureVersionBounds,
     pub identity: FeatureVersionBounds,
     pub proofs: FeatureVersionBounds,
     pub costs: FeatureVersionBounds,

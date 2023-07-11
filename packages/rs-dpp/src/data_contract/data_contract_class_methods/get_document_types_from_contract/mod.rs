@@ -51,6 +51,7 @@ impl DataContract {
                 definition_references,
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
+                platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "get_document_types_from_contract".to_string(),

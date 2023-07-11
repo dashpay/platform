@@ -1,8 +1,17 @@
+mod serialize_enum;
+mod serialize_struct;
+
 extern crate proc_macro;
 
+use crate::serialize_enum::derive_platform_serialize_enum;
+use crate::serialize_struct::derive_platform_serialize_struct;
 use proc_macro::TokenStream;
+use proc_macro2::{Ident, Span};
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Expr, Lit, Meta, LitInt, Type, LitStr};
+use syn::{
+    parse_macro_input, Data, DataEnum, DataStruct, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
+    Path, Type,
+};
 
 /// This proc macro derives the `PlatformSerialize` trait for the input data structure.
 /// The derived trait implementation will provide methods to serialize the data into a binary format, with some customization options.
@@ -45,10 +54,7 @@ use syn::{parse_macro_input, Data, DeriveInput, Expr, Lit, Meta, LitInt, Type, L
 /// Errors from the `bincode` library are converted into the specified platform error type. If a size limit is exceeded, the error will be `MaxEncodedBytesReachedError`.
 ///
 /// This macro is intended to be used for platform-specific serialization where it is necessary to control the serialization process more closely than what is provided by the standard `Serialize` trait.
-#[proc_macro_derive(
-PlatformSerialize,
-attributes(platform_error_type, platform_serialize)
-)]
+#[proc_macro_derive(PlatformSerialize, attributes(platform_error_type, platform_serialize))]
 pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -77,35 +83,57 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let mut platform_serialize_limit = None;
     let mut untagged = false;
     let mut platform_serialize_into = None;
+    let mut platform_version_path = None;
+    let mut crate_name: Ident = Ident::new("crate", Span::call_site()); // default value is "crate"
     let mut allow_prepend_version = false;
     let mut force_prepend_version = false;
 
-    platform_serialize_attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("passthrough") {
-            passthrough = true;
-        } else if meta.path.is_ident("allow_nested") {
-            nested = true;
-        } else if meta.path.is_ident("allow_prepend_version") {
-            allow_prepend_version = true;
-        } else if meta.path.is_ident("force_prepend_version") {
-            force_prepend_version = true;
-        }  else if meta.path.is_ident("limit") {
-            let value = meta.value()?;
-            let parsed_limit: LitInt = value.parse()?;
-            platform_serialize_limit = Some(parsed_limit.base10_parse::<usize>().expect("Expected a number for 'limit'"));
-        } else if meta.path.is_ident("untagged") {
-            untagged = true;
-        } else if meta.path.is_ident("into") {
-            let value = meta.value()?;
-            let parsed_into: LitStr = value.parse()?;
-            platform_serialize_into = Some(parsed_into.parse::<syn::Path>().expect("Expected a valid path for 'into'"));
-        } else {
-            return Err(meta.error(format!("unsupported parameter {:?}", meta.path.get_ident()).as_str()));
-        }
-        Ok(())
-    }).expect("expected to parse nested meta");
+    platform_serialize_attr
+        .parse_nested_meta(|meta| {
+            if meta.path.is_ident("crate_name") {
+                let value = meta.value()?;
+                let crate_name_str: LitStr = value.parse()?;
+                crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
+            } else if meta.path.is_ident("passthrough") {
+                passthrough = true;
+            } else if meta.path.is_ident("allow_nested") {
+                nested = true;
+            } else if meta.path.is_ident("allow_prepend_version") {
+                allow_prepend_version = true;
+            } else if meta.path.is_ident("force_prepend_version") {
+                force_prepend_version = true;
+            } else if meta.path.is_ident("limit") {
+                let value = meta.value()?;
+                let parsed_limit: LitInt = value.parse()?;
+                platform_serialize_limit = Some(
+                    parsed_limit
+                        .base10_parse::<usize>()
+                        .expect("Expected a number for 'limit'"),
+                );
+            } else if meta.path.is_ident("untagged") {
+                untagged = true;
+            } else if meta.path.is_ident("into") {
+                let value = meta.value()?;
+                let parsed_into: LitStr = value.parse()?;
+                platform_serialize_into = Some(
+                    parsed_into
+                        .parse::<syn::Path>()
+                        .expect("Expected a valid path for 'into'"),
+                );
+            } else if meta.path.is_ident("platform_version_path") {
+                let value = meta.value()?;
+                platform_version_path = Some(value.parse()?);
+            } else {
+                return Err(meta
+                    .error(format!("unsupported parameter {:?}", meta.path.get_ident()).as_str()));
+            }
+            Ok(())
+        })
+        .expect("expected to parse nested meta");
 
-    if passthrough && (platform_serialize_limit.is_some() || untagged || platform_serialize_into.is_some()) {
+    if passthrough
+        && (platform_serialize_limit.is_some() || untagged || platform_serialize_into.is_some())
+    {
         panic!("The 'passthrough' attribute cannot be used with untagged, limit or into");
     }
 
@@ -113,320 +141,66 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         panic!("The 'allow_prepend_version' attribute cannot be used with 'force_prepend_version', only one should be choosed");
     }
 
-    let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let serialize_into;
-    let serialize_into_consume;
-
-    if passthrough {
-        if let Data::Enum(data_enum) = &input.data {
-            let match_exprs = data_enum
-                .variants
-                .iter()
-                .map(|v| {
-                    let ident = &v.ident;
-                    quote! { #name::#ident(inner) => inner.serialize() }
-                })
-                .collect::<Vec<_>>();
-
-            serialize_into = quote! {
-                match self {
-                    #( #match_exprs, )*
-                }
-            };
-
-            let match_exprs_consume = data_enum
-                .variants
-                .iter()
-                .map(|v| {
-                    let ident = &v.ident;
-                    quote! { #name::#ident(inner) => inner.serialize_consume() }
-                })
-                .collect::<Vec<_>>();
-
-            serialize_into_consume = quote! {
-                match self {
-                    #( #match_exprs_consume, )*
-                }
-            };
-        } else {
-            panic!("The 'passthrough' attribute can only be used on enums");
-        }
-    } else if untagged {
-        if let Data::Enum(data_enum) = &input.data {
-            let match_exprs = data_enum
-                .variants
-                .iter()
-                .map(|v| {
-                    let ident = &v.ident;
-                    quote! { #name::#ident(inner) => bincode::encode_to_vec(inner, config) }
-                })
-                .collect::<Vec<_>>();
-
-            serialize_into = quote! {
-                match self {
-                    #( #match_exprs, )*
-                }
-            };
-
-            let match_exprs_consume = data_enum
-                .variants
-                .iter()
-                .map(|v| {
-                    let ident = &v.ident;
-                    quote! { #name::#ident(inner) => bincode::encode_to_vec(inner, config) }
-                })
-                .collect::<Vec<_>>();
-
-            serialize_into_consume = quote! {
-                match self {
-                    #( #match_exprs_consume, )*
-                }
-            };
-        } else {
-            panic!("The 'untagged' attribute can only be used on enums");
-        }
-    } else {
-        match &platform_serialize_into {
-            Some(inner) => {
-                serialize_into = quote! {
-                    let inner: #inner = self.clone().into();
-                    bincode::encode_to_vec(&inner, config)
-                };
-                serialize_into_consume = quote! {
-                    let inner: #inner = self.into();
-                    bincode::encode_to_vec(&inner, config)
-                };
-            },
-            None => {
-                serialize_into = quote! { bincode::encode_to_vec(self, config) };
-                serialize_into_consume = quote! { bincode::encode_to_vec(self, config) };
-            }
-        }
+    let version_attributes = VersionAttributes {
+        crate_name,
+        passthrough,
+        nested,
+        platform_serialize_limit,
+        untagged,
+        platform_serialize_into,
+        platform_version_path,
+        allow_prepend_version,
+        force_prepend_version,
     };
 
-
-    let encode_body =
-        if nested {
-            if passthrough {
-                if let Data::Enum(data_enum) = &input.data {
-                    let match_exprs = data_enum
-                        .variants
-                        .iter()
-                        .map(|v| {
-                            let ident = &v.ident;
-                            quote! { #name::#ident(inner) => inner.encode(encoder) }
-                        })
-                        .collect::<Vec<_>>();
-
-                    quote! {
-                    match self {
-                        #( #match_exprs, )*
-                    }
-                }
-                } else {
-                    panic!("The 'passthrough' attribute can only be used on enums");
-                }
-            } else {
-                quote! { self.encode(encoder) }
-            }
-        } else {
-            quote! {}
-        };
-
-    let with_limit = platform_serialize_limit.is_some();
-    let limit = platform_serialize_limit.unwrap_or_default();
-
-    let without_limit_body = quote! {
-    impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
-    {
-        fn serialize(&self) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_no_limit();
-            #serialize_into.map_err(|e| {
-                #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
-            })
+    match &input.data {
+        Data::Struct(data_struct) => {
+            version_attributes.check_for_struct();
+            derive_platform_serialize_struct(
+                &input,
+                version_attributes,
+                data_struct,
+                error_type,
+                name,
+            )
         }
-
-        fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_no_limit();
-            #serialize_into_consume.map_err(|e| {
-                #error_type::PlatformSerializationError(format!("unable to serialize consume {}: {}", stringify!(#name), e))
-            })
+        Data::Enum(data_enum) => {
+            version_attributes.check_for_enum();
+            derive_platform_serialize_enum(&input, version_attributes, data_enum, error_type, name)
+        }
+        _ => {
+            panic!("can only derive serialize on a struct or an enum")
         }
     }
-};
+}
 
-    let with_limit_body = quote! {
-    impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
-    {
-        fn serialize(&self) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
-            #serialize_into.map_err(|e| {
-            match e {
-                bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-            }})
-        }
+struct VersionAttributes {
+    crate_name: Ident,
+    passthrough: bool,
+    nested: bool,
+    platform_serialize_limit: Option<usize>,
+    untagged: bool,
+    platform_serialize_into: Option<Path>,
+    platform_version_path: Option<LitStr>,
+    allow_prepend_version: bool,
+    force_prepend_version: bool,
+}
 
-        fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
-            #serialize_into_consume.map_err(|e| {
-            match e {
-                bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-            }})
+impl VersionAttributes {
+    fn check_for_enum(&self) {
+        if self.platform_serialize_into.is_some() {
+            panic!("'into' can not be used for platform versioning of enums")
         }
     }
-};
 
-    let with_limit_prefix_version_body = quote! {
-    impl #impl_generics PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
-        fn serialize_with_prefix_version(&self, version: FeatureVersion) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
-
-            let mut serialized = #serialize_into.map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-            Ok(encoded_version)
+    fn check_for_struct(&self) {
+        if self.passthrough {
+            panic!("'passthrough' can not be used for platform versioning of structs")
         }
-
-        fn serialize_consume_with_prefix_version(self, version: FeatureVersion) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
-
-            let mut serialized = #serialize_into_consume.map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-            Ok(encoded_version)
+        if self.untagged {
+            panic!("'untagged' can not be used for platform versioning of structs")
         }
     }
-};
-
-    let with_prefix_version_body = quote! {
-    impl #impl_generics PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
-        fn serialize_with_prefix_version(&self, version: FeatureVersion) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_no_limit();
-
-            let mut serialized = #serialize_into.map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-            Ok(encoded_version)
-        }
-
-        fn serialize_consume_with_prefix_version(self, version: FeatureVersion) -> Result<Vec<u8>, #error_type> {
-            let config = config::standard().with_big_endian().with_no_limit();
-
-            let mut serialized = #serialize_into_consume.map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                }
-            })?;
-
-            encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-            Ok(encoded_version)
-        }
-    }
-};
-
-
-    let bincode_encode_body = quote! {
-        impl #impl_generics bincode::Encode for #name #ty_generics #where_clause {
-            fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
-                #encode_body
-            }
-        }
-    };
-
-    let mut expanded = quote! {};
-
-    if force_prepend_version {
-        if with_limit {
-            expanded = quote! {
-            #with_limit_prefix_version_body
-            #bincode_encode_body
-        };
-        } else {
-            expanded = quote! {
-            #with_prefix_version_body
-            #bincode_encode_body
-        };
-        }
-    } else if allow_prepend_version {
-        if with_limit {
-            expanded = quote! {
-            #with_limit_body
-            #with_limit_prefix_version_body
-            #bincode_encode_body
-        };
-        } else {
-            expanded = quote! {
-            #without_limit_body
-            #with_prefix_version_body
-            #bincode_encode_body
-        };
-        }
-    } else if with_limit {
-        expanded = quote! {
-        #with_limit_body
-        #bincode_encode_body
-    };
-    } else {
-        expanded = quote! {
-        #without_limit_body
-        #bincode_encode_body
-    };
-    }
-    eprintln!("Processing variant: {}", &expanded);
-
-    TokenStream::from(expanded)
 }
 
 #[proc_macro_derive(

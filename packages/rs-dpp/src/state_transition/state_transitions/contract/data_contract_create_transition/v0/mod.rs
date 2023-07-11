@@ -7,7 +7,7 @@ pub(super) mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
 
-use crate::serialization_traits::PlatformSerializable;
+use crate::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use platform_serialization::PlatformSignable;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
@@ -28,14 +28,15 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
 use crate::state_transition::StateTransition;
+use crate::version::PlatformVersion;
+
+///DataContractCreateTransitionV0 has the same encoding structure
 
 #[derive(
     Debug,
     Clone,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PartialEq,
@@ -44,12 +45,22 @@ use crate::state_transition::StateTransition;
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransitionV0 {
+    #[platform_serialization(versioned_structure, versioned_serialization)]
     pub data_contract: DataContract,
     pub entropy: Bytes32,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
+}
+
+impl PlatformSerializableWithPlatformVersion for DataContractCreateTransitionV0 {
+    fn serialize_with_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        bincode::enc::Encoder
+    }
 }
 
 impl Default for DataContractCreateTransitionV0 {

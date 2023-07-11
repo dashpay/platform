@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 
-use crate::serialization_traits::PlatformSerializable;
-use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -15,8 +13,6 @@ use crate::identity::{
 use crate::prelude::Revision;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };

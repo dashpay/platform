@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use itertools::{Either, Itertools};
+use platform_serialization::PlatformSerialize;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Identifier;
 use platform_value::{ReplacementType, Value, ValueMapHelper};
@@ -150,13 +151,6 @@ pub struct DataContractV0 {
     /// A nested mapping of document names and property paths to their binary values.
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
-}
-
-impl Encode for DataContractV0 {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        let inner: DataContractSerializationFormat = self.clone().into();
-        inner.encode(encoder)
-    }
 }
 
 impl Decode for DataContractV0 {

@@ -8,9 +8,9 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
-use serde_json::Value as JsonValue;
 
 #[derive(Encode, Decode)]
 pub struct DataContractSerializationFormatV0 {
