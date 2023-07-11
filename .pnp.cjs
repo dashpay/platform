@@ -14129,6 +14129,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["node-gyp-build", "npm:4.3.0"]\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["npm:4.6.0", {\
+          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.6.0-5434aac3e5-25d78c5ef1.zip/node_modules/node-gyp-build/",\
+          "packageDependencies": [\
+            ["node-gyp-build", "npm:4.6.0"]\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["node-inspect-extracted", [\
@@ -19744,7 +19751,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["zeromq", "npm:5.2.8"],\
             ["nan", "npm:2.14.2"],\
             ["node-gyp", "npm:8.4.0"],\
-            ["node-gyp-build", "npm:4.3.0"]\
+            ["node-gyp-build", "npm:4.6.0"]\
           ],\
           "linkType": "HARD"\
         }]\
