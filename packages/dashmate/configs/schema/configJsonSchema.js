@@ -88,9 +88,13 @@ module.exports = {
             subnet: {
               type: 'string',
             },
+            bindIp: {
+              type: 'string',
+              format: 'ipv4',
+            },
           },
           additionalProperties: false,
-          required: ['subnet'],
+          required: ['subnet', 'bindIp'],
         },
       },
       additionalProperties: false,
@@ -289,8 +293,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'log', 'reindex', 'logIps', 'indexes'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'sentinel', 'devnet',
+        'log', 'logIps', 'indexes', 'reindex'],
       additionalProperties: false,
     },
     platform: {
@@ -746,6 +750,6 @@ module.exports = {
       enum: ['development', 'production'],
     },
   },
-  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment'],
+  required: ['description', 'group', 'docker', 'core', 'externalIp', 'network', 'environment'],
   additionalProperties: false,
 };

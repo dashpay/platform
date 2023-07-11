@@ -40,11 +40,12 @@ module.exports = {
   docker: {
     network: {
       subnet: '172.24.24.0/24',
+      bindIp: '0.0.0.0',
     },
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:19.1.0',
+      image: 'dashpay/dashd:19.2.0',
     },
     p2p: {
       port: 9999,
