@@ -1,0 +1,9 @@
+version: '3.7'
+
+services:
+  drive_abci:
+    build:
+      context: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_CONTEXT:?err}
+      dockerfile: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_DOCKER_FILE:?err}
+      target: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_DOCKER_TARGET:?err}
+    image: drive:local

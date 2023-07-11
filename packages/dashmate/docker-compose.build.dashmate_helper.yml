@@ -4,6 +4,6 @@ services:
   dashmate_helper:
     build:
       context: ${DASHMATE_HELPER_DOCKER_BUILD_CONTEXT:?err}
-      dockerfile: ${DASHMATE_HELPER_DOCKER_BUILD_DOCKER_FILE_PATH:?err}/packages/dashmate/Dockerfile
+      dockerfile: ${DASHMATE_HELPER_DOCKER_BUILD_DOCKER_FILE:?err}
+      target: ${DASHMATE_HELPER_DOCKER_BUILD_TARGET:?err}
     image: dashmate_helper:local
-    stop_grace_period: 10s

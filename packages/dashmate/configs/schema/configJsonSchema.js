@@ -18,17 +18,33 @@ module.exports = {
     dockerBuild: {
       type: 'object',
       properties: {
-        context: {
-          type: ['string', 'null'],
+        image: {
+          type: 'string',
           minLength: 1,
         },
-        dockerFilePath: {
-          type: ['string', 'null'],
-          minLength: 1,
+        build: {
+          properties: {
+            enabled: {
+              type: 'boolean',
+            },
+            context: {
+              type: 'string',
+              minLength: 1,
+            },
+            dockerFile: {
+              type: 'string',
+              minLength: 1,
+            },
+            target: {
+              type: 'string',
+            },
+          },
+          required: ['enabled', 'context', 'dockerFile', 'target'],
+          additionalProperties: false,
         },
       },
+      required: ['image', 'build'],
       additionalProperties: false,
-      required: ['path', 'context'],
     },
     port: {
       type: 'integer',
@@ -307,9 +323,6 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
-                },
-                dockerBuild: {
                   $ref: '#/definitions/dockerBuild',
                 },
                 http: {
@@ -340,7 +353,6 @@ module.exports = {
                     enabled: {
                       type: 'boolean',
                     },
-
                   },
                   required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
                   additionalProperties: false,
@@ -380,20 +392,17 @@ module.exports = {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'dockerBuild', 'http', 'rateLimiter', 'ssl'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
-                },
-                dockerBuild: {
                   $ref: '#/definitions/dockerBuild',
                 },
               },
-              required: ['docker', 'dockerBuild'],
+              required: ['docker'],
               additionalProperties: false,
             },
           },
@@ -407,9 +416,6 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
-                },
-                dockerBuild: {
                   $ref: '#/definitions/dockerBuild',
                 },
                 log: {
@@ -449,7 +455,7 @@ module.exports = {
                 },
               },
               additionalProperties: false,
-              required: ['docker', 'dockerBuild', 'log', 'validatorSet'],
+              required: ['docker', 'log', 'validatorSet'],
             },
             tenderdash: {
               type: 'object',
@@ -713,9 +719,6 @@ module.exports = {
           type: 'object',
           properties: {
             docker: {
-              $ref: '#/definitions/docker',
-            },
-            dockerBuild: {
               $ref: '#/definitions/dockerBuild',
             },
             api: {
@@ -732,7 +735,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['docker', 'dockerBuild', 'api'],
+          required: ['docker', 'api'],
           additionalProperties: false,
         },
       },

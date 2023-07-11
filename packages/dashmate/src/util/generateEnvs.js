@@ -19,38 +19,39 @@ const convertObjectToEnvs = require('../config/convertObjectToEnvs');
  */
 function generateEnvs(configFile, config, options = {}) {
   const dockerComposeFiles = [];
+  const profiles = [];
 
   dockerComposeFiles.push('docker-compose.yml');
 
-  if (config.get('dashmate.helper.dockerBuild.context') !== null) {
-    dockerComposeFiles.push('docker-compose.platform.build.dashmate_helper.yml');
+  if (config.get('dashmate.helper.docker.build.enabled')) {
+    dockerComposeFiles.push('docker-compose.build.dashmate_helper.yml');
   }
 
   if (!options.platformOnly) {
-    dockerComposeFiles.push('docker-compose.core.yml');
+    profiles.push('core');
 
-    if (config.get('core.masternode.enable') === true) {
-      dockerComposeFiles.push('docker-compose.sentinel.yml');
+    if (config.get('core.masternode.enable')) {
+      profiles.push('masternode');
     }
   }
 
   if (config.get('platform.enable')) {
-    dockerComposeFiles.push('docker-compose.platform.yml');
+    profiles.push('platform');
 
-    if (config.get('platform.drive.abci.dockerBuild.context') !== null) {
-      dockerComposeFiles.push('docker-compose.platform.build.drive_abci.yml');
+    if (config.get('platform.drive.abci.docker.build.enabled')) {
+      dockerComposeFiles.push('docker-compose.build.drive_abci.yml');
     }
 
-    if (config.get('platform.dapi.api.dockerBuild.context') !== null) {
-      dockerComposeFiles.push('docker-compose.platform.build.dapi_api.yml');
+    if (config.get('platform.dapi.api.docker.build.enabled')) {
+      dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
     }
 
-    if (config.get('platform.dapi.api.dockerBuild.context') !== null) {
-      dockerComposeFiles.push('docker-compose.platform.build.dapi_tx_filter_stream.yml');
+    if (config.get('platform.dapi.api.docker.build.context')) {
+      dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
     }
 
-    if (config.get('platform.dapi.envoy.dockerBuild.context') !== null) {
-      dockerComposeFiles.push('docker-compose.platform.build.dapi_envoy.yml');
+    if (config.get('platform.dapi.envoy.docker.build.enabled')) {
+      dockerComposeFiles.push('docker-compose.build.dapi_envoy.yml');
     }
   }
 
@@ -61,6 +62,7 @@ function generateEnvs(configFile, config, options = {}) {
     COMPOSE_PROJECT_NAME: `dashmate${projectIdWithPrefix}_${config.getName()}`,
     CONFIG_NAME: config.getName(),
     COMPOSE_FILE: dockerComposeFiles.join(':'),
+    COMPOSE_PROFILES: profiles.join(','),
     COMPOSE_PATH_SEPARATOR: ':',
     DOCKER_BUILDKIT: 1,
     COMPOSE_DOCKER_CLI_BUILD: 1,
