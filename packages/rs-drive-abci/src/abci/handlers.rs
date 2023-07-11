@@ -47,7 +47,10 @@ use drive::fee::credits::SignedCredits;
 use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
+use tenderdash_abci::proto::abci::{
+    self as proto, ExtendVoteExtension, RequestListSnapshots, ResponseException,
+    ResponseListSnapshots, Snapshot,
+};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -675,7 +678,26 @@ where
 
         Ok(response)
     }
+
+    fn list_snapshots(
+        &self,
+        request: RequestListSnapshots,
+    ) -> Result<ResponseListSnapshots, ResponseException> {
+        match self.platform.snapshot_manager.as_ref() {
+            Some(manager) => match manager.get_snapshots(&self.platform.drive.grove) {
+                Ok(snapshots) => Ok(ResponseListSnapshots {
+                    snapshots: snapshots
+                        .into_iter()
+                        .map(|snapshot| snapshot.into())
+                        .collect(),
+                }),
+                Err(e) => Err(ResponseException::from(e)),
+            },
+            None => Ok(ResponseListSnapshots { snapshots: vec![] }),
+        }
+    }
 }
+
 //
 // #[cfg(test)]
 // mod tests {

@@ -4,6 +4,7 @@ use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
 use std::path::Path;
+use tenderdash_abci::proto::abci;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -24,6 +25,21 @@ pub struct Snapshot {
     pub hash: [u8; 32],
     /// Metadata
     pub metadata: Vec<u8>,
+}
+
+impl From<Snapshot> for abci::Snapshot {
+    fn from(snapshot: Snapshot) -> Self {
+        // TODO: after regenerate proto files in rs-tenderdash-abci needs
+        //  1. replace "format" on "version"
+        //  2. remove "chunks"
+        abci::Snapshot {
+            height: snapshot.height as u64,
+            format: snapshot.version as u32,
+            chunks: 0,
+            hash: snapshot.hash.into(),
+            metadata: snapshot.metadata,
+        }
+    }
 }
 
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
