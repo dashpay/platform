@@ -41,9 +41,11 @@ runs:
       id: script
       with:
         script: |
+          const sanitizedHeadRef = '${{ inputs.head_ref }}'.replace(/[^a-zA-Z0-9]/g, '-');
+
           const manifestNames = [
             '${{ inputs.name }}_sha_${{ github.sha }}',
-            '${{ inputs.name }}_tag_${{ inputs.head_ref }}',
+            `${{ inputs.name }}_tag_${ sanitizedHeadRef }`,
             '${{ inputs.name }}'
           ];
 
