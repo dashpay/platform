@@ -41,10 +41,12 @@ runs:
       id: script
       with:
         script: |
+          const sanitizedHeadRef = '${{ inputs.head_ref }}'.replace(/[^a-zA-Z0-9]/g, '-');
+
           const manifestNames = [
-            '${{ inputs.image }}_sha_${{ github.sha }}',
-            '${{ inputs.image }}_tag_${{ inputs.tag }}',
-            '${{ inputs.image }}'
+            '${{ inputs.name }}_sha_${{ github.sha }}',
+            `${{ inputs.name }}_tag_${ sanitizedHeadRef }`,
+            '${{ inputs.name }}'
           ];
 
           const settings = {

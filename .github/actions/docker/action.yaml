@@ -122,7 +122,7 @@ runs:
         builder: ${{ steps.buildx.outputs.name }}
         file: ${{ inputs.dockerfile }}
         target: ${{ inputs.target }}
-        tags:  ${{ steps.docker_meta.outputs.tags }}
+        tags: ${{ steps.docker_meta.outputs.tags }}
         labels: ${{ steps.docker_meta.outputs.labels }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
