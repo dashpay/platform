@@ -23,6 +23,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 
 impl Drive {
+    // TODO(doc): add explanation
     pub(super) fn stateless_delete_of_non_tree_for_costs_v0(
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,

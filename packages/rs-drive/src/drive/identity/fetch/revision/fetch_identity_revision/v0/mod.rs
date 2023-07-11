@@ -17,6 +17,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
+    // TODO(doc): not clear why `fetch` function applies something
     /// Fetches the Identity's revision from the backing store
     /// Passing apply as false get the estimated cost instead
     pub(super) fn fetch_identity_revision_v0(
@@ -36,6 +37,7 @@ impl Drive {
         )
     }
 
+    // TODO(doc): not clear why `fetch` operation applies something
     /// Creates the operations to get Identity's revision from the backing store
     /// This gets operations based on apply flag (stateful vs stateless)
     pub(super) fn fetch_identity_revision_operations_v0(
@@ -84,6 +86,7 @@ impl Drive {
         }
     }
 
+    // TODO(doc): not clear why `fetch` applies something
     /// Fetches the Identity's revision from the backing store
     /// Passing apply as false get the estimated cost instead
     pub(super) fn fetch_identity_revision_with_fees_v0(

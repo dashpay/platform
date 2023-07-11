@@ -18,6 +18,7 @@ impl Drive {
     ///
     /// # Returns
     ///
+    /// TODO(doc): do we need to specify return type in the document?
     /// * `Result<Vec<u8>, Error>` - If successful, returns a `Vec<u8>` containing the proof data.
     ///   If an error occurs during the proof generation, returns an `Error`.
     ///

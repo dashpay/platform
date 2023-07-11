@@ -50,6 +50,10 @@ use dpp::version::drive_versions::DriveVersion;
 impl Drive {
     /// Deletes a document and returns the associated fee.
     /// The contract CBOR is given instead of the contract itself.
+    // TODO(doc):
+    //      - Not clear where contract cbor is given?
+    //      - Explain about fee. Is it always negative (refund)
+    //        Or could be positive as well?
     pub(super) fn delete_document_for_contract_id_v0(
         &self,
         document_id: [u8; 32],

@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
+    // TODO(doc): needs more explanation?
     /// Deletes a document.
     pub(super) fn delete_document_for_contract_apply_and_add_to_operations_v0(
         &self,

@@ -23,6 +23,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 
 impl Drive {
+    // TODO(doc): document function
     pub(super) fn add_estimation_costs_for_add_document_to_primary_storage_v0(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],

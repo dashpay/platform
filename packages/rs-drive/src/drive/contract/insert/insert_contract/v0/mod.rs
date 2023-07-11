@@ -112,6 +112,8 @@ impl Drive {
         Ok(())
     }
 
+    // TODO(doc): comment duplicates function above. Needs to be written that this function
+    //   generates operations, not adds them to a contract
     /// The operations for adding a contract.
     /// These operations add a contract to storage using `add_contract_to_storage`
     /// and insert the empty trees which will be necessary to later insert documents.
