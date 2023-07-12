@@ -1,3 +1,23 @@
+### [0.24.15](https://github.com/dashpay/platform/compare/v0.24.14...v0.24.15) (2023-07-10)
+
+
+### Features
+
+* **dashmate:** interface binding configuration ([#1220](https://github.com/dashpay/platform/issues/1220))
+
+### Bug Fixes
+
+* **dashmate:** service name variable name ([#1225](https://github.com/dashpay/platform/issues/1225))
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash genesis for testnet ([#1223](https://github.com/dashpay/platform/issues/1223))
+
+### Continuous Integration
+
+* temporary ignore gRPC JS vulnerability ([#1221](https://github.com/dashpay/platform/issues/1221))
+
+
 ### [0.24.14](https://github.com/dashpay/platform/compare/v0.24.13...v0.24.14) (2023-07-05)
 
 

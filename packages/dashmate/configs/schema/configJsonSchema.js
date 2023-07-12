@@ -95,9 +95,13 @@ module.exports = {
             subnet: {
               type: 'string',
             },
+            bindIp: {
+              type: 'string',
+              format: 'ipv4',
+            },
           },
           additionalProperties: false,
-          required: ['subnet'],
+          required: ['subnet', 'bindIp'],
         },
       },
       additionalProperties: false,
@@ -736,6 +740,6 @@ module.exports = {
       enum: ['development', 'production'],
     },
   },
-  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment'],
+  required: ['description', 'group', 'docker', 'core', 'externalIp', 'network', 'environment'],
   additionalProperties: false,
 };
