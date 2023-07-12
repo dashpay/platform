@@ -70,18 +70,14 @@ function reindexNodeTaskFactory(
 
               if (!ctx.isDetached) {
                 const agreement = await task.prompt({
-                  type: 'select',
-                  message: 'Dash Core found running on your node, but it must be stopped before we proceed',
-                  choices: [
-                    {
-                      name: 'true',
-                      message: 'Stop Dash Core and proceed to reindex',
-                    }, {
-                      name: 'false',
-                      message: 'Cancel operation',
-                    },
-                  ],
-                  initial: 'true',
+                  type: 'toggle',
+                  name: 'confirm',
+                  header: `Node found running, Dash Core will be restarted and the node will be unavailable until reindex is complete:
+
+Select "No" to cancel operation.\n`,
+                  message: 'Stop Dash Core and proceed to reindex?',
+                  enabled: 'Yes',
+                  disabled: 'No',
                 });
 
                 agreed = agreement === 'true';
