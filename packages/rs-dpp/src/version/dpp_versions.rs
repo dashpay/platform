@@ -4,10 +4,6 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default)]
 pub struct DPPVersion {
     pub state_transition_serialization_versions: StateTransitionSerializationVersions,
-    /// This is how we serialize and unserialize a contract
-    pub contract_serialization_version: FeatureVersionBounds,
-    /// This is the structure of the Contract as it is defined for code paths
-    pub contract_structure_version: FeatureVersion,
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
 }
@@ -36,6 +32,10 @@ pub struct DocumentFeatureVersionBounds {
 
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
+    /// This is how we serialize and deserialize a contract
+    pub contract_serialization_version: FeatureVersionBounds,
+    /// This is the structure of the Contract as it is defined for code paths
+    pub contract_structure_version: FeatureVersion,
     pub document_type_versions: DocumentTypeVersions,
     pub contract_class_method_versions: ContractClassMethodVersions,
 }
@@ -81,4 +81,19 @@ pub struct DocumentVersions {
     pub document_structure_version: FeatureVersion,
     pub document_serialization_version: FeatureVersionBounds,
     pub extended_document_structure_version: FeatureVersionBounds,
+    pub document_method_versions: DocumentMethodVersions,
+    pub document_class_method_versions: DocumentClassMethodVersions,
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentClassMethodVersions {
+    pub get_identifiers_and_binary_paths: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentMethodVersions {
+    pub hash: FeatureVersion,
+    pub get_raw_for_contract: FeatureVersion,
+    pub get_raw_for_document_type: FeatureVersion,
+}
+

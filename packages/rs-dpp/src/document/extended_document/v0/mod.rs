@@ -21,7 +21,6 @@ use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 
-use crate::document::v0::json_conversion::DocumentV0JsonMethods;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 #[cfg(feature = "json-object")]
 use serde_json::Value as JsonValue;

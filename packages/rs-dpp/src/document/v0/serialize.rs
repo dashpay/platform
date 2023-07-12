@@ -12,8 +12,6 @@ use crate::ProtocolError;
 
 use crate::document::v0::DocumentV0;
 use byteorder::{BigEndian, ReadBytesExt};
-#[cfg(feature = "cbor")]
-use ciborium::Value as CborValue;
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
@@ -21,64 +19,19 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::io::{BufReader, Read};
+use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::document::serialization_traits::{DocumentPlatformConversionMethodsV0, DocumentPlatformDeserializationMethodsV0, DocumentPlatformSerializationMethodsV0};
+use crate::version::PlatformVersion;
 
-#[cfg(feature = "cbor")]
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct DocumentForCbor {
-    /// The unique document ID.
-    #[serde(rename = "$id")]
-    pub id: [u8; 32],
 
-    /// The document's properties (data).
-    #[serde(flatten)]
-    pub properties: BTreeMap<String, CborValue>,
-
-    /// The ID of the document's owner.
-    #[serde(rename = "$ownerId")]
-    pub owner_id: [u8; 32],
-
-    /// The document revision.
-    #[serde(rename = "$revision")]
-    pub revision: Option<Revision>,
-
-    #[serde(rename = "$createdAt")]
-    pub created_at: Option<TimestampMillis>,
-    #[serde(rename = "$updatedAt")]
-    pub updated_at: Option<TimestampMillis>,
-}
-
-#[cfg(feature = "cbor")]
-impl TryFrom<DocumentV0> for DocumentForCbor {
-    type Error = ProtocolError;
-
-    fn try_from(value: DocumentV0) -> Result<Self, Self::Error> {
-        let DocumentV0 {
-            id,
-            properties,
-            owner_id,
-            revision,
-            created_at,
-            updated_at,
-        } = value;
-        Ok(DocumentForCbor {
-            id: id.to_buffer(),
-            properties: Value::convert_to_cbor_map(properties)
-                .map_err(ProtocolError::ValueError)?,
-            owner_id: owner_id.to_buffer(),
-            revision,
-            created_at,
-            updated_at,
-        })
-    }
-}
-
-impl DocumentV0 {
+impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    pub fn serialize(&self, document_type: &DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
+    fn serialize_v0(&self, document_type: &DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
+        let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
+        buffer.extend(self.id.as_slice());
         buffer.extend(self.owner_id.as_slice());
         if let Some(revision) = self.revision {
             buffer.extend(revision.encode_var_vec())
@@ -177,13 +130,13 @@ impl DocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    pub fn serialize_consume(
+    fn serialize_consume_v0(
         mut self,
         document_type: &DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = self.id.to_vec();
-        let mut owner_id = self.owner_id.to_vec();
-        buffer.append(&mut owner_id);
+        let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
+        buffer.extend(self.id.into_buffer());
+        buffer.extend(self.owner_id.into_buffer());
 
         if let Some(revision) = self.revision {
             buffer.extend(revision.to_be_bytes())
@@ -243,9 +196,12 @@ impl DocumentV0 {
 
         Ok(buffer)
     }
+}
+
+impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
 
     /// Reads a serialized document and creates a Document from it.
-    pub fn from_bytes(
+    fn from_bytes_v0(
         serialized_document: &[u8],
         document_type: &DocumentTypeRef,
     ) -> Result<Self, ProtocolError> {
@@ -361,82 +317,74 @@ impl DocumentV0 {
         }
         .into())
     }
+}
 
-    /// Reads a CBOR-serialized document and creates a Document from it.
-    /// If Document and Owner IDs are provided, they are used, otherwise they are created.
-    #[cfg(feature = "cbor")]
-    pub fn from_cbor(
-        document_cbor: &[u8],
-        document_id: Option<[u8; 32]>,
-        owner_id: Option<[u8; 32]>,
-    ) -> Result<Self, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            main_message_bytes: read_document_cbor,
-            ..
-        } = deserializer::split_cbor_protocol_version(document_cbor)?;
-
-        // first we need to deserialize the document and contract indices
-        // we would need dedicated deserialization functions based on the document type
-        let document_cbor_map: BTreeMap<String, CborValue> =
-            ciborium::de::from_reader(read_document_cbor).map_err(|_| {
-                ProtocolError::StructureError(StructureError::InvalidCBOR(
-                    "unable to decode document for document call",
-                ))
-            })?;
-        let document_map: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(document_cbor_map).map_err(ProtocolError::ValueError)?;
-
-        Self::from_map(document_map, document_id, owner_id)
+impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
+    /// Serializes the document.
+    ///
+    /// The serialization of a document follows the pattern:
+    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
+    fn serialize(&self, document_type: &DocumentTypeRef, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version.dpp.contract_versions.contract_serialization_version.default_current_version {
+            0 => {
+                self.serialize_v0(document_type)
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentV0::serialize".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
-    /// Reads a CBOR-serialized document and creates a Document from it.
-    /// If Document and Owner IDs are provided, they are used, otherwise they are created.
-    pub fn from_map(
-        mut document_map: BTreeMap<String, Value>,
-        document_id: Option<[u8; 32]>,
-        owner_id: Option<[u8; 32]>,
-    ) -> Result<Self, ProtocolError> {
-        let owner_id = match owner_id {
-            None => document_map
-                .remove_hash256_bytes(property_names::OWNER_ID)
-                .map_err(ProtocolError::ValueError)?,
-            Some(owner_id) => owner_id,
-        };
-
-        let id = match document_id {
-            None => document_map
-                .remove_hash256_bytes(property_names::ID)
-                .map_err(ProtocolError::ValueError)?,
-            Some(document_id) => document_id,
-        };
-
-        let revision = document_map.remove_optional_integer(property_names::REVISION)?;
-
-        let created_at = document_map.remove_optional_integer(property_names::CREATED_AT)?;
-        let updated_at = document_map.remove_optional_integer(property_names::UPDATED_AT)?;
-
-        // dev-note: properties is everything other than the id and owner id
-        Ok(DocumentV0 {
-            properties: document_map,
-            owner_id: Identifier::new(owner_id),
-            id: Identifier::new(id),
-            revision,
-            created_at,
-            updated_at,
-        })
+    /// Serializes and consumes the document.
+    ///
+    /// The serialization of a document follows the pattern:
+    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
+    fn serialize_consume(
+        self,
+        document_type: &DocumentTypeRef,
+        platform_version: &PlatformVersion
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version.dpp.contract_versions.contract_serialization_version.default_current_version {
+            0 => {
+                self.serialize_consume_v0(document_type)
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentV0::serialize_consume".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
-    /// Serializes the Document to CBOR.
-    #[cfg(feature = "cbor")]
-    pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.write_varint(0).map_err(|_| {
-            ProtocolError::EncodingError("error writing protocol version".to_string())
-        })?;
-        let cbor_document = DocumentForCbor::try_from(self.clone())?;
-        ciborium::ser::into_writer(&cbor_document, &mut buffer).map_err(|_| {
-            ProtocolError::EncodingError("unable to serialize into cbor".to_string())
-        })?;
-        Ok(buffer)
+    /// Reads a serialized document and creates a DocumentV0 from it.
+    fn from_bytes(
+        mut serialized_document: &[u8],
+        document_type: &DocumentTypeRef,
+        platform_version: &PlatformVersion
+    ) -> Result<Self, ProtocolError> {
+        match platform_version.dpp.contract_versions.contract_structure_version {
+            0 => {
+                let serialized_version = serialized_document.read_varint().map_err(|_| {
+                    ProtocolError::DecodingError(
+                        "error reading revision from serialized document for revision".to_string(),
+                    )
+                })?;
+                match serialized_version { 
+                    0 => DocumentV0::from_bytes_v0(serialized_document, document_type),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::from_bytes (deserialization)".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::from_bytes (structure)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 }

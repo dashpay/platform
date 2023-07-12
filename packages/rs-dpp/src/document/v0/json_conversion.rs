@@ -1,22 +1,14 @@
 use crate::document::fields::property_names;
-use crate::document::{DocumentV0, DocumentV0Methods};
+use crate::document::DocumentV0;
 use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
+use crate::document::serialization_traits::{DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0};
 
-pub trait DocumentV0JsonMethods {
-    fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError>;
-    fn to_json(&self) -> Result<JsonValue, ProtocolError>;
-    fn from_json_value<S>(document_value: JsonValue) -> Result<Self, ProtocolError>
-    where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
-        Self: Sized;
-}
-
-impl DocumentV0JsonMethods for DocumentV0 {
+impl DocumentJsonMethodsV0 for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             property_names::ID: self.id,

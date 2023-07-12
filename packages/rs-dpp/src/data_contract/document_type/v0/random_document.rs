@@ -43,6 +43,8 @@ use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use crate::version::PlatformVersion;
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
@@ -124,7 +126,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
 
     /// Creates a Document from a serialized Document.
     fn document_from_bytes(&self, bytes: &[u8]) -> Result<Document, ProtocolError> {
-        Document::from_bytes(bytes, self)
+        Document::from_bytes(bytes, self, PlatformVersion::latest())
     }
 
     /// Creates a random Document using a seed if given, otherwise entropy.

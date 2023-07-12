@@ -1,61 +1,33 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Documents.
 //!
 //! This module defines the `Document` struct and implements its functions.
 //!
 
+#[cfg(feature = "json-object")]
 pub(super) mod json_conversion;
 pub mod serialize;
+#[cfg(feature = "cbor")]
+pub(super) mod cbor_conversion;
+#[cfg(feature = "platform-value")]
+mod platform_value_conversion;
+mod accessors;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
 use std::fmt;
 
-#[cfg(feature = "cbor")]
-use ciborium::Value as CborValue;
-use dashcore::SchnorrSighashType::Default;
 use serde_json::{json, Value as JsonValue};
 
 use crate::data_contract::document_type::document_field::DocumentFieldType;
 use crate::data_contract::DataContract;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
+use crate::document::document_methods::{DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentMethodsV0};
 
 use crate::document::errors::DocumentError;
 
@@ -64,7 +36,6 @@ use crate::prelude::Identifier;
 use crate::prelude::Revision;
 
 use crate::util::hash::hash_to_vec;
-use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
 
 /// Documents contain the data that goes into data contracts.
@@ -84,234 +55,18 @@ pub struct DocumentV0 {
     pub updated_at: Option<TimestampMillis>,
 }
 
-pub trait DocumentV0Methods {
-    /// Return a value given the path to its key for a document type.
-    fn get_raw_for_document_type<'a>(
-        &'a self,
-        key_path: &str,
-        document_type: &DocumentTypeRef,
-        owner_id: Option<[u8; 32]>,
-    ) -> Result<Option<Vec<u8>>, ProtocolError>;
-    /// Return a value given the path to its key and the document type for a contract.
-    fn get_raw_for_contract<'a>(
-        &'a self,
-        key: &str,
-        document_type_name: &str,
-        contract: &DataContract,
-        owner_id: Option<[u8; 32]>,
-    ) -> Result<Option<Vec<u8>>, ProtocolError>;
-    /// The document is only unique within the contract and document type
-    /// Hence we must include contract and document type information to get uniqueness
-    fn hash(
-        &self,
-        contract: &DataContract,
-        document_type: &DocumentTypeRef,
-    ) -> Result<Vec<u8>, ProtocolError>;
-    fn increment_revision(&mut self) -> Result<(), ProtocolError>;
-    fn get_identifiers_and_binary_paths<'a>(
-        data_contract: &'a DataContract,
-        document_type_name: &'a str,
-    ) -> Result<(HashSet<&'a str>, HashSet<&'a str>), ProtocolError>;
-    fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError>;
-    fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError>;
-    fn into_value(self) -> Result<Value, ProtocolError>;
-    fn to_object(&self) -> Result<Value, ProtocolError>;
-    #[cfg(feature = "cbor")]
-    fn to_cbor_value(&self) -> Result<CborValue, ProtocolError>;
-    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
+impl DocumentGetRawForContractV0 for DocumentV0 {
+    //automatically done
 }
 
-impl DocumentV0Methods for DocumentV0 {
-    /// Return a value given the path to its key for a document type.
-    fn get_raw_for_document_type<'a>(
-        &'a self,
-        key_path: &str,
-        document_type: &DocumentTypeRef,
-        owner_id: Option<[u8; 32]>,
-    ) -> Result<Option<Vec<u8>>, ProtocolError> {
-        // todo: maybe merge with document_type.serialize_value_for_key() because we use different
-        //   code paths for query and index creation
-        // returns the owner id if the key path is $ownerId and an owner id is given
-        if key_path == "$ownerId" && owner_id.is_some() {
-            Ok(Some(Vec::from(owner_id.unwrap())))
-        } else {
-            match key_path {
-                // returns self.id or self.owner_id if key path is $id or $ownerId
-                "$id" => return Ok(Some(self.id.to_vec())),
-                "$ownerId" => return Ok(Some(self.owner_id.to_vec())),
-                "$createdAt" => {
-                    return Ok(self
-                        .created_at
-                        .map(|time| DocumentFieldType::encode_date_timestamp(time).unwrap()))
-                }
-                "$updatedAt" => {
-                    return Ok(self
-                        .updated_at
-                        .map(|time| DocumentFieldType::encode_date_timestamp(time).unwrap()))
-                }
-                _ => {}
-            }
-            self.properties
-                .get_optional_at_path(key_path)?
-                .map(|value| document_type.serialize_value_for_key(key_path, value))
-                .transpose()
-        }
-    }
-
-    /// Return a value given the path to its key and the document type for a contract.
-    fn get_raw_for_contract<'a>(
-        &'a self,
-        key: &str,
-        document_type_name: &str,
-        contract: &DataContract,
-        owner_id: Option<[u8; 32]>,
-    ) -> Result<Option<Vec<u8>>, ProtocolError> {
-        let document_type = contract.document_types().get(document_type_name).ok_or({
-            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                "document type should exist for name",
-            ))
-        })?;
-        self.get_raw_for_document_type(key, document_type, owner_id)
-    }
-
-    /// The document is only unique within the contract and document type
-    /// Hence we must include contract and document type information to get uniqueness
-    fn hash(
-        &self,
-        contract: &DataContract,
-        document_type: &DocumentTypeRef,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = contract.id().to_vec();
-        buf.extend(document_type.name().as_bytes());
-        buf.extend(self.serialize(document_type)?);
-        Ok(hash_to_vec(buf))
-    }
-
-    fn increment_revision(&mut self) -> Result<(), ProtocolError> {
-        let Some(revision) = self.revision else {
-            return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
-                document: Box::new(self.clone().into()),
-            })))
-        };
-
-        let new_revision = revision
-            .checked_add(1)
-            .ok_or(ProtocolError::Overflow("overflow when adding 1"))?;
-
-        self.revision = Some(new_revision);
-
-        Ok(())
-    }
-
-    fn get_identifiers_and_binary_paths<'a>(
-        data_contract: &'a DataContract,
-        document_type_name: &'a str,
-    ) -> Result<(HashSet<&'a str>, HashSet<&'a str>), ProtocolError> {
-        let (mut identifiers_paths, binary_paths) =
-            data_contract.get_identifiers_and_binary_paths(document_type_name)?;
-
-        identifiers_paths.extend(super::IDENTIFIER_FIELDS);
-        Ok((identifiers_paths, binary_paths))
-    }
-
-    fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
-        let mut map: BTreeMap<String, Value> = BTreeMap::new();
-        map.insert(super::property_names::ID.to_string(), self.id.into());
-        map.insert(
-            super::property_names::OWNER_ID.to_string(),
-            self.owner_id.into(),
-        );
-
-        if let Some(created_at) = self.created_at {
-            map.insert(
-                super::property_names::CREATED_AT.to_string(),
-                Value::U64(created_at),
-            );
-        }
-        if let Some(updated_at) = self.updated_at {
-            map.insert(
-                super::property_names::UPDATED_AT.to_string(),
-                Value::U64(updated_at),
-            );
-        }
-        if let Some(revision) = self.revision {
-            map.insert(
-                super::property_names::REVISION.to_string(),
-                Value::U64(revision),
-            );
-        }
-
-        map.extend(self.properties.clone());
-
-        Ok(map)
-    }
-
-    fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
-        let mut map: BTreeMap<String, Value> = BTreeMap::new();
-        map.insert(super::property_names::ID.to_string(), self.id.into());
-        map.insert(
-            super::property_names::OWNER_ID.to_string(),
-            self.owner_id.into(),
-        );
-
-        if let Some(created_at) = self.created_at {
-            map.insert(
-                super::property_names::CREATED_AT.to_string(),
-                Value::U64(created_at),
-            );
-        }
-        if let Some(updated_at) = self.updated_at {
-            map.insert(
-                super::property_names::UPDATED_AT.to_string(),
-                Value::U64(updated_at),
-            );
-        }
-        if let Some(revision) = self.revision {
-            map.insert(
-                super::property_names::REVISION.to_string(),
-                Value::U64(revision),
-            );
-        }
-
-        map.extend(self.properties);
-
-        Ok(map)
-    }
-
-    fn into_value(self) -> Result<Value, ProtocolError> {
-        Ok(self.into_map_value()?.into())
-    }
-
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_map_value()?.into())
-    }
-
-    #[cfg(feature = "cbor")]
-    fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
-        self.to_object()
-            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
-    }
-
-    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
-        let mut properties = document_value
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-
-        let mut document = DocumentV0 {
-            id: properties.remove_identifier(super::property_names::ID)?,
-            owner_id: properties.remove_identifier(super::property_names::OWNER_ID)?,
-            properties: BTreeMap::new(),
-            revision: properties.remove_optional_integer(super::property_names::REVISION)?,
-            created_at: properties.remove_optional_integer(super::property_names::CREATED_AT)?,
-            updated_at: properties.remove_optional_integer(super::property_names::UPDATED_AT)?,
-        };
-
-        document.properties = properties;
-        Ok(document)
-    }
+impl DocumentGetRawForDocumentTypeV0 for DocumentV0 {
+    //automatically done
 }
+
+impl DocumentHashV0Method for DocumentV0 {
+    //automatically done
+}
+
 
 impl fmt::Display for DocumentV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

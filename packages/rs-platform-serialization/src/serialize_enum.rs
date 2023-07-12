@@ -1,8 +1,8 @@
 use crate::VersionAttributes;
 use proc_macro::TokenStream;
-use std::str::FromStr;
 use proc_macro2::Ident;
 use quote::quote;
+use std::str::FromStr;
 use syn::{
     parse_macro_input, Data, DataEnum, DataStruct, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
     Path, Type,
@@ -263,8 +263,9 @@ pub(super) fn derive_platform_serialize_enum(
     };
 
     let with_platform_version_body = if let Some(platform_version_path) = platform_version_path {
-        let platform_version_path_tokens = proc_macro2::TokenStream::from_str(&platform_version_path.value())
-            .expect("Expected a valid field path for 'platform_version_path'");
+        let platform_version_path_tokens =
+            proc_macro2::TokenStream::from_str(&platform_version_path.value())
+                .expect("Expected a valid field path for 'platform_version_path'");
         quote! {
         impl #impl_generics #crate_name::serialization_traits::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause {
             fn serialize_with_platform_version(&self, version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {

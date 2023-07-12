@@ -52,7 +52,7 @@ use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde_json::Value as JsonValue;
 use crate::data_contract::serialized_version::{CONTRACT_DESERIALIZATION_LIMIT, DataContractSerializationFormat};
-use crate::ProtocolError::PlatformDeserializationError;
+use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
 pub mod property_names {
     pub const SYSTEM_VERSION: &str = "systemVersion";
@@ -120,20 +120,20 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     fn serialize_with_platform_version(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format = self.to_serialization_format_based_on_default_current_version(platform_version)?;
         let config = config::standard().with_big_endian().with_no_limit();
-        bincode::encode_to_vec(serialization_format, config).map_err(|e| ProtocolError::new(e))
+        bincode::encode_to_vec(serialization_format, config).map_err(|e| PlatformSerializationError(format!("unable to serialize DataContract: {}", e)))
     }
 
     fn serialize_consume_with_platform_version(self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format = self.into_serialization_format_based_on_default_current_version(platform_version)?;
         let config = config::standard().with_big_endian().with_no_limit();
-        bincode::encode_to_vec(serialization_format, config).map_err(|e| ProtocolError::new(e))
+        bincode::encode_to_vec(serialization_format, config).map_err(|e| PlatformSerializationError(format!("unable to serialize consume DataContract: {}", e)))
     }
 }
 
 impl PlatformDeserializableFromVersionedStructure for DataContract {
     fn versioned_deserialize(data: &[u8], platform_version: &PlatformVersion) -> Result<Self, ProtocolError> where Self: Sized {
         let config = config::standard().with_big_endian().with_no_limit();
-        let data_contract_in_serialization_format : DataContractSerializationFormat = bincode::decode_from_slice(data, config).map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e)))?.0;
+        let data_contract_in_serialization_format : DataContractSerializationFormat = bincode::decode_from_slice(data, config).map_err(|e| PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e)))?.0;
         DataContract::from_serialization_format(data_contract_in_serialization_format, platform_version)
     }
 }
@@ -141,7 +141,7 @@ impl PlatformDeserializableFromVersionedStructure for DataContract {
 impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
     fn versioned_limit_deserialize(data: &[u8], platform_version: &PlatformVersion) -> Result<Self, ProtocolError> where Self: Sized {
         let config = config::standard().with_big_endian().with_limit::<CONTRACT_DESERIALIZATION_LIMIT>();
-        let data_contract_in_serialization_format : DataContractSerializationFormat = bincode::decode_from_slice(data, config).map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e)))?.0;
+        let data_contract_in_serialization_format : DataContractSerializationFormat = bincode::decode_from_slice(data, config).map_err(|e| PlatformDeserializationError(format!("unable to deserialize DataContract with limit: {}", e)))?.0;
         DataContract::from_serialization_format(data_contract_in_serialization_format, platform_version)
     }
 }
