@@ -8,7 +8,7 @@ use crate::error::identity::IdentityError;
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
-    pub fn add_to_previous_balance_v0(
+    pub(super) fn add_to_previous_balance_v0(
         &self,
         identity_id: [u8; 32],
         previous_balance: Credits,

@@ -14,7 +14,7 @@ use crate::fee::result::FeeResult;
 
 impl Drive {
     /// Deserializes a document and adds it to a contract.
-    pub fn add_serialized_document_for_contract_v0(
+    pub(super) fn add_serialized_document_for_contract_v0(
         &self,
         serialized_document: &[u8],
         contract: &DataContract,

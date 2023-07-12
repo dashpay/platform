@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
-    pub fn re_enable_identity_keys_operations_v0(
+    pub(super) fn re_enable_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],
         key_ids: Vec<KeyID>,

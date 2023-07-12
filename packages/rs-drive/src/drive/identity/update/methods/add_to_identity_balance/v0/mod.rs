@@ -13,7 +13,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
-    pub fn add_to_identity_balance_v0(
+    pub(super) fn add_to_identity_balance_v0(
         &self,
         identity_id: [u8; 32],
         added_balance: Credits,
@@ -54,7 +54,7 @@ impl Drive {
 
     /// Balances are stored in the balance tree under the identity's id
     /// This gets operations based on apply flag (stateful vs stateless)
-    pub fn add_to_identity_balance_operations_v0(
+    pub(super) fn add_to_identity_balance_operations_v0(
         &self,
         identity_id: [u8; 32],
         added_balance: Credits,
