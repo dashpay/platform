@@ -20,6 +20,7 @@ class ReindexCommand extends ConfigBaseCommand {
     args,
     {
       verbose: isVerbose,
+      detach: isDetached,
     },
     isSystemConfig,
     config,
@@ -43,7 +44,7 @@ class ReindexCommand extends ConfigBaseCommand {
 
     try {
       await tasks.run({
-        isVerbose,
+        isDetached
       });
     } catch (e) {
       throw new MuteOneLineError(e);

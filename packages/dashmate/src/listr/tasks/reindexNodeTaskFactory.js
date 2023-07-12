@@ -66,24 +66,28 @@ function reindexNodeTaskFactory(
 
             // If core is running, we need to stop it first
             if (info.State.Status !== 'exited') {
-              const agreement = await task.prompt({
-                type: 'select',
-                message: 'Dash Core found running on your node, but it must be stopped before we proceed',
-                choices: [
-                  {
-                    name: 'true',
-                    message: 'Stop Dash Core and proceed to reindex',
-                  }, {
-                    name: 'false',
-                    message: 'Cancel operation',
-                  },
-                ],
-                initial: 'true',
-              });
+              let agreed;
 
-              const agreed = agreement === 'true';
+              if (!ctx.isDetached) {
+                const agreement = await task.prompt({
+                  type: 'select',
+                  message: 'Dash Core found running on your node, but it must be stopped before we proceed',
+                  choices: [
+                    {
+                      name: 'true',
+                      message: 'Stop Dash Core and proceed to reindex',
+                    }, {
+                      name: 'false',
+                      message: 'Cancel operation',
+                    },
+                  ],
+                  initial: 'true',
+                });
 
-              if (agreed) {
+                agreed = agreement === 'true';
+              }
+
+              if (ctx.isDetached || agreed) {
                 await ctx.coreContainer.stop();
               } else {
                 // eslint-disable-next-line no-param-reassign
@@ -146,7 +150,7 @@ function reindexNodeTaskFactory(
         },
       },
       {
-        enabled: (ctx) => !ctx.cancel && !ctx.detach,
+        enabled: (ctx) => !ctx.cancel && !ctx.isDetached,
         task: async (ctx) => new Observable(async (observer) => {
           observer.next(`Reindexing Core for ${config.getName()}`);
 
