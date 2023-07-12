@@ -44,7 +44,7 @@ class ReindexCommand extends ConfigBaseCommand {
 
     try {
       await tasks.run({
-        isDetached
+        isDetached,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

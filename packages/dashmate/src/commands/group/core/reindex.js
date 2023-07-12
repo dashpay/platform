@@ -69,7 +69,7 @@ GroupReindexCommand.description = 'Reindex group Core data';
 
 GroupReindexCommand.flags = {
   ...GroupBaseCommand.flags,
-  verbose: Flags.boolean({char: 'v', description: 'use verbose mode for output', default: false}),
+  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
   detach: Flags.boolean({
     char: 'd',
     description: 'detach from the process and keep reindexing in the background',
