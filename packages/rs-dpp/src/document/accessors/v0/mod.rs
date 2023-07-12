@@ -35,7 +35,7 @@ pub trait DocumentV0Getters {
     }
 }
 
-pub trait DocumentV0Setters {
+pub trait DocumentV0Setters : DocumentV0Getters {
     /// Sets the unique document ID.
     fn set_id(&mut self, id: Identifier);
 
@@ -58,60 +58,60 @@ pub trait DocumentV0Setters {
     /// The path supports syntax from the `lodash` JS library. Example: "root.people[0].name".
     /// If parents are not present, they will be automatically created.
     fn set(&mut self, path: &str, value: Value) {
-        self.properties().insert(path.to_string(), value);
+        self.properties_mut().insert(path.to_string(), value);
     }
 
     /// Sets a `u8` value for the specified property name.
     fn set_u8(&mut self, property_name: &str, value: u8) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::U8(value));
     }
 
     /// Sets an `i8` value for the specified property name.
     fn set_i8(&mut self, property_name: &str, value: i8) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::I8(value));
     }
 
     /// Sets a `u16` value for the specified property name.
     fn set_u16(&mut self, property_name: &str, value: u16) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::U16(value));
     }
 
     /// Sets an `i16` value for the specified property name.
     fn set_i16(&mut self, property_name: &str, value: i16) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::I16(value));
     }
 
     /// Sets a `u32` value for the specified property name.
     fn set_u32(&mut self, property_name: &str, value: u32) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::U32(value));
     }
 
     /// Sets an `i32` value for the specified property name.
     fn set_i32(&mut self, property_name: &str, value: i32) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::I32(value));
     }
 
     /// Sets a `u64` value for the specified property name.
     fn set_u64(&mut self, property_name: &str, value: u64) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::U64(value));
     }
 
     /// Sets an `i64` value for the specified property name.
     fn set_i64(&mut self, property_name: &str, value: i64) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::I64(value));
     }
 
     /// Sets a `Vec<u8>` (byte array) value for the specified property name.
     fn set_bytes(&mut self, property_name: &str, value: Vec<u8>) {
-        self.properties()
+        self.properties_mut()
             .insert(property_name.to_string(), Value::Bytes(value));
     }
 }

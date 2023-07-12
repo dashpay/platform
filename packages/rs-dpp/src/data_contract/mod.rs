@@ -31,11 +31,13 @@ mod factory;
 #[cfg(feature = "client")]
 pub use factory::*;
 mod data_contract_class_methods;
+pub use data_contract_class_methods::*;
 #[cfg(feature = "client")]
 mod data_contract_facade;
 mod serialized_version;
 mod conversion;
 mod data_contract_methods;
+pub use data_contract_methods::*;
 pub(crate) mod accessors;
 
 #[cfg(feature = "state-transitions")]

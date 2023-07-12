@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use crate::data_contract::DataContract;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::document::{Document, IDENTIFIER_FIELDS};
 use crate::ProtocolError;
 
