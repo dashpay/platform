@@ -415,6 +415,27 @@ FLAGS
 
 With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
 
+#### Reindex group nodes
+
+The `group core reindex` reindexes all your local dash core containers
+
+```
+Reindex group Core data
+
+USAGE
+  $ dashmate group core reindex [-v] [--group <value>] [-d]
+
+FLAGS
+  -d, --detach     detach from the process and keep reindexing in the background
+  -v, --verbose    use verbose mode for output
+  --group=<value>  group name to use
+
+DESCRIPTION
+  Reindex group Core data
+```
+
+With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
+
 #### Mint tDash
 
 The `wallet mint` command can be used to generate an arbitrary amount of tDash to a new or specified recipient address on a local network. The network must be stopped before running this command.
