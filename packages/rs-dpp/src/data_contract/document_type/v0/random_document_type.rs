@@ -108,6 +108,7 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
+use crate::version::PlatformVersion;
 
 impl DocumentTypeV0 {
     pub fn random_document_type(
@@ -226,7 +227,7 @@ impl DocumentTypeV0 {
 
         let index_structure = IndexLevel::from(indices.as_slice());
         let (identifier_paths, binary_paths) =
-            DocumentType::find_identifier_and_binary_paths(&properties);
+            DocumentType::find_identifier_and_binary_paths(&properties, &PlatformVersion::latest().dpp.contract_versions.document_type_versions)?;
         Ok(DocumentTypeV0 {
             name: format!("doc_type_{}", rng.gen::<u16>()),
             indices,

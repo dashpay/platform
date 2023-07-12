@@ -1,16 +1,39 @@
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::{property_names, DataContract};
+use crate::data_contract::{property_names, DataContract, DocumentName, PropertyPath};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
 use std::collections::BTreeMap;
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::property_names::SYSTEM_VERSION;
+use serde_json::Value as JsonValue;
 
-impl DataContractV0 {
-    pub fn from_raw_object(
+impl DataContractValueConversionMethodsV0 for DataContractV0 {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        value.set_into_value(SYSTEM_VERSION, 0u16)?;
+        Ok(value)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        let mut value = self.to_object()?;
+        if self.defs.is_none() {
+            value.remove(property_names::DEFINITIONS)?;
+        }
+        Ok(value)
+    }
+
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
+        value.set_into_value(SYSTEM_VERSION, 0u16)?;
+        Ok(value)
+    }
+
+    fn from_raw_object(
         raw_object: Value,
         platform_version: &PlatformVersion,
-    ) -> Result<DataContractV0, ProtocolError> {
+    ) -> Result<Self, ProtocolError> {
         let mut data_contract_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
@@ -46,12 +69,12 @@ impl DataContractV0 {
         let binary_properties = documents
             .iter()
             .map(|(doc_type, schema)| {
-                (
+                Ok((
                     String::from(doc_type),
-                    DataContract::get_binary_properties(schema, platform_version),
-                )
+                    DataContract::get_binary_properties(schema, platform_version)?,
+                ))
             })
-            .collect();
+            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
 
         let data_contract = DataContractV0 {
             id,

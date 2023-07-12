@@ -43,6 +43,7 @@ use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::version::PlatformVersion;
 
@@ -126,7 +127,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
 
     /// Creates a Document from a serialized Document.
     fn document_from_bytes(&self, bytes: &[u8]) -> Result<Document, ProtocolError> {
-        Document::from_bytes(bytes, self, PlatformVersion::latest())
+        Document::from_bytes(bytes, &DocumentTypeRef::V0(self), PlatformVersion::latest())
     }
 
     /// Creates a random Document using a seed if given, otherwise entropy.

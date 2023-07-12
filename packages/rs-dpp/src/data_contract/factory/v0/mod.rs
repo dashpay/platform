@@ -124,7 +124,7 @@ impl DataContractFactoryV0 {
         }
         .into();
 
-        data_contract.generate_binary_properties();
+        data_contract.generate_binary_properties()?;
         Ok(CreatedDataContractV0 {
             data_contract,
             entropy_used: entropy,

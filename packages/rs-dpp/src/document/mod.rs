@@ -4,6 +4,7 @@ mod accessors;
 pub mod action_type;
 mod document_patch;
 pub mod errors;
+#[cfg(feature = "extended-document")]
 pub mod extended_document;
 mod fields;
 pub mod generate_document_id;
@@ -21,8 +22,11 @@ mod platform_value_conversion;
 pub use v0::*;
 pub use accessors::*;
 
+#[cfg(feature = "extended-document")]
 pub use extended_document::property_names as extended_document_property_names;
+#[cfg(feature = "extended-document")]
 pub use extended_document::ExtendedDocument;
+#[cfg(feature = "extended-document")]
 pub use extended_document::IDENTIFIER_FIELDS as EXTENDED_DOCUMENT_IDENTIFIER_FIELDS;
 
 /// the initial revision of newly created document
@@ -58,7 +62,7 @@ impl DocumentMethodsV0 for Document {
         match self {
             Document::V0(document_v0) => {
                 match platform_version.dpp.document_versions.document_method_versions.get_raw_for_contract {
-                    0 => document_v0.get_raw_for_contract_v0(key, document_type_name, contract, owner_id),
+                    0 => document_v0.get_raw_for_contract_v0(key, document_type_name, contract, owner_id, platform_version),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::get_raw_for_contract".to_string(),
                         known_versions: vec![0],
@@ -80,7 +84,7 @@ impl DocumentMethodsV0 for Document {
         match self {
             Document::V0(document_v0) => {
                 match platform_version.dpp.document_versions.document_method_versions.get_raw_for_document_type {
-                    0 => document_v0.get_raw_for_document_type_v0(key_path, document_type, owner_id),
+                    0 => document_v0.get_raw_for_document_type_v0(key_path, document_type, owner_id, platform_version),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::get_raw_for_document_type".to_string(),
                         known_versions: vec![0],
@@ -112,7 +116,7 @@ impl DocumentMethodsV0 for Document {
     }
 
     fn increment_revision(&mut self) -> Result<(), ProtocolError> {
-        let Some(revision) = self.revision else {
+        let Some(revision) = self.revision() else {
             return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
                 document: Box::new(self.clone().into()),
             })))

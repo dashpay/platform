@@ -22,6 +22,7 @@ use std::io::{BufReader, Read};
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::document::serialization_traits::{DocumentPlatformConversionMethodsV0, DocumentPlatformDeserializationMethodsV0, DocumentPlatformSerializationMethodsV0};
 use crate::version::PlatformVersion;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {

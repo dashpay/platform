@@ -45,7 +45,7 @@ pub enum ProtocolError {
 
     /// Platform expected some specific versions
     #[error(
-        "dpp unknown version on {method}, known versions: {known_versions}, received: {received}"
+        "dpp unknown version on {method}, known versions: {known_versions:?}, received: {received}"
     )]
     UnknownVersionMismatch {
         /// method

@@ -9,5 +9,7 @@ pub mod serialization;
 pub mod structure_validation;
 #[cfg(feature = "validation")]
 pub mod validation;
+mod accessors;
+mod methods;
 
 pub use data_contract::*;

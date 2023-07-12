@@ -3,9 +3,11 @@ use thiserror::Error;
 
 use crate::errors::consensus::ConsensusError;
 
+use crate::document::Document;
+#[cfg(feature = "extended-document")]
+use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
-use super::document_transition::DocumentTransition;
-use crate::document::{Document, ExtendedDocument};
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
@@ -33,15 +35,20 @@ pub enum DocumentError {
         errors: Vec<ConsensusError>,
         raw_document: Value,
     },
+
+    #[cfg(feature = "extended-document")]
     #[error("Invalid Document initial revision '{}'", document.revision().copied().unwrap_or_default())]
     InvalidInitialRevisionError { document: Box<ExtendedDocument> },
 
+    #[cfg(feature = "extended-document")]
     #[error("Revision absent on mutable document")]
     RevisionAbsentError { document: Box<ExtendedDocument> },
 
+    #[cfg(feature = "extended-document")]
     #[error("Trying To Replace Immutable Document")]
     TryingToReplaceImmutableDocument { document: Box<ExtendedDocument> },
 
+    #[cfg(feature = "extended-document")]
     #[error("Documents have mixed owner ids")]
     MismatchOwnerIdsError { documents: Vec<ExtendedDocument> },
 

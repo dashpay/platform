@@ -6,7 +6,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
-pub use serde_json::Value as JsonValue;
+use serde_json::Value as JsonValue;
 
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};

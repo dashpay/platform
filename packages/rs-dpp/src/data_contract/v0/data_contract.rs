@@ -35,6 +35,7 @@ use platform_value::string_encoding::Encoding;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::property_names::{SYSTEM_VERSION, VERSION};
 use crate::data_contract::serialized_version::DataContractSerializationFormat;
+use crate::util::deserializer::ProtocolVersion;
 use crate::version::PlatformVersion;
 
 use super::super::property_names;
@@ -45,62 +46,6 @@ pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
 pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
-
-impl Convertible for DataContractV0 {
-    #[cfg(feature = "platform-value")]
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
-        value.set_into_value(SYSTEM_VERSION, 0u16)?;
-        Ok(value)
-    }
-
-    #[cfg(feature = "platform-value")]
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        let mut value = self.to_object()?;
-        if self.defs.is_none() {
-            value.remove(property_names::DEFINITIONS)?;
-        }
-        Ok(value)
-    }
-
-    #[cfg(feature = "platform-value")]
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
-        value.set_into_value(SYSTEM_VERSION, 0u16)?;
-        Ok(value)
-    }
-
-    #[cfg(feature = "json-object")]
-    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()?
-            .try_into_validating_json()
-            .map_err(ProtocolError::ValueError)
-    }
-
-    /// Returns Data Contract as a JSON Value
-    #[cfg(feature = "json-object")]
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()?
-            .try_into()
-            .map_err(ProtocolError::ValueError)
-    }
-
-    /// Returns Data Contract as a Buffer
-    #[cfg(feature = "cbor")]
-    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut object = self.to_object()?;
-        if self.defs.is_none() {
-            object.remove(property_names::DEFINITIONS)?;
-        }
-        object
-            .to_map_mut()
-            .unwrap()
-            .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
-
-        // we are on version 0 here
-        cbor_serializer::serializable_value_to_cbor(&object, Some(0))
-    }
-}
 
 /// `DataContractV0` represents a data contract in a decentralized platform.
 ///
@@ -241,10 +186,8 @@ impl From<DataContractV0> for DataContractV0Inner {
     }
 }
 
-impl TryFrom<DataContractV0Inner> for DataContractV0 {
-    type Error = ProtocolError;
-
-    fn try_from(value: DataContractV0Inner) -> Result<Self, Self::Error> {
+impl DataContractV0 {
+    fn try_from_inner(value: DataContractV0Inner, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let DataContractV0Inner {
             id,
             config,
@@ -256,7 +199,7 @@ impl TryFrom<DataContractV0Inner> for DataContractV0 {
             ..
         } = value;
 
-        let document_types = DataContract::get_document_types_from_value_array_v0(
+        let document_types = DataContract::get_document_types_from_value_array(
             id,
             &documents
                 .iter()
@@ -273,11 +216,12 @@ impl TryFrom<DataContractV0Inner> for DataContractV0 {
                 .unwrap_or_default(),
             config.documents_keep_history_contract_default,
             config.documents_mutable_contract_default,
+            platform_version,
         )?;
 
         let binary_properties = documents
             .iter()
-            .map(|(doc_type, schema)| Ok((String::from(doc_type), get_binary_properties(&schema.clone().try_into()?))))
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version))))
             .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
 
         let data_contract = DataContractV0 {
@@ -357,279 +301,6 @@ impl DataContractV0 {
     }
 }
 
-pub trait DataContractV0Methods {
-    /// Increments version of Data Contract
-    fn increment_version(&mut self);
-    /// Returns true if document type is defined
-    fn is_document_defined(&self, document_type_name: &str) -> bool;
-    fn optional_document_type_for_name<'a>(
-        &self,
-        document_type_name: &str,
-    ) -> Option<DocumentTypeRef<'a>>;
-    fn document_type_for_name<'a>(
-        &self,
-        document_type_name: &str,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
-    fn has_document_type_for_name(&self, document_type_name: &str) -> bool;
-    fn get_identifiers_and_binary_paths(
-        &self,
-        document_type: &str,
-    ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError>;
-    fn generate_binary_properties(&mut self, platform_version: &PlatformVersion);
-    /// Returns the binary properties for the given document type
-    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
-    /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which
-    /// automatically generates binary properties when setting the Json Schema
-    // TODO: Naming is confusing. It's not clear, it sounds like it will return optional document properties
-    //   but not None if document type is not present. Rename this
-    fn get_optional_binary_properties(
-        &self,
-        doc_type: &str,
-    ) -> Result<Option<&BTreeMap<String, JsonValue>>, ProtocolError>;
-    /// Returns the binary properties for the given document type
-    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
-    /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which
-    /// automatically generates binary properties when setting the Json Schema
-    fn get_binary_properties(
-        &self,
-        doc_type: &str,
-    ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError>;
-    fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError>;
-    fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError>;
-    fn set_document_schema(
-        &mut self,
-        doc_type: String,
-        schema: JsonSchema,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError>;
-    fn get_identifiers_and_binary_paths_owned<
-        I: IntoIterator<Item = String> + Extend<String> + Default,
-    >(
-        &self,
-        document_type: &str,
-    ) -> Result<(I, I), ProtocolError>;
-}
-
-impl DataContractV0Methods for DataContractV0 {
-    /// Increments version of Data Contract
-    fn increment_version(&mut self) {
-        self.version += 1;
-    }
-
-    /// Returns true if document type is defined
-    fn is_document_defined(&self, document_type_name: &str) -> bool {
-        self.document_types.get(document_type_name).is_some()
-    }
-
-    fn optional_document_type_for_name<'a>(
-        &self,
-        document_type_name: &str,
-    ) -> Option<DocumentTypeRef<'a>> {
-        self.document_types
-            .get(document_type_name)
-            .map(|document_type| document_type.as_ref())
-    }
-
-    fn document_type_for_name<'a>(
-        &self,
-        document_type_name: &str,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
-        Ok(self
-            .document_types
-            .get(document_type_name)
-            .ok_or({
-                ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                    "can not get document type from contract",
-                ))
-            })?
-            .as_ref())
-    }
-
-    fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
-        self.document_types.get(document_type_name).is_some()
-    }
-
-    fn set_document_schema(
-        &mut self,
-        doc_type: String,
-        schema: JsonSchema,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
-        let binary_properties = DataContract::get_binary_properties(&schema, platform_version)?;
-        self.documents.insert(doc_type.clone(), schema.clone());
-        self.binary_properties
-            .insert(doc_type.clone(), binary_properties);
-
-        let document_type_value = platform_value::Value::from(schema);
-
-        // Make sure the document_type_value is a map
-        let Some(document_type_value_map) = document_type_value.as_map() else {
-            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                "document type data is not a map as expected",
-            )));
-        };
-
-        let document_type = DocumentTypeV0::from_platform_value(
-            self.id,
-            &doc_type,
-            document_type_value_map,
-            &BTreeMap::new(),
-            self.config.documents_keep_history_contract_default,
-            self.config.documents_mutable_contract_default,
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
-        )?;
-
-        self.document_types.insert(doc_type, document_type.into());
-
-        Ok(())
-    }
-
-    fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        let document = self
-            .documents
-            .get(doc_type)
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
-                    doc_type.to_owned(),
-                    self.id,
-                )),
-            ))?;
-        Ok(document)
-    }
-
-    fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
-        if !self.is_document_defined(doc_type) {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
-                    doc_type.to_owned(),
-                    self.id,
-                )),
-            ));
-        };
-
-        Ok(format!(
-            "{}#/documents/{}",
-            self.id.to_string(Encoding::Base58),
-            doc_type
-        ))
-    }
-
-    /// Returns the binary properties for the given document type
-    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
-    /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which
-    /// automatically generates binary properties when setting the Json Schema
-    fn get_binary_properties(
-        &self,
-        doc_type: &str,
-    ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
-        self.get_optional_binary_properties(doc_type)?
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
-                    doc_type.to_owned(),
-                    self.id,
-                )),
-            ))
-    }
-
-    /// Returns the binary properties for the given document type
-    /// Comparing to JS version of DPP, the binary_properties are not generated automatically
-    /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which
-    /// automatically generates binary properties when setting the Json Schema
-    // TODO: Naming is confusing. It's not clear, it sounds like it will return optional document properties
-    //   but not None if document type is not present. Rename this
-    fn get_optional_binary_properties(
-        &self,
-        doc_type: &str,
-    ) -> Result<Option<&BTreeMap<String, JsonValue>>, ProtocolError> {
-        if !self.is_document_defined(doc_type) {
-            return Ok(None);
-        }
-
-        // The rust implementation doesn't set the value if it is not present in `binary_properties`. The difference is caused by
-        // required `mut` annotation. As `get_binary_properties` is reused in many other read-only methods, the mutation would require
-        // propagating the `mut` to other getters which by the definition shouldn't be mutable.
-        self.binary_properties
-            .get(doc_type)
-            .ok_or_else(|| {
-                {
-                    anyhow::anyhow!(
-                        "document '{}' has not generated binary_properties",
-                        doc_type
-                    )
-                }
-                .into()
-            })
-            .map(Some)
-    }
-
-    fn generate_binary_properties(&mut self, platform_version: &PlatformVersion) {
-        self.binary_properties = self
-            .documents
-            .iter()
-            .map(|(doc_type, schema)| {
-                (
-                    String::from(doc_type),
-                    DataContract::get_binary_properties(schema, platform_version),
-                )
-            })
-            .collect();
-    }
-
-    fn get_identifiers_and_binary_paths(
-        &self,
-        document_type: &str,
-    ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
-        let binary_properties = self.get_optional_binary_properties(document_type)?;
-
-        // At this point we don't bother about returned error from `get_binary_properties`.
-        // If document of given type isn't found, then empty vectors will be returned.
-        let (binary_paths, identifiers_paths) = match binary_properties {
-            None => (HashSet::new(), HashSet::new()),
-            Some(binary_properties) => binary_properties.iter().partition_map(|(path, v)| {
-                if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
-                    if content_type == identifier::MEDIA_TYPE {
-                        Either::Right(path.as_str())
-                    } else {
-                        Either::Left(path.as_str())
-                    }
-                } else {
-                    Either::Left(path.as_str())
-                }
-            }),
-        };
-        Ok((identifiers_paths, binary_paths))
-    }
-
-    fn get_identifiers_and_binary_paths_owned<
-        I: IntoIterator<Item = String> + Extend<String> + Default,
-    >(
-        &self,
-        document_type: &str,
-    ) -> Result<(I, I), ProtocolError> {
-        let binary_properties = self.get_optional_binary_properties(document_type)?;
-
-        // At this point we don't bother about returned error from `get_binary_properties`.
-        // If document of given type isn't found, then empty vectors will be returned.
-        Ok(binary_properties
-            .map(|binary_properties| {
-                binary_properties.iter().partition_map(|(path, v)| {
-                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
-                        if content_type == platform_value::IDENTIFIER_MEDIA_TYPE {
-                            Either::Left(path.clone())
-                        } else {
-                            Either::Right(path.clone())
-                        }
-                    } else {
-                        Either::Right(path.clone())
-                    }
-                })
-            })
-            .unwrap_or_default())
-    }
-}
 //
 // #[cfg(feature = "json-object")]
 // impl TryFrom<JsonValue> for DataContractV0 {

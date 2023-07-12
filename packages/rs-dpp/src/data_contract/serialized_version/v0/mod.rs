@@ -1,7 +1,7 @@
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{
-    DataContract, DataContractV0Methods, DefinitionName, DocumentName, JsonSchema, PropertyPath,
+    DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath,
 };
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use crate::version::PlatformVersion;

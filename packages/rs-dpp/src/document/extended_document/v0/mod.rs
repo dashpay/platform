@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::extended_document::property_names;
-use crate::document::Document;
+use crate::document::{Document, DocumentV0Getters};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, HashSet};
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 #[cfg(feature = "json-object")]
 use serde_json::Value as JsonValue;
+use crate::document::serialization_traits::{DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0};
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]

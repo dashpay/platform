@@ -4,6 +4,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::document::DocumentV0Getters;
 use crate::ProtocolError;
+use crate::version::PlatformVersion;
 
 pub trait DocumentGetRawForDocumentTypeV0 : DocumentV0Getters {
     /// Return a value given the path to its key for a document type.
@@ -12,6 +13,7 @@ pub trait DocumentGetRawForDocumentTypeV0 : DocumentV0Getters {
         key_path: &str,
         document_type: &DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         // todo: maybe merge with document_type.serialize_value_for_key() because we use different
         //   code paths for query and index creation
@@ -37,7 +39,7 @@ pub trait DocumentGetRawForDocumentTypeV0 : DocumentV0Getters {
             }
             self.properties()
                 .get_optional_at_path(key_path)?
-                .map(|value| document_type.serialize_value_for_key(key_path, value))
+                .map(|value| document_type.serialize_value_for_key(key_path, value, platform_version))
                 .transpose()
         }
     }

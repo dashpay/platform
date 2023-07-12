@@ -22,6 +22,7 @@ pub mod document_factory;
 pub mod random_document;
 pub mod random_document_type;
 pub(crate) mod v0_methods;
+mod accessors;
 
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32
@@ -69,11 +70,11 @@ impl DocumentTypeV0 {
         documents_keep_history: bool,
         documents_mutable: bool,
         document_type_version: &DocumentTypeVersions,
-    ) -> Self {
+    ) -> Result<Self, ProtocolError> {
         let index_structure = IndexLevel::from(indices.as_slice());
         let (identifier_paths, binary_paths) =
-            DocumentType::find_identifier_and_binary_paths(&properties, document_type_version);
-        DocumentTypeV0 {
+            DocumentType::find_identifier_and_binary_paths(&properties, document_type_version)?;
+        Ok(DocumentTypeV0 {
             name,
             indices,
             index_structure,
@@ -85,7 +86,7 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
-        }
+        })
     }
 
     pub(crate) fn from_platform_value(
@@ -208,7 +209,7 @@ impl DocumentTypeV0 {
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &document_properties,
             document_type_version,
-        );
+        )?;
         Ok(DocumentTypeV0 {
             name: String::from(name),
             indices,

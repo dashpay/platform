@@ -39,7 +39,7 @@ use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
 /// Documents contain the data that goes into data contracts.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct DocumentV0 {
     /// The unique document ID.
     pub id: Identifier,

@@ -34,6 +34,9 @@ mod data_contract_class_methods;
 #[cfg(feature = "client")]
 mod data_contract_facade;
 mod serialized_version;
+mod conversion;
+mod data_contract_methods;
+pub(crate) mod accessors;
 
 #[cfg(feature = "state-transitions")]
 pub use created_data_contract::CreatedDataContract;
@@ -51,6 +54,7 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde_json::Value as JsonValue;
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::serialized_version::{CONTRACT_DESERIALIZATION_LIMIT, DataContractSerializationFormat};
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
@@ -273,6 +277,7 @@ mod tests {
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
     use serde::Serialize;
+    use crate::serialization_traits::PlatformSerializableWithPlatformVersion;
 
     #[test]
     fn test_contract_serialization() {
