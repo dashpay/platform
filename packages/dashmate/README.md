@@ -283,19 +283,23 @@ rm -rf ~/.dashmate/
 
 ### Reindex dashcore chain data
 
-The `core reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
+The `core reindex` command helps you to reindex your dashcore instance in the node.
 
-The process displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
+The process displays interactive progress and may be interrupted at any time. After reindex is finished dashcore and other services will become online without any interactions from the user.
 
 The `core reindex` command works for regular and local configurations.
 
 ```
 USAGE
-  $ dashmate core reindex [-v] [--config <value>]
+  $ dashmate core reindex [-v] [--config <value>] [-d]
 
 FLAGS
+  -d, --detach      detach from the process and keep reindexing in the background
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+
+DESCRIPTION
+  Reindex Core data
 ```
 
 ### Full node

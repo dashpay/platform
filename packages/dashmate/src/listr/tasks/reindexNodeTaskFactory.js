@@ -30,7 +30,14 @@ function reindexNodeTaskFactory(
   configFile,
   getConnectionHost,
 ) {
-  async function getCoreContainerId(config) {
+  /**
+   * Gets dashcore docker container from the node
+   * @param config
+   * @return {Promise<*>}
+   */
+  async function getCoreContainer(config) {
+    const { docker } = dockerCompose;
+
     const [containerId] = await dockerCompose
       .getContainersList(generateEnvs(configFile, config), {
         quiet: true,
@@ -38,7 +45,7 @@ function reindexNodeTaskFactory(
         filterServiceNames: 'core',
       });
 
-    return containerId;
+    return docker.getContainer(containerId);
   }
 
   /**
@@ -53,10 +60,11 @@ function reindexNodeTaskFactory(
           const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
           if (isNodeRunning) {
-            ctx.coreContainer = await getCoreContainerId(config);
+            ctx.coreContainer = await getCoreContainer(config);
 
             const info = await ctx.coreContainer.inspect();
 
+            // If core is running, we need to stop it first
             if (info.State.Status !== 'exited') {
               const agreement = await task.prompt({
                 type: 'select',
@@ -112,8 +120,6 @@ function reindexNodeTaskFactory(
         title: 'Wait for Core start',
         enabled: (ctx) => !ctx.cancel,
         task: async (ctx) => {
-          const { docker } = dockerCompose;
-
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
@@ -121,8 +127,7 @@ function reindexNodeTaskFactory(
             host: await getConnectionHost(config, 'core'),
           });
 
-          const containerId = await getCoreContainerId(config);
-          const container = docker.getContainer(containerId);
+          const container = await getCoreContainer(config);
 
           ctx.coreService = new CoreService(config, rpcClient, container);
 
