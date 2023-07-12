@@ -74,7 +74,7 @@ lazy_static! {
             (KnownCostItem::FetchSingleIdentityKeyProcessingCost, 10000),
         ]
         .into_iter()
-        .collect()
+        .collect::<HashMap<KnownCostItem, u64>>()
     ),]
     .into_iter()
     .collect();

@@ -201,7 +201,7 @@ impl DataContract {
     }
 
     #[cfg(feature = "platform-value")]
-    pub fn from_raw_object(mut raw_object: Value) -> Result<DataContract, ProtocolError> {
+    pub fn from_raw_object(mut raw_object: Value, platform_version: &PlatformVersion) -> Result<DataContract, ProtocolError> {
         let data_contract_system_version =
             match raw_object.remove_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
                 Ok(Some(data_contract_system_version)) => data_contract_system_version,
@@ -223,7 +223,7 @@ impl DataContract {
                 }
             };
         match data_contract_system_version {
-            0 => Ok(DataContractV0::from_raw_object(raw_object).into()),
+            0 => Ok(DataContractV0::from_raw_object(raw_object, platform_version)?.into()),
             _ => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::VersionError(
                     "system version found on data contract object".into(),

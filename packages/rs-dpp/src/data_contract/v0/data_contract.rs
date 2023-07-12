@@ -55,7 +55,7 @@ pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 ///
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(try_from = "DataContractV0Inner")]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractV0 {
