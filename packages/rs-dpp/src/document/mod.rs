@@ -104,7 +104,7 @@ impl DocumentMethodsV0 for Document {
         match self {
             Document::V0(document_v0) => {
                 match platform_version.dpp.document_versions.document_method_versions.hash {
-                    0 => document_v0.hash_v0(contract, document_type),
+                    0 => document_v0.hash_v0(contract, document_type, platform_version),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::hash".to_string(),
                         known_versions: vec![0],

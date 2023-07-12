@@ -6,6 +6,7 @@ use crate::document::{DocumentV0Getters, DocumentV0Setters};
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::ProtocolError;
 use crate::util::hash::hash_to_vec;
+use crate::version::PlatformVersion;
 
 pub trait DocumentHashV0Method : DocumentPlatformConversionMethodsV0 {
     /// The document is only unique within the contract and document type
@@ -14,10 +15,11 @@ pub trait DocumentHashV0Method : DocumentPlatformConversionMethodsV0 {
         &self,
         contract: &DataContract,
         document_type: &DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = contract.id().to_vec();
         buf.extend(document_type.name().as_bytes());
-        buf.extend(self.serialize(document_type)?);
+        buf.extend(self.serialize(document_type, platform_version)?);
         Ok(hash_to_vec(buf))
     }
 }
