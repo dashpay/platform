@@ -1,4 +1,4 @@
-//! `GetIdentity` requests.
+//! `GetIdentity*` requests.
 
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 
@@ -22,7 +22,7 @@ pub struct GetIdentityResponse {
 impl DapiRequest for GetIdentity {
     type DapiResponse = Option<GetIdentityResponse>;
 
-    const SETTINGS_OVERRIDES: Settings = Settings::empty();
+    const SETTINGS_OVERRIDES: Settings = Settings::default();
 
     type Error = IncompleteMessage;
 
@@ -72,7 +72,7 @@ pub struct GetIdentityProofResponse {
 impl DapiRequest for GetIdentityProof {
     type DapiResponse = GetIdentityProofResponse;
 
-    const SETTINGS_OVERRIDES: Settings = Settings::empty();
+    const SETTINGS_OVERRIDES: Settings = Settings::default();
 
     type Error = IncompleteMessage;
 

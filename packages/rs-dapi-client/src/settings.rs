@@ -24,9 +24,9 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// Create empty settings, which means no overrides will be applied.
+    /// Create empty [Setttings], which means no overrides will be applied.
     /// Actually does the same as [Default], but it's `const`.
-    pub const fn empty() -> Self {
+    pub const fn default() -> Self {
         Settings {
             network: None,
             timeout: None,

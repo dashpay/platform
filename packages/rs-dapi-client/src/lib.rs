@@ -2,12 +2,17 @@
 
 #![deny(missing_docs)]
 
-mod platform;
+mod address_list;
+mod core;
+pub mod platform;
 mod settings;
 mod transport;
 
 use backon::{ExponentialBuilder, Retryable};
-use transport::{grpc::PlatformGrpcClient, TransportRequest};
+use transport::{
+    grpc::{CoreGrpcClient, PlatformGrpcClient},
+    TransportRequest,
+};
 
 pub use settings::Settings;
 
@@ -36,21 +41,17 @@ pub trait DapiRequest {
     ) -> Result<Self::DapiResponse, Self::Error>;
 }
 
-/// DAPI error variants when using gRPC transport.
-#[derive(Debug, thiserror::Error)]
-pub enum GrpcRequestError {
-    /// gRPC transport error
-    #[error("gRPC transport error")]
-    Fetch(#[from] tonic::Status),
-    /// Proto message is correct, however it's optional fields failed our expectations.
-    #[error("gRPC response is insufficient")]
-    IncompleteResponse,
-}
-
 /// Access point to DAPI.
 #[derive(Debug)]
 pub struct DapiClient {
     settings: Settings,
+}
+
+impl DapiClient {
+    /// Initialize new [DapiClient] and optionally override default settings.
+    pub fn new(settings: Settings) -> Self {
+        Self { settings }
+    }
 }
 
 /// DAPI request error type that wraps either transport or domain (DAPI response parsing) errors.
@@ -127,10 +128,10 @@ impl DapiClient {
 }
 
 /// A mean for [DapiClient] to get a transport required for a request.
-/// This is done as a separate trait because currently we cannot share
+/// This is done as a separate trait because currently we cannot mix
 /// common request execution logic with specific transport logic unless
-/// we introduce any trait bound (and we cannot say "there exists method
-/// with a type parameter applied" -- but a trait can do).
+/// we introduce any trait bound (and we cannot say "there exists `Self`'s
+/// method with a type parameter applied" -- but a trait can do).
 pub trait GetTransport<T> {
     /// Get suitable transport.
     fn get_transport(&mut self) -> T;
@@ -138,6 +139,43 @@ pub trait GetTransport<T> {
 
 impl GetTransport<PlatformGrpcClient> for DapiClient {
     fn get_transport(&mut self) -> PlatformGrpcClient {
+        // TODO
+        // 1. Pick an address from the address list
+        // 2. Build platform grpc client from it
+        // 3. ...
         todo!()
+    }
+}
+
+impl GetTransport<CoreGrpcClient> for DapiClient {
+    fn get_transport(&mut self) -> CoreGrpcClient {
+        // TODO
+        // 1. Pick an address from the address list
+        // 2. Build core grpc client from it
+        // 3. ...
+        todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_required_transports_compile() {
+        // This is not actually a test but a sandbox to check that various types of DAPI
+        // requests are executable on a [DapiClient] since we have a nice level of decoupling.
+
+        let mut dapi_client = DapiClient::new(Settings::default());
+        let _ = async {
+            dapi_client
+                .execute(platform::GetIdentity { id: vec![] }, Settings::default())
+                .await
+                .unwrap();
+            dapi_client
+                .execute(core::GetStatus {}, Settings::default())
+                .await
+                .unwrap();
+        };
     }
 }
