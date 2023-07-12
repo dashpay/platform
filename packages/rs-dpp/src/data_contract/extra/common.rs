@@ -108,6 +108,7 @@ pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
     owner_id: Option<Identifier>,
+    platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let mut value = json_document_to_platform_value(path)?;
     if let Some(id) = id {
@@ -119,7 +120,7 @@ pub fn json_document_to_contract_with_ids(
             platform_value::Value::Identifier(owner_id.into_buffer()),
         )?;
     }
-    DataContract::from_raw_object(value)
+    DataContract::from_raw_object(value, platform_version)
 }
 
 /// Reads a JSON file and converts it a document.

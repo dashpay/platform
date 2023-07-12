@@ -221,7 +221,7 @@ impl DataContractV0 {
 
         let binary_properties = documents
             .iter()
-            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version))))
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version)?)))
             .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
 
         let data_contract = DataContractV0 {
