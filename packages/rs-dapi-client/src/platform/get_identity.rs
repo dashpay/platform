@@ -6,12 +6,14 @@ use super::IncompleteMessage;
 use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// Request Identity bytes.
+#[derive(Debug)]
 pub struct GetIdentity {
     /// Identity ID to search.
     pub id: Vec<u8>,
 }
 
 /// DAPI response for [GetIdentity].
+#[derive(Debug)]
 pub struct GetIdentityResponse {
     /// Serialized Identity
     pub identity_bytes: Vec<u8>,
@@ -56,12 +58,14 @@ impl DapiRequest for GetIdentity {
 }
 
 /// Request Identity bytes wrapped into proof.
+#[derive(Debug)]
 pub struct GetIdentityProof {
     /// Identity ID to search.
     pub id: Vec<u8>,
 }
 
 /// DAPI response for [GetIdentity].
+#[derive(Debug)]
 pub struct GetIdentityProofResponse {
     /// Proof data that wraps Identity
     pub proof: Proof,

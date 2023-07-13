@@ -1,12 +1,17 @@
-/// `GetStatus` request.
+//! `GetStatus` request.
+
+use std::convert::Infallible;
+
 use dapi_grpc::core::v0::{self as core_proto};
 
 use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// Request core status.
+#[derive(Debug)]
 pub struct GetStatus {}
 
 /// Core status response.
+#[derive(Debug)]
 pub struct GetStatusResponse {
     // TODO
 }
@@ -16,7 +21,7 @@ impl DapiRequest for GetStatus {
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
 
-    type Error = ();
+    type Error = Infallible;
 
     type TransportRequest = core_proto::GetStatusRequest;
 

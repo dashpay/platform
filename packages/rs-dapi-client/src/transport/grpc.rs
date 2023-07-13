@@ -3,11 +3,12 @@
 use dapi_grpc::core::v0::{self as core_proto, core_client::CoreClient};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
+use http::Uri;
 use tonic::{transport::Channel, IntoRequest};
 
 use crate::settings::AppliedSettings;
 
-use super::TransportRequest;
+use super::{TransportClient, TransportRequest};
 
 pub type PlatformGrpcClient = PlatformClient<Channel>;
 pub type CoreGrpcClient = CoreClient<Channel>;
@@ -43,10 +44,24 @@ pub trait GrpcTransportRequest: Sized + Clone {
     type GrpcTransportResponse;
 
     /// gRPC client to use.
-    type GrpcClient;
+    type GrpcClient: TransportClient;
 
     /// Get a handle for a gRPC client method according to the gRPC request.
     fn get_grpc_method() -> GrpcMethod<Self, Self::GrpcTransportResponse, Self::GrpcClient>;
+}
+
+impl TransportClient for PlatformGrpcClient {
+    fn with_uri(uri: Uri) -> Self {
+        let channel = Channel::builder(uri).connect_lazy();
+        PlatformGrpcClient::new(channel)
+    }
+}
+
+impl TransportClient for CoreGrpcClient {
+    fn with_uri(uri: Uri) -> Self {
+        let channel = Channel::builder(uri).connect_lazy();
+        CoreGrpcClient::new(channel)
+    }
 }
 
 /// A shortcut to link between gRPC request type, response type, client and its

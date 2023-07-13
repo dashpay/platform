@@ -8,16 +8,17 @@ pub mod platform;
 mod settings;
 mod transport;
 
-use backon::{ExponentialBuilder, Retryable};
-use transport::{
-    grpc::{CoreGrpcClient, PlatformGrpcClient},
-    TransportRequest,
-};
+use std::fmt;
 
+use backon::{ExponentialBuilder, Retryable};
+
+use address_list::AddressList;
 pub use settings::Settings;
+use tracing::Instrument;
+use transport::{TransportClient, TransportRequest};
 
 /// DAPI request.
-pub trait DapiRequest {
+pub trait DapiRequest: fmt::Debug {
     /// Response type for the request.
     type DapiResponse;
 
@@ -26,7 +27,7 @@ pub trait DapiRequest {
 
     /// Error that may happen during conversion from transport-specific response to the
     /// DAPI response.
-    type Error;
+    type Error: std::error::Error;
 
     /// 1 to 1 mapping from the DAPI request to a type that represents a way for the data
     /// to be fetched.
@@ -44,17 +45,21 @@ pub trait DapiRequest {
 /// Access point to DAPI.
 #[derive(Debug)]
 pub struct DapiClient {
+    address_list: AddressList,
     settings: Settings,
 }
 
 impl DapiClient {
     /// Initialize new [DapiClient] and optionally override default settings.
-    pub fn new(settings: Settings) -> Self {
-        Self { settings }
+    pub fn new(address_list: AddressList, settings: Settings) -> Self {
+        Self {
+            address_list,
+            settings,
+        }
     }
 }
 
-/// DAPI request error type that wraps either transport or domain (DAPI response parsing) errors.
+/// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
 pub enum DapiError<TE, PE> {
     /// The error happened on transport layer
@@ -64,10 +69,14 @@ pub enum DapiError<TE, PE> {
     /// transport request to DAPI request.
     #[error("response parse error: {0}")]
     ParseResponse(PE),
+    /// There are no valid peer addresses to use.
+    #[error("no available addresses to use")]
+    NoAvailableAddresses,
 }
 
 impl DapiClient {
     /// Execute the [Request] handling.
+    #[tracing::instrument]
     pub async fn execute<'c, R>(
         &'c mut self,
         request: R,
@@ -76,10 +85,7 @@ impl DapiClient {
         R::DapiResponse,
         DapiError<<R::TransportRequest as TransportRequest>::Error, R::Error>,
     >
-    // require the existence of transport client from this DAPI client required for the request:
     where
-        DapiClient:
-            GetTransport<<<R as DapiRequest>::TransportRequest as TransportRequest>::Client>,
         R: DapiRequest,
     {
         // Join settings of different sources to get final version of the settings for this execution:
@@ -95,17 +101,25 @@ impl DapiClient {
         // Setup DAPI request execution routine future. It's a closure that will be called more than
         // once to build new future on each retry:
         let routine = || {
-            // Get a transport client requried by the DAPI request from this DAPI client:
-            let mut transport_client = GetTransport::<
-                <R::TransportRequest as TransportRequest>::Client,
-            >::get_transport(self);
+            // Try to get an address to initialize transport on:
+            let address = self
+                .address_list
+                .get_live_address()
+                .ok_or(DapiError::NoAvailableAddresses);
+
+            // Get a transport client requried by the DAPI request from this DAPI client.
+            // It stays wrapped in [Result] since wa want to return future of [Result], not a
+            // [Result] itself.
+            let transport_client = address.map(|addr| {
+                <R::TransportRequest as TransportRequest>::Client::with_uri(addr.uri().clone())
+            });
 
             let transport_request = request.to_transport_request();
 
             async move {
-                // On a lower layer DAPI requests should be fulfilled as a transport request first:
+                // On a lower layer DAPI requests should be executed as transport requests first:
                 let transport_response = transport_request
-                    .execute(&mut transport_client, &applied_settings)
+                    .execute(&mut transport_client?, &applied_settings)
                     .await
                     .map_err(|e| DapiError::<_, <R as DapiRequest>::Error>::Transport(e))?;
 
@@ -123,37 +137,12 @@ impl DapiClient {
         };
 
         // Start the routine with retry policy applied:
-        routine.retry(&retry_settings).await
-    }
-}
-
-/// A mean for [DapiClient] to get a transport required for a request.
-/// This is done as a separate trait because currently we cannot mix
-/// common request execution logic with specific transport logic unless
-/// we introduce any trait bound (and we cannot say "there exists `Self`'s
-/// method with a type parameter applied" -- but a trait can do).
-pub trait GetTransport<T> {
-    /// Get suitable transport.
-    fn get_transport(&mut self) -> T;
-}
-
-impl GetTransport<PlatformGrpcClient> for DapiClient {
-    fn get_transport(&mut self) -> PlatformGrpcClient {
-        // TODO
-        // 1. Pick an address from the address list
-        // 2. Build platform grpc client from it
-        // 3. ...
-        todo!()
-    }
-}
-
-impl GetTransport<CoreGrpcClient> for DapiClient {
-    fn get_transport(&mut self) -> CoreGrpcClient {
-        // TODO
-        // 1. Pick an address from the address list
-        // 2. Build core grpc client from it
-        // 3. ...
-        todo!()
+        // TODO: define what is retryable and what's not
+        routine
+            .retry(&retry_settings)
+            .when(|e| !matches!(e, DapiError::NoAvailableAddresses))
+            .instrument(tracing::info_span!("request routine"))
+            .await
     }
 }
 
@@ -162,11 +151,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_required_transports_compile() {
-        // This is not actually a test but a sandbox to check that various types of DAPI
-        // requests are executable on a [DapiClient] since we have a nice level of decoupling.
+    fn example() {
+        // This is not actually a test but a sandbox to check if our loosely coupled
+        // thing would agree to compile.
 
-        let mut dapi_client = DapiClient::new(Settings::default());
+        let mut address_list = AddressList::new();
+        address_list.add_uri("http://127.0.0.1".parse().expect("seems legit"));
+
+        let mut dapi_client = DapiClient::new(
+            address_list,
+            Settings {
+                timeout: Some(std::time::Duration::from_secs(1)),
+                retries: Some(3),
+                ..Settings::default()
+            },
+        );
         let _ = async {
             dapi_client
                 .execute(platform::GetIdentity { id: vec![] }, Settings::default())
