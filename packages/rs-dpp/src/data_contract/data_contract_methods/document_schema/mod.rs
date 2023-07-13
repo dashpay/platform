@@ -1,9 +1,9 @@
 mod v0;
-pub use v0::*;
 use crate::data_contract::JsonSchema;
 use crate::prelude::DataContract;
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+pub use v0::*;
 
 impl DataContractDocumentSchemaMethodsV0 for DataContract {
     fn get_document_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
@@ -18,7 +18,12 @@ impl DataContractDocumentSchemaMethodsV0 for DataContract {
         }
     }
 
-    fn set_document_schema(&mut self, doc_type: String, schema: JsonSchema, platform_version: &PlatformVersion) -> Result<(), ProtocolError> {
+    fn set_document_schema(
+        &mut self,
+        doc_type: String,
+        schema: JsonSchema,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.set_document_schema(doc_type, schema, platform_version),
         }

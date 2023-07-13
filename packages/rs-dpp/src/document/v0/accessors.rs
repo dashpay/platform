@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
-use platform_value::{Identifier, Value};
 use crate::document::{DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
+use platform_value::{Identifier, Value};
+use std::collections::BTreeMap;
 
 impl DocumentV0Getters for DocumentV0 {
     fn id(&self) -> Identifier {

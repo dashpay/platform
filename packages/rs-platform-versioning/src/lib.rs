@@ -3,12 +3,115 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, Lit, LitInt, Meta, Type,
+    parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, Lit, LitInt, LitStr, Meta, Type,
 };
-#[proc_macro_derive(PlatformSerdeVersionedDeserialize, attributes(versioned))]
+
+/// `#[proc_macro_derive(PlatformSerdeVersionedDeserialize, attributes(versioned, platform_serde_versioned))]`
+///
+/// A procedural macro that generates an implementation of the `serde::Deserialize` trait
+/// for a versioned enum, allowing it to be deserialized from JSON or other formats supported by Serde.
+///
+/// This macro expects the enum to be annotated with a `#[versioned]` attribute on each variant.
+/// The attribute should contain an integer value that corresponds to the version of that variant.
+/// For example:
+/// ```rust
+/// #[derive(PlatformSerdeVersionedDeserialize)]
+/// pub enum MyEnum {
+///     #[versioned(1)]
+///     V1 { /* fields go here */ },
+///     #[versioned(2)]
+///     V2 { /* fields go here */ },
+///     // and so on
+/// }
+/// ```
+///
+/// The `deserialize` function that the macro generates expects to receive a JSON object (or equivalent in other formats)
+/// with a field specified by the `#[platform_serde_versioned(version_field = "name")]` attribute on the enum, where "name"
+/// is the desired version field name. By default, this field is `$version`.
+///
+/// The version field's value should match one of the variant's `#[versioned]` attribute values,
+/// and the remainder of the object should match the structure of that variant.
+///
+/// If the version field is missing or doesn't match any of the variant versions, the `deserialize` function will return an error.
+///
+/// # Params
+///
+/// * `input: TokenStream`: A TokenStream that contains the enum definition.
+///
+/// # Returns
+///
+/// * `TokenStream`: A TokenStream containing the generated `serde::Deserialize` implementation for the enum.
+///
+/// # Panics
+///
+/// * If the input does not represent an enum.
+/// * If any of the enum's variants lacks a `#[versioned]` attribute.
+/// * If any `#[versioned]` attribute is not a name-value attribute.
+/// * If the value of a `#[versioned]` attribute is not an integer.
+///
+/// # Example
+/// ```rust
+/// #[derive(PlatformSerdeVersionedDeserialize)]
+/// #[platform_serde_versioned(version_field = "structure_version")]
+/// pub enum MyEnum {
+///     #[versioned(1)]
+///     V1 { /* fields go here */ },
+///     #[versioned(2)]
+///     V2 { /* fields go here */ },
+///     // and so on
+/// }
+///
+/// let json_str = r#"{
+///   "structure_version": 2,
+///   /* fields for the V2 variant go here */
+/// }"#;
+///
+/// let my_enum: MyEnum = serde_json::from_str(json_str).unwrap();
+///
+/// match my_enum {
+///     MyEnum::V1 { /* fields go here */ } => {
+///         // Handle the V1 variant
+///     },
+///     MyEnum::V2 { /* fields go here */ } => {
+///         // Handle the V2 variant
+///     },
+///     // and so on
+/// }
+/// ```
+///
+/// Note that in the example, we use `#[platform_serde_versioned(version_field = "structure_version")]` to specify a custom version field name.
+/// If the `platform_serde_versioned` attribute is not present, the default version field name will be `$version`.
+#[proc_macro_derive(
+    PlatformSerdeVersionedDeserialize,
+    attributes(versioned, platform_serde_versioned)
+)]
 pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream {
-    let DeriveInput { ident, data, .. } = parse_macro_input!(input);
+    let DeriveInput {
+        ident, data, attrs, ..
+    } = parse_macro_input!(input);
     let name_str = ident.to_string();
+
+    let mut version_field_name = String::from("$version");
+
+    if let Some(platform_serde_versioned_attr) = attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("platform_serde_versioned"))
+    {
+        platform_serde_versioned_attr
+            .parse_nested_meta(|meta| {
+                if meta.path.is_ident("version_field") {
+                    let value = meta.value()?;
+                    let parsed_version_field: LitStr = value.parse()?;
+                    version_field_name = parsed_version_field.value();
+                } else {
+                    return Err(meta.error(
+                        format!("unsupported parameter {:?}", meta.path.get_ident()).as_str(),
+                    ));
+                }
+                Ok(())
+            })
+            .expect("Expected to parse nested meta");
+    }
 
     let variants = match data {
         Data::Enum(e) => e.variants,
@@ -26,7 +129,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
 
         quote! {
             #version => {
-                let value = <#variant_ident_sub as ::serde::Deserialize>::deserialize(::serde_json::Value::Object(map))?;
+                let value = #variant_ident_sub::from_raw_object(map_clone, current_platform_version).map_err(|e|serde::de::Error::custom(e.to_string()))?;
                 Ok(#ident::#variant_ident(value))
             }
         }
@@ -52,16 +155,12 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
                     where
                         A: ::serde::de::MapAccess<'de>,
                     {
-                        // Make a copy of the whole map
-                        let mut map_clone = ::std::collections::HashMap::new();
-                        while let Some((key, value)) = map.next_entry::<String, ::serde_json::Value>()? {
-                            map_clone.insert(key, value);
+                        let mut map_clone = platform_value::Value::Map(platform_value::ValueMap::new());
+                        while let Some((key, value)) = map.next_entry::<String, platform_value::Value>()? {
+                            map_clone.insert(key, value).expect("expected a value map");
                         }
-
-                        let version = match map_clone.get("$version") {
-                            Some(::serde_json::Value::Number(n)) if n.is_u64() => n.as_u64().unwrap() as u16,
-                            _ => return Err(::serde::de::Error::missing_field("$version")),
-                        };
+                        let version: crate::version::FeatureVersion = map_clone.get_integer(#version_field_name).map_err(|_|serde::de::Error::missing_field(#version_field_name))?;
+                        let current_platform_version = crate::version::PlatformVersion::get_current().map_err(|e|serde::de::Error::custom(e.to_string()))?;
 
                         match version {
                             #(#arms,)*
@@ -75,7 +174,10 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
         }
     };
 
-    //eprintln!("Processing variant: {}", &output);
+    eprintln!(
+        "Processing variant for platform version deserialize: {}",
+        &output
+    );
 
     TokenStream::from(output)
 }

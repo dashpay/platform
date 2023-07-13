@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use crate::data_contract::DataContract;
 use crate::document::Document;
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use std::collections::HashSet;
 
 mod v0;
 

@@ -2,6 +2,8 @@ pub use fields::{property_names, IDENTIFIER_FIELDS};
 
 mod accessors;
 pub mod action_type;
+mod document_class_methods;
+pub mod document_methods;
 mod document_patch;
 pub mod errors;
 #[cfg(feature = "extended-document")]
@@ -10,17 +12,15 @@ mod fields;
 pub mod generate_document_id;
 #[cfg(feature = "json-object")]
 mod json_conversion;
-mod serde_serialize;
-mod v0;
-pub(crate) mod serialization_traits;
-mod serialize;
-pub mod document_methods;
-mod document_class_methods;
 #[cfg(feature = "platform-value")]
 mod platform_value_conversion;
+mod serde_serialize;
+pub(crate) mod serialization_traits;
+mod serialize;
+mod v0;
 
-pub use v0::*;
 pub use accessors::*;
+pub use v0::*;
 
 #[cfg(feature = "extended-document")]
 pub use extended_document::property_names as extended_document_property_names;
@@ -32,17 +32,18 @@ pub use extended_document::IDENTIFIER_FIELDS as EXTENDED_DOCUMENT_IDENTIFIER_FIE
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u64 = 1;
 
-
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
+use crate::document::document_methods::{
+    DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
+    DocumentMethodsV0,
+};
+use crate::document::errors::DocumentError;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, HashSet};
-use crate::document::document_methods::{DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentMethodsV0};
-use crate::document::errors::DocumentError;
-
 
 #[derive(Clone, Debug, PartialEq, From)]
 pub enum Document {
@@ -61,8 +62,19 @@ impl DocumentMethodsV0 for Document {
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         match self {
             Document::V0(document_v0) => {
-                match platform_version.dpp.document_versions.document_method_versions.get_raw_for_contract {
-                    0 => document_v0.get_raw_for_contract_v0(key, document_type_name, contract, owner_id, platform_version),
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_method_versions
+                    .get_raw_for_contract
+                {
+                    0 => document_v0.get_raw_for_contract_v0(
+                        key,
+                        document_type_name,
+                        contract,
+                        owner_id,
+                        platform_version,
+                    ),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::get_raw_for_contract".to_string(),
                         known_versions: vec![0],
@@ -83,8 +95,18 @@ impl DocumentMethodsV0 for Document {
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
         match self {
             Document::V0(document_v0) => {
-                match platform_version.dpp.document_versions.document_method_versions.get_raw_for_document_type {
-                    0 => document_v0.get_raw_for_document_type_v0(key_path, document_type, owner_id, platform_version),
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_method_versions
+                    .get_raw_for_document_type
+                {
+                    0 => document_v0.get_raw_for_document_type_v0(
+                        key_path,
+                        document_type,
+                        owner_id,
+                        platform_version,
+                    ),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::get_raw_for_document_type".to_string(),
                         known_versions: vec![0],
@@ -103,7 +125,12 @@ impl DocumentMethodsV0 for Document {
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             Document::V0(document_v0) => {
-                match platform_version.dpp.document_versions.document_method_versions.hash {
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_method_versions
+                    .hash
+                {
                     0 => document_v0.hash_v0(contract, document_type, platform_version),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::hash".to_string(),
@@ -144,7 +171,7 @@ mod tests {
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
             0,
         )
-            .expect("expected to get dashpay contract");
+        .expect("expected to get dashpay contract");
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -176,7 +203,7 @@ mod tests {
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
             0,
         )
-            .expect("expected to get cbor contract");
+        .expect("expected to get cbor contract");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -197,7 +224,7 @@ mod tests {
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
             0,
         )
-            .expect("expected to get contract");
+        .expect("expected to get contract");
 
         let document_type = contract
             .document_type_for_name("profile")

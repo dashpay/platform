@@ -1,13 +1,13 @@
-use std::collections::BTreeMap;
-use platform_value::Identifier;
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::data_contract::v0::DataContractV0;
+use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::metadata::Metadata;
-use serde_json::Value as JsonValue;
 use crate::ProtocolError;
+use platform_value::Identifier;
+use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 
 impl DataContractV0Getters for DataContractV0 {
     fn id(&self) -> Identifier {
@@ -47,27 +47,33 @@ impl DataContractV0Getters for DataContractV0 {
     }
 
     fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError> {
-        Ok(&self.documents) 
+        Ok(&self.documents)
     }
 
     fn documents_mut(&mut self) -> Result<&mut BTreeMap<DocumentName, JsonSchema>, ProtocolError> {
-        Ok(&mut self.documents) 
+        Ok(&mut self.documents)
     }
 
     fn defs(&self) -> Result<Option<&BTreeMap<DefinitionName, JsonSchema>>, ProtocolError> {
-        Ok(self.defs.as_ref()) 
+        Ok(self.defs.as_ref())
     }
 
-    fn defs_mut(&mut self) -> Result<Option<&mut BTreeMap<DefinitionName, JsonSchema>>, ProtocolError> {
-        Ok(self.defs.as_mut()) 
+    fn defs_mut(
+        &mut self,
+    ) -> Result<Option<&mut BTreeMap<DefinitionName, JsonSchema>>, ProtocolError> {
+        Ok(self.defs.as_mut())
     }
 
-    fn binary_properties(&self) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
-        Ok(&self.binary_properties) 
+    fn binary_properties(
+        &self,
+    ) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
+        Ok(&self.binary_properties)
     }
 
-    fn binary_properties_mut(&mut self) -> Result<&mut BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
-        Ok(&mut self.binary_properties) 
+    fn binary_properties_mut(
+        &mut self,
+    ) -> Result<&mut BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
+        Ok(&mut self.binary_properties)
     }
 }
 
@@ -108,7 +114,10 @@ impl DataContractV0Setters for DataContractV0 {
         self.defs = defs;
     }
 
-    fn set_binary_properties(&mut self, binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>) {
+    fn set_binary_properties(
+        &mut self,
+        binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+    ) {
         self.binary_properties = binary_properties;
     }
 }

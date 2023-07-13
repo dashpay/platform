@@ -1,8 +1,8 @@
-use std::collections::HashSet;
-use crate::data_contract::DataContract;
 use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
+use crate::data_contract::DataContract;
 use crate::document::{Document, IDENTIFIER_FIELDS};
 use crate::ProtocolError;
+use std::collections::HashSet;
 
 impl Document {
     pub(super) fn get_identifiers_and_binary_paths_v0<'a>(

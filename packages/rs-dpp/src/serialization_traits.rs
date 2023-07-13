@@ -103,18 +103,17 @@ pub trait PlatformDeserializableFromVersionedStructure {
         data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 }
 
 pub trait PlatformLimitDeserializableFromVersionedStructure {
-
     fn versioned_limit_deserialize(
         data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 }
 
 pub trait ValueConvertible {

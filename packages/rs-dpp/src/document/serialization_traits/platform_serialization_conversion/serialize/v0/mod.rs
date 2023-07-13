@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::ProtocolError;
 
-pub(in crate::document)  trait DocumentPlatformSerializationMethodsV0 {
+pub(in crate::document) trait DocumentPlatformSerializationMethodsV0 {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:

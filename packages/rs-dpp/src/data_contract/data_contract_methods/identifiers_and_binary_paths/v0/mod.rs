@@ -1,14 +1,17 @@
-use std::collections::{BTreeMap, HashSet};
-use serde_json::Value as JsonValue;
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use serde_json::Value as JsonValue;
+use std::collections::{BTreeMap, HashSet};
 
 pub trait DataContractIdentifiersAndBinaryPathsMethodsV0 {
     fn get_identifiers_and_binary_paths(
         &self,
         document_type: &str,
     ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError>;
-    fn generate_binary_properties(&mut self, platform_version: &PlatformVersion) -> Result<(), ProtocolError>;
+    fn generate_binary_properties(
+        &mut self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError>;
     /// Returns the binary properties for the given document type
     /// Comparing to JS version of DPP, the binary_properties are not generated automatically
     /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which

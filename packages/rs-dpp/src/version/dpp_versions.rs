@@ -96,4 +96,3 @@ pub struct DocumentMethodVersions {
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
 }
-

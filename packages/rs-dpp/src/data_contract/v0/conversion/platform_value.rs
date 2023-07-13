@@ -1,13 +1,13 @@
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::{property_names, DataContract, DocumentName, PropertyPath};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
-use std::collections::BTreeMap;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::property_names::SYSTEM_VERSION;
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {

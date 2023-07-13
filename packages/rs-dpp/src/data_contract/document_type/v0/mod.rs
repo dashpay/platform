@@ -18,11 +18,11 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
+mod accessors;
 pub mod document_factory;
 pub mod random_document;
 pub mod random_document_type;
 pub(crate) mod v0_methods;
-mod accessors;
 
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32

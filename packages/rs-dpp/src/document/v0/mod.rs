@@ -3,14 +3,14 @@
 //! This module defines the `Document` struct and implements its functions.
 //!
 
-#[cfg(feature = "json-object")]
-pub(super) mod json_conversion;
-pub mod serialize;
+mod accessors;
 #[cfg(feature = "cbor")]
 pub(super) mod cbor_conversion;
+#[cfg(feature = "json-object")]
+pub(super) mod json_conversion;
 #[cfg(feature = "platform-value")]
 mod platform_value_conversion;
-mod accessors;
+pub mod serialize;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashSet};
@@ -27,7 +27,10 @@ use serde::{Deserialize, Serialize};
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
-use crate::document::document_methods::{DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentMethodsV0};
+use crate::document::document_methods::{
+    DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
+    DocumentMethodsV0,
+};
 
 use crate::document::errors::DocumentError;
 
@@ -66,7 +69,6 @@ impl DocumentGetRawForDocumentTypeV0 for DocumentV0 {
 impl DocumentHashV0Method for DocumentV0 {
     //automatically done
 }
-
 
 impl fmt::Display for DocumentV0 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

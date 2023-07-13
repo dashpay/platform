@@ -1,10 +1,10 @@
+use crate::document::serialization_traits::DocumentJsonMethodsV0;
 use crate::document::{Document, DocumentV0};
 use crate::ProtocolError;
 use platform_value::Identifier;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
-use crate::document::serialization_traits::DocumentJsonMethodsV0;
 
 impl DocumentJsonMethodsV0 for Document {
     /// Convert the document to JSON with identifiers using bytes.

@@ -102,13 +102,13 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{
     DocumentField, DocumentFieldType, DocumentType, DocumentTypeRef, Index,
 };
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
-use crate::version::PlatformVersion;
 
 impl DocumentTypeV0 {
     pub fn random_document_type(
@@ -226,8 +226,13 @@ impl DocumentTypeV0 {
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
 
         let index_structure = IndexLevel::from(indices.as_slice());
-        let (identifier_paths, binary_paths) =
-            DocumentType::find_identifier_and_binary_paths(&properties, &PlatformVersion::latest().dpp.contract_versions.document_type_versions)?;
+        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
+            &properties,
+            &PlatformVersion::latest()
+                .dpp
+                .contract_versions
+                .document_type_versions,
+        )?;
         Ok(DocumentTypeV0 {
             name: format!("doc_type_{}", rng.gen::<u16>()),
             indices,

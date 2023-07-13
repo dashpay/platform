@@ -21,10 +21,12 @@ use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 
+use crate::document::serialization_traits::{
+    DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
+};
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 #[cfg(feature = "json-object")]
 use serde_json::Value as JsonValue;
-use crate::document::serialization_traits::{DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0};
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]

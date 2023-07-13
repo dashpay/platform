@@ -14,6 +14,4 @@ use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
-impl DataContractV0 {
-
-}
+impl DataContractV0 {}

@@ -13,7 +13,7 @@ use crate::consensus::signature::SignatureError;
 use crate::consensus::test_consensus_error::TestConsensusError;
 
 use crate::errors::consensus::basic::BasicError;
-use crate::serialization_traits::{PlatformDeserializable};
+use crate::serialization_traits::PlatformDeserializable;
 use crate::ProtocolError;
 
 // TODO It must be versioned as all other serializable types

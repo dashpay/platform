@@ -1,4 +1,7 @@
 use crate::document::fields::property_names;
+use crate::document::serialization_traits::{
+    DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
+};
 use crate::document::DocumentV0;
 use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
@@ -6,7 +9,6 @@ use platform_value::{Identifier, Value};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
-use crate::document::serialization_traits::{DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0};
 
 impl DocumentJsonMethodsV0 for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {

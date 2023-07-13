@@ -6,7 +6,9 @@ use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
 use crate::version::v0::PLATFORM_V1;
 use crate::ProtocolError;
+use lazy_static::lazy_static;
 use std::collections::BTreeMap;
+use std::sync::RwLock;
 
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
@@ -66,11 +68,28 @@ pub struct PlatformVersion {
     pub platform_architecture: PlatformArchitectureVersion,
 }
 
-pub const PLATFORM_VERSIONS: &'static [PlatformVersion] = &[PLATFORM_V1];
+pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];
 
-pub const LATEST_PLATFORM_VERSION: &'static PlatformVersion = &PLATFORM_V1;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V1;
+
+lazy_static! {
+    static ref CURRENT_PLATFORM_VERSION: RwLock<Option<&'static PlatformVersion>> =
+        RwLock::new(None);
+}
 
 impl PlatformVersion {
+    pub fn set_current(platform_version: &'static PlatformVersion) {
+        let mut context = CURRENT_PLATFORM_VERSION.write().unwrap();
+        *context = Some(platform_version);
+    }
+
+    pub fn get_current<'a>() -> Result<&'a Self, ProtocolError> {
+        CURRENT_PLATFORM_VERSION
+            .read()
+            .unwrap()
+            .ok_or(ProtocolError::CurrentProtocolVersionNotInitialized)
+    }
+
     pub fn get<'a>(version: u32) -> Result<&'a Self, ProtocolError> {
         if version > 0 {
             PLATFORM_VERSIONS.get(version as usize - 1).ok_or(

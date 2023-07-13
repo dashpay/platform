@@ -1,12 +1,12 @@
 mod v0;
 
-use std::collections::{BTreeMap, BTreeSet};
-use platform_value::Identifier;
-pub use v0::*;
 use crate::data_contract::document_type::document_field::DocumentField;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use platform_value::Identifier;
+use std::collections::{BTreeMap, BTreeSet};
+pub use v0::*;
 
 impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {
@@ -116,7 +116,6 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 }
-
 
 impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
     fn name(&self) -> &String {

@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
-use platform_value::Identifier;
 use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::metadata::Metadata;
 use crate::ProtocolError;
+use platform_value::Identifier;
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 
 pub trait DataContractV0Getters {
     /// Returns the unique identifier for the data contract.
@@ -45,13 +45,19 @@ pub trait DataContractV0Getters {
     fn defs(&self) -> Result<Option<&BTreeMap<DefinitionName, JsonSchema>>, ProtocolError>;
 
     /// Returns a mutable reference to the optional mapping of definition names to their corresponding JSON schemas.
-    fn defs_mut(&mut self) -> Result<Option<&mut BTreeMap<DefinitionName, JsonSchema>>, ProtocolError>;
+    fn defs_mut(
+        &mut self,
+    ) -> Result<Option<&mut BTreeMap<DefinitionName, JsonSchema>>, ProtocolError>;
 
     /// Returns a nested mapping of document names and property paths to their binary values.
-    fn binary_properties(&self) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>;
+    fn binary_properties(
+        &self,
+    ) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>;
 
     /// Returns a mutable reference to the nested mapping of document names and property paths to their binary values.
-    fn binary_properties_mut(&mut self) -> Result<&mut BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>;
+    fn binary_properties_mut(
+        &mut self,
+    ) -> Result<&mut BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>;
 }
 
 pub trait DataContractV0Setters {
@@ -83,5 +89,8 @@ pub trait DataContractV0Setters {
     fn set_defs(&mut self, defs: Option<BTreeMap<DefinitionName, JsonSchema>>);
 
     /// Sets the nested mapping of document names and property paths to their binary values.
-    fn set_binary_properties(&mut self, binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>);
+    fn set_binary_properties(
+        &mut self,
+        binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+    );
 }

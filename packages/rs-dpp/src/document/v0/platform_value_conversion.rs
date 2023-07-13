@@ -1,18 +1,15 @@
-use std::collections::BTreeMap;
+use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
+use crate::document::{property_names, DocumentV0};
+use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
-use crate::document::{DocumentV0, property_names};
-use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::ProtocolError;
+use std::collections::BTreeMap;
 
 impl DocumentPlatformValueMethodsV0 for DocumentV0 {
     fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
         map.insert(property_names::ID.to_string(), self.id.into());
-        map.insert(
-            property_names::OWNER_ID.to_string(),
-            self.owner_id.into(),
-        );
+        map.insert(property_names::OWNER_ID.to_string(), self.owner_id.into());
 
         if let Some(created_at) = self.created_at {
             map.insert(
@@ -27,10 +24,7 @@ impl DocumentPlatformValueMethodsV0 for DocumentV0 {
             );
         }
         if let Some(revision) = self.revision {
-            map.insert(
-                property_names::REVISION.to_string(),
-                Value::U64(revision),
-            );
+            map.insert(property_names::REVISION.to_string(), Value::U64(revision));
         }
 
         map.extend(self.properties.clone());
@@ -41,10 +35,7 @@ impl DocumentPlatformValueMethodsV0 for DocumentV0 {
     fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
         map.insert(property_names::ID.to_string(), self.id.into());
-        map.insert(
-            property_names::OWNER_ID.to_string(),
-            self.owner_id.into(),
-        );
+        map.insert(property_names::OWNER_ID.to_string(), self.owner_id.into());
 
         if let Some(created_at) = self.created_at {
             map.insert(
@@ -59,10 +50,7 @@ impl DocumentPlatformValueMethodsV0 for DocumentV0 {
             );
         }
         if let Some(revision) = self.revision {
-            map.insert(
-                property_names::REVISION.to_string(),
-                Value::U64(revision),
-            );
+            map.insert(property_names::REVISION.to_string(), Value::U64(revision));
         }
 
         map.extend(self.properties);

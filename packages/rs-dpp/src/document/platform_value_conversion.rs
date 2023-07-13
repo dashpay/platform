@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use platform_value::Value;
-use crate::document::{Document, DocumentV0};
 use crate::document::property_names::FEATURE_VERSION;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::ProtocolError;
+use crate::document::{Document, DocumentV0};
 use crate::version::FeatureVersion;
+use crate::ProtocolError;
+use platform_value::Value;
+use std::collections::BTreeMap;
 
 impl DocumentPlatformValueMethodsV0 for Document {
     /// Convert the document to a map value.

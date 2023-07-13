@@ -55,6 +55,8 @@ pub enum ProtocolError {
         /// requested core height
         received: FeatureVersion,
     },
+    #[error("current platform version not initialized")]
+    CurrentProtocolVersionNotInitialized,
     #[error("unknown version error {0}")]
     UnknownVersionError(String),
     #[error("unknown protocol version error {0}")]

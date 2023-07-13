@@ -19,7 +19,6 @@ use crate::{
 
 pub mod block_time_window;
 pub mod byte_array_meta;
-mod identity;
 mod json_schema_validator;
 mod meta_validators;
 mod validation_result;

@@ -55,17 +55,13 @@ pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 ///
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
-#[serde(try_from = "DataContractV0Inner")]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.
-    #[serde(rename = "$id")]
     pub id: Identifier,
 
     /// A reference to the JSON schema that defines the contract.
-    #[serde(rename = "$schema")]
     pub schema: String,
 
     /// The version of this data contract.
@@ -75,179 +71,22 @@ pub struct DataContractV0 {
     pub owner_id: Identifier,
 
     /// A mapping of document names to their corresponding document types.
-    #[serde(skip)]
     pub document_types: BTreeMap<DocumentName, DocumentType>,
 
     /// Optional metadata associated with the contract.
-    #[serde(skip)]
     pub metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
-    #[serde(skip)]
     pub config: ContractConfigV0,
 
     /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
     /// Optional mapping of definition names to their corresponding JSON schemas.
-    #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
     /// A nested mapping of document names and property paths to their binary values.
-    #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
-}
-
-impl Decode for DataContractV0 {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let inner = DataContractSerializationFormat::decode(decoder)?;
-        inner
-            .try_into()
-            .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
-    }
-}
-
-impl<'a> BorrowDecode<'a> for DataContractV0 {
-    fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let inner = DataContractV0Inner::decode(decoder)?;
-        inner
-            .try_into()
-            .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
-    }
-}
-
-// Standalone default_protocol_version function
-fn default_protocol_version() -> u32 {
-    1
-}
-
-#[derive(Serialize, Deserialize, Encode, Decode)]
-#[serde(rename_all = "camelCase")]
-pub struct DataContractV0Inner {
-    /// A unique identifier for the data contract.
-    #[serde(rename = "$version")]
-    pub version0: u16,
-
-    /// A unique identifier for the data contract.
-    #[serde(rename = "$id")]
-    pub id: Identifier,
-
-    /// Internal configuration for the contract.
-    #[serde(default)]
-    pub config: ContractConfigV0,
-
-    /// A reference to the JSON schema that defines the contract.
-    #[serde(rename = "$schema")]
-    pub schema: String,
-
-    /// The version of this data contract.
-    pub version: u32,
-
-    /// The identifier of the contract owner.
-    pub owner_id: Identifier,
-
-    /// A mapping of document names to their corresponding JSON values.
-    pub documents: BTreeMap<DocumentName, Value>,
-
-    /// Optional mapping of definition names to their corresponding JSON values.
-    #[serde(rename = "$defs", default)]
-    pub defs: Option<BTreeMap<DefinitionName, Value>>,
-}
-
-impl From<DataContractV0> for DataContractV0Inner {
-    fn from(value: DataContractV0) -> Self {
-        let DataContractV0 {
-            id,
-            config,
-            schema,
-            version,
-            owner_id,
-            documents,
-            defs,
-            ..
-        } = value;
-        DataContractV0Inner {
-            version0: 0,
-            id,
-            config,
-            schema,
-            version,
-            owner_id,
-            documents: documents
-                .into_iter()
-                .map(|(key, value)| (key, value.into()))
-                .collect(),
-            defs: defs.map(|defs| {
-                defs.into_iter()
-                    .map(|(key, value)| (key, value.into()))
-                    .collect()
-            }),
-        }
-    }
-}
-
-impl DataContractV0 {
-    fn try_from_inner(value: DataContractV0Inner, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
-        let DataContractV0Inner {
-            id,
-            config,
-            schema,
-            version,
-            owner_id,
-            documents,
-            defs,
-            ..
-        } = value;
-
-        let document_types = DataContract::get_document_types_from_value_array(
-            id,
-            &documents
-                .iter()
-                .map(|(key, value)| (key.as_str(), value))
-                .collect(),
-            &defs
-                .as_ref()
-                .map(|defs| {
-                    defs.iter()
-                        .map(|(key, value)| Ok((key.clone(), value)))
-                        .collect::<Result<BTreeMap<String, &Value>, ProtocolError>>()
-                })
-                .transpose()?
-                .unwrap_or_default(),
-            config.documents_keep_history_contract_default,
-            config.documents_mutable_contract_default,
-            platform_version,
-        )?;
-
-        let binary_properties = documents
-            .iter()
-            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version)?)))
-            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
-
-        let data_contract = DataContractV0 {
-            id,
-            schema,
-            version,
-            owner_id,
-            document_types,
-            metadata: None,
-            config,
-            documents: documents
-                .into_iter()
-                .map(|(key, value)| Ok((key, value.try_into()?)))
-                .collect::<Result<BTreeMap<DocumentName, JsonSchema>, ProtocolError>>()?,
-            defs: defs
-                .map(|defs| {
-                    defs.into_iter()
-                        .map(|(key, value)| Ok((key, value.try_into()?)))
-                        .collect::<Result<BTreeMap<DefinitionName, JsonSchema>, ProtocolError>>()
-                })
-                .transpose()?,
-            binary_properties,
-        };
-
-        Ok(data_contract)
-    }
 }
 
 impl DataContractV0 {
@@ -363,6 +202,8 @@ impl DataContractV0 {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::base::DataContractBaseMethodsV0;
+    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use anyhow::Result;
     use integer_encoding::VarInt;
 

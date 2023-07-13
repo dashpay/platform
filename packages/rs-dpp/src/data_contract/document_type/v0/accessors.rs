@@ -1,10 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet};
-use platform_value::Identifier;
-use crate::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV0Setters};
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV0Setters,
+};
 use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use platform_value::Identifier;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn name(&self) -> &String {

@@ -1,14 +1,14 @@
+use crate::data_contract::{property_names, DataContract};
+use crate::util::cbor_value::CborCanonicalMap;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::util::{cbor_serializer, deserializer};
+use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use ciborium::Value as CborValue;
+use platform_value::{Identifier, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::format;
-use ciborium::Value as CborValue;
-use serde_json::Value;
-use platform_value::{Identifier, Value};
-use crate::data_contract::{DataContract, property_names};
-use crate::ProtocolError;
-use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::{cbor_serializer, deserializer};
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::version::PlatformVersion;
 
 pub trait DataContractCborConversionMethodsV0 {
     fn from_cbor_with_id(

@@ -10,6 +10,7 @@ use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 use crate::document::v0::{DocumentV0, DocumentV0Methods};
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
@@ -20,8 +21,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
-use crate::document::serialization_traits::DocumentCborMethodsV0;
-
 
 #[cfg(feature = "cbor")]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -62,22 +62,21 @@ pub enum KnownCostItem {
 const EPOCH_COST_UPDATE_VERSIONS: [u16; 1] = [0];
 
 lazy_static! {
-    static ref EPOCH_COSTS: HashMap<EpochIndex, HashMap<KnownCostItem, u64>> = [(
+    static ref EPOCH_COSTS: HashMap<EpochIndex, HashMap<KnownCostItem, u64>> = HashMap::from([(
         0,
-        [
-            (KnownCostItem::StorageDiskUsageCreditPerByte, 27000),
-            (KnownCostItem::StorageProcessingCreditPerByte, 400),
-            (KnownCostItem::StorageLoadCreditPerByte, 400),
-            (KnownCostItem::NonStorageLoadCreditPerByte, 30),
-            (KnownCostItem::StorageSeekCost, 4000),
-            (KnownCostItem::FetchIdentityBalanceProcessingCost, 10000),
-            (KnownCostItem::FetchSingleIdentityKeyProcessingCost, 10000),
-        ]
-        .into_iter()
-        .collect::<HashMap<KnownCostItem, u64>>()
-    ),]
-    .into_iter()
-    .collect();
+        HashMap::from([
+            (KnownCostItem::StorageDiskUsageCreditPerByte, 27000u64),
+            (KnownCostItem::StorageProcessingCreditPerByte, 400u64),
+            (KnownCostItem::StorageLoadCreditPerByte, 400u64),
+            (KnownCostItem::NonStorageLoadCreditPerByte, 30u64),
+            (KnownCostItem::StorageSeekCost, 4000u64),
+            (KnownCostItem::FetchIdentityBalanceProcessingCost, 10000u64),
+            (
+                KnownCostItem::FetchSingleIdentityKeyProcessingCost,
+                10000u64
+            ),
+        ])
+    )]);
 }
 
 /// Costs for Epochs

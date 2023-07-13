@@ -1,12 +1,12 @@
-use std::convert::TryInto;
+use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DATA_CONTRACT_BINARY_FIELDS_V0, DATA_CONTRACT_IDENTIFIER_FIELDS_V0};
 use crate::version::PlatformVersion;
 use crate::{Convertible, ProtocolError};
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
-use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use std::convert::TryInto;
 
 impl DataContractJsonConversionMethodsV0 for DataContractV0 {
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {

@@ -1,8 +1,8 @@
 mod v0;
-pub use v0::*;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::prelude::DataContract;
 use crate::ProtocolError;
+pub use v0::*;
 
 impl DataContractBaseMethodsV0 for DataContract {
     fn increment_version(&mut self) {
@@ -17,13 +17,19 @@ impl DataContractBaseMethodsV0 for DataContract {
         }
     }
 
-    fn optional_document_type_for_name<'a>(&self, document_type_name: &str) -> Option<DocumentTypeRef<'a>> {
+    fn optional_document_type_for_name<'a>(
+        &self,
+        document_type_name: &str,
+    ) -> Option<DocumentTypeRef<'a>> {
         match self {
             DataContract::V0(v0) => v0.optional_document_type_for_name(document_type_name),
         }
     }
 
-    fn document_type_for_name<'a>(&self, document_type_name: &str) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+    fn document_type_for_name<'a>(
+        &self,
+        document_type_name: &str,
+    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(document_type_name),
         }

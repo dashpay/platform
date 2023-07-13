@@ -1,12 +1,12 @@
-use crate::data_contract::DataContract;
-use crate::data_contract::errors::DataContractError;
-use crate::document::DocumentV0Getters;
-use crate::ProtocolError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::errors::DataContractError;
+use crate::data_contract::DataContract;
 use crate::document::document_methods::DocumentGetRawForDocumentTypeV0;
+use crate::document::DocumentV0Getters;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
 
-pub trait DocumentGetRawForContractV0 : DocumentV0Getters + DocumentGetRawForDocumentTypeV0 {
+pub trait DocumentGetRawForContractV0: DocumentV0Getters + DocumentGetRawForDocumentTypeV0 {
     /// Return a value given the path to its key and the document type for a contract.
     fn get_raw_for_contract_v0<'a>(
         &'a self,

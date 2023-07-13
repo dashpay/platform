@@ -1,3 +1,4 @@
+pub(crate) mod accessors;
 pub mod array_field;
 pub mod document_field;
 pub mod document_type_class_methods;
@@ -5,7 +6,6 @@ pub mod document_type_methods;
 pub mod index;
 pub mod index_level;
 pub mod v0;
-pub(crate) mod accessors;
 
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
 use crate::data_contract::document_type::index::{Index, IndexProperty};
@@ -16,9 +16,9 @@ use crate::document::Document;
 use crate::prelude::Revision;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use derive_more::From;
 use platform_value::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use derive_more::From;
 
 pub(self) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";

@@ -1,9 +1,8 @@
-
-use std::collections::{BTreeMap, BTreeSet};
-use platform_value::Identifier;
 use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use platform_value::Identifier;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.

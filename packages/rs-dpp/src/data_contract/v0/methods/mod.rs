@@ -1,18 +1,18 @@
-use std::collections::{BTreeMap, HashSet};
-use platform_value::string_encoding::Encoding;
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::data_contract_methods::base::DataContractBaseMethodsV0;
 use crate::data_contract::data_contract_methods::document_schema::DataContractDocumentSchemaMethodsV0;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::data_contract_methods::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::v0::DataContractV0;
-use crate::{identifier, ProtocolError};
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DocumentName, JsonSchema, PropertyPath};
 use crate::version::PlatformVersion;
+use crate::{identifier, ProtocolError};
 use itertools::{Either, Itertools};
+use platform_value::string_encoding::Encoding;
 use serde_json::Value as JsonValue;
-use crate::data_contract::data_contract_methods::base::DataContractBaseMethodsV0;
-use crate::data_contract::data_contract_methods::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
+use std::collections::{BTreeMap, HashSet};
 
 impl DataContractBaseMethodsV0 for DataContractV0 {
     /// Increments version of Data Contract
@@ -55,8 +55,6 @@ impl DataContractBaseMethodsV0 for DataContractV0 {
 }
 
 impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
-
-
     /// Returns the binary properties for the given document type
     /// Comparing to JS version of DPP, the binary_properties are not generated automatically
     /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which
@@ -100,12 +98,15 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
                         doc_type
                     )
                 }
-                    .into()
+                .into()
             })
             .map(Some)
     }
 
-    fn generate_binary_properties(&mut self, platform_version: &PlatformVersion) -> Result<(), ProtocolError> {
+    fn generate_binary_properties(
+        &mut self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
         self.binary_properties = self
             .documents
             .iter()
@@ -240,5 +241,4 @@ impl DataContractDocumentSchemaMethodsV0 for DataContractV0 {
             doc_type
         ))
     }
-
 }

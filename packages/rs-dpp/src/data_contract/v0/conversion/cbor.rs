@@ -1,17 +1,17 @@
-use std::collections::BTreeMap;
-use platform_value::{Identifier, Value, ValueMapHelper};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::conversion::DataContractCborConversionMethodsV0;
-use crate::{Convertible, ProtocolError};
-use crate::util::{cbor_serializer, deserializer};
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::version::PlatformVersion;
-use serde_json::Value as JsonValue;
-use crate::data_contract::{contract_config, DataContract, DataContractV0Methods, property_names};
-use crate::util::cbor_value::CborCanonicalMap;
-use ciborium::Value as CborValue;
+use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::data_contract_methods::identifiers_and_binary_paths::v0::DataContractIdentifiersAndBinaryPathsMethodsV0;
+use crate::data_contract::{contract_config, property_names, DataContract, DataContractV0Methods};
+use crate::util::cbor_value::CborCanonicalMap;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::util::{cbor_serializer, deserializer};
+use crate::version::PlatformVersion;
+use crate::{Convertible, ProtocolError};
+use ciborium::Value as CborValue;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::{Identifier, Value, ValueMapHelper};
+use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 
 impl DataContractCborConversionMethodsV0 for DataContractV0 {
     fn from_cbor_with_id(
@@ -73,7 +73,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
             mutability.documents_mutable_contract_default,
             platform_version,
         )
-            .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
+        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
         let mut data_contract = Self {
             id: contract_id,

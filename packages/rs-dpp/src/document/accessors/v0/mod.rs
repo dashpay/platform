@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, HashSet};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Identifier;
@@ -35,7 +35,7 @@ pub trait DocumentV0Getters {
     }
 }
 
-pub trait DocumentV0Setters : DocumentV0Getters {
+pub trait DocumentV0Setters: DocumentV0Getters {
     /// Sets the unique document ID.
     fn set_id(&mut self, id: Identifier);
 

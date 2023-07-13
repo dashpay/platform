@@ -1,3 +1,4 @@
+use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "state-transitions")]
@@ -62,7 +63,7 @@ pub fn json_document_to_cbor(
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
-    version: FeatureVersion,
+    platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let file = File::open(path.as_ref()).map_err(|_| {
         ProtocolError::FileNotFound(format!(
@@ -70,31 +71,20 @@ pub fn json_document_to_contract(
             path.as_ref().to_str().unwrap()
         ))
     })?;
-
     let reader = BufReader::new(file);
-    match version {
-        0 => {
-            let data_contract_v0: DataContractV0 =
-                serde_json::from_reader(reader).map_err(|e| {
-                    ProtocolError::DecodingError(format!(
-                        "error decoding contract from document {e}"
-                    ))
-                })?;
-            Ok(data_contract_v0.into())
-        }
-        version => Err(ProtocolError::UnknownVersionError(format!(
-            "version {version} not known for json document to contract"
-        ))),
-    }
+    let data_contract_value: serde_json::Value = serde_json::from_reader(reader).map_err(|e| {
+        ProtocolError::DecodingError(format!("error decoding contract from document {e}"))
+    })?;
+    DataContract::from_json_object(data_contract_value, platform_version)
 }
 
 #[cfg(feature = "state-transitions")]
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
-    version: FeatureVersion,
+    platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
-    let data_contract = json_document_to_contract(path, version)?;
+    let data_contract = json_document_to_contract(path, platform_version)?;
     Ok(CreatedDataContractV0 {
         data_contract,
         entropy_used: Default::default(),

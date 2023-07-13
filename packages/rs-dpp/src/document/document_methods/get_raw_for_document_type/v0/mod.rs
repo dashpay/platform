@@ -1,12 +1,12 @@
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use crate::data_contract::document_type::document_field::DocumentFieldType;
-use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::DocumentV0Getters;
-use crate::ProtocolError;
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 
-pub trait DocumentGetRawForDocumentTypeV0 : DocumentV0Getters {
+pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
     /// Return a value given the path to its key for a document type.
     fn get_raw_for_document_type_v0<'a>(
         &'a self,
@@ -39,7 +39,9 @@ pub trait DocumentGetRawForDocumentTypeV0 : DocumentV0Getters {
             }
             self.properties()
                 .get_optional_at_path(key_path)?
-                .map(|value| document_type.serialize_value_for_key(key_path, value, platform_version))
+                .map(|value| {
+                    document_type.serialize_value_for_key(key_path, value, platform_version)
+                })
                 .transpose()
         }
     }
