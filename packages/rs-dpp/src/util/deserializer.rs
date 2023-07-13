@@ -2,7 +2,6 @@ use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::errors::ProtocolError;
-use crate::version::PlatformVersion;
 
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],

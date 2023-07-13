@@ -87,8 +87,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         for public_key in public_keys.iter() {
             validation_error = match public_key.key_type {
                 KeyType::ECDSA_SECP256K1 => {
-                    let key_bytes = &public_key.as_ecdsa_array()?;
-                    match PublicKey::from_slice(key_bytes) {
+                    match PublicKey::from_slice(public_key.data.as_slice()) {
                         Ok(_) => None,
                         Err(e) => Some(PublicKeyValidationError::new(e.to_string())),
                     }

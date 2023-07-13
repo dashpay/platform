@@ -6,7 +6,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use platform_value::{Identifier, Value};
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::format;
 
