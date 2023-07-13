@@ -40,6 +40,7 @@ module.exports = {
   docker: {
     network: {
       subnet: '172.24.24.0/24',
+      bindIp: '0.0.0.0',
     },
   },
   core: {
@@ -165,6 +166,10 @@ module.exports = {
         rpc: {
           port: 26657,
         },
+        pprof: {
+          enabled: false,
+          port: 6060,
+        },
         consensus: {
           createEmptyBlocks: true,
           createEmptyBlocksInterval: '3m',
@@ -252,7 +257,7 @@ module.exports = {
       },
       api: {
         enable: false,
-        port: 9000,
+        port: 9100,
       },
     },
   },

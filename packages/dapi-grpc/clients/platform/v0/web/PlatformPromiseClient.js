@@ -58,6 +58,21 @@ class PlatformPromiseClient {
 
   /**
    *
+   * @param {!GetDataContractHistoryRequest} getDataContractHistoryRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetDataContractResponse>}
+   */
+  getDataContractHistory(getDataContractHistoryRequest, metadata = {}) {
+    return promisify(
+        this.client.getDataContractHistory.bind(this.client),
+    )(
+        getDataContractHistoryRequest,
+        metadata,
+    );
+  }
+
+  /**
+   *
    * @param {!GetDocumentsRequest} getDocumentsRequest
    * @param {?Object<string, string>} metadata
    * @returns {Promise<!GetDocumentsResponse>}

@@ -5,6 +5,7 @@ const getCoreScopeFactory = require('../../../../src/status/scopes/core');
 const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
 const PortStateEnum = require('../../../../src/status/enums/portState');
+const getConfigMock = require('../../../../src/test/mock/getConfigMock');
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
@@ -22,6 +23,7 @@ describe('getCoreScopeFactory', () => {
     let rpcService;
 
     let config;
+    let configFile;
     let getCoreScope;
 
     beforeEach(async function it() {
@@ -31,14 +33,16 @@ describe('getCoreScopeFactory', () => {
         getNetworkInfo: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
-      mockDockerCompose = { isServiceRunning: this.sinon.stub() };
+      mockDockerCompose = { isNodeRunning: this.sinon.stub(), isServiceRunning: this.sinon.stub() };
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockGithubProvider = this.sinon.stub(providers.github, 'release');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockInsightProvider = this.sinon.stub(providers, 'insight');
       mockGetConnectionHost = this.sinon.stub();
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+      configFile = { getProjectId: this.sinon.stub() };
+
+      config = getConfigMock(this.sinon);
 
       config.get.withArgs('network').returns('testnet');
       config.get.withArgs('core.rpc.port').returns('8080');
@@ -49,8 +53,12 @@ describe('getCoreScopeFactory', () => {
       rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
       p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
-      getCoreScope = getCoreScopeFactory(mockDockerCompose,
-        mockCreateRpcClient, mockGetConnectionHost);
+      getCoreScope = getCoreScopeFactory(
+        mockDockerCompose,
+        mockCreateRpcClient,
+        mockGetConnectionHost,
+        configFile,
+      );
     });
 
     it('should just work', async function it() {
@@ -107,7 +115,7 @@ describe('getCoreScopeFactory', () => {
     });
 
     it('should return status stopped if no service is running', async () => {
-      mockDockerCompose.isServiceRunning.resolves(false);
+      mockDockerCompose.isNodeRunning.resolves(false);
 
       const scope = await getCoreScope(config);
 
@@ -118,7 +126,7 @@ describe('getCoreScopeFactory', () => {
         version: null,
         chain: null,
         latestVersion: null,
-        dockerStatus: null,
+        dockerStatus: DockerStatusEnum.not_started,
         serviceStatus: ServiceStatusEnum.stopped,
         peersCount: null,
         p2pPortState: null,

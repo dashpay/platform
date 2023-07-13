@@ -4,15 +4,17 @@ const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
 const providers = require('../providers');
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @returns {getPlatformScopeFactory}
- * @param dockerCompose {DockerCompose}
- * @param createRpcClient {createRpcClient}
- * @param getConnectionHost {getConnectionHost}
+ * @param {DockerCompose} dockerCompose
+ * @param {createRpcClient} createRpcClient
+ * @param {getConnectionHost} getConnectionHost
+ * @param {ConfigFile} configFile
  */
 function getPlatformScopeFactory(dockerCompose,
-  createRpcClient, getConnectionHost) {
+  createRpcClient, getConnectionHost, configFile) {
   async function getMNSync(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -32,6 +34,8 @@ function getPlatformScopeFactory(dockerCompose,
 
   async function getTenderdashInfo(config, isCoreSynced) {
     const info = {
+      p2pPortState: null,
+      httpPortState: null,
       dockerStatus: null,
       serviceStatus: null,
       version: null,
@@ -46,7 +50,7 @@ function getPlatformScopeFactory(dockerCompose,
       network: null,
     };
     try {
-      if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
+      if (!(await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'drive_tenderdash'))) {
         info.dockerStatus = DockerStatusEnum.not_started;
         info.serviceStatus = ServiceStatusEnum.stopped;
 
@@ -58,7 +62,7 @@ function getPlatformScopeFactory(dockerCompose,
         return info;
       }
 
-      const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
+      const dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_tenderdash');
       const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
 
       info.dockerStatus = dockerStatus;
@@ -135,14 +139,19 @@ function getPlatformScopeFactory(dockerCompose,
     };
 
     try {
-      info.dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
+      info.dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_abci');
       info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
-      const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
-        'drive_abci', 'drive-abci status');
+      if (info.serviceStatus === ServiceStatusEnum.up) {
+        const driveEchoResult = await dockerCompose.execCommand(
+          generateEnvs(configFile, config),
+          'drive_abci',
+          'drive-abci status',
+        );
 
-      if (driveEchoResult.exitCode !== 0) {
-        info.serviceStatus = ServiceStatusEnum.error;
+        if (driveEchoResult.exitCode !== 0) {
+          info.serviceStatus = ServiceStatusEnum.error;
+        }
       }
 
       return info;
@@ -222,15 +231,12 @@ function getPlatformScopeFactory(dockerCompose,
           // eslint-disable-next-line no-console
           console.error('Platform status is not available until masternode state is \'READY\'');
         }
-        return scope;
       }
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.error('Could not get MNSync from core', e);
       }
-
-      return scope;
     }
 
     const [tenderdash, drive] = await Promise.all([

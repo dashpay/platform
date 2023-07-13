@@ -7,8 +7,9 @@
     "postpack": "rm -f oclif.manifest.json",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": "yarn run test:unit",
+    "test": "yarn run test:unit && yarn run test:e2e",
     "test:unit": "mocha --recursive test/unit",
+    "test:e2e": "mocha --recursive test/e2e",
     "helper": "node scripts/helper.js"
   },
   "repository": {
@@ -48,7 +49,7 @@
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
-    "@dashevo/dashcore-lib": "~0.20.6",
+    "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/docker-compose": "^0.24.2",
@@ -75,6 +76,7 @@
     "hasbin": "^1.2.3",
     "is-wsl": "2.2.0",
     "jayson": "^3.3.4",
+    "js-yaml": "^4.1.0",
     "listr2": "5.0.7",
     "lodash": "^4.17.21",
     "memory-streams": "^0.1.3",
@@ -86,12 +88,13 @@
     "public-ip": "^4.0.4",
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
-    "semver": "^7.3.2",
+    "semver": "^7.5.3",
     "table": "^5.4.6",
     "wrap-ansi": "^7.0.0"
   },
   "devDependencies": {
     "@dashevo/oclif": "^1.0.4",
+    "babel-eslint": "^10.1.0",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",

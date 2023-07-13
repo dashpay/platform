@@ -303,7 +303,7 @@ fn validate_transition(
                 return Ok(result);
             };
 
-            let validation_result = check_if_timestamps_are_equal(transition, &original_document);
+            let validation_result = check_if_timestamps_are_equal(transition, original_document);
             result.merge(validation_result);
 
             let validation_result = check_ownership(transition, original_document, owner_id);

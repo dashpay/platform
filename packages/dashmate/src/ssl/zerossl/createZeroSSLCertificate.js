@@ -1,17 +1,17 @@
-const fetch = require('node-fetch');
 const qs = require('qs');
-const errorDescriptions = require('./errors/errorDescriptions');
+const Certificate = require('./Certificate');
+const requestApi = require('./requestApi');
 
 /**
  * Create a ZeroSSL Certificate
  *
- * @typedef {createZerosslCertificate}
+ * @typedef {createZeroSSLCertificate}
  * @param {string} csr
  * @param {string} externalIp
  * @param {string} apiKey
- * @return {Promise<string>}
+ * @return {Promise<Certificate>}
  */
-async function createCertificate(
+async function createZeroSSLCertificate(
   csr,
   externalIp,
   apiKey,
@@ -32,17 +32,9 @@ async function createCertificate(
     },
   };
 
-  const response = await fetch(url, requestOptions);
+  const data = await requestApi(url, requestOptions);
 
-  const data = await response.json();
-
-  if (data.error) {
-    const errorMessage = errorDescriptions[data.error.code];
-
-    throw new Error(errorMessage || JSON.stringify(data.error));
-  }
-
-  return data;
+  return new Certificate(data);
 }
 
-module.exports = createCertificate;
+module.exports = createZeroSSLCertificate;

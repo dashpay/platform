@@ -14,7 +14,6 @@ if [[ "${CARGO_BUILD_PROFILE}" == "dev" ]]; then
 fi
 
 OUTPUT_DIR="${PWD}/wasm"
-WORKSPACE_ROOT="$(dirname "$0")/../../.."
 # shellcheck disable=SC2034
 OUTPUT_FILE="${OUTPUT_DIR}/wasm_dpp_bg.wasm"
 BUILD_COMMAND="cargo build --config net.git-fetch-with-cli=true --target=${TARGET} ${PROFILE_ARG}"
@@ -24,15 +23,13 @@ if ! [[ -d ${OUTPUT_DIR} ]]; then
   mkdir -p "${OUTPUT_DIR}"
 fi
 
-if ! [[ -x "$(command -v cargo-lock)" ]]; then
-  echo 'cargo-lock is not installed. Installing'
-  cargo install cargo-lock --features=cli --profile "${CARGO_BUILD_PROFILE}"
-fi
-
-WASM_BINDGEN_VERSION=$(cargo-lock list --file "${WORKSPACE_ROOT}/Cargo.lock" --package wasm-bindgen | grep -Eo '[0-9.]+')
-if ! [[ "$(wasm-bindgen --version)" =~ ${WASM_BINDGEN_VERSION} ]]; then
+# TODO: Build wasm with build.rs
+# Meantime if you want to update wasm-bindgen you also need to update version in:
+#  - packages/wasm-dpp/Cargo.toml
+#  - Dockerfile
+if ! [[ -x "$(command -v wasm-bindgen)" ]]; then
   echo "Wasm-bindgen CLI ${WASM_BINDGEN_VERSION} is not installed. Installing"
-  cargo install --config net.git-fetch-with-cli=true --profile "${CARGO_BUILD_PROFILE}" -f "wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
+  cargo install --config net.git-fetch-with-cli=true --profile "${CARGO_BUILD_PROFILE}" -f "wasm-bindgen-cli@0.2.86"
 fi
 
 # On a mac, bundled clang won't work - you need to install LLVM manually through brew,

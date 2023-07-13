@@ -8,6 +8,7 @@ const {
 
 const Docker = require('dockerode');
 
+const getServiceListFactory = require('./docker/getServiceListFactory');
 const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
 const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
@@ -73,20 +74,22 @@ const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFac
 const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
 const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 
+const updateNodeFactory = require('./update/updateNodeFactory');
+
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
 const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
 
-const createZeroSSLCertificate = require('./ssl/zerossl/createCertificate');
+const createZeroSSLCertificate = require('./ssl/zerossl/createZeroSSLCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
 const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
 const getCertificate = require('./ssl/zerossl/getCertificate');
 const listCertificates = require('./ssl/zerossl/listCertificates');
 const generateCsr = require('./ssl/zerossl/generateCsr');
 const generateKeyPair = require('./ssl/generateKeyPair');
-const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
+const createSelfSignedCertificate = require('./ssl/selfSigned/createSelfSignedCertificate');
 
 const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
 const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
@@ -104,6 +107,7 @@ async function createDIContainer() {
    * Config
    */
   container.register({
+    getServiceList: asFunction(getServiceListFactory).singleton(),
     ensureHomeDir: asFunction(ensureHomeDirFactory).singleton(),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
     systemConfigs: asValue(systemConfigs),
@@ -114,6 +118,13 @@ async function createDIContainer() {
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
+  });
+
+  /**
+   * Update
+   */
+  container.register({
+    updateNode: asFunction(updateNodeFactory).singleton(),
   });
 
   /**

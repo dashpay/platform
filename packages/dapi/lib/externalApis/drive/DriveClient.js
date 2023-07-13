@@ -65,6 +65,20 @@ class DriveClient {
   }
 
   /**
+   * Fetch serialized data contract
+   *
+   * @param {GetDataContractHistoryRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchDataContractHistory(request) {
+    return this.request(
+      '/dataContractHistory',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
    * Fetch serialized documents
    *
    * @param {GetDocumentsRequest} request

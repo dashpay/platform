@@ -26,9 +26,11 @@ describe('Platform', () => {
 
     before(async () => {
       dataContractFixture = await getDataContractFixture();
-      client = await createClientWithFundedWallet(350000);
+      client = await createClientWithFundedWallet(35000000);
 
-      identity = await client.platform.identities.register(300000);
+      // Looks like updating the contact and keeping history requires about
+      // 7 million credits in fees. Investigate this further.
+      identity = await client.platform.identities.register(30000000);
     });
 
     after(async () => {
@@ -134,6 +136,17 @@ describe('Platform', () => {
 
       const newDocumentType = 'myAwesomeDocument';
 
+      // binary contract representation doesn't have a contract config in it,
+      // and we set default value on deserialization, so we need to set it
+      // here to avoid the error, as original contract has a non-default
+      // value here
+      fetchedDataContract.setConfig({
+        canBeDeleted: false,
+        readonly: false,
+        keepsHistory: true,
+        documentsKeepHistoryContractDefault: false,
+        documentsMutableContractDefault: true,
+      });
       fetchedDataContract.setDocumentSchema(newDocumentType, {
         type: 'object',
         indices: [
@@ -204,6 +217,27 @@ describe('Platform', () => {
           lastName: 'myLastName',
         },
       );
+
+      const contractHistory = await client.platform.contracts.history(
+        dataContractFixture.getId(), 0, 10, 0,
+      );
+
+      // By default, history is not really sorted, since it's a map
+      const historyPairs = Object.entries(contractHistory);
+      historyPairs.sort((a, b) => a[0] - b[0]);
+
+      expect(historyPairs).to.have.lengthOf(2);
+
+      const [originalContractDate, originalContract] = Object.entries(contractHistory)[0];
+      expect(originalContract.toObject()).to.be.deep.equal(dataContractFixture.toObject());
+
+      const [updatedContractDate, updatedContract] = Object.entries(contractHistory)[1];
+      // Version is updated separately inside SDK on a cloned contract, so we need to update it
+      //  here manually to compare
+      fetchedDataContract.incrementVersion();
+      expect(updatedContract.toObject()).to.be.deep.equal(fetchedDataContract.toObject());
+
+      expect(Number(updatedContractDate)).to.be.greaterThan(Number(originalContractDate));
     });
   });
 });

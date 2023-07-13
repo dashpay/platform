@@ -1328,7 +1328,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
@@ -1361,7 +1361,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
@@ -1438,7 +1438,7 @@ __metadata:
     "@dashevo/bls": ~1.2.9
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/dpp": "workspace:*"
@@ -1464,12 +1464,12 @@ __metadata:
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
     nyc: ^15.1.0
-    semver: ^7.3.2
+    semver: ^7.5.3
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
     swagger-jsdoc: ^3.5.0
     ws: ^7.5.3
-    zeromq: ^5.2.8
+    zeromq: ~5.2.8
   languageName: unknown
   linkType: soft
 
@@ -1486,7 +1486,7 @@ __metadata:
   dependencies:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     chai: ^4.3.4
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1495,6 +1495,8 @@ __metadata:
     memdown: ^5.1.0
     mocha: ^9.1.2
     should: ^13.2.3
+    sinon: ^11.1.2
+    wasm-x11-hash: ~0.0.2
   languageName: unknown
   linkType: soft
 
@@ -1508,9 +1510,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashcore-lib@npm:~0.20.6":
-  version: 0.20.6
-  resolution: "@dashevo/dashcore-lib@npm:0.20.6"
+"@dashevo/dashcore-lib@npm:~0.20.9":
+  version: 0.20.9
+  resolution: "@dashevo/dashcore-lib@npm:0.20.9"
   dependencies:
     "@dashevo/bls": ~1.2.9
     "@dashevo/x11-hash-js": ^1.0.2
@@ -1522,8 +1524,9 @@ __metadata:
     inherits: =2.0.1
     lodash: ^4.17.20
     ripemd160: ^2.0.2
+    tsd: ^0.28.1
     unorm: ^1.6.0
-  checksum: 730145e1302908e0762cb3a102d52f8b5478d3b00c38e386c786da8c77dd53f4e99d7aca6ca4c6f0df2d32ef59a70bdcb0c8ae383426987d472f6c4e3f9ae0eb
+  checksum: a92adaf44107c9c8418dd91989db24e3c594083ca54cf56afe478fbedb3f3b8129fadbba5a362c5e85843dd6c75555d1435f306335b461a7555f6dfd1e53de5f
   languageName: node
   linkType: hard
 
@@ -1609,7 +1612,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
     "@dashevo/bls": ~1.2.9
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -1701,7 +1704,7 @@ __metadata:
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
     nyc: ^15.1.0
-    semver: ^7.3.2
+    semver: ^7.5.3
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -1756,7 +1759,7 @@ __metadata:
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -1797,7 +1800,7 @@ __metadata:
     os-browserify: ^0.3.0
     path-browserify: ^1.0.1
     process: ^0.11.10
-    semver: ^7.3.2
+    semver: ^7.5.3
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
     stream-browserify: ^3.0.0
@@ -1822,7 +1825,7 @@ __metadata:
     conventional-changelog: ^3.1.24
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
     node-gyp: ^9.3.1
-    semver: ^7.3.2
+    semver: ^7.5.3
     tempfile: ^3.0.0
     ultra-runner: ^3.10.5
   languageName: unknown
@@ -1858,9 +1861,10 @@ __metadata:
   dependencies:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
+    "@yarnpkg/pnpify": ^4.0.0-rc.42
     assert: ^2.0.0
     browserify-zlib: ^0.2.0
     buffer: ^6.0.3
@@ -1897,6 +1901,7 @@ __metadata:
     stream-browserify: ^3.0.0
     stream-http: ^3.2.0
     string_decoder: ^1.3.0
+    tsd: ^0.28.1
     url: ^0.11.0
     util: ^0.12.4
     wasm-x11-hash: ~0.0.2
@@ -1915,7 +1920,7 @@ __metadata:
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
     "@dashevo/bls": ~1.2.9
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/wasm-re2": ~1.0.2
@@ -6054,7 +6059,7 @@ __metadata:
     "@dashevo/bls": ~1.2.9
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
@@ -6071,6 +6076,7 @@ __metadata:
     "@types/sinon-chai": ^3.2.4
     "@typescript-eslint/eslint-plugin": ^5.55.0
     "@typescript-eslint/parser": ^5.55.0
+    "@yarnpkg/pnpify": ^4.0.0-rc.42
     assert: ^2.0.0
     browserify-zlib: ^0.2.0
     bs58: ^4.0.1
@@ -6112,6 +6118,7 @@ __metadata:
     ts-mocha: ^9.0.2
     ts-mock-imports: ^1.3.0
     ts-node: ^10.4.0
+    tsd: ^0.28.1
     typescript: ^3.9.5
     url: ^0.11.0
     util: ^0.12.4
@@ -6126,7 +6133,7 @@ __metadata:
   resolution: "dashmate@workspace:packages/dashmate"
   dependencies:
     "@dashevo/bls": ~1.2.9
-    "@dashevo/dashcore-lib": ~0.20.6
+    "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.2
@@ -6142,6 +6149,7 @@ __metadata:
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
     awilix: ^4.2.6
+    babel-eslint: ^10.1.0
     begoo: ^2.0.2
     chai: ^4.3.4
     chai-as-promised: ^7.1.1
@@ -6161,6 +6169,7 @@ __metadata:
     hasbin: ^1.2.3
     is-wsl: 2.2.0
     jayson: ^3.3.4
+    js-yaml: ^4.1.0
     listr2: 5.0.7
     lodash: ^4.17.21
     memory-streams: ^0.1.3
@@ -6174,7 +6183,7 @@ __metadata:
     public-ip: ^4.0.4
     qs: ^6.11.0
     rxjs: ^6.6.7
-    semver: ^7.3.2
+    semver: ^7.5.3
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
     table: ^5.4.6
@@ -9454,7 +9463,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"js-yaml@npm:4.1.0":
+"js-yaml@npm:4.1.0, js-yaml@npm:^4.1.0":
   version: 4.1.0
   resolution: "js-yaml@npm:4.1.0"
   dependencies:
@@ -11043,7 +11052,18 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"node-gyp-build@npm:^4.2.3, node-gyp-build@npm:^4.3.0":
+"node-gyp-build@npm:^4.2.3":
+  version: 4.6.0
+  resolution: "node-gyp-build@npm:4.6.0"
+  bin:
+    node-gyp-build: bin.js
+    node-gyp-build-optional: optional.js
+    node-gyp-build-test: build-test.js
+  checksum: 25d78c5ef1f8c24291f4a370c47ba52fcea14f39272041a90a7894cd50d766f7c8cb8fb06c0f42bf6f69b204b49d9be3c8fc344aac09714d5bdb95965499eb15
+  languageName: node
+  linkType: hard
+
+"node-gyp-build@npm:^4.3.0":
   version: 4.3.0
   resolution: "node-gyp-build@npm:4.3.0"
   bin:
@@ -12997,52 +13017,14 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"semver@npm:2 || 3 || 4 || 5, semver@npm:^5.5.0, semver@npm:^5.6.0, semver@npm:^5.7.1":
-  version: 5.7.1
-  resolution: "semver@npm:5.7.1"
-  bin:
-    semver: ./bin/semver
-  checksum: 57fd0acfd0bac382ee87cd52cd0aaa5af086a7dc8d60379dfe65fea491fb2489b6016400813930ecd61fd0952dae75c115287a1b16c234b1550887117744dfaf
-  languageName: node
-  linkType: hard
-
-"semver@npm:7.0.0, semver@npm:~7.0.0":
-  version: 7.0.0
-  resolution: "semver@npm:7.0.0"
-  bin:
-    semver: bin/semver.js
-  checksum: 272c11bf8d083274ef79fe40a81c55c184dff84dd58e3c325299d0927ba48cece1f020793d138382b85f89bab5002a35a5ba59a3a68a7eebbb597eb733838778
-  languageName: node
-  linkType: hard
-
-"semver@npm:^6.0.0, semver@npm:^6.1.1, semver@npm:^6.1.2, semver@npm:^6.3.0":
-  version: 6.3.0
-  resolution: "semver@npm:6.3.0"
-  bin:
-    semver: ./bin/semver.js
-  checksum: 1b26ecf6db9e8292dd90df4e781d91875c0dcc1b1909e70f5d12959a23c7eebb8f01ea581c00783bbee72ceeaad9505797c381756326073850dc36ed284b21b9
-  languageName: node
-  linkType: hard
-
-"semver@npm:^7.1.1, semver@npm:^7.1.3, semver@npm:^7.2.1, semver@npm:^7.3.2, semver@npm:^7.3.4, semver@npm:^7.3.5, semver@npm:^7.3.7, semver@npm:^7.3.8":
-  version: 7.3.8
-  resolution: "semver@npm:7.3.8"
+"semver@npm:^7.5.3":
+  version: 7.5.3
+  resolution: "semver@npm:7.5.3"
   dependencies:
     lru-cache: ^6.0.0
   bin:
     semver: bin/semver.js
-  checksum: ba9c7cbbf2b7884696523450a61fee1a09930d888b7a8d7579025ad93d459b2d1949ee5bbfeb188b2be5f4ac163544c5e98491ad6152df34154feebc2cc337c1
-  languageName: node
-  linkType: hard
-
-"semver@npm:^7.1.2":
-  version: 7.5.0
-  resolution: "semver@npm:7.5.0"
-  dependencies:
-    lru-cache: ^6.0.0
-  bin:
-    semver: bin/semver.js
-  checksum: 2d266937756689a76f124ffb4c1ea3e1bbb2b263219f90ada8a11aebebe1280b13bb76cca2ca96bdee3dbc554cbc0b24752eb895b2a51577aa644427e9229f2b
+  checksum: 9d58db16525e9f749ad0a696a1f27deabaa51f66e91d2fa2b0db3de3e9644e8677de3b7d7a03f4c15bc81521e0c3916d7369e0572dbde250d9bedf5194e2a8a7
   languageName: node
   linkType: hard
 
@@ -15650,7 +15632,7 @@ typescript@^3.9.5:
   languageName: node
   linkType: hard
 
-"zeromq@npm:^5.2.8":
+"zeromq@npm:~5.2.8":
   version: 5.2.8
   resolution: "zeromq@npm:5.2.8"
   dependencies:

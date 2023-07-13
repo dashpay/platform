@@ -1,6 +1,6 @@
 const Dash = require('dash');
 
-const { createFakeInstantLock } = require('dash/build/src/utils/createFakeIntantLock');
+const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
@@ -323,8 +323,6 @@ describe('Platform', () => {
 
       before(async () => {
         dataContractFixture = await getDataContractFixture(identity.getId());
-
-        console.log(dataContractFixture);
 
         await client.platform.contracts.publish(dataContractFixture, identity);
 

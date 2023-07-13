@@ -36,7 +36,6 @@ class StateRepository {
     const { transaction } = await walletAccount.getTransaction(id);
 
     return {
-      // @ts-ignore
       data: transaction.toBuffer(),
       // we don't have transaction heights atm
       // and it will be implemented later with DAPI SPV functionality
