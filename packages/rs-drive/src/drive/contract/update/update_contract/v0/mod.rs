@@ -95,7 +95,7 @@ impl Drive {
             drive_version,
         )?;
 
-        // Update Data Contracts cache with the new contract
+        // Update DataContracts cache with the new contract
         let updated_contract_fetch_info = self
             .fetch_contract_and_add_operations(
                 contract.id().to_buffer(),

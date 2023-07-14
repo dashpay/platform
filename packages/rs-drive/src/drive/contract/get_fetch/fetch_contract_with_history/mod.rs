@@ -29,7 +29,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<u64, Contract>, Error>` - A `Result` type, where `Ok` variant contains
+    /// * `Result<BTreeMap<u64,DataContract>, Error>` - A `Result` type, where `Ok` variant contains
     /// a `BTreeMap` with Unix timestamp as the key and contract as the value, representing
     /// the contract's history. The `Err` variant contains an `Error` in case of a failure.
     ///
@@ -52,7 +52,7 @@ impl Drive {
         limit: Option<u16>,
         offset: Option<u16>,
         drive_version: &DriveVersion,
-    ) -> Result<BTreeMap<u64, Contract>, Error> {
+    ) -> Result<BTreeMap<u64,DataContract>, Error> {
         match drive_version.methods.contract.get.fetch_contract_with_history {
             0 => self.fetch_contract_with_history_v0(contract_id, transaction, start_at_date, limit, offset, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
@@ -212,7 +212,7 @@ mod tests {
                 query_non_existent_contract_id: false,
                 contract_created_date_ms: 1000,
                 update_period_interval_ms: 1000,
-                // Contract created at 1000, 20 updates applied. The last update is at 21000
+                //DataContract created at 1000, 20 updates applied. The last update is at 21000
                 // The 5th update from the latest update is 21000 - 10000 = 11000, plus since
                 // the latest update is included into result, the expected oldest update date
                 // is 12000.

@@ -12,7 +12,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
-pub enum ContractApplyInfo {
+pub enum DataContractApplyInfo {
     Keys(Vec<IdentityPublicKey>),
 }
 
@@ -20,7 +20,7 @@ impl Drive {
     pub(crate) fn add_contract_info_operations(
         &self,
         identity_id: [u8; 32],
-        contract_infos: Vec<([u8; 32], ContractApplyInfo)>,
+        contract_infos: Vec<([u8; 32],DataContractApplyInfo)>,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -56,7 +56,7 @@ impl Drive {
                 &mut batch_operations,
             )?;
             match contract_info {
-                ContractApplyInfo::Keys(keys) => {
+               DataContractApplyInfo::Keys(keys) => {
                     self.add_new_keys_to_identity_operations(
                         identity_id,
                         keys,

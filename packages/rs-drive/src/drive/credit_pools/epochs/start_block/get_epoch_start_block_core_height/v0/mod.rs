@@ -2,7 +2,7 @@ use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::epoch::EpochIndex;
+use dpp::fee::epoch::EpochIndex;
 use crate::fee_pools::epochs::paths;
 use dpp::block::epoch::Epoch;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;

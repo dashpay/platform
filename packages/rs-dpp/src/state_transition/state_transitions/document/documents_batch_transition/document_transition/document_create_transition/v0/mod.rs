@@ -139,7 +139,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
     }
 
     #[cfg(feature = "platform-value")]
-    fn from_raw_object(
+    fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
@@ -303,7 +303,7 @@ mod test {
         });
 
         let transition: DocumentCreateTransition =
-            DocumentCreateTransition::from_raw_object(raw_document, data_contract).unwrap();
+            DocumentCreateTransition::from_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
         assert_eq!(json_transition["$id"], JsonValue::String(id.into()));

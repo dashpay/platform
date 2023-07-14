@@ -3,7 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::epoch::CreditsPerEpoch;
+use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::{TransactionArg, GroveDbOpBatch};
 use dpp::version::drive_versions::DriveVersion;
 use crate::drive::batch::GroveDbOpBatch;

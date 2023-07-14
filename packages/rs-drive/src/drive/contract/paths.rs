@@ -3,7 +3,7 @@ use crate::drive::RootTree;
 use dpp::data_contract::DataContract;
 
 /// The various GroveDB paths underneath a contract
-pub trait ContractPaths {
+pub trait DataContractPaths {
     /// The root path, under this there should be the documents area and the contract itself
     fn root_path(&self) -> [&[u8]; 2];
     /// The documents path, under this you should have the various document types
@@ -20,7 +20,7 @@ pub trait ContractPaths {
     ) -> [&'a [u8]; 6];
 }
 
-impl ContractPaths for DataContract {
+impl DataContractPaths for DataContract {
     fn root_path(&self) -> [&[u8]; 2] {
         [
             Into::<&[u8; 1]>::into(RootTree::ContractDocuments),

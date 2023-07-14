@@ -71,9 +71,9 @@ impl Drive {
         };
         // we need to construct the path for documents on the contract
         // the path is
-        //  * Document and Contract root tree
-        //  * Contract ID recovered from document
-        //  * 0 to signify Documents and not Contract
+        //  * Document andDataContract root tree
+        //  *DataContract ID recovered from document
+        //  * 0 to signify Documents and notDataContract
         let contract_document_type_path =
             contract_document_type_path(contract.id().as_bytes(), document_type.name.as_str());
 
@@ -162,7 +162,7 @@ impl Drive {
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
 
             // with the example of the dashpay contract's first index
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
+            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document
                 .get_raw_for_document_type(&top_index_property.name, document_type, owner_id)?
                 .unwrap_or_default();
@@ -213,7 +213,7 @@ impl Drive {
                 .collect();
             // we push the actual value of the index path
             index_path.push(document_top_field);
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
+            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             old_index_path.push(old_document_top_field);
 
@@ -269,8 +269,8 @@ impl Drive {
                 index_path.push(Vec::from(index_property.name.as_bytes()));
                 old_index_path.push(DriveKeyInfo::Key(Vec::from(index_property.name.as_bytes())));
 
-                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
-                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+                // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+                // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
                 if change_occurred_on_index {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
@@ -302,8 +302,8 @@ impl Drive {
                 // we push the actual value of the index path, both for the new and the old
                 index_path.push(document_index_field);
                 old_index_path.push(old_document_index_field);
-                // Iteration 1. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
-                // Iteration 2. the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+                // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+                // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
             }
 
             if change_occurred_on_index {

@@ -6,6 +6,7 @@ use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
+use crate::version::PlatformVersion;
 
 impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
@@ -20,10 +21,10 @@ impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
             .map_err(ProtocolError::ValueError)
     }
 
-    fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
+    fn from_json_object(raw_object: JsonValue, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let mut value: Value = raw_object.into();
         value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
-        Self::from_value(value)
+        Self::from_object(value, platform_version)
     }
 }
 

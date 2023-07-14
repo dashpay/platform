@@ -1,5 +1,7 @@
 #![allow(clippy::from_over_into)]
 
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
@@ -19,7 +21,7 @@ pub mod methods;
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Encode, Decode, Serialize, Deserialize)]
 pub enum IdentityPublicKey {
     V0(IdentityPublicKeyV0),
 }

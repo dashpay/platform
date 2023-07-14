@@ -277,8 +277,8 @@ impl QueryResultEncoding {
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
-    /// Contract
-    pub contract: &'a Contract,
+    ///DataContract
+    pub contract: &'a DataContract,
     /// Document type
     pub document_type: &'a DocumentTypeRef<'a>,
     /// Internal clauses
@@ -302,7 +302,7 @@ pub struct DriveQuery<'a> {
 impl<'a> DriveQuery<'a> {
     #[cfg(feature = "full")]
     /// Returns any item
-    pub fn any_item_query(contract: &'a Contract, document_type: &'a DocumentTypeRef) -> Self {
+    pub fn any_item_query(contract: &'a DataContract, document_type: &'a DocumentTypeRef) -> Self {
         DriveQuery {
             contract,
             document_type,
@@ -337,7 +337,7 @@ impl<'a> DriveQuery<'a> {
     /// Converts a query CBOR to a `DriveQuery`.
     pub fn from_cbor(
         query_cbor: &[u8],
-        contract: &'a Contract,
+        contract: &'a DataContract,
         document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
@@ -353,7 +353,7 @@ impl<'a> DriveQuery<'a> {
     /// Converts a query Value to a `DriveQuery`.
     pub fn from_value(
         query_value: Value,
-        contract: &'a Contract,
+        contract: &'a DataContract,
         document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
@@ -365,7 +365,7 @@ impl<'a> DriveQuery<'a> {
     /// Converts a query Value to a `DriveQuery`.
     pub fn from_btree_map_value(
         mut query_document: BTreeMap<String, Value>,
-        contract: &'a Contract,
+        contract: &'a DataContract,
         document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
@@ -494,7 +494,7 @@ impl<'a> DriveQuery<'a> {
         start_at: Option<[u8; 32]>,
         start_at_included: bool,
         block_time_ms: Option<u64>,
-        contract: &'a Contract,
+        contract: &'a DataContract,
         document_type: &'a DocumentTypeRef,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
@@ -570,7 +570,7 @@ impl<'a> DriveQuery<'a> {
     /// Converts a SQL expression to a `DriveQuery`.
     pub fn from_sql_expr(
         sql_string: &str,
-        contract: &'a Contract,
+        contract: &'a DataContract,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
@@ -1679,7 +1679,7 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use dpp::block::extended_block_info::BlockInfo;
 
-    fn setup_family_contract() -> (Drive, Contract) {
+    fn setup_family_contract() -> (Drive,DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -1700,7 +1700,7 @@ mod tests {
         (drive, contract)
     }
 
-    fn setup_family_birthday_contract() -> (Drive, Contract) {
+    fn setup_family_birthday_contract() -> (Drive,DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -1734,7 +1734,7 @@ mod tests {
                 ["lastName", "asc"],
             ]
         });
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1761,7 +1761,7 @@ mod tests {
             ],
             "invalid": 0,
         });
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1789,7 +1789,7 @@ mod tests {
             ],
         });
 
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1817,7 +1817,7 @@ mod tests {
             ],
         });
 
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1844,7 +1844,7 @@ mod tests {
                 ["lastName", "asc"],
             ],
         });
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2098,7 +2098,7 @@ mod tests {
             ],
         });
 
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2124,7 +2124,7 @@ mod tests {
             ],
         });
 
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2150,7 +2150,7 @@ mod tests {
             ],
         });
 
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2176,7 +2176,7 @@ mod tests {
             ],
         });
 
-        let contract = Contract::default();
+        let contract =DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)

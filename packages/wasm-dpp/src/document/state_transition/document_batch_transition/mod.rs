@@ -52,7 +52,7 @@ pub struct ToObjectOptions {
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]
 impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn from_raw_object(
+    pub fn from_object(
         js_raw_transition: JsValue,
         data_contracts: Array,
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
@@ -62,7 +62,7 @@ impl DocumentsBatchTransitionWasm {
 
         for contract in data_contracts_array_js.iter() {
             let value = contract.with_serde_to_platform_value()?;
-            let data_contract = DataContract::from_raw_object(value).with_js_error()?;
+            let data_contract = DataContract::from_object(value).with_js_error()?;
             data_contracts.push(data_contract);
         }
 
@@ -81,7 +81,7 @@ impl DocumentsBatchTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let documents_batch_transition = DocumentsBatchTransition::from_raw_object_with_contracts(
+        let documents_batch_transition = DocumentsBatchTransition::from_object_with_contracts(
             batch_transition_value,
             data_contracts,
         )

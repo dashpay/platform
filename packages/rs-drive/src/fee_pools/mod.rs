@@ -31,7 +31,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
-use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use dpp::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,

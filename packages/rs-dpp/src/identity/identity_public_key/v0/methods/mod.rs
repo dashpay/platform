@@ -1,5 +1,4 @@
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
@@ -7,6 +6,7 @@ use anyhow::anyhow;
 use dashcore::hashes::Hash;
 use dashcore::PublicKey as ECDSAPublicKey;
 use platform_value::Bytes20;
+use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash

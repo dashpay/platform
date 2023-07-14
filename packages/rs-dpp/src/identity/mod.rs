@@ -22,5 +22,10 @@ pub mod accessors;
 pub mod random;
 mod v0;
 pub mod versions;
+mod conversion;
+mod fields;
+mod methods;
+
+pub use fields::*;
 
 pub use v0::*;

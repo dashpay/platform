@@ -78,9 +78,9 @@ impl Drive {
 
         // first we need to construct the path for documents on the contract
         // the path is
-        //  * Document and Contract root tree
-        //  * Contract ID recovered from document
-        //  * 0 to signify Documents and not Contract
+        //  * Document andDataContract root tree
+        //  *DataContract ID recovered from document
+        //  * 0 to signify Documents and notDataContract
         let contract_documents_primary_key_path = contract_documents_primary_key_path(
             contract.id().as_bytes(),
             document_type.name.as_str(),

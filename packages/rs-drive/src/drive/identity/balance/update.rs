@@ -352,7 +352,7 @@ mod tests {
         use super::*;
         use crate::common::helpers::identities::create_test_identity;
         use crate::fee::credits::SignedCredits;
-        use crate::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
+        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use crate::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
         use grovedb::batch::Op;
         use nohash_hasher::IntMap;

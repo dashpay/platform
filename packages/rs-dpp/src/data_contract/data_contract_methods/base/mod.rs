@@ -1,5 +1,5 @@
 mod v0;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentTypeMutRef, DocumentTypeRef};
 use crate::prelude::DataContract;
 use crate::ProtocolError;
 pub use v0::*;
@@ -17,19 +17,25 @@ impl DataContractBaseMethodsV0 for DataContract {
         }
     }
 
-    fn optional_document_type_for_name<'a>(
+    fn optional_document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Option<DocumentTypeRef<'a>> {
+    ) -> Option<DocumentTypeRef> {
         match self {
             DataContract::V0(v0) => v0.optional_document_type_for_name(document_type_name),
         }
     }
 
-    fn document_type_for_name<'a>(
+    fn optional_document_type_mut_for_name(&mut self, document_type_name: &str) -> Option<DocumentTypeMutRef> {
+        match self {
+            DataContract::V0(v0) => v0.optional_document_type_mut_for_name(document_type_name),
+        }
+    }
+
+    fn document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+    ) -> Result<DocumentTypeRef, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(document_type_name),
         }

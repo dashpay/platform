@@ -119,7 +119,7 @@ impl DataContractWasm {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
-        DataContract::from_raw_object(
+        DataContract::from_object(
             platform_value::to_value(parameters).expect("Implements Serialize"),
         )
         .with_js_error()

@@ -51,6 +51,7 @@ pub mod serialization_traits;
 pub mod signing;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+pub mod state_transition_action;
 
 pub use async_trait;
 pub use bls::*;

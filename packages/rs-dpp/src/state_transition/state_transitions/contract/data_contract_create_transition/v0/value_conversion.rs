@@ -22,7 +22,7 @@ use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
 impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
-    fn from_raw_object(
+    fn from_object(
         mut raw_object: Value,
     ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
         Ok(DataContractCreateTransitionV0 {
@@ -38,7 +38,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_raw_object(
+            data_contract: DataContract::from_object(
                 raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
@@ -65,7 +65,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_raw_object(
+            data_contract: DataContract::from_object(
                 raw_data_contract_create_transition
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(

@@ -42,6 +42,11 @@ pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }
 
+pub enum DocumentTypeMutRef<'a> {
+    V0(&'a mut DocumentTypeV0),
+}
+
+
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
@@ -51,6 +56,12 @@ impl DocumentType {
     pub const fn as_ref(&self) -> DocumentTypeRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
+        }
+    }
+
+    pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
+        match self {
+            DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
         }
     }
 

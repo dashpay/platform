@@ -22,7 +22,7 @@ pub struct DriveCache {
     pub protocol_versions_counter: Option<IntMap<ProtocolVersion, u64>>,
 }
 
-/// Data Contract cache that handle both non global and block data
+/// DataContract cache that handle both non global and block data
 #[cfg(feature = "full")]
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
@@ -31,7 +31,7 @@ pub struct DataContractCache {
 
 #[cfg(feature = "full")]
 impl DataContractCache {
-    /// Create a new Data Contract cache instance
+    /// Create a new DataContract cache instance
     pub fn new(global_cache_max_capacity: u64, block_cache_max_capacity: u64) -> Self {
         Self {
             global_cache: Cache::new(global_cache_max_capacity),
@@ -39,7 +39,7 @@ impl DataContractCache {
         }
     }
 
-    /// Inserts Data Contract to block cache
+    /// Inserts DataContract to block cache
     /// otherwise to goes to global cache
     pub fn insert(&mut self, fetch_info: Arc<ContractFetchInfo>, is_block_cache: bool) {
         let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
@@ -103,7 +103,7 @@ mod tests {
                 .insert(contract_id, Arc::clone(&fetch_info_global));
 
             // Create transactional contract with a new version
-            let mut fetch_info_block = ContractFetchInfo::default();
+            let mut fetch_info_block =DataContractFetchInfo::default();
 
             fetch_info_block.contract.increment_version();
 

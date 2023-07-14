@@ -73,7 +73,7 @@ pub mod batch;
 pub mod cache;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod config;
-/// Contract module
+///DataContract module
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod contract;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -155,9 +155,9 @@ pub struct Drive {
 // The root tree structure is very important!
 // It must be constructed in such a way that important information
 // is at the top of the tree in order to reduce proof size
-// the most import tree is the Contract Documents tree
+// the most import tree is theDataContract Documents tree
 
-//                         Contract_Documents 64
+//                        DataContract_Documents 64
 //                  /                               \
 //             Identities 32                           Balances 96
 //             /        \                         /                   \
@@ -170,8 +170,8 @@ pub struct Drive {
 #[repr(u8)]
 pub enum RootTree {
     // Input data errors
-    /// Contract Documents
-    ContractDocuments = 64,
+    ///DataContract Documents
+   DataContractDocuments = 64,
     /// Identities
     Identities = 32,
     /// Unique Public Key Hashes to Identities

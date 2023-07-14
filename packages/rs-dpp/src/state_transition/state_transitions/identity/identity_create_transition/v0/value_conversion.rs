@@ -25,7 +25,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
-    fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
+    fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
         let mut transition_map = raw_object

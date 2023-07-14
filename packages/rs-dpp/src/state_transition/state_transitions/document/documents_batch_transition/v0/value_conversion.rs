@@ -134,7 +134,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
     }
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
-    fn from_raw_object_with_contracts(
+    fn from_object_with_contracts(
         raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
@@ -227,7 +227,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
         Ok(batch_transitions)
     }
 
-    fn from_raw_object(
+    fn from_object(
         mut raw_object: Value,
     ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
         Ok(DataContractCreateTransitionV0 {
@@ -243,7 +243,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_raw_object(
+            data_contract: DataContract::from_object(
                 raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),

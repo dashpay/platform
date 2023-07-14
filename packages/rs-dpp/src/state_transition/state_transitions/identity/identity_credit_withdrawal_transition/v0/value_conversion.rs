@@ -23,7 +23,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for IdentityCreditWithdrawalTransitionV0 {
-    fn from_raw_object(
+    fn from_object(
         raw_object: Value,
     ) -> Result<IdentityCreditWithdrawalTransitionV0, ProtocolError> {
         platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)

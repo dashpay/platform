@@ -118,15 +118,15 @@ where
 //
 //     match transition_type {
 //         StateTransitionType::DataContractCreate => {
-//             let transition = DataContractCreateTransition::from_raw_object(raw_state_transition)?;
+//             let transition = DataContractCreateTransition::from_object(raw_state_transition)?;
 //             Ok(StateTransition::DataContractCreate(transition))
 //         }
 //         StateTransitionType::DataContractUpdate => {
-//             let transition = DataContractUpdateTransition::from_raw_object(raw_state_transition)?;
+//             let transition = DataContractUpdateTransition::from_object(raw_state_transition)?;
 //             Ok(StateTransition::DataContractUpdate(transition))
 //         }
 //         StateTransitionType::IdentityCreate => {
-//             let transition = IdentityCreateTransition::from_raw_object(raw_state_transition)?;
+//             let transition = IdentityCreateTransition::from_object(raw_state_transition)?;
 //             Ok(StateTransition::IdentityCreate(transition))
 //         }
 //         StateTransitionType::IdentityTopUp => {
@@ -135,7 +135,7 @@ where
 //         }
 //         StateTransitionType::IdentityCreditWithdrawal => {
 //             let transition =
-//                 IdentityCreditWithdrawalTransition::from_raw_object(raw_state_transition)?;
+//                 IdentityCreditWithdrawalTransition::from_object(raw_state_transition)?;
 //             Ok(StateTransition::IdentityCreditWithdrawal(transition))
 //         }
 //         StateTransitionType::DocumentsBatch => {
@@ -149,7 +149,7 @@ where
 //             )
 //             .await?;
 //             let documents_batch_transition =
-//                 DocumentsBatchTransition::from_raw_object_with_contracts(
+//                 DocumentsBatchTransition::from_object_with_contracts(
 //                     raw_state_transition,
 //                     data_contracts,
 //                 )?;
@@ -256,7 +256,7 @@ mod test {
                 }
         );
         let data_contract_create_state_transition =
-            DataContractCreateTransition::from_raw_object(state_transition_data).unwrap();
+            DataContractCreateTransition::from_object(state_transition_data).unwrap();
 
         let result = create_state_transition(
             &state_repostiory_mock,

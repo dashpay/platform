@@ -38,6 +38,7 @@ impl ErrorWithCode for BasicError {
             Self::SerializedObjectParsingError { .. } => 1001,
             Self::UnsupportedProtocolVersionError(_) => 1002,
             Self::IncompatibleProtocolVersionError(_) => 1003,
+            Self::VersionError(_) => 1004,
 
             // Structure error
             Self::JsonSchemaCompilationError(..) => 1004,

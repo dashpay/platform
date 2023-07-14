@@ -36,7 +36,7 @@ pub enum DocumentOperation<'a> {
 pub struct DocumentOperationsForContractDocumentType<'a> {
     /// Document info
     pub operations: Vec<DocumentOperation<'a>>,
-    /// Contract
+    ///DataContract
     pub contract: &'a DataContract,
     /// Document type
     pub document_type: &'a DocumentTypeRef<'a>,
@@ -79,7 +79,7 @@ pub enum DocumentOperationType<'a> {
     AddDocument {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,
-        /// Contract
+        ///DataContract
         contract_id: Identifier,
         /// Document type
         document_type_name: Cow<'a, String>,
@@ -147,7 +147,7 @@ pub enum DocumentOperationType<'a> {
     UpdateDocument {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,
-        /// Contract
+        ///DataContract
         contract_id: Identifier,
         /// Document type
         document_type_name: Cow<'a, String>,

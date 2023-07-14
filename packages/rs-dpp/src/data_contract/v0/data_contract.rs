@@ -153,7 +153,7 @@ impl DataContractV0 {
 // impl TryFrom<Value> for DataContractV0 {
 //     type Error = ProtocolError;
 //     fn try_from(value: Value) -> Result<Self, Self::Error> {
-//         DataContractV0::from_raw_object(value)
+//         DataContractV0::from_object(value)
 //     }
 // }
 //
@@ -180,7 +180,7 @@ impl DataContractV0 {
 //         let data_contract: DataContractV0 = serde_json::from_str(v)?;
 //         //todo: there's a better to do this, find it
 //         let value = data_contract.to_object()?;
-//         DataContractV0::from_raw_object(value)
+//         DataContractV0::from_object(value)
 //     }
 // }
 //

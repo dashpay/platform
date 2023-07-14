@@ -139,7 +139,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
         Ok(document)
     }
 
-    fn from_raw_object(
+    fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentReplaceTransition, ProtocolError> {

@@ -9,7 +9,7 @@ mod create_new_identity_key_query_trees;
 use dpp::identity::IdentityPublicKey;
 
 /// The contract apply info
-pub enum ContractApplyInfo {
+pub enum DataContractApplyInfo {
     /// Keys of the contract apply info
     Keys(Vec<IdentityPublicKey>),
 }

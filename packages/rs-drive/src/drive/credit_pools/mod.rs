@@ -32,7 +32,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::credits::SignedCredits;
-use crate::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
+use dpp::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::paths::EpochProposers;
@@ -170,7 +170,7 @@ mod tests {
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
         use crate::fee::credits::Credits;
-        use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
+        use dpp::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use grovedb::batch::Op;
         use dpp::block::epoch::EpochIndex;

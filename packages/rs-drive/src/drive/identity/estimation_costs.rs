@@ -153,7 +153,7 @@ impl Drive {
         // In this layer we have
         //                   Keys
         //              /         \
-        // Contract Info         Revision
+        //DataContract Info         Revision
         //       /                   /
         //  Negative Credit      Query Keys
 
@@ -190,7 +190,7 @@ impl Drive {
         // In this layer we have
         //                   Keys
         //              /         \
-        // Contract Info         Revision
+        //DataContract Info         Revision
         //       /                   /
         //  Negative Credit      Query Keys
 

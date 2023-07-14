@@ -1,6 +1,4 @@
-use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV0Setters,
-};
+use crate::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV0MutGetters, DocumentTypeV0Setters};
 use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -52,6 +50,9 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
     fn data_contract_id(&self) -> Identifier {
         self.data_contract_id
     }
+}
+
+impl DocumentTypeV0MutGetters for DocumentTypeV0 {
 
     fn indices_mut(&mut self) -> &mut Vec<Index> {
         &mut self.indices

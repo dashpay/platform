@@ -222,7 +222,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let contract = Contract::from_cbor(contract_cbor)?;
+        let contract =DataContract::from_cbor(contract_cbor)?;
         //todo cbor cost
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 

@@ -34,7 +34,7 @@ use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::epoch::EpochIndex;
+use dpp::fee::epoch::EpochIndex;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use grovedb::{Element, TransactionArg};
 use dpp::block::epoch::EpochIndex;

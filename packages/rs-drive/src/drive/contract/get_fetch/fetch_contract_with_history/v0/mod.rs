@@ -39,7 +39,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<u64, Contract>, Error>` - A `Result` type, where `Ok` variant contains
+    /// * `Result<BTreeMap<u64,DataContract>, Error>` - A `Result` type, where `Ok` variant contains
     /// a `BTreeMap` with Unix timestamp as the key and contract as the value, representing
     /// the contract's history. The `Err` variant contains an `Error` in case of a failure.
     ///
@@ -61,7 +61,7 @@ impl Drive {
         limit: Option<u16>,
         offset: Option<u16>,
         drive_version: &DriveVersion,
-    ) -> Result<BTreeMap<u64, Contract>, Error> {
+    ) -> Result<BTreeMap<u64,DataContract>, Error> {
         let mut ops = Vec::new();
 
         let path_query =
@@ -99,7 +99,7 @@ impl Drive {
                     "contract path did not refer to a contract element",
                 ))),
             })
-            .collect::<Result<BTreeMap<u64, Contract>, Error>>();
+            .collect::<Result<BTreeMap<u64,DataContract>, Error>>();
 
         // Left like this for future additions if needed
         contracts

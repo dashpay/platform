@@ -86,7 +86,7 @@ pub struct DriveOperationContext {
 #[derive(Clone, Debug)]
 pub enum DriveOperation<'a> {
     /// A contract operation
-    ContractOperation(ContractOperationType<'a>),
+   DataContractOperation(ContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
     /// Withdrawal operation

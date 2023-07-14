@@ -25,7 +25,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 
 impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
-    fn from_raw_object(mut raw_object: Value) -> Result<IdentityUpdateTransitionV0, ProtocolError> {
+    fn from_object(mut raw_object: Value) -> Result<IdentityUpdateTransitionV0, ProtocolError> {
         let signature = raw_object
             .get_binary_data(SIGNATURE)
             .map_err(ProtocolError::ValueError)?;

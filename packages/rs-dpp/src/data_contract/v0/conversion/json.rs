@@ -32,6 +32,6 @@ impl DataContractJsonConversionMethodsV0 for DataContractV0 {
             DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
             ReplacementType::Identifier,
         )?;
-        Self::from_raw_object(value, platform_version)
+        Self::from_object(value, platform_version)
     }
 }

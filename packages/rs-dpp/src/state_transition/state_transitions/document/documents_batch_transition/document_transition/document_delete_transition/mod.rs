@@ -29,11 +29,11 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
     }
 
     #[cfg(feature = "platform-value")]
-    fn from_raw_object(
+    fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
-        let base = DocumentBaseTransition::from_raw_object(raw_transition, data_contract)?;
+        let base = DocumentBaseTransition::from_object(raw_transition, data_contract)?;
 
         Ok(DocumentDeleteTransition { base })
     }

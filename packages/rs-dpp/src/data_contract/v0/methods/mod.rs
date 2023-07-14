@@ -3,7 +3,7 @@ use crate::data_contract::data_contract_methods::base::DataContractBaseMethodsV0
 use crate::data_contract::data_contract_methods::document_schema::DataContractDocumentSchemaMethodsV0;
 use crate::data_contract::data_contract_methods::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentTypeMutRef, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DocumentName, JsonSchema, PropertyPath};
@@ -25,19 +25,28 @@ impl DataContractBaseMethodsV0 for DataContractV0 {
         self.document_types.get(document_type_name).is_some()
     }
 
-    fn optional_document_type_for_name<'a>(
+    fn optional_document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Option<DocumentTypeRef<'a>> {
+    ) -> Option<DocumentTypeRef> {
         self.document_types
             .get(document_type_name)
             .map(|document_type| document_type.as_ref())
     }
 
-    fn document_type_for_name<'a>(
+    fn optional_document_type_mut_for_name(
+        &mut self,
+        document_type_name: &str,
+    ) -> Option<DocumentTypeMutRef> {
+        self.document_types
+            .get_mut(document_type_name)
+            .map(|document_type| document_type.as_mut_ref())
+    }
+
+    fn document_type_for_name(
         &self,
         document_type_name: &str,
-    ) -> Result<DocumentTypeRef<'a>, ProtocolError> {
+    ) -> Result<DocumentTypeRef, ProtocolError> {
         Ok(self
             .document_types
             .get(document_type_name)

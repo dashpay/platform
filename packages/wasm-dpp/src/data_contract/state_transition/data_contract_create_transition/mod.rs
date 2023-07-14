@@ -67,7 +67,7 @@ impl DataContractCreateTransitionWasm {
         let transition_object = platform_value::to_value(parameters)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        DataContractCreateTransition::from_raw_object(transition_object)
+        DataContractCreateTransition::from_object(transition_object)
             .map(Into::into)
             .with_js_error()
     }

@@ -60,14 +60,14 @@ impl StateTransitionValueConvert for IdentityCreditWithdrawalTransition {
         }
     }
 
-    fn from_raw_object(
+    fn from_object(
         mut raw_object: Value,
     ) -> Result<IdentityCreditWithdrawalTransition, ProtocolError> {
         let version: u8 = raw_object
             .remove_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?;
         match version {
-            0 => Ok(IdentityCreditWithdrawalTransitionV0::from_raw_object(raw_object)?.into()),
+            0 => Ok(IdentityCreditWithdrawalTransitionV0::from_object(raw_object)?.into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreditWithdrawalTransition version {n}"
             ))),

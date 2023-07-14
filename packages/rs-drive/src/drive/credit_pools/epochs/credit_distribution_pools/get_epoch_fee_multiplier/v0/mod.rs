@@ -131,5 +131,4 @@ mod tests {
 
             assert_eq!(stored_multiplier, multiplier);
         }
-    }
 }

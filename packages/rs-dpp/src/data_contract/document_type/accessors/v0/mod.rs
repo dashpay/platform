@@ -37,6 +37,9 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;
+}
+
+pub trait DocumentTypeV0MutGetters {
 
     /// Returns a mutable reference to the indices of the document type.
     fn indices_mut(&mut self) -> &mut Vec<Index>;

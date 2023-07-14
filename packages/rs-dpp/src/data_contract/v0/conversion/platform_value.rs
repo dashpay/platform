@@ -30,7 +30,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
         Ok(value)
     }
 
-    fn from_raw_object(
+    fn from_object(
         raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {

@@ -66,7 +66,7 @@ mod tests {
     mod has_epoch_tree_exists {
         use super::*;
 
-        use crate::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+        use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 
         #[test]
         fn test_return_true_if_tree_exists() {

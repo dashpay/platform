@@ -153,7 +153,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let contract = Contract::from_cbor(serialized_contract)?;
+        let contract =DataContract::from_cbor(serialized_contract)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 

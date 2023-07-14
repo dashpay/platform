@@ -49,7 +49,7 @@ pub trait StateTransitionValueConvert: Serialize {
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         self.to_object(skip_signature)
     }
-    fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError>;
+    fn from_object(raw_object: Value) -> Result<Self, ProtocolError>;
     fn from_value_map(
         raw_data_contract_create_transition: BTreeMap<String, Value>,
     ) -> Result<Self, ProtocolError>;

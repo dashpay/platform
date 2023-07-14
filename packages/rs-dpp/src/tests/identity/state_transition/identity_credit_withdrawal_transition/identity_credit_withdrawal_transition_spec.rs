@@ -16,10 +16,10 @@ mod deserialization {
     use super::*;
 
     #[test]
-    fn from_raw_object() {
+    fn from_object() {
         let raw_object = identity_credit_withdrawal_transition_fixture_raw_object();
         let state_transition =
-            IdentityCreditWithdrawalTransition::from_raw_object(raw_object).unwrap();
+            IdentityCreditWithdrawalTransition::from_object(raw_object).unwrap();
 
         assert_eq!(
             state_transition.identity_id,
@@ -65,7 +65,7 @@ mod serialization {
     fn to_raw_object() {
         let raw_object = identity_credit_withdrawal_transition_fixture_raw_object();
         let state_transition =
-            IdentityCreditWithdrawalTransition::from_raw_object(raw_object).unwrap();
+            IdentityCreditWithdrawalTransition::from_object(raw_object).unwrap();
 
         assert_eq!(
             identity_credit_withdrawal_transition_fixture_raw_object(),

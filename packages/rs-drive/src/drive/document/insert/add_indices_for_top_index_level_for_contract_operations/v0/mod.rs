@@ -51,9 +51,9 @@ impl Drive {
 
         // we need to construct the path for documents on the contract
         // the path is
-        //  * Document and Contract root tree
-        //  * Contract ID recovered from document
-        //  * 0 to signify Documents and not Contract
+        //  * Document andDataContract root tree
+        //  *DataContract ID recovered from document
+        //  * 0 to signify Documents and notDataContract
         let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id().as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
@@ -98,7 +98,7 @@ impl Drive {
             index_path.push(Vec::from(name.as_bytes()));
 
             // with the example of the dashpay contract's first index
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId
+            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -166,7 +166,7 @@ impl Drive {
 
             // we push the actual value of the index path
             index_path_info.push(document_top_field)?;
-            // the index path is now something like Contracts/ContractID/Documents(1)/$ownerId/<ownerId>
+            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
             self.add_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,

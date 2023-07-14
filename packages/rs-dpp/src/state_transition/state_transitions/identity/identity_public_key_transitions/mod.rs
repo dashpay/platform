@@ -100,7 +100,7 @@ impl IdentityPublicKeyInCreation {
     }
 
     #[cfg(feature = "platform-value")]
-    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
+    pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
         raw_object.try_into().map_err(ProtocolError::ValueError)
     }
 

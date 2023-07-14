@@ -6,7 +6,6 @@ mod json_conversion;
 mod serialize;
 mod state_transition_like;
 mod v0;
-mod v0_action;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
@@ -114,7 +113,7 @@ mod test {
     pub(crate) fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None);
 
-        let state_transition = DataContractCreateTransition::from_raw_object(Value::from([
+        let state_transition = DataContractCreateTransition::from_object(Value::from([
             (
                 STATE_TRANSITION_PROTOCOL_VERSION,
                 LATEST_PLATFORM_VERSION

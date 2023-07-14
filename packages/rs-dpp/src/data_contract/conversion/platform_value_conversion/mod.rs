@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 
 impl DataContractValueConversionMethodsV0 for DataContract {
-    fn from_raw_object(
+    fn from_object(
         raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -17,9 +17,9 @@ impl DataContractValueConversionMethodsV0 for DataContract {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(DataContractV0::from_raw_object(raw_object, platform_version)?.into()),
+            0 => Ok(DataContractV0::from_object(raw_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::from_raw_object".to_string(),
+                method: "DataContract::from_object".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

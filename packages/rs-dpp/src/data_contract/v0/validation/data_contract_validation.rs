@@ -96,7 +96,7 @@ impl DataContractV0 {
             return Ok(result);
         }
 
-        let data_contract = Self::from_raw_object(raw_data_contract.clone())?;
+        let data_contract = Self::from_object(raw_data_contract.clone())?;
         let enriched_data_contract =
             data_contract.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
 

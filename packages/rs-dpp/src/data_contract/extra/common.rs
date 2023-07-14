@@ -110,7 +110,7 @@ pub fn json_document_to_contract_with_ids(
             platform_value::Value::Identifier(owner_id.into_buffer()),
         )?;
     }
-    DataContract::from_raw_object(value, platform_version)
+    DataContract::from_object(value, platform_version)
 }
 
 /// Reads a JSON file and converts it a document.

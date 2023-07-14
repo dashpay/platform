@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = Contract::default();
+        let contract =DataContract::default();
 
         let query_value = json!({
             "where": [
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = Contract::default();
+        let contract =DataContract::default();
 
         let query_value = json!({
             "where": [

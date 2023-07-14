@@ -1,7 +1,7 @@
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::util::cbor_serializer;
 use crate::ProtocolError;
-use ciborium::{Value as CborValue, Value};
+use ciborium::{Value as CborValue};
 
 pub trait IdentityPublicKeyCborConversionMethodsV0 {
     fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError>;

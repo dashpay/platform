@@ -27,7 +27,6 @@ pub struct StateTransitionSerializationVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DocumentFeatureVersionBounds {
     pub bounds: FeatureVersionBounds,
-    pub base_version_mapping: BTreeMap<FeatureVersion, FeatureVersion>,
 }
 
 #[derive(Clone, Debug, Default)]

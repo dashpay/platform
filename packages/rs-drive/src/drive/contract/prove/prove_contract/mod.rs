@@ -1,7 +1,5 @@
 mod v0;
 
-mod v0;
-
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::error::drive::DriveError;

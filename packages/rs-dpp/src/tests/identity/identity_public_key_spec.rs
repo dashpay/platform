@@ -1,4 +1,4 @@
-mod from_raw_object {
+mod from_object {
     use dashcore::PublicKey;
     use platform_value::platform_value;
     use platform_value::BinaryData;
@@ -92,7 +92,7 @@ mod from_raw_object {
             .try_into()
             .expect("expected to convert to IdentityPublicKey");
 
-        // let public_key = IdentityPublicKey::from_raw_object(public_key_json).unwrap();
+        // let public_key = IdentityPublicKey::from_object(public_key_json).unwrap();
 
         assert_eq!(public_key.id, 0);
         assert_eq!(public_key.key_type, KeyType::ECDSA_SECP256K1);

@@ -46,6 +46,7 @@ use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::identity::accessors::IdentityGettersV0;
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.

@@ -55,7 +55,7 @@ impl IdentityTopUpTransitionWasm {
         let raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
 
         let identity_topup_transition =
-            IdentityTopUpTransition::from_raw_object(raw_state_transition)
+            IdentityTopUpTransition::from_object(raw_state_transition)
                 .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         Ok(identity_topup_transition.into())

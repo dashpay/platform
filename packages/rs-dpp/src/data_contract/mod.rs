@@ -254,7 +254,7 @@ impl DataContract {
     }
 
     #[cfg(feature = "platform-value")]
-    pub fn from_raw_object(
+    pub fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContract, ProtocolError> {
@@ -279,7 +279,7 @@ impl DataContract {
                 }
             };
         match data_contract_system_version {
-            0 => Ok(DataContractV0::from_raw_object(raw_object, platform_version)?.into()),
+            0 => Ok(DataContractV0::from_object(raw_object, platform_version)?.into()),
             _ => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(BasicError::VersionError(
                     "system version found on data contract object".into(),

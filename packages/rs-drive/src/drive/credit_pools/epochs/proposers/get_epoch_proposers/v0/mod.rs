@@ -100,4 +100,3 @@ mod tests {
             assert_eq!(result, vec!((pro_tx_hash.to_vec(), block_count)));
         }
     }
-}

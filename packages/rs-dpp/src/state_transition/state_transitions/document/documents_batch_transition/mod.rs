@@ -45,16 +45,15 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod v0;
-mod v0_action;
 mod v0_methods;
 pub mod validation;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
 
 pub use v0::*;
-pub use v0_action::*;
+pub use crate::state_transition_action::document::documents_batch::v0::*;
 
-pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
+pub use action::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransitionAction};
 
 #[derive(
     Debug,
@@ -158,7 +157,7 @@ impl DocumentsBatchTransition {
     }
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
-    pub fn from_raw_object_with_contracts(
+    pub fn from_object_with_contracts(
         raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
@@ -549,7 +548,7 @@ mod test {
         },
     };
 
-    use super::{document_transition::Action, *};
+    use super::{*, document_transition::Action};
 
     #[test]
     fn should_return_highest_sec_level_for_all_transitions() {

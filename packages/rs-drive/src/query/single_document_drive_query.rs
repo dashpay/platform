@@ -7,7 +7,7 @@ use grovedb::{PathQuery, SizedQuery};
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct SingleDocumentDriveQuery {
-    /// Contract
+    ///DataContract
     pub contract_id: [u8; 32],
     /// Document type
     pub document_type_name: String,

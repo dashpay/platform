@@ -60,12 +60,12 @@ impl StateTransitionValueConvert for IdentityUpdateTransition {
         }
     }
 
-    fn from_raw_object(mut raw_object: Value) -> Result<IdentityUpdateTransition, ProtocolError> {
+    fn from_object(mut raw_object: Value) -> Result<IdentityUpdateTransition, ProtocolError> {
         let version: u8 = raw_object
             .remove_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?;
         match version {
-            0 => Ok(IdentityUpdateTransitionV0::from_raw_object(raw_object)?.into()),
+            0 => Ok(IdentityUpdateTransitionV0::from_object(raw_object)?.into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityUpdateTransition version {n}"
             ))),

@@ -14,7 +14,7 @@ pub struct CreatedDataContractV0 {
 
 impl CreatedDataContractV0 {
     #[cfg(feature = "platform-value")]
-    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
+    pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
         let mut raw_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
@@ -27,7 +27,7 @@ impl CreatedDataContractV0 {
             .remove_bytes_32(ENTROPY)
             .map_err(ProtocolError::ValueError)?;
 
-        let data_contract = DataContractV0::from_raw_object(raw_data_contract)?;
+        let data_contract = DataContractV0::from_object(raw_data_contract)?;
 
         Ok(Self {
             data_contract: data_contract.into(),

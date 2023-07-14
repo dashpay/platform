@@ -230,7 +230,7 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::from_raw_object(
+        let mut state_transition: StateTransition = IdentityCreateTransition::from_object(
             identity_create_transition_fixture(Some(private_key)),
         )
         .unwrap()
@@ -269,7 +269,7 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::from_raw_object(
+        let mut state_transition: StateTransition = IdentityCreateTransition::from_object(
             identity_create_transition_fixture(Some(private_key)),
         )
         .unwrap()

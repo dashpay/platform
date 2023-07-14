@@ -312,7 +312,7 @@ mod tests {
             drop(drive_cache);
 
             /*
-             * Contracts fetched with user query and during block execution must have equal costs
+             *DataContracts fetched with user query and during block execution must have equal costs
              */
 
             let deep_contract_fetch_info = drive

@@ -7,8 +7,8 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 pub struct DocumentAndContractInfo<'a> {
     /// Document info
     pub owned_document_info: OwnedDocumentInfo<'a>,
-    /// Contract
-    pub contract: &'a Contract,
+    ///DataContract
+    pub contract: &'a DataContract,
     /// Document type
     pub document_type: &'a DocumentTypeRef<'a>,
 }

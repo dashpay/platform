@@ -1,11 +1,9 @@
 mod v0;
 
-mod v0;
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::epoch::CreditsPerEpoch;
+use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::TransactionArg;
 use dpp::version::drive_versions::DriveVersion;
 

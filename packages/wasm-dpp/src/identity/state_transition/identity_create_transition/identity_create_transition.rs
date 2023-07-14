@@ -56,7 +56,7 @@ impl IdentityCreateTransitionWasm {
         let mut raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
         IdentityCreateTransition::clean_value(&mut raw_state_transition).with_js_error()?;
         let identity_create_transition =
-            IdentityCreateTransition::from_raw_object(raw_state_transition)
+            IdentityCreateTransition::from_object(raw_state_transition)
                 .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         Ok(identity_create_transition.into())

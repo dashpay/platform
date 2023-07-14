@@ -20,7 +20,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
 
-use crate::identity::v0::identity::IdentityV0;
+use crate::identity::v0::IdentityV0;
 use platform_value::Value;
 use std::sync::Arc;
 

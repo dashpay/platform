@@ -14,8 +14,6 @@ use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::data_contract::DataContract;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction};
 use dpp::version::drive_versions::DriveVersion;
 use crate::error::drive::DriveError;
 

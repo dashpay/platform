@@ -177,9 +177,9 @@ fn make_document_reference(
     }
     // 2 because the contract could allow for history
     // 4 because
-    // - ContractDocumentsTree
-    // - Contract ID
-    // - 1 Documents in Contract
+    // -DataContractDocumentsTree
+    // -DataContract ID
+    // - 1 Documents inDataContract
     // - DocumentType
     // We add 2 or 3
     // - 0 Storage

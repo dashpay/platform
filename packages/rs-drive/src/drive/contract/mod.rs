@@ -27,9 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-//! Drive Contracts.
+//! DriveDataContracts.
 //!
-//! This module defines functions pertinent to Contracts stored in Drive.
+//! This module defines functions pertinent toDataContracts stored in Drive.
 //!
 
 #[cfg(feature = "full")]
@@ -66,12 +66,10 @@ pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
-    use crate::contract::CreateRandomDocument;
     use rand::Rng;
     use std::option::Option::None;
     use tempfile::TempDir;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::DataContract;
 
     use super::*;
     use dpp::data_contract::DataContract;
@@ -141,7 +139,7 @@ mod tests {
         (drive, contract)
     }
 
-    fn setup_reference_contract() -> (Drive, Contract) {
+    fn setup_reference_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let drive_version = DriveVersion::latest();

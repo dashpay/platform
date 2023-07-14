@@ -7,7 +7,6 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod v0;
-mod v0_action;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;

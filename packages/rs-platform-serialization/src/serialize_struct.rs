@@ -20,6 +20,7 @@ pub(super) fn derive_platform_serialize_struct(
         platform_version_path,
         allow_prepend_version,
         force_prepend_version,
+        nested,
         ..
     } = version_attributes;
 
@@ -47,6 +48,20 @@ pub(super) fn derive_platform_serialize_struct(
         },
     };
 
+    let encode_body = if nested {
+        quote! { self.encode(encoder) }
+    } else {
+        quote! {}
+    };
+
+    let bincode_encode_body = quote! {
+        impl #impl_generics bincode::Encode for #name #ty_generics #where_clause {
+            fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
+                #encode_body
+            }
+        }
+    };
+
     let expanded = if let Some(limit) = platform_serialize_limit {
         quote! {
             impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
@@ -69,6 +84,7 @@ pub(super) fn derive_platform_serialize_struct(
                     }})
                 }
             }
+            #bincode_encode_body
         }
     } else {
         quote! {
@@ -88,6 +104,8 @@ pub(super) fn derive_platform_serialize_struct(
                     })
                 }
             }
+
+            #bincode_encode_body
         }
     };
 

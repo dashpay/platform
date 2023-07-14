@@ -431,7 +431,7 @@ mod test {
     async fn identity_create_transition_should_return_invalid_result_if_asset_lock_output_amount_is_not_enough(
     ) {
         let identity_create_transition =
-            IdentityCreateTransition::from_raw_object(identity_create_transition_fixture(None))
+            IdentityCreateTransition::from_object(identity_create_transition_fixture(None))
                 .unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
         let state_repository_mock = MockStateRepositoryLike::new();
@@ -464,7 +464,7 @@ mod test {
     #[tokio::test]
     async fn identity_create_transition_should_return_valid_result() {
         let identity_create_transition =
-            IdentityCreateTransition::from_raw_object(identity_create_transition_fixture(None))
+            IdentityCreateTransition::from_object(identity_create_transition_fixture(None))
                 .unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
         let state_repository_mock = MockStateRepositoryLike::new();

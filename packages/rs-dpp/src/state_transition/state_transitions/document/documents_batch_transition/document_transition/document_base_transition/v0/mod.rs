@@ -127,7 +127,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
     }
 
     #[cfg(feature = "platform-value")]
-    fn from_raw_object(
+    fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
@@ -207,7 +207,7 @@ pub trait DocumentTransitionObjectLike {
         Self: std::marker::Sized;
     #[cfg(feature = "platform-value")]
     /// Creates the document transition from Raw Object
-    fn from_raw_object(
+    fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>

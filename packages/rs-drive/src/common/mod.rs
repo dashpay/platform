@@ -71,7 +71,7 @@ pub fn setup_contract(
     path: &str,
     contract_id: Option<[u8; 32]>,
     transaction: TransactionArg,
-) -> Contract {
+) ->DataContract {
     let contract =
         json_document_to_contract_with_ids(path, contract_id.map(Identifier::from), None)
             .expect("expected to get cbor contract");
@@ -88,9 +88,9 @@ pub fn setup_contract_from_cbor_hex(
     drive: &Drive,
     hex_string: String,
     transaction: TransactionArg,
-) -> Contract {
+) ->DataContract {
     let contract_cbor = cbor_from_hex(hex_string);
-    let contract = Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
+    let contract =DataContract::from_cbor(&contract_cbor).expect("contract should be deserialized");
     drive
         .apply_contract_cbor(
             contract_cbor,

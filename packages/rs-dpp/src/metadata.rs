@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{errors::ProtocolError, prelude::TimestampMillis, util::deserializer::ProtocolVersion};
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd, Eq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, PartialOrd, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
     #[serde(default)]

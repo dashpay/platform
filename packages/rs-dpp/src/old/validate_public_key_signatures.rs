@@ -56,7 +56,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
         match transition_type {
             StateTransitionType::IdentityCreate => {
                 let transition =
-                    IdentityCreateTransition::from_raw_object(raw_state_transition.clone())
+                    IdentityCreateTransition::from_object(raw_state_transition.clone())
                         .map_err(|e| NonConsensusError::ObjectCreationError {
                             object_name: object_names::STATE_TRANSITION,
                             details: format!("{e:#}"),
@@ -65,7 +65,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
             }
             StateTransitionType::IdentityUpdate => {
                 let transition =
-                    IdentityUpdateTransition::from_raw_object(raw_state_transition.clone())
+                    IdentityUpdateTransition::from_object(raw_state_transition.clone())
                         .map_err(|e| NonConsensusError::ObjectCreationError {
                             object_name: object_names::STATE_TRANSITION,
                             details: format!("{e:#}"),
@@ -83,7 +83,7 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let add_public_key_transitions: Vec<IdentityPublicKeyInCreation> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyInCreation::from_raw_object(k.to_owned())
+            IdentityPublicKeyInCreation::from_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;

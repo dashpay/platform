@@ -44,9 +44,6 @@ pub struct AbciStructureVersion {
 pub struct DataContractFactoryVersion {
     /// The bounds that the protocol version supports
     pub bounds: FeatureVersionBounds,
-    /// This is to example say that the factory version 0 supports data contracts version 0 to 3
-    /// Then version 1 supports data contracts 4 to 7
-    pub allowed_contract_bounds_mapping: BTreeMap<FeatureVersion, FeatureVersionBounds>,
 }
 
 #[derive(Clone, Debug, Default)]

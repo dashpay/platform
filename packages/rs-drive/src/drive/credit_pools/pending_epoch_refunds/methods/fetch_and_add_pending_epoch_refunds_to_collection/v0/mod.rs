@@ -3,7 +3,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::credits::Creditable;
-use crate::fee::epoch::CreditsPerEpoch;
+use dpp::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
 use grovedb::query_result_type::QueryResultType;

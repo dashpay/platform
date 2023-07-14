@@ -69,7 +69,7 @@ impl DataContractUpdateTransitionWasm {
         let raw_data_contract_update_transition = platform_value::to_value(parameters)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        DataContractUpdateTransition::from_raw_object(raw_data_contract_update_transition)
+        DataContractUpdateTransition::from_object(raw_data_contract_update_transition)
             .map(Into::into)
             .with_js_error()
     }

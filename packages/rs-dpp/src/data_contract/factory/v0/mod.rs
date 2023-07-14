@@ -159,7 +159,7 @@ impl DataContractFactoryV0 {
             self.data_contract_feature_version
         };
         match version {
-            0 => Ok(DataContractV0::from_raw_object(data_contract_object)?.into()),
+            0 => Ok(DataContractV0::from_object(data_contract_object)?.into()),
             _ => Err(ProtocolError::UnknownVersionError(
                 "unknown contract version when creating from object in factory".to_string(),
             )),
