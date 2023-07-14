@@ -1,4 +1,3 @@
-mod action;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "json-object")]

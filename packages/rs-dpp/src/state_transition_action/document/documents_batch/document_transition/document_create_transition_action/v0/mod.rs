@@ -1,3 +1,5 @@
+mod transformer;
+
 use crate::document::Document;
 use crate::identity::TimestampMillis;
 use platform_value::{Identifier, Value};

@@ -27,7 +27,6 @@ pub mod fee;
 
 mod serialization;
 mod signing;
-mod state_transition_action;
 mod state_transitions;
 mod traits;
 

@@ -1,7 +1,7 @@
+#[cfg(feature = "state-transition-transformers")]
 mod transformer;
 
 use crate::fee::Credits;
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
@@ -13,34 +13,3 @@ pub struct IdentityCreditTransferTransitionActionV0 {
     pub identity_id: Identifier,
 }
 
-impl From<IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransitionActionV0 {
-    fn from(value: IdentityCreditTransferTransitionV0) -> Self {
-        let IdentityCreditTransferTransitionV0 {
-            identity_id,
-            recipient_id,
-            amount,
-            ..
-        } = value;
-        IdentityCreditTransferTransitionActionV0 {
-            identity_id,
-            recipient_id,
-            transfer_amount: amount,
-        }
-    }
-}
-
-impl From<&IdentityCreditTransferTransitionV0> for IdentityCreditTransferTransitionActionV0 {
-    fn from(value: &IdentityCreditTransferTransitionV0) -> Self {
-        let IdentityCreditTransferTransitionV0 {
-            identity_id,
-            recipient_id,
-            amount,
-            ..
-        } = value;
-        IdentityCreditTransferTransitionActionV0 {
-            identity_id: *identity_id,
-            recipient_id: *recipient_id,
-            transfer_amount: *amount,
-        }
-    }
-}

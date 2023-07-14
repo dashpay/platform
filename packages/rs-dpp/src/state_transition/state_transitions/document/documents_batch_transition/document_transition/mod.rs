@@ -12,7 +12,6 @@ use crate::{
 };
 use document_base_transition::DocumentBaseTransition;
 
-mod action;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
@@ -32,7 +31,7 @@ pub use crate::state_transition_action::document::documents_batch::document_tran
 pub use crate::state_transition_action::document::documents_batch::document_transition::::DocumentDeleteTransitionAction;
 pub use crate::state_transition_action::document::documents_batch::document_transition::::DocumentReplaceTransitionAction;
 
-pub use action::{DOCUMENT_TRANSITION_ACTION_VERSION, DocumentTransitionAction};
+pub use crate::state_transition_action::document::documents_batch::action::{DOCUMENT_TRANSITION_ACTION_VERSION, DocumentTransitionAction};
 
 pub const PROPERTY_ACTION: &str = "$action";
 

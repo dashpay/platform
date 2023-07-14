@@ -18,9 +18,9 @@ pub enum DocumentCreateTransitionAction {
     V0(DocumentCreateTransitionActionV0),
 }
 
-impl Default for DocumentBaseTransitionAction {
+impl Default for DocumentCreateTransitionAction {
     fn default() -> Self {
-        DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0::default())
+        DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0::default())
         // since only v0
     }
 }

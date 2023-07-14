@@ -15,8 +15,6 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-mod action;
-
 mod fields;
 mod identity_signed;
 #[cfg(feature = "json-object")]

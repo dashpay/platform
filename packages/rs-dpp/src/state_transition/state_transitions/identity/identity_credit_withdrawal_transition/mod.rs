@@ -1,6 +1,5 @@
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 
-mod action;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "json-object")]
