@@ -1,12 +1,12 @@
 mod v0;
 
-use grovedb::{PathQuery, TransactionArg};
-use grovedb::query_result_type::PathKeyOptionalElementTrio;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::query_result_type::PathKeyOptionalElementTrio;
+use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
     /// Retrieves the raw results of a path query from GroveDB with optional elements.
@@ -28,8 +28,16 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Vec<PathKeyOptionalElementTrio>, Error> {
-        match drive_version.grove_methods.basic.grove_get_raw_path_query_with_optional {
-            0 => self.grove_get_raw_path_query_with_optional_v0(path_query, transaction, drive_operations),
+        match drive_version
+            .grove_methods
+            .basic
+            .grove_get_raw_path_query_with_optional
+        {
+            0 => self.grove_get_raw_path_query_with_optional_v0(
+                path_query,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_raw_path_query_with_optional".to_string(),
                 known_versions: vec![0],

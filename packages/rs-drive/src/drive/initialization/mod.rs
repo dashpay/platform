@@ -40,22 +40,30 @@ use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
-use dpp::version::drive_versions::DriveVersion;
 
 use super::identity::add_initial_withdrawal_state_structure_operations;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub fn create_initial_state_structure(&self, transaction: TransactionArg, drive_version: &DriveVersion,) -> Result<(), Error> {
-        match drive_version.methods.initialization.create_initial_state_structure {
+    pub fn create_initial_state_structure(
+        &self,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        match drive_version
+            .methods
+            .initialization
+            .create_initial_state_structure
+        {
             0 => self.create_initial_state_structure_0(transaction),
             version => Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "create_initial_state_structure".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })
+            }),
         }
     }
 }

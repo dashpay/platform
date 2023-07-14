@@ -1,9 +1,9 @@
-use std::convert::TryInto;
-use platform_value::Value;
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
-use crate::identity::{IdentityV0, property_names};
-use crate::ProtocolError;
+use crate::identity::{property_names, IdentityV0};
 use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::Value;
+use std::convert::TryInto;
 
 impl IdentityPlatformValueConversionMethodsV0 for IdentityV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
@@ -25,12 +25,11 @@ impl IdentityPlatformValueConversionMethodsV0 for IdentityV0 {
         Ok(value)
     }
 
-
-
     /// Creates an identity from a raw object
-    fn from_object(raw_object: Value, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+    fn from_object(
+        raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         raw_object.try_into()
     }
 }
-
-

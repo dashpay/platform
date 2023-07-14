@@ -28,7 +28,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        match drive_version.methods.credit_pools.epochs.is_epochs_proposers_tree_empty {
+        match drive_version
+            .methods
+            .credit_pools
+            .epochs
+            .is_epochs_proposers_tree_empty
+        {
             0 => self.is_epochs_proposers_tree_empty_v0(epoch_tree, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "is_epochs_proposers_tree_empty".to_string(),
@@ -39,26 +44,24 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-        use dpp::block::epoch::Epoch;
-    use dpp::version::drive_versions::DriveVersion;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::drive_versions::DriveVersion;
 
-        #[test]
-        fn test_check_if_empty() {
-            let drive = setup_drive_with_initial_state_structure();
-            let drive_version = DriveVersion::default();
-            let transaction = drive.grove.start_transaction();
+    #[test]
+    fn test_check_if_empty() {
+        let drive = setup_drive_with_initial_state_structure();
+        let drive_version = DriveVersion::default();
+        let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0).unwrap();
+        let epoch = Epoch::new(0).unwrap();
 
-            let result = drive
-                .is_epochs_proposers_tree_empty(&epoch, Some(&transaction), &drive_version)
-                .expect("should check if tree is empty");
+        let result = drive
+            .is_epochs_proposers_tree_empty(&epoch, Some(&transaction), &drive_version)
+            .expect("should check if tree is empty");
 
-            assert!(result);
-        }
+        assert!(result);
+    }
 }
-

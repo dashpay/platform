@@ -1,6 +1,6 @@
+use crate::drive::object_size_info::OwnedDocumentInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use crate::drive::object_size_info::OwnedDocumentInfo;
 
 /// Document and contract info
 #[derive(Clone, Debug)]

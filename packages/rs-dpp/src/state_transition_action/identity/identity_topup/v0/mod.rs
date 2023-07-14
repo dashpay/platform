@@ -16,4 +16,3 @@ pub struct IdentityTopUpTransitionActionV0 {
     pub identity_id: Identifier,
     pub asset_lock_outpoint: Bytes36,
 }
-

@@ -1,19 +1,19 @@
-use std::collections::{HashMap, HashSet};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::batch::KeyInfoPath;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::DataContract;
-use dpp::serialization_traits::PlatformSerializable;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::drive::contract::paths;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
+use dpp::fee::fee_result::FeeResult;
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::{HashMap, HashSet};
 
 impl Drive {
     /// Insert a contract.
@@ -212,7 +212,7 @@ impl Drive {
             Self::add_estimation_costs_for_contract_insertion(
                 contract,
                 estimated_costs_only_with_layer_info,
-                drive_version
+                drive_version,
             )?;
         }
 

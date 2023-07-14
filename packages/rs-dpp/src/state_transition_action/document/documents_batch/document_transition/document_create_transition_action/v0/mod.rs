@@ -1,6 +1,7 @@
-mod transformer;
+#[cfg(feature = "state-transition-transformers")]
+pub mod transformer;
 
-use crate::document::Document;
+use crate::document::{Document, DocumentV0};
 use crate::identity::TimestampMillis;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
@@ -9,11 +10,11 @@ use crate::ProtocolError;
 use serde::{Deserialize, Serialize};
 use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
-use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use crate::version::PlatformVersion;
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct DocumentCreateTransitionActionV0 {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction,
@@ -26,40 +27,13 @@ pub struct DocumentCreateTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
 }
 
-impl From<DocumentCreateTransitionV0> for DocumentCreateTransitionActionV0 {
-    fn from(value: DocumentCreateTransitionV0) -> Self {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = value;
-        DocumentCreateTransitionActionV0 {
-            base: base.into(),
-            created_at,
-            updated_at,
-            data: data.unwrap_or_default(),
-        }
-    }
-}
-
-impl From<&DocumentCreateTransitionV0> for DocumentCreateTransitionActionV0 {
-    fn from(value: &DocumentCreateTransitionV0) -> Self {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = value;
-        DocumentCreateTransitionActionV0 {
-            base: base.into(),
-            created_at: *created_at,
-            updated_at: *updated_at,
-            data: data.clone().unwrap_or_default(),
-        }
-    }
+pub trait DocumentCreateTransitionActionAccessorsV0 {
+    fn base(&self) -> &DocumentBaseTransitionAction;
+    fn base_owned(self) -> DocumentBaseTransitionAction;
+    fn created_at(&self) -> Option<TimestampMillis>;
+    fn updated_at(&self) -> Option<TimestampMillis>;
+    fn data(&self) -> &BTreeMap<String, Value>;
+    fn data_owned(self) -> BTreeMap<String, Value>;
 }
 
 impl Document {
@@ -74,33 +48,51 @@ impl Document {
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
     pub(crate) fn try_from_create_transition_v0(
-        value: &DocumentCreateTransitionActionV0,
+        v0: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let DocumentCreateTransitionActionV0 {
             base,
             created_at,
             updated_at,
             data,
-        } = value;
+        } = v0;
 
-        let DocumentBaseTransitionActionV0 {
-            id,
-            document_type_name,
-            data_contract,
-            ..
-        } = base;
+        match base {
+            DocumentBaseTransitionAction::V0(base_v0) => {
+                let DocumentBaseTransitionActionV0 {
+                    id,
+                    document_type_name,
+                    data_contract,
+                    ..
+                } = base_v0;
 
-        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type =
+                    data_contract.document_type_for_name(document_type_name.as_str())?;
 
-        Ok(Document {
-            id: *id,
-            owner_id,
-            properties: data.clone(),
-            revision: document_type.initial_revision(),
-            created_at: created_at.clone(),
-            updated_at: updated_at.clone(),
-        })
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_structure_version
+                {
+                    0 => Ok(DocumentV0 {
+                        id: *id,
+                        owner_id,
+                        properties: data.clone(),
+                        revision: document_type.initial_revision(),
+                        created_at: created_at.clone(),
+                        updated_at: updated_at.clone(),
+                    }
+                    .into()),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_create_transition_v0".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
     }
 
     /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
@@ -113,33 +105,51 @@ impl Document {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    pub fn try_from_owned_create_transition(
-        value: DocumentCreateTransitionAction,
+    pub(crate) fn try_from_owned_create_transition_v0(
+        v0: DocumentCreateTransitionActionV0,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let DocumentCreateTransitionAction {
+        let DocumentCreateTransitionActionV0 {
             base,
             created_at,
             updated_at,
             data,
-        } = value;
+        } = v0;
 
-        let DocumentBaseTransitionAction {
-            id,
-            document_type_name,
-            data_contract,
-            ..
-        } = base;
+        match base {
+            DocumentBaseTransitionAction::V0(base_v0) => {
+                let DocumentBaseTransitionActionV0 {
+                    id,
+                    document_type_name,
+                    data_contract,
+                    ..
+                } = base_v0;
 
-        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type =
+                    data_contract.document_type_for_name(document_type_name.as_str())?;
 
-        Ok(Document {
-            id,
-            owner_id,
-            properties: data,
-            revision: document_type.initial_revision(),
-            created_at,
-            updated_at,
-        })
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_structure_version
+                {
+                    0 => Ok(DocumentV0 {
+                        id,
+                        owner_id,
+                        properties: data,
+                        revision: document_type.initial_revision(),
+                        created_at,
+                        updated_at,
+                    }
+                    .into()),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "Document::try_from_owned_create_transition_v0".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
     }
 }

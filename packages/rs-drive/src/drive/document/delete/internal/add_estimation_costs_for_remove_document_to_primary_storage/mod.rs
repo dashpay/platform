@@ -1,20 +1,18 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES,
-    AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
-    DEFAULT_HASH_SIZE_U8,
+    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_HASH_SIZE_U8,
 };
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimated costs for removing a document to primary storage.
@@ -34,12 +32,19 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.delete.add_estimation_costs_for_remove_document_to_primary_storage {
-            0 => Ok(Self::add_estimation_costs_for_remove_document_to_primary_storage_v0(
-                primary_key_path,
-                document_type,
-                estimated_costs_only_with_layer_info,
-            )),
+        match drive_version
+            .methods
+            .document
+            .delete
+            .add_estimation_costs_for_remove_document_to_primary_storage
+        {
+            0 => Ok(
+                Self::add_estimation_costs_for_remove_document_to_primary_storage_v0(
+                    primary_key_path,
+                    document_type,
+                    estimated_costs_only_with_layer_info,
+                ),
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_remove_document_to_primary_storage".to_string(),
                 known_versions: vec![0],

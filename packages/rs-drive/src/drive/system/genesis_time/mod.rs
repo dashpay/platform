@@ -34,8 +34,8 @@
 
 use crate::drive::Drive;
 use crate::error::Error;
-use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::block::epoch::Epoch;
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use grovedb::TransactionArg;
 
 impl Drive {

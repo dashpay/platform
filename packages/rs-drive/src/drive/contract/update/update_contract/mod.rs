@@ -1,22 +1,22 @@
 mod v0;
 
-use std::collections::{HashMap, HashSet};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::batch::KeyInfoPath;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::DataContract;
-use dpp::serialization_traits::PlatformSerializable;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::{contract_documents_path, Drive};
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
+use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
+use dpp::fee::fee_result::FeeResult;
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::{HashMap, HashSet};
 
 impl Drive {
     /// Updates a data contract.
@@ -62,7 +62,6 @@ impl Drive {
         }
     }
 
-
     /// Updates a contract element.
     ///
     /// This function updates a given element in a contract. The version of
@@ -101,7 +100,15 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.methods.contract.update.update_contract {
-            0 => self.update_contract_element_v0(contract_element, contract, original_contract, block_info, transaction, drive_operations, drive_version),
+            0 => self.update_contract_element_v0(
+                contract_element,
+                contract,
+                original_contract,
+                block_info,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_element".to_string(),
                 known_versions: vec![0],
@@ -153,7 +160,16 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.methods.contract.update.update_contract {
-            0 => self.update_contract_add_operations_v0(contract_element, contract, original_contract, block_info, estimated_costs_only_with_layer_info, transaction, drive_operations, drive_version),
+            0 => self.update_contract_add_operations_v0(
+                contract_element,
+                contract,
+                original_contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_add_operations".to_string(),
                 known_versions: vec![0],
@@ -202,7 +218,15 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match drive_version.methods.contract.update.update_contract {
-            0 => self.update_contract_operations_v0(contract_element, contract, original_contract, block_info, estimated_costs_only_with_layer_info, transaction, drive_version),
+            0 => self.update_contract_operations_v0(
+                contract_element,
+                contract,
+                original_contract,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_operations".to_string(),
                 known_versions: vec![0],

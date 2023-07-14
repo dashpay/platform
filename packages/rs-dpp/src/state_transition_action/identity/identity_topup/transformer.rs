@@ -1,7 +1,7 @@
 use crate::consensus::ConsensusError;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
+use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 
 impl IdentityTopUpTransitionAction {
     pub fn try_from(

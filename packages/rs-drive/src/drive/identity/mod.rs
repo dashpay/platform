@@ -68,9 +68,9 @@ mod update;
 #[cfg(feature = "full")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
+use crate::drive::Drive;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use fetch::queries::*;
-use crate::drive::Drive;
 
 #[cfg(feature = "full")]
 pub(crate) const IDENTITY_KEY: [u8; 1] = [0];

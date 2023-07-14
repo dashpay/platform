@@ -25,10 +25,7 @@ impl DataContractBaseMethodsV0 for DataContractV0 {
         self.document_types.get(document_type_name).is_some()
     }
 
-    fn optional_document_type_for_name(
-        &self,
-        document_type_name: &str,
-    ) -> Option<DocumentTypeRef> {
+    fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<DocumentTypeRef> {
         self.document_types
             .get(document_type_name)
             .map(|document_type| document_type.as_ref())

@@ -1,14 +1,14 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Removes the document from primary storage.
@@ -37,18 +37,21 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.delete.remove_document_from_primary_storage {
-            0 => {
-                self.remove_document_from_primary_storage_v0(
-                    document_id,
-                    document_type,
-                    contract_documents_primary_key_path,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    batch_operations,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .delete
+            .remove_document_from_primary_storage
+        {
+            0 => self.remove_document_from_primary_storage_v0(
+                document_id,
+                document_type,
+                contract_documents_primary_key_path,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_document_from_primary_storage".to_string(),
                 known_versions: vec![0],

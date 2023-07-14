@@ -61,5 +61,5 @@ pub enum Error {
     Value(#[from] ValueError),
     ///DataContract error
     #[error("contract: {0}")]
-   DataContract(#[from]DataContractError),
+    DataContract(#[from] DataContractError),
 }

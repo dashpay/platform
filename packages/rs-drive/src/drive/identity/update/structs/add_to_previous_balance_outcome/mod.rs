@@ -1,13 +1,14 @@
+use crate::drive::identity::update::structs::add_to_previous_balance_outcome::v0::{
+    AddToPreviousBalanceOutcomeV0, AddToPreviousBalanceOutcomeV0Methods,
+};
 use dpp::fee::Credits;
-use crate::drive::identity::update::structs::add_to_previous_balance_outcome::v0::{AddToPreviousBalanceOutcomeV0, AddToPreviousBalanceOutcomeV0Methods};
 
 mod v0;
 
 /// The outcome of paying for a fee
 pub(in crate::drive::identity::update) enum AddToPreviousBalanceOutcome {
-    V0(AddToPreviousBalanceOutcomeV0)
+    V0(AddToPreviousBalanceOutcomeV0),
 }
-
 
 impl AddToPreviousBalanceOutcomeV0Methods for AddToPreviousBalanceOutcome {
     fn balance_modified(&self) -> Option<Credits> {

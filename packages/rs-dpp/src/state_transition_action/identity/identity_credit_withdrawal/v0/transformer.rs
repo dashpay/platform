@@ -1,8 +1,8 @@
-use platform_value::platform_value;
 use crate::contracts::withdrawals_contract;
-use crate::document::{DocumentV0, generate_document_id};
+use crate::document::{generate_document_id, DocumentV0};
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
+use platform_value::platform_value;
 
 impl IdentityCreditWithdrawalTransitionActionV0 {
     pub fn from_identity_credit_withdrawal(
@@ -32,7 +32,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
             created_at: Some(creation_time_ms),
             updated_at: Some(creation_time_ms),
         }
-            .into();
+        .into();
 
         IdentityCreditWithdrawalTransitionActionV0 {
             identity_id: identity_credit_withdrawal.identity_id,

@@ -1,4 +1,3 @@
-
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
@@ -41,68 +40,75 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use grovedb::Element;
-    use dpp::block::epoch::Epoch;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use grovedb::Element;
 
-        use dpp::version::drive_versions::DriveVersion;
     use crate::error::Error;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::fee_pools::epochs::paths::EpochProposers;
+    use dpp::version::drive_versions::DriveVersion;
 
     #[test]
-        fn test_error_if_value_has_invalid_length_v0() {
-            let drive = setup_drive_with_initial_state_structure();
-            let drive_version = DriveVersion::default();
-            let transaction = drive.grove.start_transaction();
+    fn test_error_if_value_has_invalid_length_v0() {
+        let drive = setup_drive_with_initial_state_structure();
+        let drive_version = DriveVersion::default();
+        let transaction = drive.grove.start_transaction();
 
-            let pro_tx_hash: [u8; 32] = rand::random();
+        let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = Epoch::new(0).unwrap();
+        let epoch = Epoch::new(0).unwrap();
 
-            let mut batch = GroveDbOpBatch::new();
+        let mut batch = GroveDbOpBatch::new();
 
-            batch.push(epoch.init_proposers_tree_operation());
+        batch.push(epoch.init_proposers_tree_operation());
 
-            batch.add_insert(
-                epoch.get_proposers_path_vec(),
-                pro_tx_hash.to_vec(),
-                Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
-            );
+        batch.add_insert(
+            epoch.get_proposers_path_vec(),
+            pro_tx_hash.to_vec(),
+            Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
+        );
 
-            drive
-                .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
-                .expect("should apply batch");
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
+            .expect("should apply batch");
 
-            let result =
-                drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction), &drive_version);
+        let result = drive.get_epochs_proposer_block_count(
+            &epoch,
+            &pro_tx_hash,
+            Some(&transaction),
+            &drive_version,
+        );
 
-            assert!(matches!(
-                result,
-                Err(Error::Drive(DriveError::CorruptedSerialization(_),))
-            ));
-        }
+        assert!(matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedSerialization(_),))
+        ));
+    }
 
-        #[test]
-        fn test_error_if_epoch_tree_is_not_initiated_v0() {
-            let drive = setup_drive_with_initial_state_structure();
-            let drive_version = DriveVersion::default();
-            let transaction = drive.grove.start_transaction();
+    #[test]
+    fn test_error_if_epoch_tree_is_not_initiated_v0() {
+        let drive = setup_drive_with_initial_state_structure();
+        let drive_version = DriveVersion::default();
+        let transaction = drive.grove.start_transaction();
 
-            let pro_tx_hash: [u8; 32] = rand::random();
+        let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = Epoch::new(7000).unwrap();
+        let epoch = Epoch::new(7000).unwrap();
 
-            let result =
-                drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction), &drive_version);
+        let result = drive.get_epochs_proposer_block_count(
+            &epoch,
+            &pro_tx_hash,
+            Some(&transaction),
+            &drive_version,
+        );
 
-            assert!(matches!(
-                result,
-                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
-            ));
-        }
+        assert!(matches!(
+            result,
+            Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+        ));
+    }
 }

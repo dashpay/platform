@@ -1,7 +1,7 @@
 mod v0;
 
-use std::ops::Range;
 use grovedb::{Element, TransactionArg};
+use std::ops::Range;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -34,8 +34,18 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u64>, Error> {
-        match drive_version.methods.credit_pools.epochs.get_storage_credits_for_distribution_for_epochs_in_range {
-            0 => Ok(self.get_storage_credits_for_distribution_for_epochs_in_range_v0(epoch_range, transaction)),
+        match drive_version
+            .methods
+            .credit_pools
+            .epochs
+            .get_storage_credits_for_distribution_for_epochs_in_range
+        {
+            0 => Ok(
+                self.get_storage_credits_for_distribution_for_epochs_in_range_v0(
+                    epoch_range,
+                    transaction,
+                ),
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_storage_credits_for_distribution_for_epochs_in_range".to_string(),
                 known_versions: vec![0],

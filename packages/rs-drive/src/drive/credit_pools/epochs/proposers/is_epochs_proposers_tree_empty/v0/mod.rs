@@ -1,4 +1,3 @@
-
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
@@ -7,7 +6,6 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
-
 
 impl Drive {
     /// Returns true if the Epoch's Proposers Tree is empty

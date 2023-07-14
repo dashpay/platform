@@ -35,7 +35,6 @@
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
-use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -43,6 +42,7 @@ use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 
 use dpp::document::Document;
 
@@ -222,7 +222,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let contract =DataContract::from_cbor(contract_cbor)?;
+        let contract = DataContract::from_cbor(contract_cbor)?;
         //todo cbor cost
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 

@@ -1,6 +1,6 @@
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use crate::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
+use crate::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 
 impl From<IdentityCreditTransferTransition> for IdentityCreditTransferTransitionAction {
     fn from(value: IdentityCreditTransferTransition) -> Self {

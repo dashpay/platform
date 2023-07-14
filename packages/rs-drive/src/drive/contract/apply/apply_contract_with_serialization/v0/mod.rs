@@ -1,24 +1,24 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
+use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
+use crate::drive::flags::StorageFlags;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::{DirectQueryType, QueryType};
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fee::calculate_fee;
+use crate::fee::op::LowLevelDriveOperation;
+use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 use dpp::serialization_traits::PlatformDeserializable;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
-use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
-use crate::drive::Drive;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{DirectQueryType, QueryType};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a contract and returns the fee for applying.
@@ -60,8 +60,6 @@ impl Drive {
         let fees = calculate_fee(None, Some(cost_operations), &block_info.epoch)?;
         Ok(fees)
     }
-
-
 
     /// Gets the operations for applying a contract with it's serialization
     /// If the contract already exists, we get operations for an update

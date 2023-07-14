@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use crate::drive::Drive;
+use crate::error::Error;
+use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
-use dpp::identity::{IdentityPublicKey, Purpose};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::error::Error;
+use std::collections::HashMap;
 
 impl Drive {
     /// Insert a new non unique key into an identity operations

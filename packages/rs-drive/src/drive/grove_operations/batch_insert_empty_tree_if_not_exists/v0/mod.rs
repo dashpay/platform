@@ -1,15 +1,17 @@
-use grovedb::query_result_type::PathKey;
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::PathKeyInfo;
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
+use crate::drive::object_size_info::PathKeyInfo::{
+    PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
+};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::query_result_type::PathKey;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.

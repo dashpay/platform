@@ -29,15 +29,16 @@ use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
 #[cfg(feature = "full")]
-use dpp::fee::default_costs::EpochCosts;
-#[cfg(feature = "full")]
-use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
-#[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::query::{Query, QueryItem};
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
+#[cfg(feature = "full")]
+use dpp::fee::default_costs::EpochCosts;
+#[cfg(feature = "full")]
+use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
+use dpp::fee::Credits;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
 use dpp::identity::IDENTITY_MAX_KEYS;
@@ -63,7 +64,6 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
-use dpp::fee::Credits;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting
@@ -773,7 +773,6 @@ impl IdentityKeysRequest {
     }
 }
 
-
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
@@ -795,7 +794,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity( None,5, Some(12345));
+        let identity = Identity::random_identity(None, 5, Some(12345));
 
         drive
             .add_new_identity(
@@ -824,7 +823,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity( None,5, Some(12345));
+        let identity = Identity::random_identity(None, 5, Some(12345));
 
         drive
             .add_new_identity(
@@ -861,7 +860,7 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(None,5, Some(12345));
+        let identity = Identity::random_identity(None, 5, Some(12345));
 
         drive
             .add_new_identity(
@@ -906,7 +905,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                &drive_version
+                &drive_version,
             )
             .expect("expected to insert identity");
 

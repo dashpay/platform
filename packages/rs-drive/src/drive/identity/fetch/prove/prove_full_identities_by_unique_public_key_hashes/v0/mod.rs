@@ -2,20 +2,22 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use grovedb::{PathQuery, TransactionArg};
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
-
     /// Given public key hashes, fetches full identities as proofs.
     pub(super) fn prove_full_identities_by_unique_public_key_hashes_v0(
         &self,
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
-        drive_version: &DriveVersion
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        let identity_ids =
-            self.fetch_identity_ids_by_unique_public_key_hashes(public_key_hashes, transaction, drive_version)?;
+        let identity_ids = self.fetch_identity_ids_by_unique_public_key_hashes(
+            public_key_hashes,
+            transaction,
+            drive_version,
+        )?;
         let path_queries = identity_ids
             .into_iter()
             .map(|(public_key_hash, maybe_identity_id)| {
@@ -36,12 +38,11 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::extended_block_info::BlockInfo;
     use dpp::identity::Identity;
     use std::collections::BTreeMap;
-    use crate::drive::Drive;
-
 
     #[test]
     fn should_prove_multiple_identities() {

@@ -1,18 +1,16 @@
 mod v0;
 
-
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::block_info::BlockInfo;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::document::insert::add_document_for_contract_apply_and_add_to_operations::params::AddDocumentForContractApplyAndAddToOperationsParams;
-use crate::drive::Drive;
 use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-
+use dpp::block::block_info::BlockInfo;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Performs the operations to add a document to a contract.
@@ -42,19 +40,22 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.insert.add_document_for_contract_apply_and_add_to_operations {
-            0 => {
-                self.add_document_for_contract_apply_and_add_to_operations_v0(
-                    document_and_contract_info,
-                    override_document,
-                    block_info,
-                    document_is_unique_for_document_type_in_batch,
-                    stateful,
-                    transaction,
-                    drive_operations,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .insert
+            .add_document_for_contract_apply_and_add_to_operations
+        {
+            0 => self.add_document_for_contract_apply_and_add_to_operations_v0(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                document_is_unique_for_document_type_in_batch,
+                stateful,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_for_contract_apply_and_add_to_operations".to_string(),
                 known_versions: vec![0],

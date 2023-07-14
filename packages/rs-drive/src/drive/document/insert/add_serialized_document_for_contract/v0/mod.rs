@@ -1,16 +1,16 @@
-use std::borrow::Cow;
-use grovedb::TransactionArg;
-use serde::Deserialize;
-use dpp::block::block_info::BlockInfo;
-use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::data_contract::DataContract;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
+use dpp::document::Document;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use serde::Deserialize;
+use std::borrow::Cow;
 
 impl Drive {
     /// Deserializes a document and adds it to a contract.

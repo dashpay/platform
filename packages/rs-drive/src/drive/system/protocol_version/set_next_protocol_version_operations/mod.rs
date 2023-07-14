@@ -1,17 +1,17 @@
 mod v0;
 
-use grovedb::{Element, TransactionArg};
-use integer_encoding::VarInt;
-use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::drive::system::misc_path;
 use crate::drive::system::misc_tree_constants::NEXT_PROTOCOL_VERSION_STORAGE_KEY;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::{Element, TransactionArg};
+use integer_encoding::VarInt;
 
 impl Drive {
     /// Sets the next protocol version
@@ -37,8 +37,18 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.platform_system.protocol_version.set_next_protocol_version_operations {
-            0 => self.set_next_protocol_version_operations_v0(protocol_version, transaction, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .platform_system
+            .protocol_version
+            .set_next_protocol_version_operations
+        {
+            0 => self.set_next_protocol_version_operations_v0(
+                protocol_version,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "set_next_protocol_version_operations".to_string(),
                 known_versions: vec![0],

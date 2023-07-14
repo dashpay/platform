@@ -1,10 +1,13 @@
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_value::Identifier;
+
+#[cfg(feature = "state-transition-transformers")]
+pub mod transformer;
 mod v0;
 
+use crate::data_contract::DataContract;
 pub use v0::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum DocumentBaseTransitionAction {
     V0(DocumentBaseTransitionActionV0),
 }
@@ -12,5 +15,31 @@ pub enum DocumentBaseTransitionAction {
 impl Default for DocumentBaseTransitionAction {
     fn default() -> Self {
         DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0::default())
+    }
+}
+
+impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
+    fn id(&self) -> Identifier {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.id,
+        }
+    }
+
+    fn document_type_name(&self) -> &String {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => &v0.document_type_name,
+        }
+    }
+
+    fn data_contract_id(&self) -> Identifier {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => v0.data_contract_id,
+        }
+    }
+
+    fn data_contract(&self) -> &DataContract {
+        match self {
+            DocumentBaseTransitionAction::V0(v0) => &v0.data_contract,
+        }
     }
 }

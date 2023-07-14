@@ -1,11 +1,11 @@
 mod v0;
 
-use grovedb::Element;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::Element;
 
 impl Drive {
     /// Pushes an "refresh reference" operation to `drive_operations`.
@@ -32,7 +32,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.grove_methods.batch.batch_refresh_reference {
-            0 => self.batch_refresh_reference_v0(path, key, document_reference, trust_refresh_reference, drive_operations),
+            0 => self.batch_refresh_reference_v0(
+                path,
+                key,
+                document_reference,
+                trust_refresh_reference,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_refresh_reference".to_string(),
                 known_versions: vec![0],

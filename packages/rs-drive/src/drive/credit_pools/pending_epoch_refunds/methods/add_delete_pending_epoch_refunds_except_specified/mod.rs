@@ -1,12 +1,12 @@
 mod v0;
 
+use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::epoch::CreditsPerEpoch;
-use grovedb::{TransactionArg, GroveDbOpBatch};
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::batch::GroveDbOpBatch;
+use grovedb::{GroveDbOpBatch, TransactionArg};
 
 impl Drive {
     /// Adds operations to delete pending epoch refunds except epochs from provided collection based on the drive version
@@ -28,8 +28,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.credit_pools.pending_epoch_refunds.add_delete_pending_epoch_refunds_except_specified {
-            0 => self.add_delete_pending_epoch_refunds_except_specified_operations_v0(batch, refunds_per_epoch, transaction),
+        match drive_version
+            .methods
+            .credit_pools
+            .pending_epoch_refunds
+            .add_delete_pending_epoch_refunds_except_specified
+        {
+            0 => self.add_delete_pending_epoch_refunds_except_specified_operations_v0(
+                batch,
+                refunds_per_epoch,
+                transaction,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_delete_pending_epoch_refunds_except_specified_operations".to_string(),
                 known_versions: vec![0],

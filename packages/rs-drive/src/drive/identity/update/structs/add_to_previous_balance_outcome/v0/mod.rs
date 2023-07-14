@@ -8,7 +8,6 @@ pub(in crate::drive::identity::update) struct AddToPreviousBalanceOutcomeV0 {
     pub(super) negative_credit_balance_modified: Option<Credits>,
 }
 
-
 pub trait AddToPreviousBalanceOutcomeV0Methods {
     fn balance_modified(&self) -> Option<Credits>;
     fn negative_credit_balance_modified(&self) -> Option<Credits>;

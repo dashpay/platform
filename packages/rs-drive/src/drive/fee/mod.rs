@@ -1,9 +1,9 @@
-use enum_map::EnumMap;
+use crate::error::fee::FeeError;
+use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::ProtocolError;
-use crate::error::Error;
-use crate::error::fee::FeeError;
+use enum_map::EnumMap;
 
 /// Calculates fees for the given operations. Returns the storage and processing costs.
 pub fn calculate_fee(
@@ -33,7 +33,6 @@ pub fn calculate_fee(
 
     Ok(aggregate_fee_result)
 }
-
 
 pub fn get_overflow_error(str: &'static str) -> Error {
     Error::Fee(FeeError::Overflow(str))

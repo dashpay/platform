@@ -1,11 +1,11 @@
-pub mod v0;
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
+pub mod v0;
 
 use crate::fee::Credits;
+use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
 use derive_more::From;
 use platform_value::{Bytes36, Identifier};
-use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreditTransferTransitionAction {

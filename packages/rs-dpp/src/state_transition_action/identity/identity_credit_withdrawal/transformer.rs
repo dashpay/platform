@@ -1,6 +1,6 @@
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
+use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 
 impl IdentityCreditWithdrawalTransitionAction {
     pub fn from_identity_credit_withdrawal(
@@ -9,7 +9,11 @@ impl IdentityCreditWithdrawalTransitionAction {
     ) -> Self {
         match identity_credit_withdrawal {
             IdentityCreditWithdrawalTransition::V0(v0) => {
-                IdentityCreditWithdrawalTransitionActionV0::from_identity_credit_withdrawal(v0, creation_time_ms).into()
+                IdentityCreditWithdrawalTransitionActionV0::from_identity_credit_withdrawal(
+                    v0,
+                    creation_time_ms,
+                )
+                .into()
             }
         }
     }

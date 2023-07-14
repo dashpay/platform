@@ -1,8 +1,8 @@
-use grovedb::Element;
-use dpp::prelude::Revision;
-use crate::drive::Drive;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
+use crate::drive::Drive;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::prelude::Revision;
+use grovedb::Element;
 
 impl Drive {
     /// Initialize the revision of the identity, should only be called on create identity

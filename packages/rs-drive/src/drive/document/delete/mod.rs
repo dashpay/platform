@@ -85,7 +85,6 @@ pub use delete_document_for_contract_operations::*;
 mod internal;
 use internal::*;
 
-
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
@@ -98,7 +97,6 @@ use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
@@ -113,6 +111,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
@@ -135,13 +134,13 @@ use dpp::block::epoch::Epoch;
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
     use rand::Rng;
     use serde_json::json;
     use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
-    use dpp::block::block_info::BlockInfo;
 
     use super::*;
     use crate::common::{cbor_from_hex, setup_contract, setup_contract_from_cbor_hex};
@@ -152,11 +151,11 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
-    use dpp::fee::default_costs::EpochCosts;
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::document::Document;
+    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::util::cbor_serializer;
 
     #[test]

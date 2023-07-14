@@ -1,17 +1,17 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::Credits;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id. This function is version controlled.
@@ -37,8 +37,20 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.identity.update.add_to_identity_balance {
-            0 => self.add_to_identity_balance_v0(identity_id, added_balance, block_info, apply, transaction, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .update
+            .add_to_identity_balance
+        {
+            0 => self.add_to_identity_balance_v0(
+                identity_id,
+                added_balance,
+                block_info,
+                apply,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_identity_balance".to_string(),
                 known_versions: vec![0],

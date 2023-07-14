@@ -1,4 +1,3 @@
-
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
 
 use crate::drive::flags::StorageFlags;
@@ -11,9 +10,9 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
 use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_levels_up_to_contract_v0(

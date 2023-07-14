@@ -1,10 +1,10 @@
 mod v0;
 
 use crate::drive::Drive;
-use crate::error::Error;
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
 use crate::error::drive::DriveError;
+use crate::error::Error;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches an identity with all its information from storage.
@@ -26,8 +26,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version.methods.identity.prove.prove_full_identity_by_unique_public_key_hash {
-            0 => self.prove_full_identity_by_unique_public_key_hash_v0(public_key_hash, transaction, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .prove
+            .prove_full_identity_by_unique_public_key_hash
+        {
+            0 => self.prove_full_identity_by_unique_public_key_hash_v0(
+                public_key_hash,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_full_identity_by_unique_public_key_hash".to_string(),
                 known_versions: vec![0],

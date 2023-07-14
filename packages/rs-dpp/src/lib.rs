@@ -49,10 +49,10 @@ pub mod fee;
 pub mod serialization_traits;
 #[cfg(feature = "validation")]
 pub mod signing;
-#[cfg(feature = "system_contracts")]
-pub mod system_data_contracts;
 #[cfg(feature = "state-transition-actions")]
 pub mod state_transition_action;
+#[cfg(feature = "system_contracts")]
+pub mod system_data_contracts;
 
 pub use async_trait;
 pub use bls::*;

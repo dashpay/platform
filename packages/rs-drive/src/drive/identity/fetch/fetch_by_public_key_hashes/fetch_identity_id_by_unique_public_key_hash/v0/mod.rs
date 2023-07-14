@@ -1,4 +1,3 @@
-
 use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_sub_tree_path_vec,
@@ -14,11 +13,11 @@ use dpp::platform_value::Value;
 use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
 
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches an identity id with all its information from storage.
@@ -33,10 +32,9 @@ impl Drive {
             public_key_hash,
             transaction,
             &mut drive_operations,
-            drive_version
+            drive_version,
         )
     }
-
 
     /// Given an identity, fetches the identity with its flags from storage.
     pub(super) fn fetch_identity_id_by_unique_public_key_hash_operations_v0(

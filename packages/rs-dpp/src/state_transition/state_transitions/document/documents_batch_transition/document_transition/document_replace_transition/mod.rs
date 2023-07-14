@@ -22,12 +22,12 @@ pub(self) mod property_names {
     pub const UPDATED_AT: &str = "$updatedAt";
 }
 
-/// Identifier fields in [`DocumentReplaceTransition`]
+/// Identifier fields in [`DocumentReplaceTransitionV0`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct DocumentReplaceTransition {
+pub struct DocumentReplaceTransitionV0 {
     #[serde(flatten)]
     pub base: DocumentBaseTransition,
     #[serde(rename = "$revision")]
@@ -38,7 +38,7 @@ pub struct DocumentReplaceTransition {
     pub data: Option<BTreeMap<String, Value>>,
 }
 
-impl DocumentReplaceTransition {
+impl DocumentReplaceTransitionV0 {
     pub(crate) fn to_document_for_dry_run(
         &self,
         owner_id: Identifier,
@@ -110,7 +110,7 @@ impl DocumentReplaceTransition {
     }
 }
 
-impl DocumentTransitionObjectLike for DocumentReplaceTransition {
+impl DocumentTransitionObjectLike for DocumentReplaceTransitionV0 {
     #[cfg(feature = "json-object")]
     fn from_json_object(
         json_value: JsonValue,
@@ -142,7 +142,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
-    ) -> Result<DocumentReplaceTransition, ProtocolError> {
+    ) -> Result<DocumentReplaceTransitionV0, ProtocolError> {
         let map = raw_transition
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
@@ -156,7 +156,7 @@ impl DocumentTransitionObjectLike for DocumentReplaceTransition {
     where
         Self: Sized,
     {
-        Ok(DocumentReplaceTransition {
+        Ok(DocumentReplaceTransitionV0 {
             base: DocumentBaseTransition::from_value_map_consume(&mut map, data_contract)?,
             revision: map
                 .remove_integer(property_names::REVISION)
@@ -224,7 +224,7 @@ mod test {
 					"message": "example_message_replace"
 				}"#;
 
-        let cdt: DocumentReplaceTransition =
+        let cdt: DocumentReplaceTransitionV0 =
             serde_json::from_str(transition_json).expect("no error");
 
         assert_eq!(cdt.base.action, Action::Replace);

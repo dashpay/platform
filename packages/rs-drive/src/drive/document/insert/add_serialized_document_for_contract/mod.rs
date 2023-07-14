@@ -1,19 +1,19 @@
 mod v0;
 
-use std::borrow::Cow;
-use grovedb::TransactionArg;
-use serde::Deserialize;
-use dpp::block::block_info::BlockInfo;
-use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::data_contract::DataContract;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
+use dpp::document::Document;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use serde::Deserialize;
+use std::borrow::Cow;
 
 impl Drive {
     /// Deserializes a document and adds it to a contract.
@@ -46,21 +46,24 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.document.insert.add_serialized_document_for_contract {
-            0 => {
-                self.add_serialized_document_for_contract_v0(
-                    serialized_document,
-                    contract,
-                    document_type_name,
-                    owner_id,
-                    override_document,
-                    block_info,
-                    apply,
-                    storage_flags,
-                    transaction,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .insert
+            .add_serialized_document_for_contract
+        {
+            0 => self.add_serialized_document_for_contract_v0(
+                serialized_document,
+                contract,
+                document_type_name,
+                owner_id,
+                override_document,
+                block_info,
+                apply,
+                storage_flags,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_serialized_document_for_contract".to_string(),
                 known_versions: vec![0],

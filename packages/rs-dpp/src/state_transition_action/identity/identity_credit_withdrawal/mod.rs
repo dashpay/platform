@@ -1,14 +1,13 @@
-pub mod v0;
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
+pub mod v0;
 
 use crate::document::Document;
 use crate::fee::Credits;
 use crate::prelude::Revision;
-use crate::state_transition::identity_credit_withdrawal_transition::v0_action::IdentityCreditWithdrawalTransitionActionV0;
+use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use derive_more::From;
 use platform_value::{Bytes36, Identifier};
-use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreditWithdrawalTransitionAction {

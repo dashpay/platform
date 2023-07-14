@@ -1,4 +1,3 @@
-
 use crate::drive::verify::RootHash;
 
 use crate::error::proof::ProofError;

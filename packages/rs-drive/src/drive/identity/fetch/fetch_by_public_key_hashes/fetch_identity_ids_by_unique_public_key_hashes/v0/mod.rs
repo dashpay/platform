@@ -1,4 +1,3 @@
-
 use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_sub_tree_path_vec,
@@ -14,11 +13,11 @@ use dpp::platform_value::Value;
 use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
 
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches identity ids with all its information from storage.
@@ -59,27 +58,30 @@ impl Drive {
             offset: None,
         };
         let path_query = PathQuery::new(unique_key_hashes, sized_query);
-        self.grove_get_raw_path_query_with_optional(&path_query, transaction, drive_operations, drive_version)?
-            .into_iter()
-            .map(|(_, key, element)| {
-                let identity_key_hash: [u8; 20] = key.try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
-                })?;
-                match element {
-                    Some(Item(identity_id_vec, ..)) => {
-                        let identity_id: [u8; 32] = identity_id_vec.try_into().map_err(|_| {
-                            Error::Drive(DriveError::CorruptedCodeExecution(
-                                "key hash not 20 bytes",
-                            ))
-                        })?;
-                        Ok((identity_key_hash, Some(identity_id)))
-                    }
-                    None => Ok((identity_key_hash, None)),
-                    _ => Err(Error::Drive(DriveError::CorruptedDriveState(
-                        "unique public key hashes containing non identity ids".to_string(),
-                    ))),
+        self.grove_get_raw_path_query_with_optional(
+            &path_query,
+            transaction,
+            drive_operations,
+            drive_version,
+        )?
+        .into_iter()
+        .map(|(_, key, element)| {
+            let identity_key_hash: [u8; 20] = key.try_into().map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
+            })?;
+            match element {
+                Some(Item(identity_id_vec, ..)) => {
+                    let identity_id: [u8; 32] = identity_id_vec.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
+                    })?;
+                    Ok((identity_key_hash, Some(identity_id)))
                 }
-            })
-            .collect()
+                None => Ok((identity_key_hash, None)),
+                _ => Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "unique public key hashes containing non identity ids".to_string(),
+                ))),
+            }
+        })
+        .collect()
     }
 }

@@ -1,12 +1,6 @@
 mod v0;
 
-use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, CONTRACT_DOCUMENTS_PATH_HEIGHT};
+use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8};
 use crate::drive::document::document_reference_size;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
@@ -15,6 +9,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::key_info::KeyInfo::KnownKey;
+use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
+use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Removes the terminal reference.
@@ -51,22 +51,25 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.delete.remove_reference_for_index_level_for_contract_operations {
-            0 => {
-                self.remove_reference_for_index_level_for_contract_operations_v0(
-                    document_and_contract_info,
-                    index_path_info,
-                    unique,
-                    any_fields_null,
-                    storage_flags,
-                    previous_batch_operations,
-                    estimated_costs_only_with_layer_info,
-                    event_id,
-                    transaction,
-                    batch_operations,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .delete
+            .remove_reference_for_index_level_for_contract_operations
+        {
+            0 => self.remove_reference_for_index_level_for_contract_operations_v0(
+                document_and_contract_info,
+                index_path_info,
+                unique,
+                any_fields_null,
+                storage_flags,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_reference_for_index_level_for_contract_operations".to_string(),
                 known_versions: vec![0],

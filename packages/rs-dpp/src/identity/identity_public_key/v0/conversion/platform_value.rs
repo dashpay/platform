@@ -1,9 +1,9 @@
 use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use std::convert::{TryFrom, TryInto};
-use crate::version::PlatformVersion;
 
 impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
@@ -24,7 +24,10 @@ impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
-    fn from_object(value: Value, platform_version: &PlatformVersion) -> Result<IdentityPublicKeyV0, ProtocolError> {
+    fn from_object(
+        value: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<IdentityPublicKeyV0, ProtocolError> {
         value.try_into().map_err(ProtocolError::ValueError)
     }
 }

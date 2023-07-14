@@ -12,7 +12,6 @@ use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
@@ -27,6 +26,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
@@ -46,7 +46,6 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
-
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -76,7 +75,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.document.delete.delete_document_for_contract_id {
+        match drive_version
+            .methods
+            .document
+            .delete
+            .delete_document_for_contract_id
+        {
             0 => self.delete_document_for_contract_id_v0(
                 document_id,
                 contract_id,
@@ -85,7 +89,7 @@ impl Drive {
                 block_info,
                 apply,
                 transaction,
-                drive_version
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_id".to_string(),

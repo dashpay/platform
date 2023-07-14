@@ -13,14 +13,14 @@ use crate::drive::identity::key::fetch::{
 };
 use crate::fee::result::FeeResult;
 
+use crate::fee::calculate_fee;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Disable identity keys
@@ -99,7 +99,12 @@ impl Drive {
                 offset: None,
             };
 
-            self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations, drive_version)?
+            self.fetch_identity_keys_operations(
+                key_request,
+                transaction,
+                &mut drive_operations,
+                drive_version,
+            )?
         };
 
         if keys.len() != key_ids_len {

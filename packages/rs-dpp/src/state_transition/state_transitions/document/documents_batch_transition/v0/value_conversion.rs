@@ -227,9 +227,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
         Ok(batch_transitions)
     }
 
-    fn from_object(
-        mut raw_object: Value,
-    ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
+    fn from_object(mut raw_object: Value) -> Result<DataContractCreateTransitionV0, ProtocolError> {
         Ok(DataContractCreateTransitionV0 {
             signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
@@ -243,13 +241,13 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
-                raw_object.remove(DATA_CONTRACT).map_err(|_| {
+            data_contract: DataContract::from_object(raw_object.remove(DATA_CONTRACT).map_err(
+                |_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     )
-                })?,
-            )?,
+                },
+            )?)?,
             ..Default::default()
         })
     }

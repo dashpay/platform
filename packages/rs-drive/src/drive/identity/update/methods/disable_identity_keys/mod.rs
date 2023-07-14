@@ -1,25 +1,25 @@
 mod v0;
 
-use dpp::block::extended_block_info::BlockInfo;
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
+};
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use grovedb::batch::KeyInfoPath;
-use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
-};
 use crate::fee::result::FeeResult;
+use dpp::block::extended_block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Disables identity keys. This function is version controlled.
@@ -48,7 +48,15 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
         match drive_version.methods.identity.update.disable_identity_keys {
-            0 => self.disable_identity_keys_v0(identity_id, keys_ids, disable_at, block_info, apply, transaction, drive_version),
+            0 => self.disable_identity_keys_v0(
+                identity_id,
+                keys_ids,
+                disable_at,
+                block_info,
+                apply,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "disable_identity_keys".to_string(),
                 known_versions: vec![0],
@@ -83,7 +91,14 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match drive_version.methods.identity.update.disable_identity_keys {
-            0 => self.disable_identity_keys_operations_v0(identity_id, key_ids, disable_at, estimated_costs_only_with_layer_info, transaction, drive_version),
+            0 => self.disable_identity_keys_operations_v0(
+                identity_id,
+                key_ids,
+                disable_at,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "disable_identity_keys_operations".to_string(),
                 known_versions: vec![0],

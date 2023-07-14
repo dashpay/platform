@@ -1,12 +1,12 @@
 mod v0;
 
-use grovedb::Element;
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
-use crate::error::drive::DriveError;
+use grovedb::Element;
 
 impl Drive {
     /// Adds GroveDB batch operations to update pending epoch storage pool updates
@@ -25,7 +25,12 @@ impl Drive {
         refunds_per_epoch: CreditsPerEpoch,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.credit_pools.epochs.add_update_pending_epoch_refunds_operations {
+        match drive_version
+            .methods
+            .credit_pools
+            .epochs
+            .add_update_pending_epoch_refunds_operations
+        {
             0 => Self::add_update_pending_epoch_refunds_operations_v0(batch, refunds_per_epoch),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_update_pending_epoch_refunds_operations".to_string(),

@@ -1,4 +1,3 @@
-
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
@@ -6,16 +5,16 @@ use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identity::Identity;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
@@ -157,16 +156,15 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::identity::Identity;
 
     use dpp::block::extended_block_info::BlockInfo;
-    use tempfile::TempDir;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
+    use tempfile::TempDir;
 
     use crate::drive::Drive;
 
@@ -215,7 +213,13 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         drive
-            .add_new_identity_v0(identity, &BlockInfo::default(), true, Some(&db_transaction), drive_version)
+            .add_new_identity_v0(
+                identity,
+                &BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                drive_version,
+            )
             .expect("expected to insert identity");
 
         drive

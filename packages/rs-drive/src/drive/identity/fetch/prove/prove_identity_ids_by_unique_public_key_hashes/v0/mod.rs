@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use grovedb::TransactionArg;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves identity ids against public key hashes.
@@ -11,22 +11,27 @@ impl Drive {
         &self,
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
-        drive_version: &DriveVersion
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
-        self.grove_get_proved_path_query(&path_query, false, transaction, &mut vec![], drive_version)
+        self.grove_get_proved_path_query(
+            &path_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::extended_block_info::BlockInfo;
     use dpp::identity::Identity;
-    use std::collections::BTreeMap;
     use dpp::version::drive_versions::DriveVersion;
-    use crate::drive::Drive;
+    use std::collections::BTreeMap;
 
     #[test]
     fn should_prove_multiple_identity_ids() {
@@ -75,11 +80,7 @@ mod tests {
             .expect("should not error when proving an identity");
 
         let (_, proved_identity_id): ([u8; 32], BTreeMap<[u8; 20], Option<[u8; 32]>>) =
-            Drive::verify_identity_ids_by_public_key_hashes(
-                proof.as_slice(),
-                false,
-                &key_hashes,
-            )
+            Drive::verify_identity_ids_by_public_key_hashes(proof.as_slice(), false, &key_hashes)
                 .expect("expect that this be verified");
 
         assert_eq!(proved_identity_id, key_hashes_to_identity_ids);

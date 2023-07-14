@@ -1,10 +1,8 @@
-
-
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::Error;
-use grovedb::TransactionArg;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves the existence of all keys associated with the specified identities.
@@ -39,6 +37,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let identity_query = Self::fetch_identities_all_keys_query(self, identity_ids, limit)?;
-        self.grove_get_proved_path_query(&identity_query, false, transaction, &mut vec![], drive_version)
+        self.grove_get_proved_path_query(
+            &identity_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }

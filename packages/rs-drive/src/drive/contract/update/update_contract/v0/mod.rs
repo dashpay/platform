@@ -1,20 +1,20 @@
-use std::collections::{HashMap, HashSet};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::batch::KeyInfoPath;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::DataContract;
-use dpp::serialization_traits::PlatformSerializable;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::{contract_documents_path, Drive};
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
+use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
+use dpp::fee::fee_result::FeeResult;
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::{HashMap, HashSet};
 
 impl Drive {
     /// Updates a data contract.
@@ -209,8 +209,8 @@ impl Drive {
 
         if contract.config.documents_keep_history_contract_default
             ^ original_contract
-            .config
-            .documents_keep_history_contract_default
+                .config
+                .documents_keep_history_contract_default
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(

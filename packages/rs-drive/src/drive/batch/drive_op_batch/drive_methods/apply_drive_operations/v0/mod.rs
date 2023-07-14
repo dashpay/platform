@@ -17,17 +17,16 @@ pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use dpp::fee::fee_result::FeeResult;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 
 impl Drive {
-
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
     ///
     /// # Arguments

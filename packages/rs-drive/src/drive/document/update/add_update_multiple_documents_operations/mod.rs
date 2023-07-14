@@ -1,15 +1,16 @@
 mod v0;
 
-
-use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::batch::drive_op_batch::{DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo};
+use crate::drive::batch::drive_op_batch::{
+    DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
+};
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::Drive;
-use crate::error::Error;
 use crate::error::drive::DriveError;
+use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use dpp::document::Document;
+use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Adds multiple document update operations to the drive.
@@ -43,16 +44,21 @@ impl Drive {
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.update.add_update_multiple_documents_operations {
+        match drive_version
+            .methods
+            .document
+            .update
+            .add_update_multiple_documents_operations
+        {
             0 => {
                 Self::add_update_multiple_documents_operations_v0(
                     documents,
                     data_contract,
                     document_type,
-                    drive_operation_types
+                    drive_operation_types,
                 );
                 Ok(())
-            },
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_update_multiple_documents_operations".to_string(),
                 known_versions: vec![0],

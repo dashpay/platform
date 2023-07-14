@@ -1,16 +1,15 @@
 mod v0;
 
-
-use std::collections::HashMap;
+use crate::drive::operation::LowLevelDriveOperation;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
-use dpp::identity::{IdentityPublicKey, Purpose};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::operation::LowLevelDriveOperation;
-use crate::error::drive::DriveError;
-use crate::error::Error;
+use std::collections::HashMap;
 
 impl Drive {
     /// Generates a set of operations to insert a new unique key into an identity.
@@ -37,13 +36,29 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
         with_references: bool,
-        estimated_costs_only_with_layer_info: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.identity.keys.insert.insert_new_unique_key {
-            0 => self.insert_new_unique_key_operations_v0(identity_id, identity_key, with_references, estimated_costs_only_with_layer_info, transaction, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .insert
+            .insert_new_unique_key
+        {
+            0 => self.insert_new_unique_key_operations_v0(
+                identity_id,
+                identity_key,
+                with_references,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_new_unique_key_operations".to_string(),
                 known_versions: vec![0],

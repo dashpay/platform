@@ -1,21 +1,23 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::reference_path::ReferencePathType::SiblingReference;
-use dpp::block::block_info::BlockInfo;
-use dpp::version::drive_versions::DriveVersion;
 use crate::common::encode::encode_u64;
 use crate::drive::contract::paths;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{BatchInsertTreeApplyType, DirectQueryType};
-use crate::drive::LowLevelDriveOperation;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElementSize};
+use crate::drive::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyRefElement, PathKeyElementSize,
+};
 use crate::drive::object_size_info::PathKeyInfo;
+use crate::drive::Drive;
+use crate::drive::LowLevelDriveOperation;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
+use grovedb::reference_path::ReferencePathType::SiblingReference;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Adds a contract to storage.

@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-use costs::OperationCost;
-use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use crate::query::GroveError;
+use costs::OperationCost;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a batch of Drive operations to groveDB.
@@ -36,7 +36,7 @@ impl Drive {
                 let new_grove_db_operations = LowLevelDriveOperation::grovedb_operations_batch(
                     &additional_low_level_drive_operations,
                 )
-                    .operations;
+                .operations;
                 Ok(new_grove_db_operations)
             },
             drive_operations,

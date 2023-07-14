@@ -1,14 +1,14 @@
 mod v0;
 
-use grovedb::{Element, TransactionArg};
-use integer_encoding::VarInt;
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
+use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::drive::grove_operations::DirectQueryType;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::{Element, TransactionArg};
+use integer_encoding::VarInt;
+use path::SubtreePath;
 
 impl Drive {
     /// Retrieves a u64 value from GroveDB that was originally encoded as a varint.
@@ -36,7 +36,11 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Option<u64>, Error> {
-        match drive_version.grove_methods.basic.grove_get_raw_value_u64_from_encoded_var_vec {
+        match drive_version
+            .grove_methods
+            .basic
+            .grove_get_raw_value_u64_from_encoded_var_vec
+        {
             0 => self.grove_get_raw_value_u64_from_encoded_var_vec_v0(
                 path,
                 key,

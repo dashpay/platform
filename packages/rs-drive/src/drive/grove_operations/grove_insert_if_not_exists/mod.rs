@@ -1,12 +1,12 @@
 mod v0;
 
-use grovedb::{Element, TransactionArg};
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::{Element, TransactionArg};
+use path::SubtreePath;
 
 impl Drive {
     /// Inserts an element into groveDB only if the specified path and key do not exist.
@@ -35,7 +35,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         match drive_version.grove_methods.basic.grove_insert_if_not_exists {
-            0 => self.grove_insert_if_not_exists_v0(path, key, element, transaction, drive_operations),
+            0 => self.grove_insert_if_not_exists_v0(
+                path,
+                key,
+                element,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_insert_if_not_exists".to_string(),
                 known_versions: vec![0],

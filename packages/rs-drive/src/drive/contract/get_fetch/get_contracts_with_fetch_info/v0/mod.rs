@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::contract::ContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 impl Drive {
     /// Retrieves the specified contracts along with their fetch info.

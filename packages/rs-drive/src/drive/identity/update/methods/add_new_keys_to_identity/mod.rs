@@ -1,14 +1,14 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::identity::IdentityPublicKey;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::IdentityPublicKey;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// The operations for adding new keys to an identity. This function is version controlled.
@@ -38,8 +38,21 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.identity.update.add_new_keys_to_identity {
-            0 => self.add_new_keys_to_identity_operations_v0(identity_id, unique_keys_to_add, non_unique_keys_to_add, with_references, estimated_costs_only_with_layer_info, transaction, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .update
+            .add_new_keys_to_identity
+        {
+            0 => self.add_new_keys_to_identity_operations_v0(
+                identity_id,
+                unique_keys_to_add,
+                non_unique_keys_to_add,
+                with_references,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keys_to_identity_operations".to_string(),
                 known_versions: vec![0],

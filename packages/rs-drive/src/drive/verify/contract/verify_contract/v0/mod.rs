@@ -1,4 +1,3 @@
-
 use crate::drive::contract::paths::{
     contract_keeping_history_storage_path, contract_root_path, contract_storage_path_vec,
 };

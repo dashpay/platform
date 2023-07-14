@@ -12,4 +12,3 @@ pub struct IdentityCreditTransferTransitionActionV0 {
     pub recipient_id: Identifier,
     pub identity_id: Identifier,
 }
-

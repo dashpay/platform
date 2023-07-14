@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    data_contract::DataContract, prelude::Identifier, ProtocolError, util::json_value::JsonValueExt,
+    data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
 };
 use document_base_transition::DocumentBaseTransition;
 
@@ -22,16 +22,9 @@ use crate::prelude::Revision;
 pub use document_base_transition::DocumentTransitionObjectLike;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
-pub use document_replace_transition::DocumentReplaceTransition;
+pub use document_replace_transition::DocumentReplaceTransitionV0;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
-
-pub use document_base_transition_action::DocumentBaseTransitionAction;
-pub use crate::state_transition_action::document::documents_batch::document_transition::::DocumentCreateTransitionAction;
-pub use crate::state_transition_action::document::documents_batch::document_transition::::DocumentDeleteTransitionAction;
-pub use crate::state_transition_action::document::documents_batch::document_transition::::DocumentReplaceTransitionAction;
-
-pub use crate::state_transition_action::document::documents_batch::action::{DOCUMENT_TRANSITION_ACTION_VERSION, DocumentTransitionAction};
 
 pub const PROPERTY_ACTION: &str = "$action";
 
@@ -71,7 +64,7 @@ pub trait DocumentTransitionExt {
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq)]
 pub enum DocumentTransition {
     Create(DocumentCreateTransition),
-    Replace(DocumentReplaceTransition),
+    Replace(DocumentReplaceTransitionV0),
     Delete(DocumentDeleteTransition),
 }
 
@@ -120,7 +113,7 @@ impl DocumentTransitionObjectLike for DocumentTransition {
                 DocumentCreateTransition::from_json_object(json_value, data_contract)?,
             ),
             Action::Replace => DocumentTransition::Replace(
-                DocumentReplaceTransition::from_json_object(json_value, data_contract)?,
+                DocumentReplaceTransitionV0::from_json_object(json_value, data_contract)?,
             ),
             Action::Delete => DocumentTransition::Delete(
                 DocumentDeleteTransition::from_json_object(json_value, data_contract)?,
@@ -177,7 +170,7 @@ impl DocumentTransitionObjectLike for DocumentTransition {
                 data_contract,
             )?),
             Action::Replace => DocumentTransition::Replace(
-                DocumentReplaceTransition::from_value_map(map, data_contract)?,
+                DocumentReplaceTransitionV0::from_value_map(map, data_contract)?,
             ),
             Action::Delete => DocumentTransition::Delete(DocumentDeleteTransition::from_value_map(
                 map,
@@ -203,7 +196,7 @@ impl DocumentTransition {
             None
         }
     }
-    pub fn as_transition_replace(&self) -> Option<&DocumentReplaceTransition> {
+    pub fn as_transition_replace(&self) -> Option<&DocumentReplaceTransitionV0> {
         if let Self::Replace(ref t) = self {
             Some(t)
         } else {

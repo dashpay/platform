@@ -1,10 +1,9 @@
-
 use crate::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::metadata::Metadata;
 use crate::prelude::{AssetLockProof, Revision};
+use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::{BTreeMap, HashSet};
-use crate::ProtocolError;
 
 /// Trait for getters in Identity
 pub trait IdentityGettersV0 {

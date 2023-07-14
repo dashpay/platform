@@ -1,18 +1,17 @@
-use std::ops::AddAssign;
-use std::sync::Arc;
-use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use grovedb::{Element, TransactionArg};
-use dpp::block::epoch::Epoch;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::contract::{ContractFetchInfo, paths};
+use crate::drive::contract::{paths, ContractFetchInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
+use dpp::block::epoch::Epoch;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::{Element, TransactionArg};
+use std::ops::AddAssign;
+use std::sync::Arc;
 
 impl Drive {
-
     /// Retrieves the specified contract from storage and inserts it into the cache.
     ///
     /// This function fetches the contract with the given ID from storage and, if successful,
@@ -143,7 +142,7 @@ impl Drive {
                     Ok(_) => Err(Error::Drive(DriveError::CorruptedContractPath(
                         "contract path did not refer to a contract element",
                     )))
-                        .wrap_with_cost(cost),
+                    .wrap_with_cost(cost),
                     Err(
                         grovedb::Error::PathKeyNotFound(_)
                         | grovedb::Error::PathParentLayerNotFound(_)
@@ -155,7 +154,7 @@ impl Drive {
             Ok(_) => Err(Error::Drive(DriveError::CorruptedContractPath(
                 "contract path did not refer to a contract element",
             )))
-                .wrap_with_cost(cost),
+            .wrap_with_cost(cost),
             Err(
                 grovedb::Error::PathKeyNotFound(_)
                 | grovedb::Error::PathParentLayerNotFound(_)
@@ -164,7 +163,6 @@ impl Drive {
             Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),
         }
     }
-
 
     /// Fetch contract from database and add operations
     pub(super) fn fetch_contract_and_add_operations_v0(
@@ -189,8 +187,8 @@ impl Drive {
                     .fee
                     .as_ref()
                     .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                        "should be impossible to not have fee on something just fetched with an epoch",
-                    )))?;
+                    "should be impossible to not have fee on something just fetched with an epoch",
+                )))?;
                 drive_operations.push(PreCalculatedFeeResult(fee.clone()));
             }
         } else if epoch.is_some() {

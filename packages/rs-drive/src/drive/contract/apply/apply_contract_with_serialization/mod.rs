@@ -1,16 +1,16 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use crate::drive::flags::StorageFlags;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::flags::StorageFlags;
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 mod v0;
 
@@ -53,8 +53,21 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.contract.apply.apply_contract_with_serialization {
-            0 => self.apply_contract_with_serialization_v0(contract, contract_serialization, block_info, apply, storage_flags, transaction, drive_version),
+        match drive_version
+            .methods
+            .contract
+            .apply
+            .apply_contract_with_serialization
+        {
+            0 => self.apply_contract_with_serialization_v0(
+                contract,
+                contract_serialization,
+                block_info,
+                apply,
+                storage_flags,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization".to_string(),
                 known_versions: vec![0],
@@ -103,8 +116,21 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.contract.apply.apply_contract_with_serialization {
-            0 => self.apply_contract_with_serialization_operations_v0(contract, contract_serialization, block_info, estimated_costs_only_with_layer_info, storage_flags, transaction, drive_version),
+        match drive_version
+            .methods
+            .contract
+            .apply
+            .apply_contract_with_serialization
+        {
+            0 => self.apply_contract_with_serialization_operations_v0(
+                contract,
+                contract_serialization,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                storage_flags,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization_operations".to_string(),
                 known_versions: vec![0],

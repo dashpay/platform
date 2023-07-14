@@ -37,7 +37,6 @@ use crate::serialization_traits::PlatformSerializable;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 
-mod action;
 pub mod document_transition;
 mod fields;
 mod identity_signed;
@@ -51,9 +50,6 @@ pub mod validation;
 mod value_conversion;
 
 pub use v0::*;
-pub use crate::state_transition_action::document::documents_batch::v0::*;
-
-pub use action::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransitionAction};
 
 #[derive(
     Debug,
@@ -548,7 +544,7 @@ mod test {
         },
     };
 
-    use super::{*, document_transition::Action};
+    use super::{document_transition::Action, *};
 
     #[test]
     fn should_return_highest_sec_level_for_all_transitions() {

@@ -1,14 +1,16 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
-use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::version::drive_versions::DriveVersion;
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
+};
 use crate::drive::Drive;
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use integer_encoding::VarInt;
+use std::collections::HashMap;
 
 impl Drive {
     pub fn re_enable_identity_keys_operations_v0(
@@ -45,7 +47,12 @@ impl Drive {
                 offset: None,
             };
 
-            self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations, drive_version)?
+            self.fetch_identity_keys_operations(
+                key_request,
+                transaction,
+                &mut drive_operations,
+                drive_version,
+            )?
         };
 
         if keys.len() != key_ids_len {

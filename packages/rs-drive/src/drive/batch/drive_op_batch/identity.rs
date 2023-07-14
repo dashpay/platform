@@ -5,10 +5,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
 
 /// Operations on Identities
 #[derive(Clone, Debug)]

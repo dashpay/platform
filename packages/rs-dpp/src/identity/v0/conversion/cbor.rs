@@ -1,16 +1,15 @@
-use std::collections::BTreeMap;
-use integer_encoding::VarInt;
 use crate::identity::conversion::cbor::IdentityCborConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
-use crate::ProtocolError;
+use crate::identity::{IdentityPublicKey, KeyID};
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::ProtocolError;
 use ciborium::Value as CborValue;
-use crate::identity::{IdentityPublicKey, KeyID};
+use integer_encoding::VarInt;
+use std::collections::BTreeMap;
 
 impl IdentityCborConversionMethodsV0 for IdentityV0 {
-
     /// Converts the identity to a cbor buffer
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result

@@ -1,11 +1,11 @@
-use std::path::Path;
-use std::sync::RwLock;
-use grovedb::GroveDb;
 use crate::drive::cache::{DataContractCache, DriveCache};
 use crate::drive::config::DriveConfig;
-use crate::drive::Drive;
 use crate::drive::system_contracts_cache::SystemContracts;
+use crate::drive::Drive;
 use crate::error::Error;
+use grovedb::GroveDb;
+use std::path::Path;
+use std::sync::RwLock;
 
 impl Drive {
     /// Opens a path in GroveDB.

@@ -1,18 +1,18 @@
 mod v0;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::epoch::Epoch;
-use dpp::version::drive_versions::DriveVersion;
+use crate::drive::flags::StorageFlags;
+use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::object_size_info::PathInfo;
 use crate::drive::Drive;
-use dpp::data_contract::DataContract;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::drive::object_size_info::PathInfo;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::IndexLevel;
-use crate::drive::object_size_info::DocumentAndContractInfo;
-use crate::drive::flags::StorageFlags;
+use dpp::data_contract::DataContract;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Removes indices for an index level and recurses.
@@ -49,22 +49,25 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.delete.remove_indices_for_index_level_for_contract_operations {
-            0 => {
-                self.remove_indices_for_index_level_for_contract_operations_v0(
-                    document_and_contract_info,
-                    index_path_info,
-                    index_level,
-                    any_fields_null,
-                    storage_flags,
-                    previous_batch_operations,
-                    estimated_costs_only_with_layer_info,
-                    event_id,
-                    transaction,
-                    batch_operations,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .delete
+            .remove_indices_for_index_level_for_contract_operations
+        {
+            0 => self.remove_indices_for_index_level_for_contract_operations_v0(
+                document_and_contract_info,
+                index_path_info,
+                index_level,
+                any_fields_null,
+                storage_flags,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_indices_for_index_level_for_contract_operations".to_string(),
                 known_versions: vec![0],

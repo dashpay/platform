@@ -6,15 +6,15 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Revision;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Fetches the Identity's revision from the backing store

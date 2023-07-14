@@ -1,13 +1,13 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
-use crate::error::{Error, DriveError};
+use crate::error::{DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a batch of groveDB operations, or estimates the cost of operations depending on the arguments provided.
@@ -37,13 +37,17 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.operations.apply_batch_grovedb_operations {
+        match drive_version
+            .methods
+            .operations
+            .apply_batch_grovedb_operations
+        {
             0 => self.apply_batch_grovedb_operations_v0(
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
                 drive_operations,
-                drive_version
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_batch_grovedb_operations".to_string(),

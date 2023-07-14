@@ -63,9 +63,7 @@ impl StateTransitionValueConvert for DataContractCreateTransition {
         }
     }
 
-    fn from_object(
-        mut raw_object: Value,
-    ) -> Result<DataContractCreateTransition, ProtocolError> {
+    fn from_object(mut raw_object: Value) -> Result<DataContractCreateTransition, ProtocolError> {
         let version: u8 = raw_object
             .remove_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?;

@@ -1,11 +1,11 @@
 mod v0;
 
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::balances::TotalCreditsBalance;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Calculates the total credits balance.
@@ -30,7 +30,11 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<TotalCreditsBalance, Error> {
-        match drive_version.methods.balances.calculate_total_credits_balance {
+        match drive_version
+            .methods
+            .balances
+            .calculate_total_credits_balance
+        {
             0 => self.calculate_total_credits_balance_v0(transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "calculate_total_credits_balance".to_string(),

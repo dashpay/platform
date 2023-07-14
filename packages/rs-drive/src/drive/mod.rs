@@ -51,8 +51,6 @@ use object_size_info::DocumentAndContractInfo;
 use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::DataContract;
-#[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::config::DriveConfig;
@@ -62,6 +60,8 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+#[cfg(feature = "full")]
+use dpp::data_contract::DataContract;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod balances;
@@ -76,16 +76,14 @@ pub mod config;
 ///DataContract module
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod contract;
+/// Fee pools module
+#[cfg(feature = "full")]
+pub mod credit_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
 /// Document module
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod document;
-#[cfg(feature = "full")]
-mod shared_estimation_costs;
-/// Fee pools module
-#[cfg(feature = "full")]
-pub mod credit_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod flags;
 #[cfg(feature = "full")]
@@ -102,12 +100,18 @@ mod protocol_upgrade;
 #[cfg(feature = "full")]
 pub mod query;
 #[cfg(feature = "full")]
+mod shared_estimation_costs;
+#[cfg(feature = "full")]
 mod system;
 #[cfg(test)]
 mod test_utils;
 
 #[cfg(feature = "full")]
 mod asset_lock;
+pub(crate) mod fee;
+mod open;
+#[cfg(feature = "full")]
+mod operations;
 #[cfg(feature = "full")]
 mod prove;
 #[cfg(feature = "full")]
@@ -115,10 +119,6 @@ mod system_contracts_cache;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod verify;
-#[cfg(feature = "full")]
-mod operations;
-mod open;
-pub(crate) mod fee;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DataContractCache;
@@ -171,7 +171,7 @@ pub struct Drive {
 pub enum RootTree {
     // Input data errors
     ///DataContract Documents
-   DataContractDocuments = 64,
+    DataContractDocuments = 64,
     /// Identities
     Identities = 32,
     /// Unique Public Key Hashes to Identities
@@ -294,4 +294,3 @@ fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
         &[1],
     ]
 }
-

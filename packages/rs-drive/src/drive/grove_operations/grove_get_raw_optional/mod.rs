@@ -1,17 +1,17 @@
 mod v0;
 
-use costs::CostContext;
-use grovedb::{Element, GroveDb, TransactionArg};
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
+use crate::drive::grove_operations::{DirectQueryType, QueryTarget};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
-use crate::drive::grove_operations::{DirectQueryType, QueryTarget};
+use costs::CostContext;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, GroveDb, TransactionArg};
+use path::SubtreePath;
 
 impl Drive {
     /// Handles the retrieval of a raw element from GroveDB at the specified path and key,
@@ -41,7 +41,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Option<Element>, Error> {
         match drive_version.grove_methods.basic.grove_get_raw_optional {
-            0 => self.grove_get_raw_optional_v0(path, key, direct_query_type, transaction, drive_operations),
+            0 => self.grove_get_raw_optional_v0(
+                path,
+                key,
+                direct_query_type,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_raw_optional".to_string(),
                 known_versions: vec![0],

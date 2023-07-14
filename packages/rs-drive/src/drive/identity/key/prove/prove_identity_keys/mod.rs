@@ -2,9 +2,9 @@ mod v0;
 
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
-use crate::error::{Error, DriveError};
-use grovedb::TransactionArg;
+use crate::error::{DriveError, Error};
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prove the requested identity keys.
@@ -35,7 +35,13 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version.methods.identity.keys.prove.prove_identity_keys {
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .prove
+            .prove_identity_keys
+        {
             0 => self.prove_identity_keys_v0(key_request, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_identity_keys".to_string(),

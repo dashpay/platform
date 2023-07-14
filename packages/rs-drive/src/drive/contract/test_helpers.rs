@@ -1,13 +1,13 @@
-use std::borrow::Cow;
-use grovedb::TransactionArg;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::ArrayFieldType::Identifier;
-use dpp::fee::fee_result::FeeResult;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::{Drive, RootTree};
 use crate::drive::flags::StorageFlags;
+use crate::drive::{Drive, RootTree};
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::ArrayFieldType::Identifier;
+use dpp::data_contract::DataContract;
+use dpp::fee::fee_result::FeeResult;
+use grovedb::TransactionArg;
+use std::borrow::Cow;
 
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.

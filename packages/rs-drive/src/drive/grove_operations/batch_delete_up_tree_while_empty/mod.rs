@@ -1,17 +1,17 @@
 mod v0;
 
-use grovedb::batch::KeyInfoPath;
-use grovedb::{GroveDb, TransactionArg};
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::operations::delete::DeleteUpTreeOptions;
-use storage::rocksdb_storage::RocksDbStorage;
+use crate::drive::grove_operations::BatchDeleteUpTreeApplyType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::grove_operations::BatchDeleteUpTreeApplyType;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
+use grovedb::operations::delete::DeleteUpTreeOptions;
+use grovedb::{GroveDb, TransactionArg};
+use storage::rocksdb_storage::RocksDbStorage;
 
 impl Drive {
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.
@@ -40,8 +40,20 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.grove_methods.batch.batch_delete_up_tree_while_empty {
-            0 => self.batch_delete_up_tree_while_empty_v0(path, key, stop_path_height, apply_type, transaction, check_existing_operations, drive_operations),
+        match drive_version
+            .grove_methods
+            .batch
+            .batch_delete_up_tree_while_empty
+        {
+            0 => self.batch_delete_up_tree_while_empty_v0(
+                path,
+                key,
+                stop_path_height,
+                apply_type,
+                transaction,
+                check_existing_operations,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_delete_up_tree_while_empty".to_string(),
                 known_versions: vec![0],

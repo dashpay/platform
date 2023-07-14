@@ -1,7 +1,7 @@
 mod transformer;
 
 use crate::identifier::Identifier;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 #[derive(Default, Debug, Clone)]
 pub struct DocumentsBatchTransitionActionV0 {

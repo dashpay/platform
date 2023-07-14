@@ -1,14 +1,14 @@
 mod v0;
 
-use grovedb::batch::KeyInfoPath;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo;
-use crate::drive::object_size_info::DriveKeyInfo::{KeyRef, KeySize, Key};
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
 
 impl Drive {
     /// Pushes an "insert empty tree" operation to `drive_operations`.
@@ -31,9 +31,9 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error>
-        where
-            P: IntoIterator<Item=&'c [u8]>,
-            <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
     {
         match drive_version.grove_methods.batch.batch_insert_empty_tree {
             0 => self.batch_insert_empty_tree_v0(path, key_info, storage_flags, drive_operations),

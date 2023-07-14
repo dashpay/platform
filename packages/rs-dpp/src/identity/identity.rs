@@ -1,3 +1,4 @@
+use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::Revision;
@@ -11,7 +12,6 @@ use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 
 #[derive(
     Debug,

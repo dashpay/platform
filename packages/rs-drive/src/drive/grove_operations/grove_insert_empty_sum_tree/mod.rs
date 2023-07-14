@@ -1,13 +1,13 @@
 mod v0;
 
-use grovedb::operations::insert::InsertOptions;
-use grovedb::{Element, TransactionArg};
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::operations::insert::InsertOptions;
+use grovedb::{Element, TransactionArg};
+use path::SubtreePath;
 
 impl Drive {
     /// Inserts an empty sum tree into groveDB at the specified path and key.
@@ -33,8 +33,18 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.grove_methods.basic.grove_insert_empty_sum_tree {
-            0 => self.grove_insert_empty_sum_tree_v0(path, key, transaction, options, drive_operations),
+        match drive_version
+            .grove_methods
+            .basic
+            .grove_insert_empty_sum_tree
+        {
+            0 => self.grove_insert_empty_sum_tree_v0(
+                path,
+                key,
+                transaction,
+                options,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_insert_empty_sum_tree".to_string(),
                 known_versions: vec![0],

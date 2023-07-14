@@ -1,11 +1,10 @@
-
 use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use grovedb::{PathQuery, TransactionArg};
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
     /// Given public key hashes, fetches full identities as proofs.
@@ -60,6 +59,12 @@ impl Drive {
             _ => true,
         };
         let path_query = PathQuery::merge(path_queries.iter().collect()).map_err(Error::GroveDB)?;
-        self.grove_get_proved_path_query(&path_query, verbose, transaction, &mut vec![], drive_version)
+        self.grove_get_proved_path_query(
+            &path_query,
+            verbose,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }

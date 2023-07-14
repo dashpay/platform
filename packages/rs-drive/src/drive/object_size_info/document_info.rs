@@ -1,15 +1,15 @@
-use std::borrow::Cow;
-use grovedb::batch::key_info::KeyInfo;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::{DriveKeyInfo, KeyValueInfo};
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
+use crate::drive::object_size_info::{DriveKeyInfo, KeyValueInfo};
 use crate::error::drive::DriveError;
-use crate::error::Error;
 use crate::error::fee::FeeError;
+use crate::error::Error;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::document::Document;
+use grovedb::batch::key_info::KeyInfo;
+use std::borrow::Cow;
 
 /// Document info
 #[derive(Clone, Debug)]
@@ -50,9 +50,8 @@ pub trait DocumentInfoV0Methods {
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
     ) -> Result<Option<DriveKeyInfo>, Error>;
     /// Gets the borrowed document
-    fn get_borrowed_document_and_storage_flags(
-        &self,
-    ) -> Option<(&Document, Option<&StorageFlags>)>;
+    fn get_borrowed_document_and_storage_flags(&self)
+        -> Option<(&Document, Option<&StorageFlags>)>;
     /// Gets storage flags
     fn get_storage_flags_ref(&self) -> Option<&StorageFlags>;
     /// Gets storage flags

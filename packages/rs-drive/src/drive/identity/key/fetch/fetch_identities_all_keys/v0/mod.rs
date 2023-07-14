@@ -1,12 +1,11 @@
-use std::collections::BTreeMap;
-use grovedb::TransactionArg;
-use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::Error;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
-
     /// Fetches all keys associated with the specified identities.
     ///
     /// This function retrieves all keys associated with each identity ID provided

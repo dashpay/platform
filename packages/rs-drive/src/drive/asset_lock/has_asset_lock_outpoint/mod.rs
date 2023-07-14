@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::asset_lock::asset_lock_storage_path;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
@@ -8,12 +9,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::asset_lock::asset_lock_storage_path;
 
 impl Drive {
     /// Checks if a given `outpoint` is present as an asset lock in the transaction.
@@ -63,7 +63,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         match drive_version.methods.asset_lock.has_asset_lock_outpoint {
-            0 => self.has_asset_lock_outpoint_add_operations_v0(apply, drive_operations, outpoint, transaction, drive_version),
+            0 => self.has_asset_lock_outpoint_add_operations_v0(
+                apply,
+                drive_operations,
+                outpoint,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "has_asset_lock_outpoint_add_operations".to_string(),
                 known_versions: vec![0],

@@ -2,6 +2,7 @@ mod v0;
 
 use dpp::data_contract::document_type::IndexLevel;
 
+use dpp::block::block_info::BlockInfo;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -13,9 +14,7 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::option::Option::None;
-use dpp::block::block_info::BlockInfo;
 
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
 use crate::drive::document::{
     contract_document_type_path_vec,
@@ -44,6 +43,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::DataContract;
 
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 
@@ -77,18 +77,21 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.insert.add_document_to_primary_storage {
-            0 => {
-                self.add_document_to_primary_storage_0(
-                    document_and_contract_info,
-                    block_info,
-                    insert_without_check,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    drive_operations,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage
+        {
+            0 => self.add_document_to_primary_storage_0(
+                document_and_contract_info,
+                block_info,
+                insert_without_check,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_to_primary_storage".to_string(),
                 known_versions: vec![0],

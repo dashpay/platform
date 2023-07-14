@@ -1,15 +1,15 @@
 mod v0;
 
-use std::collections::HashMap;
-use costs::OperationCost;
-use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
-use crate::error::{Error, DriveError};
+use crate::error::{DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use crate::query::GroveError;
+use costs::OperationCost;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::{KeyInfoPath, OpsByLevelPath};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a partial batch of low level drive operations depending on the drive version.
@@ -44,14 +44,18 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.operations.apply_partial_batch_low_level_drive_operations {
+        match drive_version
+            .methods
+            .operations
+            .apply_partial_batch_low_level_drive_operations
+        {
             0 => self.apply_partial_batch_low_level_drive_operations_v0(
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
                 add_on_operations,
                 drive_operations,
-                drive_version
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_partial_batch_low_level_drive_operations".to_string(),

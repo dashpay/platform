@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use std::format;
-use ciborium::{Value as CborValue};
-use crate::ProtocolError;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::ProtocolError;
+use ciborium::Value as CborValue;
+use std::collections::BTreeMap;
+use std::format;
 
 pub trait IdentityCborConversionMethodsV0 {
     /// Converts the identity to a cbor buffer

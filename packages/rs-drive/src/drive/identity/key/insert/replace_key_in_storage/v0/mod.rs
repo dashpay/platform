@@ -1,9 +1,9 @@
-use grovedb::Element;
+use crate::drive::identity::identity_key_tree_path_vec;
+use crate::drive::Drive;
+use crate::error::Error;
 use dpp::identity::IdentityPublicKey;
 use dpp::serialization_traits::PlatformSerializable;
-use crate::drive::Drive;
-use crate::drive::identity::identity_key_tree_path_vec;
-use crate::error::Error;
+use grovedb::Element;
 
 impl Drive {
     /// Modification of keys is prohibited on protocol level.

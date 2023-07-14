@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::Error;
 use crate::error::identity::IdentityError;
+use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
@@ -17,8 +17,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<ApplyBalanceChangeOutcome, Error> {
-        let (batch_operations, actual_fee_paid) =
-            self.apply_balance_change_from_fee_to_identity_operations_v0(balance_change, transaction, drive_version)?;
+        let (batch_operations, actual_fee_paid) = self
+            .apply_balance_change_from_fee_to_identity_operations_v0(
+                balance_change,
+                transaction,
+                drive_version,
+            )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -32,7 +36,6 @@ impl Drive {
 
         Ok(ApplyBalanceChangeOutcome { actual_fee_paid })
     }
-
 
     /// Applies a balance change based on Fee Result
     /// If calculated balance is below 0 it will go to negative balance
@@ -109,9 +112,11 @@ impl Drive {
         };
 
         if let Some(new_balance) = balance_modified {
-            drive_operations.push(
-                self.update_identity_balance_operation(balance_change.identity_id, new_balance, drive_version)?,
-            );
+            drive_operations.push(self.update_identity_balance_operation(
+                balance_change.identity_id,
+                new_balance,
+                drive_version,
+            )?);
         }
 
         if let Some(new_negative_balance) = negative_credit_balance_modified {

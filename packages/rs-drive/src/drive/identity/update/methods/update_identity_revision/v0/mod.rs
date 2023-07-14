@@ -13,14 +13,14 @@ use crate::drive::identity::key::fetch::{
 };
 use crate::fee::result::FeeResult;
 
+use crate::fee::calculate_fee;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     //todo: this should probably not exist

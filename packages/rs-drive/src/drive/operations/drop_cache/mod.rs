@@ -1,9 +1,9 @@
 mod v0;
 
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::cache::DataContractCache;
 use crate::drive::Drive;
-use crate::error::{Error, DriveError};
+use crate::error::{DriveError, Error};
+use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Drops the drive cache.
@@ -24,7 +24,7 @@ impl Drive {
             0 => {
                 self.drop_cache_v0();
                 Ok(())
-            },
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "drop_cache".to_string(),
                 known_versions: vec![0],

@@ -1,18 +1,18 @@
 mod v0;
 
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{KeyInfoPath, Op};
-use grovedb::{Element, GroveDb, TransactionArg};
-use grovedb::operations::delete::DeleteOptions;
-use path::SubtreePath;
-use storage::rocksdb_storage::RocksDbStorage;
-use dpp::version::drive_versions::DriveVersion;
+use crate::drive::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use crate::drive::Drive;
-use crate::drive::grove_operations::{BatchDeleteApplyType, push_drive_operation_result};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::{KeyInfoPath, Op};
+use grovedb::operations::delete::DeleteOptions;
+use grovedb::{Element, GroveDb, TransactionArg};
+use path::SubtreePath;
+use storage::rocksdb_storage::RocksDbStorage;
 
 impl Drive {
     /// Pushes a "delete element" operation to `drive_operations` and returns the current element.
@@ -41,7 +41,14 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Option<Element>, Error> {
         match drive_version.grove_methods.batch.batch_remove_raw {
-            0 => self.batch_remove_raw_v0(path, key, apply_type, transaction, drive_operations, drive_version),
+            0 => self.batch_remove_raw_v0(
+                path,
+                key,
+                apply_type,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_remove_raw".to_string(),
                 known_versions: vec![0],

@@ -18,13 +18,13 @@ pub mod errors;
 pub mod signer;
 
 pub mod accessors;
+mod conversion;
+mod fields;
+mod methods;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod random;
 mod v0;
 pub mod versions;
-mod conversion;
-mod fields;
-mod methods;
 
 pub use fields::*;
 

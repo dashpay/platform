@@ -1,6 +1,5 @@
-
-use std::ops::Range;
 use grovedb::{Element, TransactionArg};
+use std::ops::Range;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -12,7 +11,6 @@ use dpp::fee::Credits;
 
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
-
 
 impl Drive {
     /// Gets the amount of processing fees to be distributed for the Epoch.
@@ -41,15 +39,13 @@ impl Drive {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use grovedb::Element;
-    use dpp::block::epoch::Epoch;
     use crate::fee_pools::epochs::epoch_key_constants;
     use crate::fee_pools::epochs::paths::EpochProposers;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use grovedb::Element;
 
     #[test]
     fn test_error_if_value_has_wrong_element_type() {
@@ -74,8 +70,8 @@ mod tests {
             drive.get_epoch_processing_credits_for_distribution_v0(&epoch, Some(&transaction));
 
         assert!(matches!(
-                result,
-                Err(Error::Drive(DriveError::UnexpectedElementType(_)))
-            ));
+            result,
+            Err(Error::Drive(DriveError::UnexpectedElementType(_)))
+        ));
     }
 }

@@ -1,4 +1,3 @@
-
 use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_sub_tree_path_vec,
@@ -14,11 +13,11 @@ use dpp::platform_value::Value;
 use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
 
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Operations for if a key with that public key hash already exists in the non unique set?

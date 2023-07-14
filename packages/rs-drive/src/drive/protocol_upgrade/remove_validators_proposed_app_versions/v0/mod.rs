@@ -4,6 +4,7 @@ use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use std::collections::BTreeMap;
 
+use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -11,13 +12,12 @@ use crate::error::Error::GroveDB;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 
 impl Drive {
     /// Removes the proposed app versions for a list of validators.
@@ -49,15 +49,15 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<[u8; 32]>, Error>
-        where
-            I: IntoIterator<Item=[u8; 32]>,
+    where
+        I: IntoIterator<Item = [u8; 32]>,
     {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let inserted = self.remove_validators_proposed_app_versions_operations_v0(
             validator_pro_tx_hashes,
             transaction,
             &mut batch_operations,
-            drive_version
+            drive_version,
         )?;
 
         let grove_db_operations =
@@ -105,8 +105,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Vec<[u8; 32]>, Error>
-        where
-            I: IntoIterator<Item = [u8; 32]>,
+    where
+        I: IntoIterator<Item = [u8; 32]>,
     {
         let mut cache = self.cache.write().unwrap();
         let maybe_version_counter = &mut cache.protocol_versions_counter;
@@ -114,7 +114,8 @@ impl Drive {
         let version_counter = if let Some(version_counter) = maybe_version_counter {
             version_counter
         } else {
-            *maybe_version_counter = Some(self.fetch_versions_with_counter(transaction, drive_version)?);
+            *maybe_version_counter =
+                Some(self.fetch_versions_with_counter(transaction, drive_version)?);
             maybe_version_counter.as_mut().unwrap()
         };
 
@@ -172,7 +173,7 @@ impl Drive {
                     Element::new_item((*previous_count + change).encode_var_vec()),
                 )),
                 drive_operations,
-                drive_version
+                drive_version,
             )?;
         }
 

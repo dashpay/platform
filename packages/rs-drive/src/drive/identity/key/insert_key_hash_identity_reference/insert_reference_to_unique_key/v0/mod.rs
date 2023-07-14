@@ -1,4 +1,3 @@
-
 use crate::drive::defaults::{
     DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8,
     ESTIMATED_NON_UNIQUE_KEY_DUPLICATES,
@@ -17,13 +16,13 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
 use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use dpp::identity::IdentityPublicKey;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Insert a public key hash reference that contains an identity id
@@ -37,7 +36,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         let hash_vec = identity_key.hash()?;

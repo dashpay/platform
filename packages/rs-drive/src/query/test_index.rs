@@ -6,10 +6,10 @@ mod tests {
     use dpp::util::cbor_serializer;
     use serde_json::json;
 
-    use dpp::data_contract::DataContract;
     use crate::drive::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;
+    use dpp::data_contract::DataContract;
 
     fn construct_indexed_document_type() -> DocumentTypeRef {
         DocumentTypeRef::new(
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract =DataContract::default();
+        let contract = DataContract::default();
 
         let query_value = json!({
             "where": [
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract =DataContract::default();
+        let contract = DataContract::default();
 
         let query_value = json!({
             "where": [

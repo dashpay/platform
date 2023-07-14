@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::identity::IdentityPublicKey;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::IdentityPublicKey;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
-
     /// The operations for adding new keys to an identity
     pub fn add_new_keys_to_identity_operations_v0(
         &self,
@@ -50,7 +49,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut drive_operations,
-                drive_version
+                drive_version,
             )?;
         }
         Ok(drive_operations)

@@ -1,14 +1,14 @@
 mod v0;
 
-use costs::OperationCost;
-use grovedb::batch::{GroveDbOp, OpsByLevelPath};
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::GroveError;
+use costs::OperationCost;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::{GroveDbOp, OpsByLevelPath};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Applies the given groveDB operations batch.
@@ -36,7 +36,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.grove_methods.apply.grove_apply_partial_batch {
-            0 => self.grove_apply_partial_batch_v0(ops, validate, add_on_operations, transaction, drive_version),
+            0 => self.grove_apply_partial_batch_v0(
+                ops,
+                validate,
+                add_on_operations,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_apply_partial_batch".to_string(),
                 known_versions: vec![0],

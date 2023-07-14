@@ -1,8 +1,7 @@
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::identity_update_transition::IdentityUpdateTransitionV0;
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
-
 
 impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
     fn from(value: IdentityUpdateTransitionV0) -> Self {

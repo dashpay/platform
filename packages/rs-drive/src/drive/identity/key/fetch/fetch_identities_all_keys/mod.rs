@@ -1,15 +1,14 @@
 mod v0;
 
-use std::collections::BTreeMap;
-use grovedb::TransactionArg;
-use dpp::identity::{IdentityPublicKey, KeyID};
 use crate::drive::Drive;
-use crate::error::Error;
-use dpp::version::drive_versions::DriveVersion;
 use crate::error::drive::DriveError;
+use crate::error::Error;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
-
     /// Fetches all keys associated with the specified identities.
     ///
     /// This function retrieves all keys associated with each identity ID provided
@@ -39,7 +38,13 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<BTreeMap<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
-        match drive_version.methods.identity.keys.fetch.fetch_identities_all_keys {
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .fetch
+            .fetch_identities_all_keys
+        {
             0 => self.fetch_identities_all_keys_v0(identity_ids, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identities_all_keys".to_string(),

@@ -1,13 +1,13 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Returns the operations required to remove from system credits.
@@ -38,8 +38,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.balances.remove_from_system_credits_operations {
-            0 => self.remove_from_system_credits_operations_v0(amount, estimated_costs_only_with_layer_info, transaction, drive_version),
+        match drive_version
+            .methods
+            .balances
+            .remove_from_system_credits_operations
+        {
+            0 => self.remove_from_system_credits_operations_v0(
+                amount,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_from_system_credits_operations".to_string(),
                 known_versions: vec![0],

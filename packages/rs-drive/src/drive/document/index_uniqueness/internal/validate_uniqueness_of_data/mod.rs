@@ -1,21 +1,21 @@
 mod v0;
 
-use dpp::data_contract::DataContract;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::version::drive_versions::DriveVersion;
-use crate::error::drive::DriveError;
 
 // We don't create an enum version of this
 // If this would ever need to be changed all index uniqueness methods would need to be changed
@@ -54,7 +54,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match drive_version.methods.document.index_uniqueness.validate_uniqueness_of_data {
+        match drive_version
+            .methods
+            .document
+            .index_uniqueness
+            .validate_uniqueness_of_data
+        {
             0 => self.validate_uniqueness_of_data_v0(request, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_uniqueness_of_data".to_string(),

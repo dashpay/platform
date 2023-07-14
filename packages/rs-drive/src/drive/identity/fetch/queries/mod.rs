@@ -3,9 +3,9 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
+use crate::drive::balances::balance_path_vec;
 use crate::error::query::QuerySyntaxError;
 use grovedb::{PathQuery, Query, SizedQuery};
-use crate::drive::balances::balance_path_vec;
 
 /// An enumeration representing the types of identity prove requests.
 ///

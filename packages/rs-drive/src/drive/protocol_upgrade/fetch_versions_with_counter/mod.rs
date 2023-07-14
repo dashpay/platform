@@ -6,6 +6,7 @@ use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use std::collections::BTreeMap;
 
+use crate::drive::protocol_upgrade::versions_counter_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -13,14 +14,12 @@ use crate::error::Error::GroveDB;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::protocol_upgrade::versions_counter_path_vec;
-
 
 impl Drive {
     /// Fetch versions by count for the upgrade window
@@ -41,7 +40,11 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<IntMap<ProtocolVersion, u64>, Error> {
-        match drive_version.methods.protocol_upgrade.fetch_versions_with_counter {
+        match drive_version
+            .methods
+            .protocol_upgrade
+            .fetch_versions_with_counter
+        {
             0 => self.fetch_versions_with_counter_v0(transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_versions_with_counter".to_string(),

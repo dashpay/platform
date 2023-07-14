@@ -1,22 +1,22 @@
 mod v0;
 
-use std::borrow::Cow;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::block_info::BlockInfo;
-use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::data_contract::DataContract;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-use crate::error::Error;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::DataContract;
+use dpp::document::Document;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates a document and returns the associated fee.
@@ -49,21 +49,24 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.document.update.update_document_with_serialization_for_contract {
-            0 => {
-                self.update_document_with_serialization_for_contract_v0(
-                    document,
-                    serialized_document,
-                    contract,
-                    document_type_name,
-                    owner_id,
-                    block_info,
-                    apply,
-                    storage_flags,
-                    transaction,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .update
+            .update_document_with_serialization_for_contract
+        {
+            0 => self.update_document_with_serialization_for_contract_v0(
+                document,
+                serialized_document,
+                contract,
+                document_type_name,
+                owner_id,
+                block_info,
+                apply,
+                storage_flags,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_with_serialization_for_contract".to_string(),
                 known_versions: vec![0],

@@ -1,13 +1,13 @@
 mod v0;
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::contract::ContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
 impl Drive {
     /// Retrieves the specified contracts and their associated fetch information.
@@ -45,7 +45,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<Arc<ContractFetchInfo>>>, Error> {
-        match drive_version.methods.contract.get.get_contracts_with_fetch_info {
+        match drive_version
+            .methods
+            .contract
+            .get
+            .get_contracts_with_fetch_info
+        {
             0 => contract_ids
                 .iter()
                 .map(|contract_id| {

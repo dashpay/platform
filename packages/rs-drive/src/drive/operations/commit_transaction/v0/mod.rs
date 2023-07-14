@@ -1,6 +1,6 @@
-use grovedb::Transaction;
 use crate::drive::Drive;
 use crate::error::Error;
+use grovedb::Transaction;
 
 impl Drive {
     /// Commits a transaction.

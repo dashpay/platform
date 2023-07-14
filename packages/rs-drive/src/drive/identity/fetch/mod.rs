@@ -32,6 +32,7 @@ use grovedb::{PathQuery, SizedQuery};
 #[cfg(feature = "full")]
 use std::collections::BTreeMap;
 
+mod balance;
 #[cfg(feature = "full")]
 mod fetch_by_public_key_hashes;
 #[cfg(feature = "full")]
@@ -44,7 +45,6 @@ mod prove;
 pub(crate) mod queries;
 #[cfg(feature = "full")]
 mod revision;
-mod balance;
 
 impl Drive {
     #[cfg(any(feature = "full", feature = "verify"))]

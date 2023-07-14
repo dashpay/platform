@@ -1,29 +1,37 @@
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::key_info::KeyInfo::KnownKey;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::{contract_document_type_path, contract_documents_keeping_history_primary_key_path_for_document_id, contract_documents_primary_key_path, make_document_reference};
-use crate::drive::Drive;
+use crate::drive::document::{
+    contract_document_type_path,
+    contract_documents_keeping_history_primary_key_path_for_document_id,
+    contract_documents_primary_key_path, make_document_reference,
+};
 use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType, QueryType};
-use crate::drive::object_size_info::{DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo};
+use crate::drive::grove_operations::{
+    BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
+    QueryType,
+};
 use crate::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
 use crate::drive::object_size_info::DriveKeyInfo::{KeyRef, KeySize};
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
+};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
-
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use dpp::document::Document;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::key_info::KeyInfo::KnownKey;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 
 impl Drive {
     /// Gathers operations for updating a document.
@@ -258,7 +266,7 @@ impl Drive {
                             transaction,
                             previous_batch_operations,
                             &mut batch_operations,
-                            drive_version
+                            drive_version,
                         )?;
                         if inserted {
                             batch_insertion_cache.insert(qualified_path);
@@ -289,7 +297,7 @@ impl Drive {
                             transaction,
                             previous_batch_operations,
                             &mut batch_operations,
-                            drive_version
+                            drive_version,
                         )?;
                         if inserted {
                             batch_insertion_cache.insert(qualified_path);
@@ -349,7 +357,7 @@ impl Drive {
                         transaction,
                         previous_batch_operations,
                         &mut batch_operations,
-                        drive_version
+                        drive_version,
                     )?;
                 }
 

@@ -1,16 +1,16 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use crate::drive::flags::StorageFlags;
+use crate::drive::Drive;
+use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use crate::drive::Drive;
-use crate::drive::flags::StorageFlags;
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::borrow::Cow;
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a contract and returns the fee for applying.
@@ -54,7 +54,7 @@ impl Drive {
             apply,
             storage_flags,
             transaction,
-            drive_version
+            drive_version,
         )
     }
 

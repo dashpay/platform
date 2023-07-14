@@ -1,9 +1,8 @@
-
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::Error;
-use grovedb::TransactionArg;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Prove the requested identity keys.
@@ -31,6 +30,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let identity_query = key_request.into_path_query();
-        self.grove_get_proved_path_query(&identity_query, false, transaction, &mut vec![], drive_version)
+        self.grove_get_proved_path_query(
+            &identity_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }

@@ -33,7 +33,7 @@ pub use dpp;
 #[cfg(feature = "full")]
 pub use grovedb;
 
+mod fee;
 /// Test helpers
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
-mod fee;

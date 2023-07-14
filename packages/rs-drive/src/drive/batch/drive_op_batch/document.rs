@@ -11,11 +11,11 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]

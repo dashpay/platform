@@ -1,11 +1,13 @@
+use crate::drive::identity::update::structs::apply_balance_change_outcome::v0::{
+    ApplyBalanceChangeOutcomeV0, ApplyBalanceChangeOutcomeV0Methods,
+};
 use dpp::fee::fee_result::FeeResult;
-use crate::drive::identity::update::structs::apply_balance_change_outcome::v0::{ApplyBalanceChangeOutcomeV0, ApplyBalanceChangeOutcomeV0Methods};
 
 mod v0;
 
 /// The outcome of paying for a fee
 pub enum ApplyBalanceChangeOutcome {
-    V0(ApplyBalanceChangeOutcomeV0)
+    V0(ApplyBalanceChangeOutcomeV0),
 }
 
 impl ApplyBalanceChangeOutcomeV0Methods for ApplyBalanceChangeOutcome {

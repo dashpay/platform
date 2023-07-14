@@ -34,20 +34,24 @@ use path::SubtreePath;
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::batch::GroveDbOpBatch;
 
+use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 
 use super::identity::add_initial_withdrawal_state_structure_operations;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub(super) fn create_initial_state_structure_0(&self, transaction: TransactionArg, drive_version: &DriveVersion) -> Result<(), Error> {
+    pub(super) fn create_initial_state_structure_0(
+        &self,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
         // We can not use batching to insert the root tree structure
 
         let mut drive_operations = vec![];

@@ -1,17 +1,22 @@
 mod v0;
 
-use grovedb::{Element, GroveDb, TransactionArg};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::drive::object_size_info::PathKeyElementInfo::{
+    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
+    PathKeyUnknownElementSize,
+};
+use crate::drive::object_size_info::PathKeyInfo::{
+    PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
+};
 use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
-use crate::drive::object_size_info::PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement, PathKeyUnknownElementSize};
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::{Element, GroveDb, TransactionArg};
 
 impl Drive {
     /// Pushes an "insert element if element was changed or is new" operation to `drive_operations`.
@@ -36,8 +41,18 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(bool, Option<Element>), Error> {
-        match drive_version.grove_methods.batch.batch_insert_if_changed_value {
-            0 => self.batch_insert_if_changed_value_v0(path_key_element_info, apply_type, transaction, drive_operations, drive_version),
+        match drive_version
+            .grove_methods
+            .batch
+            .batch_insert_if_changed_value
+        {
+            0 => self.batch_insert_if_changed_value_v0(
+                path_key_element_info,
+                apply_type,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_insert_if_changed_value".to_string(),
                 known_versions: vec![0],

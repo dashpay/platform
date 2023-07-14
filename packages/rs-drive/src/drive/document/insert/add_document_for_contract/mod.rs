@@ -1,17 +1,17 @@
 mod v0;
 
-use grovedb::TransactionArg;
-use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds a document to a contract.
@@ -36,16 +36,19 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.document.insert.add_document_for_contract {
-            0 => {
-                self.add_document_for_contract_v0(
-                    document_and_contract_info,
-                    override_document,
-                    block_info,
-                    apply,
-                    transaction,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .insert
+            .add_document_for_contract
+        {
+            0 => self.add_document_for_contract_v0(
+                document_and_contract_info,
+                override_document,
+                block_info,
+                apply,
+                transaction,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_for_contract".to_string(),
                 known_versions: vec![0],

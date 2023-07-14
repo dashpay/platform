@@ -1,8 +1,6 @@
-
+mod conversion;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod random;
-mod conversion;
-
 
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
@@ -25,8 +23,6 @@ use crate::{
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-
-
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
@@ -53,18 +49,18 @@ impl Hash for IdentityV0 {
 }
 
 mod public_key_serialization {
+    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::{IdentityPublicKey, KeyID};
     use serde::ser::SerializeSeq;
     use serde::{Deserialize, Serializer};
     use std::collections::BTreeMap;
-    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
     /// deserialize_public_keys deserializes public keys from a vector
     pub fn deserialize<'de, D>(
         deserializer: D,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, D::Error>
-        where
-            D: serde::Deserializer<'de>,
+    where
+        D: serde::Deserializer<'de>,
     {
         let public_key_vec: Vec<IdentityPublicKey> = Deserialize::deserialize(deserializer)?;
         Ok(public_key_vec.into_iter().map(|k| (k.id(), k)).collect())
@@ -74,8 +70,8 @@ mod public_key_serialization {
         public_keys: &BTreeMap<KeyID, IdentityPublicKey>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         let mut seq = serializer.serialize_seq(Some(public_keys.len()))?;
         for element in public_keys.values() {

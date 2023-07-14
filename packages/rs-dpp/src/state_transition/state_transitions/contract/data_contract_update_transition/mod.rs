@@ -29,9 +29,7 @@ mod value_conversion;
 pub use fields::*;
 
 use crate::version::FeatureVersion;
-pub use action::DataContractUpdateTransitionAction;
 pub use v0::*;
-pub use v0_action::DataContractUpdateTransitionActionV0;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 

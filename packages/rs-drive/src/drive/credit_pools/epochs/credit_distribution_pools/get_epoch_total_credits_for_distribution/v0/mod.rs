@@ -1,6 +1,5 @@
-
-use std::ops::Range;
 use grovedb::{Element, TransactionArg};
+use std::ops::Range;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -13,9 +12,7 @@ use dpp::fee::Credits;
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
 
-
 impl Drive {
-
     /// Gets the total credits to be distributed for the Epoch.
     pub(super) fn get_epoch_total_credits_for_distribution_v0(
         &self,
@@ -34,15 +31,14 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use dpp::block::epoch::Epoch;
-    use dpp::fee::Credits;
-    use dpp::version::drive_versions::DriveVersion;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use dpp::fee::Credits;
+    use dpp::version::drive_versions::DriveVersion;
 
     #[test]
     fn test_get_epoch_total_credits_for_distribution_v0() {

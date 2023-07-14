@@ -1,5 +1,5 @@
-use dpp::version::FeatureVersion;
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
+use dpp::version::FeatureVersion;
 
 /// Drive errors
 #[derive(Debug, thiserror::Error)]
@@ -10,8 +10,10 @@ pub enum DriveError {
     CorruptedCodeExecution(&'static str),
 
     /// Platform expected some specific versions
-    #[error("drive unknown version on {method}, known versions: {known_versions}, received: {received}")]
-    UnknownVersionMismatch{
+    #[error(
+        "drive unknown version on {method}, known versions: {known_versions}, received: {received}"
+    )]
+    UnknownVersionMismatch {
         /// method
         method: String,
         /// the allowed versions for this method

@@ -18,14 +18,13 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
 use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use dpp::identity::IdentityPublicKey;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
-
 
 impl Drive {
     /// Generates a set of operations to insert a reference to a unique key.
@@ -55,8 +54,20 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.identity.keys.insert_key_hash_identity_reference.insert_reference_to_unique_key {
-            0 => self.insert_reference_to_unique_key_operations_v0(identity_id, identity_key, estimated_costs_only_with_layer_info, transaction, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .insert_key_hash_identity_reference
+            .insert_reference_to_unique_key
+        {
+            0 => self.insert_reference_to_unique_key_operations_v0(
+                identity_id,
+                identity_key,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_reference_to_unique_key_operations".to_string(),
                 known_versions: vec![0],

@@ -41,9 +41,9 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use tempfile::TempDir;
-use dpp::version::drive_versions::DriveVersion;
 
 /// Struct with options regarding setting up fee pools.
 pub struct SetupFeePoolsOptions {
@@ -91,7 +91,14 @@ pub fn setup_system_data_contract(
 ) {
     let drive_version = DriveVersion::latest();
     drive
-        .apply_contract(data_contract, BlockInfo::default(), true, None, transaction, &drive_version)
+        .apply_contract(
+            data_contract,
+            BlockInfo::default(),
+            true,
+            None,
+            transaction,
+            &drive_version,
+        )
         .unwrap();
 }
 
@@ -118,7 +125,7 @@ pub fn setup_document(
             BlockInfo::default(),
             true,
             transaction,
-            &drive_version
+            &drive_version,
         )
         .unwrap();
 }

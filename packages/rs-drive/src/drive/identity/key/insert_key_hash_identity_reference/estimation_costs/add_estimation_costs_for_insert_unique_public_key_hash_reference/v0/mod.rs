@@ -1,4 +1,3 @@
-
 use crate::drive::defaults::{
     DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8,
     ESTIMATED_NON_UNIQUE_KEY_DUPLICATES,
@@ -23,8 +22,6 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-
-
 
 impl Drive {
     /// Adds the estimation costs for the insertion of a unique public key hash reference

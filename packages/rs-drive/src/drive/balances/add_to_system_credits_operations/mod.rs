@@ -1,19 +1,19 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use grovedb::Element::Item;
-use integer_encoding::VarInt;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use crate::drive::Drive;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::system::{misc_path, misc_path_vec};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::{GroveDbOp, KeyInfoPath};
+use grovedb::Element::Item;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use integer_encoding::VarInt;
+use std::collections::HashMap;
 
 impl Drive {
     /// Provides the operations needed to add to system credits
@@ -41,8 +41,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.balances.add_to_system_credits_operations {
-            0 => self.add_to_system_credits_operations_v0(amount, estimated_costs_only_with_layer_info, transaction, drive_version),
+        match drive_version
+            .methods
+            .balances
+            .add_to_system_credits_operations
+        {
+            0 => self.add_to_system_credits_operations_v0(
+                amount,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_system_credits_operations".to_string(),
                 known_versions: vec![0],

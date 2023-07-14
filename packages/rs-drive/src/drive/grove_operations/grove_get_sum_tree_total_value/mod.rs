@@ -1,18 +1,18 @@
 mod v0;
 
-use costs::CostContext;
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, TransactionArg};
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
-use crate::drive::Drive;
 use crate::drive::grove_operations::{DirectQueryType, QueryTarget};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
+use costs::CostContext;
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, TransactionArg};
+use path::SubtreePath;
 
 impl Drive {
     /// Retrieves the total value from a sum tree within groveDB at the specified path and key.
@@ -40,8 +40,18 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<i64, Error> {
-        match drive_version.grove_methods.basic.grove_get_sum_tree_total_value {
-            0 => self.grove_get_sum_tree_total_value(path, key, query_type, transaction, drive_operations),
+        match drive_version
+            .grove_methods
+            .basic
+            .grove_get_sum_tree_total_value
+        {
+            0 => self.grove_get_sum_tree_total_value(
+                path,
+                key,
+                query_type,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_sum_tree_total_value".to_string(),
                 known_versions: vec![0],

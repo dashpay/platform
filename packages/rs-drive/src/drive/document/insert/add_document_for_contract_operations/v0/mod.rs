@@ -1,15 +1,15 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::block_info::BlockInfo;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::document::contract_documents_primary_key_path;
-use crate::drive::Drive;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
@@ -45,21 +45,21 @@ impl Drive {
 
         if override_document
             && !document_and_contract_info
-            .owned_document_info
-            .document_info
-            .is_document_size()
-            && self.grove_has_raw(
-            primary_key_path.as_ref().into(),
-            document_and_contract_info
                 .owned_document_info
                 .document_info
-                .id_key_value_info()
-                .as_key_ref_request()?,
-            query_type,
-            transaction,
-            &mut batch_operations,
-            drive_version,
-        )?
+                .is_document_size()
+            && self.grove_has_raw(
+                primary_key_path.as_ref().into(),
+                document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .id_key_value_info()
+                    .as_key_ref_request()?,
+                query_type,
+                transaction,
+                &mut batch_operations,
+                drive_version,
+            )?
         {
             let update_operations = self.update_document_for_contract_operations(
                 document_and_contract_info,

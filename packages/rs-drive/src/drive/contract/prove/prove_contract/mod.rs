@@ -1,10 +1,10 @@
 mod v0;
 
 use crate::drive::Drive;
-use crate::error::Error;
 use crate::error::drive::DriveError;
-use grovedb::TransactionArg;
+use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves the existence of a specified contract.
@@ -34,9 +34,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         match drive_version.methods.contract.prove.prove_contract {
-            0 => {
-                self.prove_contract_v0(contract_id, transaction)
-            },
+            0 => self.prove_contract_v0(contract_id, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_contract".to_string(),
                 known_versions: vec![0],

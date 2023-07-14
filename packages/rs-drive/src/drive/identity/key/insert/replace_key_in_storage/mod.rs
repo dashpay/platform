@@ -1,14 +1,14 @@
 mod v0;
 
-use grovedb::Element;
+use crate::drive::identity::identity_key_tree_path_vec;
+use crate::drive::operation::LowLevelDriveOperation;
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::Error;
 use dpp::identity::IdentityPublicKey;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::operation::LowLevelDriveOperation;
-use crate::error::Error;
-use crate::drive::identity::identity_key_tree_path_vec;
-use crate::error::drive::DriveError;
+use grovedb::Element;
 
 impl Drive {
     /// Generates a set of operations to replace a key in storage.
@@ -37,8 +37,20 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.identity.keys.insert.replace_key_in_storage {
-            0 => self.replace_key_in_storage_operations_v0(identity_id, identity_key, key_id_bytes, change_in_bytes, drive_operations),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .insert
+            .replace_key_in_storage
+        {
+            0 => self.replace_key_in_storage_operations_v0(
+                identity_id,
+                identity_key,
+                key_id_bytes,
+                change_in_bytes,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "replace_key_in_storage_operations".to_string(),
                 known_versions: vec![0],

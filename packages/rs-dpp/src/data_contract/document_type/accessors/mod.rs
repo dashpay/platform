@@ -76,7 +76,6 @@ impl DocumentTypeV0Getters for DocumentType {
 }
 
 impl DocumentTypeV0MutGetters for DocumentType {
-
     fn indices_mut(&mut self) -> &mut Vec<Index> {
         match self {
             DocumentType::V0(v0) => v0.indices_mut(),
@@ -187,8 +186,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
     }
 }
 
-
-
 impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn name(&self) -> &String {
         match self {
@@ -257,7 +254,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
 }
 
 impl<'a> DocumentTypeV0MutGetters for DocumentTypeMutRef<'a> {
-
     fn indices_mut(&mut self) -> &mut Vec<Index> {
         match self {
             DocumentTypeMutRef::V0(ref mut v0) => v0.indices_mut(),

@@ -75,8 +75,6 @@ use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use ordering::OrderClause;
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 #[cfg(feature = "full")]
@@ -91,6 +89,8 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
+#[cfg(any(feature = "full", feature = "verify"))]
+use dpp::data_contract::DataContract;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::paths::ContractPaths;
@@ -1666,12 +1666,12 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use dpp::data_contract::DataContract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::data_contract::DataContract;
 
     use dpp::util::cbor_serializer;
     use serde_json::Value::Null;
@@ -1679,7 +1679,7 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use dpp::block::extended_block_info::BlockInfo;
 
-    fn setup_family_contract() -> (Drive,DataContract) {
+    fn setup_family_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -1700,7 +1700,7 @@ mod tests {
         (drive, contract)
     }
 
-    fn setup_family_birthday_contract() -> (Drive,DataContract) {
+    fn setup_family_birthday_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -1734,7 +1734,7 @@ mod tests {
                 ["lastName", "asc"],
             ]
         });
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1761,7 +1761,7 @@ mod tests {
             ],
             "invalid": 0,
         });
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1789,7 +1789,7 @@ mod tests {
             ],
         });
 
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1817,7 +1817,7 @@ mod tests {
             ],
         });
 
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1844,7 +1844,7 @@ mod tests {
                 ["lastName", "asc"],
             ],
         });
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2098,7 +2098,7 @@ mod tests {
             ],
         });
 
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2124,7 +2124,7 @@ mod tests {
             ],
         });
 
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2150,7 +2150,7 @@ mod tests {
             ],
         });
 
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2176,7 +2176,7 @@ mod tests {
             ],
         });
 
-        let contract =DataContract::default();
+        let contract = DataContract::default();
         let document_type = DocumentTypeRef::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)

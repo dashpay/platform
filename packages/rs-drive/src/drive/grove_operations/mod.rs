@@ -402,5 +402,3 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
         }
     }
 }
-
-

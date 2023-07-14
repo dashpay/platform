@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use grovedb::{PathQuery, TransactionArg};
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
     /// Fetches an identity with all its information from storage.
@@ -31,7 +31,6 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,34 +39,33 @@ mod tests {
     use dpp::identity::Identity;
     use std::collections::BTreeMap;
 
+    #[test]
+    fn should_prove_a_single_identity() {
+        let drive = setup_drive_with_initial_state_structure();
+        let identity = Identity::random_identity(Some(0), 3, Some(14));
 
-        #[test]
-        fn should_prove_a_single_identity() {
-            let drive = setup_drive_with_initial_state_structure();
-            let identity = Identity::random_identity(Some(0), 3, Some(14));
+        drive
+            .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+            .expect("expected to add an identity");
 
-            drive
-                .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
-                .expect("expected to add an identity");
+        let first_key_hash = identity
+            .public_keys()
+            .values()
+            .find(|public_key| public_key.key_type.is_unique_key_type())
+            .expect("expected a unique key")
+            .hash()
+            .expect("expected to hash data")
+            .try_into()
+            .expect("expected to be 20 bytes");
 
-            let first_key_hash = identity
-                .public_keys()
-                .values()
-                .find(|public_key| public_key.key_type.is_unique_key_type())
-                .expect("expected a unique key")
-                .hash()
-                .expect("expected to hash data")
-                .try_into()
-                .expect("expected to be 20 bytes");
+        let proof = drive
+            .prove_full_identity_by_unique_public_key_hash(first_key_hash, None)
+            .expect("should not error when proving an identity");
 
-            let proof = drive
-                .prove_full_identity_by_unique_public_key_hash(first_key_hash, None)
-                .expect("should not error when proving an identity");
+        let (_, proved_identity) =
+            Drive::verify_full_identity_by_public_key_hash(proof.as_slice(), first_key_hash)
+                .expect("expect that this be verified");
 
-            let (_, proved_identity) =
-                Drive::verify_full_identity_by_public_key_hash(proof.as_slice(), first_key_hash)
-                    .expect("expect that this be verified");
-
-            assert_eq!(proved_identity, Some(identity));
-        }
+        assert_eq!(proved_identity, Some(identity));
+    }
 }

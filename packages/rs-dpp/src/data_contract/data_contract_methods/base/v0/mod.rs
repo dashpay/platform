@@ -6,10 +6,7 @@ pub trait DataContractBaseMethodsV0 {
     fn increment_version(&mut self);
     /// Returns true if document type is defined
     fn is_document_defined(&self, document_type_name: &str) -> bool;
-    fn optional_document_type_for_name(
-        &self,
-        document_type_name: &str,
-    ) -> Option<DocumentTypeRef>;
+    fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<DocumentTypeRef>;
     fn optional_document_type_mut_for_name(
         &mut self,
         document_type_name: &str,

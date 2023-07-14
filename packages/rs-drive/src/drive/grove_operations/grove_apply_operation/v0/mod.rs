@@ -1,8 +1,8 @@
-use grovedb::batch::GroveDbOp;
-use grovedb::TransactionArg;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::Error;
+use grovedb::batch::GroveDbOp;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Applies the given groveDB operation

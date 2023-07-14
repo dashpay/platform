@@ -1,4 +1,3 @@
-
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
 
 use crate::drive::flags::StorageFlags;
@@ -11,10 +10,9 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
 use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
-
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
@@ -22,7 +20,10 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) {
-        Self::add_estimation_costs_for_levels_up_to_contract(estimated_costs_only_with_layer_info, drive_version);
+        Self::add_estimation_costs_for_levels_up_to_contract(
+            estimated_costs_only_with_layer_info,
+            drive_version,
+        );
 
         let document_type_count = contract.documents.len() as u32;
 

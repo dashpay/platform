@@ -1,4 +1,6 @@
-use crate::drive::object_size_info::key_value_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
+use crate::drive::object_size_info::key_value_info::KeyValueInfo::{
+    KeyRefRequest, KeyValueMaxSize,
+};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 

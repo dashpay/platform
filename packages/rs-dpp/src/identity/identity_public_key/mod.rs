@@ -1,9 +1,9 @@
 #![allow(clippy::from_over_into)]
 
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 mod key_type;
 mod purpose;

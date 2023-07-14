@@ -7,6 +7,7 @@ use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
+use crate::error::Error;
 use dpp::data_contract::DataContract;
 use dpp::serialization_traits::PlatformSerializable;
 use grovedb::batch::KeyInfoPath;
@@ -15,7 +16,6 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use crate::error::Error;
 
 impl Drive {
     /// Adds the estimation costs for a contract insertion

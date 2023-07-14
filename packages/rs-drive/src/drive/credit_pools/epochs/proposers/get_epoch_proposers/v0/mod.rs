@@ -1,4 +1,3 @@
-
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
@@ -8,9 +7,7 @@ use crate::error::Error;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 
-
 impl Drive {
-
     /// Returns a list of the Epoch's block proposers
     pub(super) fn get_epoch_proposers_v0(
         &self,
@@ -63,40 +60,39 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use dpp::block::epoch::Epoch;
-    use dpp::version::drive_versions::DriveVersion;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::drive_versions::DriveVersion;
 
     #[test]
-        fn test_value() {
-            let drive = setup_drive_with_initial_state_structure();
+    fn test_value() {
+        let drive = setup_drive_with_initial_state_structure();
         let drive_version = DriveVersion::default();
-            let transaction = drive.grove.start_transaction();
+        let transaction = drive.grove.start_transaction();
 
-            let pro_tx_hash: [u8; 32] = rand::random();
-            let block_count = 42;
+        let pro_tx_hash: [u8; 32] = rand::random();
+        let block_count = 42;
 
-            let epoch = Epoch::new(0).unwrap();
+        let epoch = Epoch::new(0).unwrap();
 
-            let mut batch = GroveDbOpBatch::new();
+        let mut batch = GroveDbOpBatch::new();
 
-            batch.push(epoch.init_proposers_tree_operation());
+        batch.push(epoch.init_proposers_tree_operation());
 
-            batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, block_count));
+        batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, block_count));
 
-            drive
-                .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
-                .expect("should apply batch");
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
+            .expect("should apply batch");
 
-            let result = drive
-                .get_epoch_proposers(&epoch, Some(100), Some(&transaction), &drive_version)
-                .expect("should get proposers");
+        let result = drive
+            .get_epoch_proposers(&epoch, Some(100), Some(&transaction), &drive_version)
+            .expect("should get proposers");
 
-            assert_eq!(result, vec!((pro_tx_hash.to_vec(), block_count)));
-        }
+        assert_eq!(result, vec!((pro_tx_hash.to_vec(), block_count)));
     }
+}

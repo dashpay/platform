@@ -1,11 +1,9 @@
-
 use crate::drive::Drive;
 use crate::error::Error;
 
 use grovedb::TransactionArg;
 
 impl Drive {
-
     /// Proves the existence of the specified contract's history.
     ///
     /// This function creates a path query for each for the given contract id and limit and offset

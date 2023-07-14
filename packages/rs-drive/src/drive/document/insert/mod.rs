@@ -96,7 +96,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::option::Option::None;
 
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
 use crate::drive::document::{
     contract_document_type_path_vec,
@@ -125,6 +124,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::DataContract;
 
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -153,7 +153,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let contract =DataContract::from_cbor(serialized_contract)?;
+        let contract = DataContract::from_cbor(serialized_contract)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
@@ -178,11 +178,6 @@ impl Drive {
     }
 }
 
-
-
-
-
-
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
@@ -198,10 +193,10 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::Drive;
-    use dpp::fee::default_costs::EpochCosts;
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::LowLevelDriveOperation;
     use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {

@@ -208,7 +208,7 @@ impl PersonWithOptionalValues {
 
 #[cfg(feature = "full")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
-pub fn setup_family_tests(count: u32, seed: u64) -> (Drive,DataContract) {
+pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
@@ -277,7 +277,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive,DataContract) {
 
 #[cfg(feature = "full")]
 /// Same as `setup_family_tests` but with null values in the documents.
-pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive,DataContract) {
+pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
@@ -345,7 +345,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive,DataContra
 
 #[cfg(feature = "full")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
-pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive,DataContract) {
+pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
@@ -623,7 +623,7 @@ pub fn add_domains_to_contract(
 
 #[cfg(feature = "full")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
-pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive,DataContract) {
+pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
 
     let db_transaction = drive.grove.start_transaction();
@@ -657,7 +657,7 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive,DataContra
 
 #[cfg(feature = "full")]
 /// Sets up the References contract to test queries on.
-pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive,DataContract) {
+pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
 
     let db_transaction = drive.grove.start_transaction();
@@ -690,7 +690,7 @@ pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive,DataContract) {
 
 #[cfg(feature = "full")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
-pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive,DataContract) {
+pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, DataContract) {
     let drive = setup_drive(Some(DriveConfig::default()));
 
     let db_transaction = drive.grove.start_transaction();
@@ -724,7 +724,7 @@ pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive,Data
 
 #[cfg(feature = "full")]
 /// Sets up the DPNS contract and inserts data from the given path to test queries on.
-pub fn setup_dpns_test_with_data(path: &str) -> (Drive,DataContract) {
+pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
     let drive = setup_drive(None);
 
     let db_transaction = drive.grove.start_transaction();
@@ -4870,8 +4870,7 @@ fn test_query_documents_by_created_at() {
         cbor_serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
             .expect("expected to serialize to cbor");
 
-    let contract =
-        DataContract::from_object(contract).expect("should create a contract from cbor");
+    let contract = DataContract::from_object(contract).expect("should create a contract from cbor");
 
     drive
         .apply_contract_with_serialization(

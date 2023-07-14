@@ -1,15 +1,15 @@
-use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
-use costs::storage_cost::transition::OperationStorageTransitionType;
-use grovedb::batch::{BatchApplyOptions, GroveDbOp};
-use grovedb::TransactionArg;
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::Drive;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::push_drive_operation_result;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::GroveError;
+use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
+use costs::storage_cost::transition::OperationStorageTransitionType;
+use grovedb::batch::{BatchApplyOptions, GroveDbOp};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
@@ -77,11 +77,11 @@ impl Drive {
                             new_storage_flags,
                             cost.added_bytes,
                         )
-                            .map_err(|_| {
-                                GroveError::JustInTimeElementFlagsClientError(
-                                    "drive could not combine storage flags (new flags were bigger)",
-                                )
-                            })?;
+                        .map_err(|_| {
+                            GroveError::JustInTimeElementFlagsClientError(
+                                "drive could not combine storage flags (new flags were bigger)",
+                            )
+                        })?;
                         let combined_flags = combined_storage_flags.to_element_flags();
                         // it's possible they got bigger in the same epoch
                         if combined_flags == *new_flags {
@@ -98,11 +98,11 @@ impl Drive {
                             new_storage_flags,
                             &cost.removed_bytes,
                         )
-                            .map_err(|_| {
-                                GroveError::JustInTimeElementFlagsClientError(
-                                    "drive could not combine storage flags (new flags were smaller)",
-                                )
-                            })?;
+                        .map_err(|_| {
+                            GroveError::JustInTimeElementFlagsClientError(
+                                "drive could not combine storage flags (new flags were smaller)",
+                            )
+                        })?;
                         let combined_flags = combined_storage_flags.to_element_flags();
                         // it's possible they got bigger in the same epoch
                         if combined_flags == *new_flags {

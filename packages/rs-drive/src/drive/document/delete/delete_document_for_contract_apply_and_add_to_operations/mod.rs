@@ -1,14 +1,14 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::version::drive_versions::DriveVersion;
-use dpp::data_contract::DataContract;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::DataContract;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Deletes a document.
@@ -39,7 +39,12 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.document.delete.delete_document_for_contract_apply_and_add_to_operations {
+        match drive_version
+            .methods
+            .document
+            .delete
+            .delete_document_for_contract_apply_and_add_to_operations
+        {
             0 => self.delete_document_for_contract_apply_and_add_to_operations_v0(
                 document_id,
                 contract,
@@ -58,4 +63,3 @@ impl Drive {
         }
     }
 }
-

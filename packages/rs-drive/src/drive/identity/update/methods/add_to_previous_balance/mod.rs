@@ -1,13 +1,13 @@
 mod v0;
 
-use grovedb::TransactionArg;
-use dpp::fee::Credits;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::Error;
 use crate::error::identity::IdentityError;
+use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::fee::Credits;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// The method to add balance to the previous balance. This function is version controlled.
@@ -35,8 +35,21 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<AddToPreviousBalanceOutcome, Error> {
-        match drive_version.methods.identity.update.add_to_previous_balance {
-            0 => self.add_to_previous_balance_v0(identity_id, previous_balance, added_balance, apply, transaction, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .update
+            .add_to_previous_balance
+        {
+            0 => self.add_to_previous_balance_v0(
+                identity_id,
+                previous_balance,
+                added_balance,
+                apply,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_previous_balance".to_string(),
                 known_versions: vec![0],

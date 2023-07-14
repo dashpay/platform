@@ -1,4 +1,3 @@
-
 use crate::drive::balances::balance_path;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;

@@ -1,17 +1,17 @@
-use grovedb::Element::SumItem;
-use grovedb::TransactionArg;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::Credits;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::balances::balance_path;
-use crate::drive::Drive;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::Element::SumItem;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store
@@ -53,7 +53,6 @@ impl Drive {
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok((value, fees))
     }
-
 
     /// Creates the operations to get Identity's balance from the backing store
     /// This gets operations based on apply flag (stateful vs stateless)

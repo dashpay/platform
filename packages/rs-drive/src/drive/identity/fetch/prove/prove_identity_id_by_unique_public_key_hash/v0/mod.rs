@@ -2,8 +2,8 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use grovedb::TransactionArg;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves an identity id against a public key hash.
@@ -11,28 +11,33 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_version: &DriveVersion
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
-        self.grove_get_proved_path_query(&path_query, false, transaction, &mut vec![], drive_version)
+        self.grove_get_proved_path_query(
+            &path_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::extended_block_info::BlockInfo;
     use dpp::identity::Identity;
-    use std::collections::BTreeMap;
     use dpp::version::drive_versions::DriveVersion;
-    use crate::drive::Drive;
+    use std::collections::BTreeMap;
 
     #[test]
     fn should_prove_a_single_identity_id() {
         let drive = setup_drive_with_initial_state_structure();
         let drive_version = DriveVersion::latest();
-        let identity = Identity::random_identity(Some(0),3, Some(14));
+        let identity = Identity::random_identity(Some(0), 3, Some(14));
 
         let identity_id = identity.id.to_buffer();
         drive
@@ -53,12 +58,9 @@ mod tests {
             .prove_identity_id_by_unique_public_key_hash_v0(first_key_hash, None, &drive_version)
             .expect("should not error when proving an identity");
 
-        let (_, proved_identity_id) = Drive::verify_identity_id_by_public_key_hash(
-            proof.as_slice(),
-            false,
-            first_key_hash,
-        )
-            .expect("expect that this be verified");
+        let (_, proved_identity_id) =
+            Drive::verify_identity_id_by_public_key_hash(proof.as_slice(), false, first_key_hash)
+                .expect("expect that this be verified");
 
         assert_eq!(proved_identity_id, Some(identity_id));
     }

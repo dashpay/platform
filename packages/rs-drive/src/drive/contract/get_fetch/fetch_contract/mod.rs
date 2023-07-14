@@ -1,17 +1,17 @@
 mod v0;
 
-use std::ops::AddAssign;
-use std::sync::Arc;
-use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use grovedb::{Element, TransactionArg};
-use dpp::block::epoch::Epoch;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::contract::{ContractFetchInfo, paths};
+use crate::drive::contract::{paths, ContractFetchInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
+use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
+use dpp::block::epoch::Epoch;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::{Element, TransactionArg};
+use std::ops::AddAssign;
+use std::sync::Arc;
 
 /// Drive contract fetching methods.
 impl Drive {
@@ -93,7 +93,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
         match drive_version.methods.contract.get.fetch_contract {
-            0 => self.fetch_contract_and_add_operations_v0(contract_id, epoch, transaction, drive_operations),
+            0 => self.fetch_contract_and_add_operations_v0(
+                contract_id,
+                epoch,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_contract_and_add_operations".to_string(),
                 known_versions: vec![0],

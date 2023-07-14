@@ -29,10 +29,10 @@
 
 mod contract;
 mod document;
+mod drive_methods;
 mod identity;
 mod system;
 mod withdrawals;
-mod drive_methods;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
@@ -53,13 +53,13 @@ pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use dpp::fee::fee_result::FeeResult;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -86,7 +86,7 @@ pub struct DriveOperationContext {
 #[derive(Clone, Debug)]
 pub enum DriveOperation<'a> {
     /// A contract operation
-   DataContractOperation(ContractOperationType<'a>),
+    DataContractOperation(ContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
     /// Withdrawal operation
@@ -175,12 +175,12 @@ mod tests {
 
     use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
 
+    use dpp::block::block_info::BlockInfo;
     use dpp::serialization_traits::PlatformSerializable;
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
     use tempfile::TempDir;
-    use dpp::block::block_info::BlockInfo;
 
     use crate::common::setup_contract;
 
@@ -445,7 +445,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            0
+            0,
         )
         .expect("expected to get contract");
 
@@ -652,7 +652,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version
+                &drive_version,
             )
             .expect("expected to be able to insert documents");
 

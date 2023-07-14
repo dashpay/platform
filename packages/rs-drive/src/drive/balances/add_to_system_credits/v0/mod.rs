@@ -1,8 +1,8 @@
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// We add to the total platform system credits when:
@@ -25,7 +25,7 @@ impl Drive {
             false,
             transaction,
             &mut drive_operations,
-            drive_version
+            drive_version,
         )
     }
 }

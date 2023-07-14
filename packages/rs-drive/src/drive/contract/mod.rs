@@ -33,7 +33,15 @@
 //!
 
 #[cfg(feature = "full")]
+mod apply;
+#[cfg(any(feature = "full", feature = "verify"))]
+mod contract_fetch_info;
+#[cfg(feature = "full")]
 mod estimation_costs;
+#[cfg(feature = "full")]
+mod get_fetch;
+#[cfg(feature = "full")]
+mod insert;
 /// Various paths for contract operations
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) mod paths;
@@ -41,18 +49,10 @@ pub(crate) mod paths;
 pub(crate) mod prove;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) mod queries;
-#[cfg(feature = "full")]
-mod insert;
-#[cfg(feature = "full")]
-mod update;
-#[cfg(feature = "full")]
-mod get_fetch;
-#[cfg(feature = "full")]
-mod apply;
 #[cfg(test)]
 mod test_helpers;
-#[cfg(any(feature = "full", feature = "verify"))]
-mod contract_fetch_info;
+#[cfg(feature = "full")]
+mod update;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use contract_fetch_info::*;
 
@@ -60,25 +60,23 @@ pub use contract_fetch_info::*;
 /// the server from being overloaded with requests.
 pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 
-
-
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
+    use dpp::block::block_info::BlockInfo;
     use rand::Rng;
+    use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
-    use dpp::block::block_info::BlockInfo;
 
     use super::*;
-    use dpp::data_contract::DataContract;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
     use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::data_contract::DataContract;
     use dpp::version::drive_versions::DriveVersion;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -132,7 +130,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &drive_version
+                &drive_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -160,7 +158,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &drive_version
+                &drive_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -319,7 +317,8 @@ mod tests {
             "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = json_document_to_contract(contract_path, 0).expect("expected to get contract");
+        let contract =
+            json_document_to_contract(contract_path, 0).expect("expected to get contract");
         drive
             .apply_contract(
                 &contract,
@@ -366,4 +365,3 @@ mod tests {
             .expect("expected to apply contract successfully");
     }
 }
-

@@ -33,8 +33,8 @@
 use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use grovedb::{Element, TransactionArg};
 use dpp::fee::Credits;
+use grovedb::{Element, TransactionArg};
 
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};

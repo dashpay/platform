@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
-use grovedb::TransactionArg;
-use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetch all the current keys of every kind for a specific Identity

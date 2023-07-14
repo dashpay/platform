@@ -1,12 +1,14 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
+use crate::drive::identity::{
+    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
+};
+use crate::drive::object_size_info::DriveKeyInfo;
+use crate::drive::Drive;
+use crate::error::Error;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::identity::{identity_query_keys_purpose_tree_path, identity_query_keys_tree_path};
-use crate::drive::object_size_info::DriveKeyInfo;
-use crate::error::Error;
+use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerInformation;
+use std::collections::HashMap;
 
 impl Drive {
     /// This creates the key query tree structure operations and adds them to the
@@ -26,7 +28,7 @@ impl Drive {
             Self::add_estimation_costs_for_root_key_reference_tree(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-                drive_version
+                drive_version,
             )
         }
 

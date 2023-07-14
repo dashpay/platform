@@ -1,19 +1,18 @@
-mod transformer;
+#[cfg(feature = "state-transition-transformers")]
+pub mod transformer;
 
-use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
-use crate::document::document_transition::DocumentReplaceTransition;
-use crate::document::Document;
+use crate::document::{Document, DocumentV0};
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::version::PlatformVersion;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DocumentReplaceTransitionAction {
+#[derive(Debug, Clone)]
+pub struct DocumentReplaceTransitionActionV0 {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction,
     /// The current revision we are setting
@@ -26,26 +25,14 @@ pub struct DocumentReplaceTransitionAction {
     pub data: BTreeMap<String, Value>,
 }
 
-impl DocumentReplaceTransitionAction {
-    pub fn from_document_replace_transition(
-        document_replace_transition: &DocumentReplaceTransition,
-        originally_created_at: Option<TimestampMillis>,
-    ) -> Self {
-        let DocumentReplaceTransition {
-            base,
-            revision,
-            updated_at,
-            data,
-            ..
-        } = document_replace_transition;
-        DocumentReplaceTransitionAction {
-            base: base.into(),
-            revision: *revision,
-            created_at: originally_created_at,
-            updated_at: *updated_at,
-            data: data.clone().unwrap_or_default(),
-        }
-    }
+pub trait DocumentReplaceTransitionActionAccessorsV0 {
+    fn base(&self) -> &DocumentBaseTransitionAction;
+    fn base_owned(self) -> DocumentBaseTransitionAction;
+    fn revision(&self) -> Revision;
+    fn created_at(&self) -> Option<TimestampMillis>;
+    fn updated_at(&self) -> Option<TimestampMillis>;
+    fn data(&self) -> &BTreeMap<String, Value>;
+    fn data_owned(self) -> BTreeMap<String, Value>;
 }
 
 impl Document {
@@ -60,10 +47,11 @@ impl Document {
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
     pub fn try_from_replace_transition(
-        value: &DocumentReplaceTransitionAction,
+        value: &DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let DocumentReplaceTransitionAction {
+        let DocumentReplaceTransitionActionV0 {
             base,
             revision,
             created_at,
@@ -71,16 +59,28 @@ impl Document {
             data,
         } = value;
 
-        let DocumentBaseTransitionAction { id, .. } = base;
+        let id = base.id();
 
-        Ok(Document {
-            id: *id,
-            owner_id,
-            properties: data.clone(),
-            revision: Some(*revision),
-            created_at: created_at.clone(),
-            updated_at: updated_at.clone(),
-        })
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id,
+                owner_id,
+                properties: data.clone(),
+                revision: Some(*revision),
+                created_at: created_at.clone(),
+                updated_at: updated_at.clone(),
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_replace_transition".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
     /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` instance and `owner_id`.
@@ -94,10 +94,11 @@ impl Document {
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
     pub fn try_from_owned_replace_transition(
-        value: DocumentReplaceTransitionAction,
+        value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let DocumentReplaceTransitionAction {
+        let DocumentReplaceTransitionActionV0 {
             base,
             revision,
             created_at,
@@ -105,15 +106,27 @@ impl Document {
             data,
         } = value;
 
-        let DocumentBaseTransitionAction { id, .. } = base;
+        let id = base.id();
 
-        Ok(Document {
-            id,
-            owner_id,
-            properties: data,
-            revision: Some(revision),
-            created_at,
-            updated_at,
-        })
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id,
+                owner_id,
+                properties: data,
+                revision: Some(revision),
+                created_at,
+                updated_at,
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_replace_transition".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 }

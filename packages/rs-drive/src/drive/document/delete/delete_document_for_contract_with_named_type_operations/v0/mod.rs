@@ -1,4 +1,3 @@
-
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
@@ -25,7 +24,6 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
-
 
 impl Drive {
     /// Prepares the operations for deleting a document.

@@ -103,7 +103,7 @@ mod tests {
                 .insert(contract_id, Arc::clone(&fetch_info_global));
 
             // Create transactional contract with a new version
-            let mut fetch_info_block =DataContractFetchInfo::default();
+            let mut fetch_info_block = DataContractFetchInfo::default();
 
             fetch_info_block.contract.increment_version();
 

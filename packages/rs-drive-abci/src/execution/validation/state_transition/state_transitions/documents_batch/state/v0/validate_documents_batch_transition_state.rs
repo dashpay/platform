@@ -40,7 +40,7 @@ use dpp::{
     ProtocolError,
 };
 use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionExt};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionExt};
 use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -487,7 +487,7 @@ pub fn check_ownership(
 }
 
 pub fn check_revision_is_bumped_by_one(
-    document_transition: &DocumentReplaceTransition,
+    document_transition: &DocumentReplaceTransitionV0,
     original_document: &Document,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();

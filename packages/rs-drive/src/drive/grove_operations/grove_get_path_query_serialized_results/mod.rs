@@ -1,11 +1,11 @@
 mod v0;
 
-use grovedb::PathQuery;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::PathQuery;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -28,8 +28,16 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        match drive_version.grove_methods.basic.grove_get_path_query_serialized_results {
-            0 => self.grove_get_path_query_serialized_results_v0(path_query, transaction, drive_operations),
+        match drive_version
+            .grove_methods
+            .basic
+            .grove_get_path_query_serialized_results
+        {
+            0 => self.grove_get_path_query_serialized_results_v0(
+                path_query,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_path_query_serialized_results".to_string(),
                 known_versions: vec![0],

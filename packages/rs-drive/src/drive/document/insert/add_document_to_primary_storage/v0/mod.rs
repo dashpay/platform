@@ -12,7 +12,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::option::Option::None;
 
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
 use crate::drive::document::{
     contract_document_type_path_vec,
@@ -41,6 +40,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::DataContract;
 
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -150,93 +150,95 @@ impl Drive {
                 drive_version,
             )?;
             let encoded_time = DocumentFieldType::encode_unsigned_integer(block_info.time_ms)?;
-            let path_key_element_info =
-                match &document_and_contract_info.owned_document_info.document_info {
-                    DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
-                        let element = Element::Item(
-                            serialized_document.to_vec(),
-                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+            let path_key_element_info = match &document_and_contract_info
+                .owned_document_info
+                .document_info
+            {
+                DocumentRefAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_document_id(
+                            contract.id().as_bytes(),
+                            document_type.name.as_str(),
+                            document.id.as_slice(),
                         );
-                        let document_id_in_primary_path =
-                            contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id().as_bytes(),
-                                document_type.name.as_str(),
-                                document.id.as_slice(),
-                            );
-                        PathFixedSizeKeyRefElement((
-                            document_id_in_primary_path,
-                            encoded_time.as_slice(),
-                            element,
-                        ))
-                    }
-                    DocumentAndSerialization((document, serialized_document, storage_flags)) => {
-                        let element = Element::Item(
-                            serialized_document.to_vec(),
-                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    PathFixedSizeKeyRefElement((
+                        document_id_in_primary_path,
+                        encoded_time.as_slice(),
+                        element,
+                    ))
+                }
+                DocumentAndSerialization((document, serialized_document, storage_flags)) => {
+                    let element = Element::Item(
+                        serialized_document.to_vec(),
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_document_id(
+                            contract.id().as_bytes(),
+                            document_type.name.as_str(),
+                            document.id.as_slice(),
                         );
-                        let document_id_in_primary_path =
-                            contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id().as_bytes(),
-                                document_type.name.as_str(),
-                                document.id.as_slice(),
-                            );
-                        PathFixedSizeKeyRefElement((
-                            document_id_in_primary_path,
-                            encoded_time.as_slice(),
-                            element,
-                        ))
-                    }
-                    DocumentOwnedInfo((document, storage_flags)) => {
-                        let serialized_document =
-                            document.serialize(document_and_contract_info.document_type)?;
-                        let element = Element::Item(
-                            serialized_document,
-                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    PathFixedSizeKeyRefElement((
+                        document_id_in_primary_path,
+                        encoded_time.as_slice(),
+                        element,
+                    ))
+                }
+                DocumentOwnedInfo((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_document_id(
+                            contract.id().as_bytes(),
+                            document_type.name.as_str(),
+                            document.id.as_slice(),
                         );
-                        let document_id_in_primary_path =
-                            contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id().as_bytes(),
-                                document_type.name.as_str(),
-                                document.id.as_slice(),
-                            );
-                        PathFixedSizeKeyRefElement((
-                            document_id_in_primary_path,
-                            encoded_time.as_slice(),
-                            element,
-                        ))
-                    }
-                    DocumentRefInfo((document, storage_flags)) => {
-                        let serialized_document =
-                            document.serialize(document_and_contract_info.document_type)?;
-                        let element = Element::Item(
-                            serialized_document,
-                            StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    PathFixedSizeKeyRefElement((
+                        document_id_in_primary_path,
+                        encoded_time.as_slice(),
+                        element,
+                    ))
+                }
+                DocumentRefInfo((document, storage_flags)) => {
+                    let serialized_document =
+                        document.serialize(document_and_contract_info.document_type)?;
+                    let element = Element::Item(
+                        serialized_document,
+                        StorageFlags::map_borrowed_cow_to_some_element_flags(storage_flags),
+                    );
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_document_id(
+                            contract.id().as_bytes(),
+                            document_type.name.as_str(),
+                            document.id.as_slice(),
                         );
-                        let document_id_in_primary_path =
-                            contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id().as_bytes(),
-                                document_type.name.as_str(),
-                                document.id.as_slice(),
-                            );
-                        PathFixedSizeKeyRefElement((
-                            document_id_in_primary_path,
-                            encoded_time.as_slice(),
-                            element,
-                        ))
-                    }
-                    DocumentEstimatedAverageSize(max_size) => {
-                        let document_id_in_primary_path =
-                            contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
-                                contract.id().as_bytes(),
-                                document_type,
-                            );
-                        PathKeyUnknownElementSize((
-                            document_id_in_primary_path,
-                            KnownKey(encoded_time.clone()),
-                            Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
-                        ))
-                    }
-                };
+                    PathFixedSizeKeyRefElement((
+                        document_id_in_primary_path,
+                        encoded_time.as_slice(),
+                        element,
+                    ))
+                }
+                DocumentEstimatedAverageSize(max_size) => {
+                    let document_id_in_primary_path =
+                        contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
+                            contract.id().as_bytes(),
+                            document_type,
+                        );
+                    PathKeyUnknownElementSize((
+                        document_id_in_primary_path,
+                        KnownKey(encoded_time.clone()),
+                        Element::required_item_space(*max_size, STORAGE_FLAGS_SIZE),
+                    ))
+                }
+            };
             self.batch_insert(path_key_element_info, drive_operations, drive_version)?;
             let path_key_element_info = if document_and_contract_info
                 .owned_document_info

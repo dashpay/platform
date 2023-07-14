@@ -1,24 +1,26 @@
-mod v0;
+use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::{DocumentDeleteTransitionActionAccessorsV0, DocumentDeleteTransitionActionV0};
 
-use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
-use crate::document::document_transition::DocumentDeleteTransition;
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "state-transition-transformers")]
+pub mod transformer;
+pub mod v0;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DocumentDeleteTransitionAction {
-    pub base: DocumentBaseTransitionAction,
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+
+#[derive(Debug, Clone)]
+pub enum DocumentDeleteTransitionAction {
+    V0(DocumentDeleteTransitionActionV0),
 }
 
-impl From<DocumentDeleteTransition> for DocumentDeleteTransitionAction {
-    fn from(value: DocumentDeleteTransition) -> Self {
-        let DocumentDeleteTransition { base } = value;
-        DocumentDeleteTransitionAction { base: base.into() }
+impl DocumentDeleteTransitionActionAccessorsV0 for DocumentDeleteTransitionAction {
+    fn base(&self) -> &DocumentBaseTransitionAction {
+        match self {
+            DocumentDeleteTransitionAction::V0(v0) => &v0.base,
+        }
     }
-}
 
-impl From<&DocumentDeleteTransition> for DocumentDeleteTransitionAction {
-    fn from(value: &DocumentDeleteTransition) -> Self {
-        let DocumentDeleteTransition { base } = value;
-        DocumentDeleteTransitionAction { base: base.into() }
+    fn base_owned(self) -> DocumentBaseTransitionAction {
+        match self {
+            DocumentDeleteTransitionAction::V0(v0) => v0.base,
+        }
     }
 }

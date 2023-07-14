@@ -1,13 +1,13 @@
 mod v0;
 
 use crate::drive::Drive;
-use crate::error::{Error, drive::DriveError};
+use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::Revision;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use dpp::block::block_info::BlockInfo;
-use dpp::prelude::Revision;
-use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     /// Fetches the Identity's revision from the backing store
@@ -65,7 +65,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Option<Revision>, Error> {
         match drive_version.methods.identity.fetch.attributes.revision {
-            0 => self.fetch_identity_revision_operations_v0(identity_id, apply, transaction, drive_operations, drive_version),
+            0 => self.fetch_identity_revision_operations_v0(
+                identity_id,
+                apply,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_revision_operations".to_string(),
                 known_versions: vec![0],
@@ -98,7 +104,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(Option<Revision>, FeeResult), Error> {
         match drive_version.methods.identity.fetch.attributes.revision {
-            0 => self.fetch_identity_revision_with_fees_v0(identity_id, block_info, apply, transaction, drive_version),
+            0 => self.fetch_identity_revision_with_fees_v0(
+                identity_id,
+                block_info,
+                apply,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_revision_with_fees".to_string(),
                 known_versions: vec![0],

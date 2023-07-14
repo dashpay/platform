@@ -1,11 +1,11 @@
 mod v0;
 
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use crate::error::drive::DriveError;
 
 impl Drive {
     /// Proves identities with all their information from the given identity ids.

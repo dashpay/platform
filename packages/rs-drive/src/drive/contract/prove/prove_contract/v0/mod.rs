@@ -51,7 +51,7 @@ impl Drive {
                     false,
                     contract_id,
                 )
-                    .expect("expected to get contract from proof");
+                .expect("expected to get contract from proof");
                 // Only return the historical proof if an element was found
                 if proof_returned_historical_contract.is_some() {
                     Ok(historical_contract_proof)

@@ -1,13 +1,13 @@
+mod fetch_full_identities_by_unique_public_key_hashes;
+mod fetch_full_identity_by_unique_public_key_hash;
 mod fetch_identity_id_by_unique_public_key_hash;
 mod fetch_identity_ids_by_non_unique_public_key_hash;
 mod fetch_identity_ids_by_unique_public_key_hashes;
-mod has_unique_public_key_hash;
+mod fetch_serialized_full_identity_by_unique_public_key_hash;
 mod has_any_of_unique_public_key_hashes;
 mod has_non_unique_public_key_hash;
 mod has_non_unique_public_key_hash_already_for_identity;
-mod fetch_serialized_full_identity_by_unique_public_key_hash;
-mod fetch_full_identity_by_unique_public_key_hash;
-mod fetch_full_identities_by_unique_public_key_hashes;
+mod has_unique_public_key_hash;
 
 #[cfg(feature = "full")]
 #[cfg(test)]
@@ -53,13 +53,21 @@ mod tests {
                 .expect("expected 20 bytes");
             if key.key_type.is_unique_key_type() {
                 let identity_id = drive
-                    .fetch_identity_id_by_unique_public_key_hash(hash, Some(&transaction), &drive_version)
+                    .fetch_identity_id_by_unique_public_key_hash(
+                        hash,
+                        Some(&transaction),
+                        &drive_version,
+                    )
                     .expect("expected to fetch identity_id")
                     .expect("expected to get an identity id");
                 assert_eq!(identity_id, identity.id.to_buffer());
             } else {
                 let identity_ids = drive
-                    .fetch_identity_ids_by_non_unique_public_key_hash(hash, Some(&transaction), &drive_version)
+                    .fetch_identity_ids_by_non_unique_public_key_hash(
+                        hash,
+                        Some(&transaction),
+                        &drive_version,
+                    )
                     .expect("expected to get identity ids");
                 assert!(identity_ids.contains(&identity.id.to_buffer()));
             }

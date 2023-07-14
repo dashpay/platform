@@ -1,4 +1,3 @@
-
 use crate::drive::balances::balance_path;
 use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
@@ -19,7 +18,6 @@ use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
 impl Drive {
-
     /// Verifies the identity IDs of multiple identities by their public key hashes.
     ///
     /// `is_proof_subset` is used to indicate if we want to verify a subset of a bigger proof.

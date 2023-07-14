@@ -1,10 +1,10 @@
-use grovedb::TransactionArg;
-use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Updates the proposed app version for a validator.
@@ -33,8 +33,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        match drive_version.methods.protocol_upgrade.update_validator_proposed_app_version {
-            0 => self.update_validator_proposed_app_version_v0(validator_pro_tx_hash, version, transaction, &self.drive_version),
+        match drive_version
+            .methods
+            .protocol_upgrade
+            .update_validator_proposed_app_version
+        {
+            0 => self.update_validator_proposed_app_version_v0(
+                validator_pro_tx_hash,
+                version,
+                transaction,
+                &self.drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_validator_proposed_app_version".to_string(),
                 known_versions: vec![0],
@@ -73,8 +82,18 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        match drive_version.methods.protocol_upgrade.update_validator_proposed_app_version {
-            0 => self.update_validator_proposed_app_version_operations_v0(validator_pro_tx_hash, version, transaction, drive_operations, &self.drive_version),
+        match drive_version
+            .methods
+            .protocol_upgrade
+            .update_validator_proposed_app_version
+        {
+            0 => self.update_validator_proposed_app_version_operations_v0(
+                validator_pro_tx_hash,
+                version,
+                transaction,
+                drive_operations,
+                &self.drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_validator_proposed_app_version_operations".to_string(),
                 known_versions: vec![0],
@@ -83,5 +102,3 @@ impl Drive {
         }
     }
 }
-
-

@@ -1,15 +1,15 @@
 mod v0;
 
-use grovedb::Element;
-use dpp::identity::IdentityPublicKey;
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::identity::identity_key_tree_path;
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::operation::LowLevelDriveOperation;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::identity::IdentityPublicKey;
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::Element;
 
 impl Drive {
     /// Generates a vector of operations for inserting key to storage.
@@ -37,8 +37,20 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.identity.keys.insert.insert_key_to_storage {
-            0 => self.insert_key_to_storage_operations_v0(identity_id, identity_key, key_id_bytes, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .insert
+            .insert_key_to_storage
+        {
+            0 => self.insert_key_to_storage_operations_v0(
+                identity_id,
+                identity_key,
+                key_id_bytes,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_key_to_storage_operations".to_string(),
                 known_versions: vec![0],

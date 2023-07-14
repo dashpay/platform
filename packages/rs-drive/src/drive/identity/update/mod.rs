@@ -1,9 +1,8 @@
-mod structs;
-mod operations;
 mod methods;
+mod operations;
+mod structs;
 
 pub use structs::*;
-
 
 #[cfg(test)]
 mod tests {

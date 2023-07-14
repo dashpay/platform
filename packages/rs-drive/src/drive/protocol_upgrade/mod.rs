@@ -1,11 +1,11 @@
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::RootTree;
 
-mod clear_version_information;
 mod change_to_new_version_and_clear_version_information;
+mod clear_version_information;
 mod fetch_versions_with_counter;
-mod update_validator_proposed_app_version;
 mod remove_validators_proposed_app_versions;
+mod update_validator_proposed_app_version;
 
 /// constant id for various versions counter
 pub const VERSIONS_COUNTER: [u8; 1] = [0];

@@ -1,15 +1,15 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::Error;
 use crate::error::identity::IdentityError;
+use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies balance changes to an identity.
@@ -34,8 +34,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<ApplyBalanceChangeOutcome, Error> {
-        match drive_version.methods.identity.update.apply_balance_change_from_fee_to_identity {
-            0 => self.apply_balance_change_from_fee_to_identity_v0(balance_change, transaction, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .update
+            .apply_balance_change_from_fee_to_identity
+        {
+            0 => self.apply_balance_change_from_fee_to_identity_v0(
+                balance_change,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_balance_change_from_fee_to_identity".to_string(),
                 known_versions: vec![0],
@@ -66,8 +75,17 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
-        match drive_version.methods.identity.update.apply_balance_change_from_fee_to_identity {
-            0 => self.apply_balance_change_from_fee_to_identity_operations_v0(balance_change, transaction, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .update
+            .apply_balance_change_from_fee_to_identity
+        {
+            0 => self.apply_balance_change_from_fee_to_identity_operations_v0(
+                balance_change,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_balance_change_from_fee_to_identity_operations".to_string(),
                 known_versions: vec![0],

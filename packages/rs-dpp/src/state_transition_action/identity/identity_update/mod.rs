@@ -1,12 +1,12 @@
-pub mod v0;
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
+pub mod v0;
 
 use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::{Identity, Revision};
+use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 use derive_more::From;
 use platform_value::{Bytes36, Identifier};
-use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityUpdateTransitionAction {

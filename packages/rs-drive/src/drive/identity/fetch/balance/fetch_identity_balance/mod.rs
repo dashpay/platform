@@ -1,19 +1,19 @@
 mod v0;
 
-use grovedb::Element::SumItem;
-use grovedb::TransactionArg;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::Credits;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::balances::balance_path;
-use crate::drive::Drive;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::{DriveError, Error};
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::Element::SumItem;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store, respecting drive versioning.
@@ -67,7 +67,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(Option<Credits>, FeeResult), Error> {
         match drive_version.methods.identity.fetch.attributes.balance {
-            0 => self.fetch_identity_balance_with_costs_v0(identity_id, block_info, apply, transaction, drive_version),
+            0 => self.fetch_identity_balance_with_costs_v0(
+                identity_id,
+                block_info,
+                apply,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_with_costs".to_string(),
                 known_versions: vec![0],
@@ -99,7 +105,13 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Option<Credits>, Error> {
         match drive_version.methods.identity.fetch.attributes.balance {
-            0 => self.fetch_identity_balance_operations_v0(identity_id, apply, transaction, drive_operations, drive_version),
+            0 => self.fetch_identity_balance_operations_v0(
+                identity_id,
+                apply,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_operations".to_string(),
                 known_versions: vec![0],

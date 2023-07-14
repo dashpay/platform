@@ -32,22 +32,22 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::credits::SignedCredits;
-use dpp::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 use dpp::block::epoch::Epoch;
+use dpp::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use itertools::Itertools;
 
 /// Epochs module
 pub mod epochs;
+mod paths;
 pub mod pending_epoch_refunds;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
-mod paths;
 
 pub use paths::*;
 
@@ -170,11 +170,11 @@ mod tests {
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
         use crate::fee::credits::Credits;
-        use dpp::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
-        use grovedb::batch::Op;
         use dpp::block::epoch::EpochIndex;
+        use dpp::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
         use dpp::fee::Credits;
+        use grovedb::batch::Op;
 
         #[test]
         fn should_do_nothing_if_credits_per_epoch_are_empty() {

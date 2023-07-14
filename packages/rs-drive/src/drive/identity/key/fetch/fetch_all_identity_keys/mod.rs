@@ -1,14 +1,14 @@
 mod v0;
 
-use std::collections::BTreeMap;
-use grovedb::TransactionArg;
-use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetches all the keys of every kind for a specific Identity.
@@ -30,7 +30,13 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        match drive_version.methods.identity.keys.fetch.fetch_all_identity_keys {
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .fetch
+            .fetch_all_identity_keys
+        {
             0 => self.fetch_all_identity_keys_v0(identity_id, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_all_identity_keys".to_string(),
@@ -61,8 +67,19 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        match drive_version.methods.identity.keys.fetch.fetch_all_identity_keys {
-            0 => self.fetch_all_identity_keys_operations_v0(identity_id, transaction, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .fetch
+            .fetch_all_identity_keys
+        {
+            0 => self.fetch_all_identity_keys_operations_v0(
+                identity_id,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_all_identity_keys_operations".to_string(),
                 known_versions: vec![0],

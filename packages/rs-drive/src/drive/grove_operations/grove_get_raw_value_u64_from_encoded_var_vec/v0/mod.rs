@@ -1,11 +1,11 @@
-use grovedb::{Element, TransactionArg};
-use integer_encoding::VarInt;
-use path::SubtreePath;
-use crate::drive::Drive;
 use crate::drive::grove_operations::DirectQueryType;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use grovedb::{Element, TransactionArg};
+use integer_encoding::VarInt;
+use path::SubtreePath;
 
 impl Drive {
     /// grove_get_direct_u64 is a helper function to get a

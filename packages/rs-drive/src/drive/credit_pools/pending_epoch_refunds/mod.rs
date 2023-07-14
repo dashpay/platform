@@ -37,9 +37,8 @@
 //! storage fee distribution on epoch change.
 //!
 
-
-mod paths;
 mod methods;
 mod operations;
+mod paths;
 
 pub use paths::*;

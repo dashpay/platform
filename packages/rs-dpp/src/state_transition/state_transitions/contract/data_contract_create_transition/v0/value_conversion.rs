@@ -22,9 +22,7 @@ use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
 impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
-    fn from_object(
-        mut raw_object: Value,
-    ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
+    fn from_object(mut raw_object: Value) -> Result<DataContractCreateTransitionV0, ProtocolError> {
         Ok(DataContractCreateTransitionV0 {
             signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
@@ -38,13 +36,13 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
-                raw_object.remove(DATA_CONTRACT).map_err(|_| {
+            data_contract: DataContract::from_object(raw_object.remove(DATA_CONTRACT).map_err(
+                |_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     )
-                })?,
-            )?,
+                },
+            )?)?,
             ..Default::default()
         })
     }

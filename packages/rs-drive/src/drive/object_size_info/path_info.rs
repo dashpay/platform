@@ -1,4 +1,3 @@
-
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -15,13 +14,13 @@ use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
 use PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement};
 use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
-use dpp::data_contract::DataContract;
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
+use crate::drive::object_size_info::drive_key_info::DriveKeyInfo;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use crate::drive::object_size_info::drive_key_info::DriveKeyInfo;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
 use crate::error::fee::FeeError;

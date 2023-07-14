@@ -1,23 +1,25 @@
 mod v0;
 
-use dpp::data_contract::DataContract;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
+};
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::data_contract::DataContract;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentReplaceTransitionAction};
-use dpp::version::drive_versions::DriveVersion;
-use crate::error::drive::DriveError;
 
 impl Drive {
     /// Validate that a document create transition action would be unique in the state.
@@ -48,8 +50,20 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match drive_version.methods.document.index_uniqueness.validate_document_create_transition_action_uniqueness {
-            0 => self.validate_document_create_transition_action_uniqueness_v0(contract, document_type, document_create_transition, owner_id, transaction, drive_version),
+        match drive_version
+            .methods
+            .document
+            .index_uniqueness
+            .validate_document_create_transition_action_uniqueness
+        {
+            0 => self.validate_document_create_transition_action_uniqueness_v0(
+                contract,
+                document_type,
+                document_create_transition,
+                owner_id,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_document_create_transition_action_uniqueness".to_string(),
                 known_versions: vec![0],

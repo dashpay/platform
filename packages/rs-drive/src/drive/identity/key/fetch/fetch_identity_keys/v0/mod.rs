@@ -1,11 +1,11 @@
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyResult};
 use crate::drive::identity::key::fetch::KeyRequestType::{SearchKey, SpecificKeys};
+use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyResult};
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetch keys matching the request for a specific Identity
@@ -16,7 +16,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<T, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations, drive_version)
+        self.fetch_identity_keys_operations(
+            key_request,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )
     }
 
     /// Operations for fetching keys matching the request for a specific Identity

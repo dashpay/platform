@@ -1,15 +1,14 @@
-use grovedb::TransactionArg;
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::balances::{TOTAL_SYSTEM_CREDITS_STORAGE_KEY, TotalCreditsBalance};
-use crate::drive::{Drive, RootTree};
+use crate::drive::balances::{TotalCreditsBalance, TOTAL_SYSTEM_CREDITS_STORAGE_KEY};
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::system::misc_path;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use path::SubtreePath;
 
 impl Drive {
-
     /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
     /// Total credits in the system
     pub(super) fn calculate_total_credits_balance_v0(

@@ -1,3 +1,4 @@
+use crate::drive::asset_lock::asset_lock_storage_path;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
@@ -5,13 +6,11 @@ use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::asset_lock::asset_lock_storage_path;
-
 
 impl Drive {
     /// Checks if a given `outpoint` is present as an asset lock in the transaction.
@@ -31,7 +30,13 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        self.has_asset_lock_outpoint_add_operations(true, &mut vec![], outpoint, transaction, drive_version)
+        self.has_asset_lock_outpoint_add_operations(
+            true,
+            &mut vec![],
+            outpoint,
+            transaction,
+            drive_version,
+        )
     }
 
     /// Checks if a given `outpoint` is present as an asset lock in the transaction and potentially applies operations to it.

@@ -1,14 +1,14 @@
-use grovedb::operations::delete::DeleteOptions;
-use grovedb::{GroveDb, TransactionArg};
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
-use path::SubtreePath;
-use storage::rocksdb_storage::RocksDbStorage;
+use crate::drive::grove_operations::{push_drive_operation_result, BatchDeleteApplyType};
 use crate::drive::Drive;
-use crate::drive::grove_operations::{BatchDeleteApplyType, push_drive_operation_result};
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
+use grovedb::operations::delete::DeleteOptions;
+use grovedb::{GroveDb, TransactionArg};
+use path::SubtreePath;
+use storage::rocksdb_storage::RocksDbStorage;
 
 impl Drive {
     /// Pushes a "delete element" operation to `drive_operations`.
@@ -41,7 +41,7 @@ impl Drive {
                 0,
                 estimated_value_size,
             )
-                .map(|r| r.map(Some)),
+            .map(|r| r.map(Some)),
             BatchDeleteApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
             } => self.grove.delete_operation_for_delete_internal(

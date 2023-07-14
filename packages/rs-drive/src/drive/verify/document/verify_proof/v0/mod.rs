@@ -1,12 +1,11 @@
-
 use crate::drive::verify::RootHash;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::document::Document;
-use grovedb::{GroveDb, PathQuery};
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::{GroveDb, PathQuery};
 
 impl<'a> DriveQuery<'a> {
     /// Verifies a proof for a collection of documents.
@@ -30,7 +29,11 @@ impl<'a> DriveQuery<'a> {
     /// This function will return an `Error` variant if:
     /// 1. The proof verification fails.
     /// 2. There is a deserialization error when parsing the serialized document(s) into `Document` struct(s).
-    pub(super) fn verify_proof_v0(&self, proof: &[u8], drive_version: &DriveVersion) -> Result<(RootHash, Vec<Document>), Error> {
+    pub(super) fn verify_proof_v0(
+        &self,
+        proof: &[u8],
+        drive_version: &DriveVersion,
+    ) -> Result<(RootHash, Vec<Document>), Error> {
         self.verify_proof_keep_serialized(proof, drive_version)
             .map(|(root_hash, documents)| {
                 let documents = documents

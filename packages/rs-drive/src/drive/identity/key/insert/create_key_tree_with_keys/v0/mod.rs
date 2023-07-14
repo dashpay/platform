@@ -1,12 +1,12 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::identity::IdentityPublicKey;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::identity::identity_path;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
+use crate::drive::Drive;
 use crate::error::Error;
+use dpp::identity::IdentityPublicKey;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn create_key_tree_with_keys_operations_v0(
@@ -17,7 +17,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion
+        drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_keys_for_identity_id(

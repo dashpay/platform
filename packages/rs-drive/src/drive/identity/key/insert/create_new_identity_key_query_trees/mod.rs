@@ -1,15 +1,17 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use dpp::identity::{Purpose, SecurityLevel};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::identity::{identity_query_keys_purpose_tree_path, identity_query_keys_tree_path};
+use crate::drive::identity::{
+    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
+};
 use crate::drive::operation::LowLevelDriveOperation;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::identity::{Purpose, SecurityLevel};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerInformation;
+use std::collections::HashMap;
 
 impl Drive {
     /// Generates a vector of operations for creating a new identity key query tree with the given keys.
@@ -31,12 +33,25 @@ impl Drive {
     pub fn create_new_identity_key_query_trees_operations(
         &self,
         identity_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.identity.keys.insert.create_new_identity_key_query_trees {
-            0 => self.create_new_identity_key_query_trees_operations_v0(identity_id, estimated_costs_only_with_layer_info, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .insert
+            .create_new_identity_key_query_trees
+        {
+            0 => self.create_new_identity_key_query_trees_operations_v0(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_new_identity_key_query_trees_operations".to_string(),
                 known_versions: vec![0],

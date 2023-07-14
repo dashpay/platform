@@ -34,14 +34,17 @@ use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::fee::epoch::EpochIndex;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
-use grovedb::{Element, TransactionArg};
 use dpp::block::epoch::EpochIndex;
+use dpp::fee::epoch::EpochIndex;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Returns the index of the unpaid Epoch.
-    pub(super) fn get_unpaid_epoch_index_v0(&self, transaction: TransactionArg) -> Result<EpochIndex, Error> {
+    pub(super) fn get_unpaid_epoch_index_v0(
+        &self,
+        transaction: TransactionArg,
+    ) -> Result<EpochIndex, Error> {
         let element = self
             .grove
             .get(&pools_path(), KEY_UNPAID_EPOCH_INDEX, transaction)

@@ -11,12 +11,12 @@ use crate::error::Error::GroveDB;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Clear all version information from the backing store, this is done on epoch change in
@@ -29,7 +29,11 @@ impl Drive {
     ) -> Result<(), Error> {
         let platform_version = PlatformVersion::get(current_version)?;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.clear_version_information_operations_v0(transaction, &mut batch_operations, platform_version)?;
+        self.clear_version_information_operations_v0(
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
         self.set_current_protocol_version_operations(
             current_version,
             transaction,

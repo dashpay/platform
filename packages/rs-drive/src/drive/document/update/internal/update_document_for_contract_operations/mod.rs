@@ -1,19 +1,19 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates a document for contract operations using bincode serialization
@@ -41,17 +41,20 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.document.update.update_document_for_contract_operations {
-            0 => {
-                self.update_document_for_contract_operations_v0(
-                    document_and_contract_info,
-                    block_info,
-                    previous_batch_operations,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    drive_version,
-                )
-            },
+        match drive_version
+            .methods
+            .document
+            .update
+            .update_document_for_contract_operations
+        {
+            0 => self.update_document_for_contract_operations_v0(
+                document_and_contract_info,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract_operations".to_string(),
                 known_versions: vec![0],

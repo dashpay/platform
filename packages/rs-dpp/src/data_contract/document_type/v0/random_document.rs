@@ -39,6 +39,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::generate_document_id::generate_document_id;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::{Document, DocumentV0};
+use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -46,7 +47,6 @@ use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::identity::accessors::IdentityGettersV0;
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.

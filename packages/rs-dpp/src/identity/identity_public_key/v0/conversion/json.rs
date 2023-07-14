@@ -2,11 +2,11 @@ use crate::identity::identity_public_key::conversion::json::IdentityPublicKeyJso
 use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use crate::identity::identity_public_key::fields::BINARY_DATA_FIELDS;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
-use crate::version::PlatformVersion;
 
 impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
@@ -21,7 +21,10 @@ impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
             .map_err(ProtocolError::ValueError)
     }
 
-    fn from_json_object(raw_object: JsonValue, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+    fn from_json_object(
+        raw_object: JsonValue,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let mut value: Value = raw_object.into();
         value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
         Self::from_object(value, platform_version)

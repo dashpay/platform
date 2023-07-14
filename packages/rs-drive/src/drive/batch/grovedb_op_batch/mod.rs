@@ -46,109 +46,109 @@ pub struct GroveDbOpBatch {
     pub(crate) operations: Vec<GroveDbOp>,
 }
 
-    /// Trait defining a batch of GroveDB operations.
-    pub trait GroveDbOpBatchV0Methods {
-        /// Creates a new empty batch of GroveDB operations.
-        fn new() -> Self;
+/// Trait defining a batch of GroveDB operations.
+pub trait GroveDbOpBatchV0Methods {
+    /// Creates a new empty batch of GroveDB operations.
+    fn new() -> Self;
 
-        /// Gets the number of operations from a list of GroveDB ops.
-        fn len(&self) -> usize;
+    /// Gets the number of operations from a list of GroveDB ops.
+    fn len(&self) -> usize;
 
-        /// Checks to see if the operation batch is empty.
-        fn is_empty(&self) -> bool;
+    /// Checks to see if the operation batch is empty.
+    fn is_empty(&self) -> bool;
 
-        /// Pushes an operation into a list of GroveDB ops.
-        fn push(&mut self, op: GroveDbOp);
+    /// Pushes an operation into a list of GroveDB ops.
+    fn push(&mut self, op: GroveDbOp);
 
-        /// Appends operations into a list of GroveDB ops.
-        fn append(&mut self, other: &mut Self);
+    /// Appends operations into a list of GroveDB ops.
+    fn append(&mut self, other: &mut Self);
 
-        /// Extend operations into a list of GroveDB ops.
-        fn extend<I: IntoIterator<Item = GroveDbOp>>(&mut self, other_ops: I);
+    /// Extend operations into a list of GroveDB ops.
+    fn extend<I: IntoIterator<Item = GroveDbOp>>(&mut self, other_ops: I);
 
-        /// Puts a list of GroveDB operations into a batch.
-        fn from_operations(operations: Vec<GroveDbOp>) -> Self;
+    /// Puts a list of GroveDB operations into a batch.
+    fn from_operations(operations: Vec<GroveDbOp>) -> Self;
 
-        /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.
-        fn add_insert_empty_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
+    /// Adds an `Insert` operation with an empty tree at the specified path and key to a list of GroveDB ops.
+    fn add_insert_empty_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
 
-        /// Adds an `Insert` operation with an empty tree with storage flags to a list of GroveDB ops.
-        fn add_insert_empty_tree_with_flags(
-            &mut self,
-            path: Vec<Vec<u8>>,
-            key: Vec<u8>,
-            storage_flags: &Option<Cow<StorageFlags>>,
-        );
+    /// Adds an `Insert` operation with an empty tree with storage flags to a list of GroveDB ops.
+    fn add_insert_empty_tree_with_flags(
+        &mut self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: &Option<Cow<StorageFlags>>,
+    );
 
-        /// Adds an `Insert` operation with an empty sum tree at the specified path and key to a list of GroveDB ops.
-        fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
+    /// Adds an `Insert` operation with an empty sum tree at the specified path and key to a list of GroveDB ops.
+    fn add_insert_empty_sum_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
 
-        /// Adds an `Insert` operation with an empty sum tree with storage flags to a list of GroveDB ops.
-        fn add_insert_empty_sum_tree_with_flags(
-            &mut self,
-            path: Vec<Vec<u8>>,
-            key: Vec<u8>,
-            storage_flags: &Option<Cow<StorageFlags>>,
-        );
+    /// Adds an `Insert` operation with an empty sum tree with storage flags to a list of GroveDB ops.
+    fn add_insert_empty_sum_tree_with_flags(
+        &mut self,
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: &Option<Cow<StorageFlags>>,
+    );
 
-        /// Adds a `Delete` operation to a list of GroveDB ops.
-        fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
+    /// Adds a `Delete` operation to a list of GroveDB ops.
+    fn add_delete(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>);
 
-        /// Adds a `Delete` tree operation to a list of GroveDB ops.
-        fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool);
+    /// Adds a `Delete` tree operation to a list of GroveDB ops.
+    fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, is_sum_tree: bool);
 
-        /// Adds an `Insert` operation with an element to a list of GroveDB ops.
-        fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element);
+    /// Adds an `Insert` operation with an element to a list of GroveDB ops.
+    fn add_insert(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, element: Element);
 
-        /// Verify consistency of operations
-        fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults;
+    /// Verify consistency of operations
+    fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults;
 
-        /// Check if the batch contains a specific path and key.
-        ///
-        /// # Arguments
-        ///
-        /// * `path` - The path to search for.
-        /// * `key` - The key to search for.
-        ///
-        /// # Returns
-        ///
-        /// * `Option<&Op>` - Returns a reference to the `Op` if found, or `None` otherwise.
-        fn contains<'c, P>(&self, path: P, key: &[u8]) -> Option<&Op>
-            where
-                P: IntoIterator<Item = &'c [u8]>,
-                <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone;
+    /// Check if the batch contains a specific path and key.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to search for.
+    /// * `key` - The key to search for.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<&Op>` - Returns a reference to the `Op` if found, or `None` otherwise.
+    fn contains<'c, P>(&self, path: P, key: &[u8]) -> Option<&Op>
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone;
 
-        /// Remove a specific path and key from the batch and return the removed `Op`.
-        ///
-        /// # Arguments
-        ///
-        /// * `path` - The path to search for.
-        /// * `key` - The key to search for.
-        ///
-        /// # Returns
-        ///
-        /// * `Option<Op>` - Returns the removed `Op` if found, or `None` otherwise.
-        fn remove<'c, P>(&mut self, path: P, key: &[u8]) -> Option<Op>
-            where
-                P: IntoIterator<Item = &'c [u8]>,
-                <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone;
+    /// Remove a specific path and key from the batch and return the removed `Op`.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to search for.
+    /// * `key` - The key to search for.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Op>` - Returns the removed `Op` if found, or `None` otherwise.
+    fn remove<'c, P>(&mut self, path: P, key: &[u8]) -> Option<Op>
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone;
 
-        /// Find and remove a specific path and key from the batch if it is an
-        /// `Op::Insert`, `Op::Replace`, or `Op::Patch`. Return the found `Op` regardless of whether it was removed.
-        ///
-        /// # Arguments
-        ///
-        /// * `path` - The path to search for.
-        /// * `key` - The key to search for.
-        ///
-        /// # Returns
-        ///
-        /// * `Option<Op>` - Returns the found `Op` if it exists. If the `Op` is an `Op::Insert`, `Op::Replace`,
-        ///                  or `Op::Patch`, it will be removed from the batch.
-        fn remove_if_insert(&mut self, path: Vec<Vec<u8>>, key: &[u8]) -> Option<Op>;
-    }
+    /// Find and remove a specific path and key from the batch if it is an
+    /// `Op::Insert`, `Op::Replace`, or `Op::Patch`. Return the found `Op` regardless of whether it was removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to search for.
+    /// * `key` - The key to search for.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Op>` - Returns the found `Op` if it exists. If the `Op` is an `Op::Insert`, `Op::Replace`,
+    ///                  or `Op::Patch`, it will be removed from the batch.
+    fn remove_if_insert(&mut self, path: Vec<Vec<u8>>, key: &[u8]) -> Option<Op>;
+}
 
-impl GroveDbOpBatchV0Methods for  GroveDbOpBatch {
+impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     /// Creates a new empty batch of GroveDB operations.
     fn new() -> Self {
         GroveDbOpBatch {

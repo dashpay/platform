@@ -1,20 +1,23 @@
 mod v0;
 
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use grovedb::reference_path::ReferencePathType;
-use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
 use crate::drive::flags::SINGLE_EPOCH_FLAGS_SIZE;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::identity::{identity_key_location_within_identity_vec, identity_query_keys_full_tree_path, identity_query_keys_purpose_tree_path};
+use crate::drive::identity::{
+    identity_key_location_within_identity_vec, identity_query_keys_full_tree_path,
+    identity_query_keys_purpose_tree_path,
+};
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::operation::LowLevelDriveOperation;
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::reference_path::ReferencePathType;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Generates a vector of operations for inserting key searchable references.
@@ -41,13 +44,29 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
         key_id_bytes: &[u8],
-        estimated_costs_only_with_layer_info: &mut Option<HashMap<KeyInfoPath, EstimatedLayerInformation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.identity.keys.insert.insert_key_searchable_references {
-            0 => self.insert_key_searchable_references_operations_v0(identity_id, identity_key, key_id_bytes, estimated_costs_only_with_layer_info, transaction, drive_operations, drive_version),
+        match drive_version
+            .methods
+            .identity
+            .keys
+            .insert
+            .insert_key_searchable_references
+        {
+            0 => self.insert_key_searchable_references_operations_v0(
+                identity_id,
+                identity_key,
+                key_id_bytes,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_key_searchable_references_operations".to_string(),
                 known_versions: vec![0],

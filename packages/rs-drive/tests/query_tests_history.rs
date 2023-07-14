@@ -179,7 +179,7 @@ pub fn setup(
     count: usize,
     restrict_to_inserts: Option<Vec<usize>>,
     seed: u64,
-) -> (Drive,DataContract) {
+) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));

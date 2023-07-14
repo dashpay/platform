@@ -1,11 +1,11 @@
-use grovedb::Element;
+use crate::drive::identity::identity_key_tree_path;
+use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
+use crate::drive::Drive;
+use crate::error::Error;
 use dpp::identity::IdentityPublicKey;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::version::drive_versions::DriveVersion;
-use crate::drive::Drive;
-use crate::drive::identity::identity_key_tree_path;
-use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
-use crate::error::Error;
+use grovedb::Element;
 
 impl Drive {
     pub(super) fn insert_key_to_storage_operations_v0(

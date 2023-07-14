@@ -1,6 +1,6 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-use serde::{Deserialize, Serialize};
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
+use serde::{Deserialize, Serialize};
 
 impl From<DataContractCreateTransitionV0> for DataContractCreateTransitionActionV0 {
     fn from(value: DataContractCreateTransitionV0) -> Self {

@@ -61,7 +61,6 @@ pub use calculate_total_credits_balance::*;
 use crate::drive::RootTree;
 use crate::fee::credits::Credits;
 
-
 /// Storage fee pool key
 #[cfg(feature = "full")]
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";

@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use grovedb::TransactionArg;
 use crate::drive::contract::ContractFetchInfo;
 use crate::drive::Drive;
+use grovedb::TransactionArg;
+use std::sync::Arc;
 
 impl Drive {
     /// Returns the contract fetch info with the given ID if it's in cache.

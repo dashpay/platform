@@ -1,14 +1,14 @@
+use crate::drive::flags::StorageFlags;
 use costs::OperationCost;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use crate::drive::flags::StorageFlags;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 ///DataContract and fetch information
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct DataContractFetchInfo {
     /// The contract
-    pub contract:DataContract,
+    pub contract: DataContract,
     /// The contract's potential storage flags
     pub storage_flags: Option<StorageFlags>,
     /// These are the operations that are used to fetch a contract

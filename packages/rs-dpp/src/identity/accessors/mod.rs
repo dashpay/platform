@@ -1,14 +1,13 @@
-use std::collections::{BTreeMap, HashSet};
-use platform_value::Identifier;
-pub use v0::{IdentityGettersV0, IdentitySettersV0};
-use crate::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::metadata::Metadata;
 use crate::prelude::{AssetLockProof, Revision};
 use crate::ProtocolError;
+use platform_value::Identifier;
+use std::collections::{BTreeMap, HashSet};
+pub use v0::{IdentityGettersV0, IdentitySettersV0};
 
 mod v0;
-
 
 impl IdentityGettersV0 for Identity {
     /// Returns a reference to the public keys of the identity.
@@ -43,7 +42,6 @@ impl IdentityGettersV0 for Identity {
             Identity::V0(identity) => identity.public_keys,
         }
     }
-
 
     /// Returns the balance of the identity.
     ///
@@ -96,7 +94,6 @@ impl IdentityGettersV0 for Identity {
         }
     }
 
-
     /// Returns the identifier of the identity.
     ///
     /// # Returns
@@ -111,28 +108,35 @@ impl IdentityGettersV0 for Identity {
     /// Returns a public key for a given id
     fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey> {
         match self {
-            Identity::V0(identity) => identity.public_keys.get(&key_id)
+            Identity::V0(identity) => identity.public_keys.get(&key_id),
         }
     }
 
     /// Returns a public key for a given id
     fn get_public_key_by_id_mut(&mut self, key_id: KeyID) -> Option<&mut IdentityPublicKey> {
         match self {
-            Identity::V0(identity) => identity.public_keys.get_mut(&key_id)
+            Identity::V0(identity) => identity.public_keys.get_mut(&key_id),
         }
     }
 
     /// Get the biggest public KeyID
     fn get_public_key_max_id(&self) -> KeyID {
         match self {
-            Identity::V0(identity) => identity.public_keys.keys().copied().max().unwrap_or_default()
+            Identity::V0(identity) => identity
+                .public_keys
+                .keys()
+                .copied()
+                .max()
+                .unwrap_or_default(),
         }
     }
 
     /// Add identity public keys
     fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
         match self {
-            Identity::V0(identity) => identity.public_keys.extend(keys.into_iter().map(|a| (a.id(), a)))
+            Identity::V0(identity) => identity
+                .public_keys
+                .extend(keys.into_iter().map(|a| (a.id(), a))),
         }
     }
 
@@ -144,13 +148,11 @@ impl IdentityGettersV0 for Identity {
         key_types: HashSet<KeyType>,
     ) -> Option<&IdentityPublicKey> {
         match self {
-            Identity::V0(identity) => {
-                identity.public_keys.values().find(|key| {
-                    key.purpose() == purpose
-                        && security_levels.contains(&key.security_level())
-                        && key_types.contains(&key.key_type())
-                })
-            }
+            Identity::V0(identity) => identity.public_keys.values().find(|key| {
+                key.purpose() == purpose
+                    && security_levels.contains(&key.security_level())
+                    && key_types.contains(&key.key_type())
+            }),
         }
     }
 }
@@ -200,7 +202,6 @@ impl IdentitySettersV0 for Identity {
         }
     }
 
-
     /// Sets the metadata of the identity.
     ///
     /// # Arguments
@@ -229,7 +230,7 @@ impl IdentitySettersV0 for Identity {
             Identity::V0(identity) => {
                 identity.balance += amount;
                 identity.balance
-            },
+            }
         }
     }
 
@@ -239,7 +240,7 @@ impl IdentitySettersV0 for Identity {
             Identity::V0(identity) => {
                 identity.balance -= amount;
                 identity.balance
-            },
+            }
         }
     }
 
@@ -247,14 +248,17 @@ impl IdentitySettersV0 for Identity {
     fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         match self {
             Identity::V0(identity) => {
-                let result = identity.revision.checked_add(1).ok_or(ProtocolError::Generic(
-                    "identity revision is at max level".to_string(),
-                ))?;
+                let result = identity
+                    .revision
+                    .checked_add(1)
+                    .ok_or(ProtocolError::Generic(
+                        "identity revision is at max level".to_string(),
+                    ))?;
 
                 identity.revision = result;
 
                 Ok(())
-            },
+            }
         }
     }
 }

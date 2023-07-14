@@ -1,15 +1,15 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::Credits;
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
@@ -49,8 +49,6 @@ impl Drive {
 
         Ok(fees)
     }
-
-
 
     /// Balances are stored in the balance tree under the identity's id
     /// This gets operations based on apply flag (stateful vs stateless)
@@ -99,14 +97,19 @@ impl Drive {
         )?;
 
         if let Some(new_balance) = balance_modified {
-            drive_operations
-                .push(self.update_identity_balance_operation(identity_id, new_balance, drive_version)?);
+            drive_operations.push(self.update_identity_balance_operation(
+                identity_id,
+                new_balance,
+                drive_version,
+            )?);
         }
 
         if let Some(new_negative_balance) = negative_credit_balance_modified {
-            drive_operations.push(
-                self.update_identity_negative_credit_operation(identity_id, new_negative_balance, drive_version),
-            );
+            drive_operations.push(self.update_identity_negative_credit_operation(
+                identity_id,
+                new_negative_balance,
+                drive_version,
+            ));
         }
 
         Ok(drive_operations)

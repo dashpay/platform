@@ -1,15 +1,15 @@
 mod v0;
 
-use costs::CostContext;
-use grovedb::{PathQuery, TransactionArg};
-use path::SubtreePath;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
+use costs::CostContext;
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
+use grovedb::{PathQuery, TransactionArg};
+use path::SubtreePath;
 
 impl Drive {
     /// Retrieves a proof of the specified path query in groveDB.
@@ -34,8 +34,17 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version.grove_methods.basic.grove_get_proved_path_query {
-            0 => self.grove_get_proved_path_query_v0(path_query, verbose, transaction, drive_operations),
+        match drive_version
+            .grove_methods
+            .basic
+            .grove_get_proved_path_query
+        {
+            0 => self.grove_get_proved_path_query_v0(
+                path_query,
+                verbose,
+                transaction,
+                drive_operations,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_proved_path_query".to_string(),
                 known_versions: vec![0],

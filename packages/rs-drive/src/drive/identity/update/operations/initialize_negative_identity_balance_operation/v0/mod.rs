@@ -1,7 +1,7 @@
-use grovedb::Element;
-use crate::drive::Drive;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
+use crate::drive::Drive;
 use crate::fee::op::LowLevelDriveOperation;
+use grovedb::Element;
 
 impl Drive {
     pub(in crate::drive::identity::update) fn initialize_negative_identity_balance_operation_v0(

@@ -1,9 +1,9 @@
 mod v0;
 
-use grovedb::Transaction;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::Drive;
-use crate::error::{Error, DriveError};
+use crate::error::{DriveError, Error};
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::Transaction;
 
 impl Drive {
     /// Commits a transaction.
@@ -20,7 +20,11 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
-    pub fn commit_transaction(&self, transaction: Transaction, drive_version: &DriveVersion) -> Result<(), Error> {
+    pub fn commit_transaction(
+        &self,
+        transaction: Transaction,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
         match drive_version.methods.operations.commit_transaction {
             0 => self.commit_transaction_v0(transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

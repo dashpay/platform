@@ -1,10 +1,10 @@
-pub mod v0;
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
+pub mod v0;
 
 use crate::prelude::DataContract;
-use derive_more::From;
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
+use derive_more::From;
 
 #[derive(Debug, Clone, From)]
 pub enum DataContractCreateTransitionAction {
@@ -24,4 +24,3 @@ impl DataContractCreateTransitionAction {
         }
     }
 }
-

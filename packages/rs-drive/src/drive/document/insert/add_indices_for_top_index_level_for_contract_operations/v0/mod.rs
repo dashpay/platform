@@ -1,25 +1,31 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
+use crate::drive::document::{
+    contract_document_type_path_vec, document_reference_size, make_document_reference,
+    unique_event_id,
+};
+use crate::drive::flags::StorageFlags;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::drive::object_size_info::DocumentInfo::{
+    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
+    DocumentRefAndSerialization, DocumentRefInfo,
+};
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
+use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::drive::Drive;
+use crate::error::drive::DriveError;
+use crate::error::fee::FeeError;
+use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{contract_document_type_path_vec, document_reference_size, make_document_reference, unique_event_id};
-use crate::drive::Drive;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
-use crate::drive::object_size_info::DocumentInfo::{DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo, DocumentRefAndSerialization, DocumentRefInfo};
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::error::fee::FeeError;
-use crate::fee::op::LowLevelDriveOperation;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.

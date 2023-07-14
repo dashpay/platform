@@ -10,11 +10,11 @@ use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
 
-use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 use crate::fee::calculate_fee;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetches an identity with all its information and
@@ -27,8 +27,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(Option<Identity>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let maybe_identity =
-            self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations, drive_version)?;
+        let maybe_identity = self.fetch_full_identity_operations(
+            identity_id,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )?;
         let fee = calculate_fee(None, Some(drive_operations), epoch)?;
         Ok((maybe_identity, fee))
     }
@@ -113,7 +117,12 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.fetch_full_identity_operations(identity_id, transaction, &mut drive_operations, drive_version)
+        self.fetch_full_identity_operations(
+            identity_id,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )
     }
 
     /// Given an identity, fetches the identity with its flags from storage.
@@ -137,13 +146,23 @@ impl Drive {
         }
         let balance = balance.unwrap();
         let revision = self
-            .fetch_identity_revision_operations(identity_id, true, transaction, drive_operations, drive_version)?
+            .fetch_identity_revision_operations(
+                identity_id,
+                true,
+                transaction,
+                drive_operations,
+                drive_version,
+            )?
             .ok_or(Error::Drive(DriveError::CorruptedDriveState(
                 "revision not found on identity".to_string(),
             )))?;
 
-        let public_keys =
-            self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations, drive_version)?;
+        let public_keys = self.fetch_all_identity_keys_operations(
+            identity_id,
+            transaction,
+            drive_operations,
+            drive_version,
+        )?;
         Ok(Some(Identity {
             feature_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),

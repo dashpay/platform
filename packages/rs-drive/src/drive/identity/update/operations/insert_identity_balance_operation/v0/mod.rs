@@ -1,10 +1,10 @@
-use grovedb::Element;
-use dpp::fee::Credits;
 use crate::drive::balances::balance_path_vec;
 use crate::drive::Drive;
-use crate::error::Error;
 use crate::error::identity::IdentityError;
+use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::fee::Credits;
+use grovedb::Element;
 
 impl Drive {
     /// Creates a balance key-value with specified amount

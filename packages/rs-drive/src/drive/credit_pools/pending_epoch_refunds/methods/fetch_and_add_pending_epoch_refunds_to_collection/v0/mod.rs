@@ -1,14 +1,14 @@
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
+use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::credits::Creditable;
-use dpp::fee::epoch::CreditsPerEpoch;
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
+use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
-use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 
 impl Drive {
     /// Fetches pending epoch refunds and adds them to specified collection
@@ -71,48 +71,46 @@ impl Drive {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use dpp::block::block_info::BlockInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
 
+    #[test]
+    fn should_fetch_and_merge_pending_updates_v0() {
+        let drive = setup_drive_with_initial_state_structure();
+        let drive_version = DriveVersion::default();
+        let transaction = drive.grove.start_transaction();
 
-        #[test]
-        fn should_fetch_and_merge_pending_updates_v0() {
-            let drive = setup_drive_with_initial_state_structure();
-            let drive_version = DriveVersion::default();
-            let transaction = drive.grove.start_transaction();
+        // Store initial set of pending refunds
 
-            // Store initial set of pending refunds
+        let initial_pending_refunds =
+            CreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
 
-            let initial_pending_refunds =
-                CreditsPerEpoch::from_iter([(1, 15), (3, 25), (7, 95), (9, 100), (12, 120)]);
+        let mut batch = vec![];
 
-            let mut batch = vec![];
+        add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
+            .expect("should update pending epoch updates");
 
-            add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
-                .expect("should update pending epoch updates");
+        drive
+            .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+            .expect("should apply batch");
 
-            drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
-                .expect("should apply batch");
+        // Fetch and merge
 
-            // Fetch and merge
+        let new_pending_refunds =
+            CreditsPerEpoch::from_iter([(1, 15), (3, 25), (30, 195), (41, 150)]);
 
-            let new_pending_refunds =
-                CreditsPerEpoch::from_iter([(1, 15), (3, 25), (30, 195), (41, 150)]);
+        let updated_pending_refunds = drive
+            .fetch_and_add_pending_epoch_refunds_to_collection(
+                new_pending_refunds,
+                Some(&transaction),
+            )
+            .expect("should fetch and merge pending updates");
 
-            let updated_pending_refunds = drive
-                .fetch_and_add_pending_epoch_refunds_to_collection(
-                    new_pending_refunds,
-                    Some(&transaction),
-                )
-                .expect("should fetch and merge pending updates");
+        let expected_pending_refunds =
+            CreditsPerEpoch::from_iter([(1, 30), (3, 50), (30, 195), (41, 150)]);
 
-            let expected_pending_refunds =
-                CreditsPerEpoch::from_iter([(1, 30), (3, 50), (30, 195), (41, 150)]);
-
-            assert_eq!(updated_pending_refunds, expected_pending_refunds);
-        }
+        assert_eq!(updated_pending_refunds, expected_pending_refunds);
     }
+}

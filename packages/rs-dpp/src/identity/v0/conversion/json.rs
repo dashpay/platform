@@ -1,10 +1,10 @@
-use std::convert::TryInto;
 use crate::identity::conversion::json::IdentityJsonConversionMethodsV0;
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
-use crate::identity::{IDENTIFIER_FIELDS_RAW_OBJECT, identity_public_key, IdentityV0};
+use crate::identity::{identity_public_key, IdentityV0, IDENTIFIER_FIELDS_RAW_OBJECT};
 use crate::ProtocolError;
-use serde_json::Value as JsonValue;
 use platform_value::{ReplacementType, Value};
+use serde_json::Value as JsonValue;
+use std::convert::TryInto;
 
 impl IdentityJsonConversionMethodsV0 for IdentityV0 {
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
@@ -40,5 +40,3 @@ impl IdentityJsonConversionMethodsV0 for IdentityV0 {
         Ok(identity)
     }
 }
-
-

@@ -46,7 +46,6 @@ pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
 }
 
-
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),

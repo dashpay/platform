@@ -1,12 +1,12 @@
 mod v0;
 
-use std::sync::Arc;
-use grovedb::TransactionArg;
-use dpp::version::drive_versions::DriveVersion;
 use crate::drive::contract::ContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::TransactionArg;
+use std::sync::Arc;
 
 impl Drive {
     /// Returns the contract fetch info with the given ID if it's in cache.
@@ -34,7 +34,12 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
-        match drive_version.methods.contract.get.get_cached_contract_with_fetch_info {
+        match drive_version
+            .methods
+            .contract
+            .get
+            .get_cached_contract_with_fetch_info
+        {
             0 => Ok(self.get_cached_contract_with_fetch_info_v0(contract_id, transaction)),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_cached_contract_with_fetch_info".to_string(),

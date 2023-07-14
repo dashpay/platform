@@ -53,8 +53,8 @@ pub use update_document_for_contract_operations::*;
 
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
-mod update_document_with_serialization_for_contract;
 mod internal;
+mod update_document_with_serialization_for_contract;
 
 pub use update_document_with_serialization_for_contract::*;
 
@@ -68,7 +68,6 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
-use dpp::data_contract::DataContract;
 use crate::drive::batch::drive_op_batch::{
     DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
 };
@@ -83,6 +82,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentOwnedInfo, DocumentRefAndSerialization, DocumentRefInfo,
 };
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
@@ -120,7 +120,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let contract =DataContract::from_cbor(contract_cbor)?;
+        let contract = DataContract::from_cbor(contract_cbor)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
@@ -142,10 +142,6 @@ impl Drive {
     }
 }
 
-
-
-
-
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
@@ -162,13 +158,13 @@ mod tests {
 
     use dpp::platform_value::{platform_value, Identifier, Value};
 
+    use dpp::block::block_info::BlockInfo;
     use dpp::util::cbor_serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use tempfile::TempDir;
-    use dpp::block::block_info::BlockInfo;
 
     use super::*;
     use crate::drive::config::DriveConfig;
@@ -177,12 +173,12 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
-    use dpp::fee::default_costs::EpochCosts;
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_document;
+    use dpp::fee::default_costs::EpochCosts;
+    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
     use dpp::serialization_traits::PlatformSerializable;
 
@@ -258,7 +254,7 @@ mod tests {
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         let contract =
-           DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+            DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -348,7 +344,7 @@ mod tests {
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         let contract =
-           DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+            DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -458,7 +454,7 @@ mod tests {
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
         let contract =
-           DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+            DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -620,8 +616,7 @@ mod tests {
         .expect("expected to serialize to cbor");
 
         // first we need to deserialize the contract
-        let contract =
-            DataContract::from_cbor_with_id(contract_cbor, None)?;
+        let contract = DataContract::from_cbor_with_id(contract_cbor, None)?;
 
         drive
             .apply_contract(

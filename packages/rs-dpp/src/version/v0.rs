@@ -1,9 +1,47 @@
-use crate::version::dpp_versions::{DPPVersion, DocumentFeatureVersionBounds, StateTransitionSerializationVersions, ContractVersions, DocumentTypeVersions, ContractClassMethodVersions, DocumentVersions, DocumentMethodVersions, DocumentClassMethodVersions};
+use crate::version::dpp_versions::{
+    ContractClassMethodVersions, ContractVersions, DPPVersion, DocumentClassMethodVersions,
+    DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions,
+    StateTransitionSerializationVersions,
+};
+use crate::version::drive_abci_versions::{
+    DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
+    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
+    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciFeePoolOutwardsDistributionMethodVersions,
+    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
+    DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
+    DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
+};
+use crate::version::drive_versions::{
+    DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
+    DriveContractApplyMethodVersions, DriveContractCostsMethodVersions,
+    DriveContractGetMethodVersions, DriveContractInsertMethodVersions, DriveContractMethodVersions,
+    DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
+    DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
+    DriveCreditPoolPendingEpochRefundsMethodVersions, DriveDocumentDeleteMethodVersions,
+    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveEstimatedCostsMethodVersions, DriveGroveApplyMethodVersions,
+    DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
+    DriveGroveMethodVersions, DriveIdentityFetchAttributesMethodVersions,
+    DriveIdentityFetchMethodVersions, DriveIdentityFetchPublicKeyHashesMethodVersions,
+    DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
+    DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
+    DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
+    DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
+    DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
+    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveStructureVersion,
+    DriveSystemProtocolVersionMethodVersions, DriveVersion,
+};
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion, StateTransitionSigningVersion};
+use crate::version::{
+    AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion,
+    StateTransitionSigningVersion,
+};
 use std::collections::BTreeMap;
-use crate::version::drive_abci_versions::{DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions, DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions, DriveAbciFeePoolOutwardsDistributionMethodVersions, DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions, DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions, DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions, DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions};
-use crate::version::drive_versions::{DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion, DriveContractApplyMethodVersions, DriveContractCostsMethodVersions, DriveContractGetMethodVersions, DriveContractInsertMethodVersions, DriveContractMethodVersions, DriveContractProveMethodVersions, DriveContractUpdateMethodVersions, DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions, DriveCreditPoolPendingEpochRefundsMethodVersions, DriveDocumentDeleteMethodVersions, DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions, DriveDocumentUpdateMethodVersions, DriveEstimatedCostsMethodVersions, DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions, DriveGroveMethodVersions, DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchMethodVersions, DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions, DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions, DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions, DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions, DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion, DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveStructureVersion, DriveSystemProtocolVersionMethodVersions, DriveVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 0,
@@ -47,7 +85,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         methods: DriveMethodVersions {
-            initialization: DriveInitializationMethodVersions { create_initial_state_structure: 0 },
+            initialization: DriveInitializationMethodVersions {
+                create_initial_state_structure: 0,
+            },
             credit_pools: DriveCreditPoolMethodVersions {
                 epochs: DriveCreditPoolEpochsMethodVersions {
                     get_epoch_fee_multiplier: 0,
@@ -140,9 +180,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     add_contract_to_storage: 0,
                     insert_contract: 0,
                 },
-                update: DriveContractUpdateMethodVersions {
-                    update_contract: 0,
-                },
+                update: DriveContractUpdateMethodVersions { update_contract: 0 },
                 costs: DriveContractCostsMethodVersions {
                     add_estimation_costs_for_contract_insertion: 0,
                 },
@@ -212,14 +250,15 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         insert_new_unique_key: 0,
                         replace_key_in_storage: 0,
                     },
-                    insert_key_hash_identity_reference: DriveIdentityKeyHashesToIdentityInsertMethodVersions {
-                        add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
-                        add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
-                        insert_non_unique_public_key_hash_reference_to_identity: 0,
-                        insert_reference_to_non_unique_key: 0,
-                        insert_reference_to_unique_key: 0,
-                        insert_unique_public_key_hash_reference_to_identity: 0,
-                    },
+                    insert_key_hash_identity_reference:
+                        DriveIdentityKeyHashesToIdentityInsertMethodVersions {
+                            add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
+                            add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
+                            insert_non_unique_public_key_hash_reference_to_identity: 0,
+                            insert_reference_to_non_unique_key: 0,
+                            insert_reference_to_unique_key: 0,
+                            insert_unique_public_key_hash_reference_to_identity: 0,
+                        },
                 },
                 update: DriveIdentityUpdateMethodVersions {
                     update_identity_revision: 0,
@@ -300,7 +339,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 grove_apply_partial_batch: 0,
                 grove_apply_partial_batch_with_add_costs: 0,
             },
-            costs: DriveGroveCostMethodVersions { grove_batch_operations_costs: 0 },
+            costs: DriveGroveCostMethodVersions {
+                grove_batch_operations_costs: 0,
+            },
         },
     },
     abci_structure: AbciStructureVersion {
@@ -322,8 +363,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions { init_chain: 0 },
-            initialization: DriveAbciInitializationMethodVersions{ initial_core_height: 0, create_genesis_state: 0 },
-            core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions{
+            initialization: DriveAbciInitializationMethodVersions {
+                initial_core_height: 0,
+                create_genesis_state: 0,
+            },
+            core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
                 update_core_info: 0,
                 update_masternode_list: 0,
                 update_quorum_info: 0,
@@ -335,109 +379,129 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     update_voter_identity: 0,
                 },
             },
-            protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions{ check_for_desired_protocol_upgrade: 0 },
-            block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions{ add_process_epoch_change_operations: 0, process_block_fees: 0 },
-            core_subsidy: DriveAbciCoreSubsidyMethodVersions{ epoch_core_reward_credits_for_distribution: 0 },
-            fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions{ add_distribute_block_fees_into_pools_operations: 0, add_distribute_storage_fee_to_epochs_operations: 0 },
-            fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions{
+            protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
+                check_for_desired_protocol_upgrade: 0,
+            },
+            block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
+                add_process_epoch_change_operations: 0,
+                process_block_fees: 0,
+            },
+            core_subsidy: DriveAbciCoreSubsidyMethodVersions {
+                epoch_core_reward_credits_for_distribution: 0,
+            },
+            fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
+                add_distribute_block_fees_into_pools_operations: 0,
+                add_distribute_storage_fee_to_epochs_operations: 0,
+            },
+            fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {
                 add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 0,
                 add_epoch_pool_to_proposers_payout_operations: 0,
                 find_oldest_epoch_needing_payment: 0,
             },
-            identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions{
+            identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
                 build_withdrawal_transactions_from_documents: 0,
                 fetch_and_prepare_unsigned_withdrawal_transactions: 0,
                 fetch_core_block_transactions: 0,
                 pool_withdrawals_into_transactions_queue: 0,
                 update_broadcasted_withdrawal_transaction_statuses: 0,
             },
-            state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions{
+            state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
                 execute_event: 0,
                 process_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
             },
-            withdrawals: DriveAbciWithdrawalsMethodVersions{ check_withdrawals: 0 },
-            epoch: DriveAbciEpochMethodVersions{ gather_epoch_info: 0, get_genesis_time: 0 },
-            block_end: DriveAbciBlockEndMethodVersions{
+            withdrawals: DriveAbciWithdrawalsMethodVersions {
+                check_withdrawals: 0,
+            },
+            epoch: DriveAbciEpochMethodVersions {
+                gather_epoch_info: 0,
+                get_genesis_time: 0,
+            },
+            block_end: DriveAbciBlockEndMethodVersions {
                 store_ephemeral_state: 0,
                 update_state_cache: 0,
                 validator_set_update: 0,
             },
         },
-        validation_and_processing: DriveAbciValidationVersions { state_transitions: DriveAbciStateTransitionValidationVersions {
-            identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
+        validation_and_processing: DriveAbciValidationVersions {
+            state_transitions: DriveAbciStateTransitionValidationVersions {
+                identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                identity_credit_withdrawal_state_transition:
+                    DriveAbciStateTransitionValidationVersion {
+                        structure: 0,
+                        identity_signatures: 0,
+                        state: 0,
+                        transform_into_action: 0,
+                    },
+                identity_credit_transfer_state_transition:
+                    DriveAbciStateTransitionValidationVersion {
+                        structure: 0,
+                        identity_signatures: 0,
+                        state: 0,
+                        transform_into_action: 0,
+                    },
+                contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                documents_batch_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                document_base_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                document_create_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                document_replace_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+                document_delete_state_transition: DriveAbciStateTransitionValidationVersion {
+                    structure: 0,
+                    identity_signatures: 0,
+                    state: 0,
+                    transform_into_action: 0,
+                },
             },
-            identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            documents_batch_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            document_base_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            document_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            document_replace_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-            document_delete_state_transition: DriveAbciStateTransitionValidationVersion {
-                structure: 0,
-                identity_signatures: 0,
-                state: 0,
-                transform_into_action: 0,
-            },
-        }, process_state_transition: 0 },
+            process_state_transition: 0,
+        },
     },
     dpp: DPPVersion {
         state_transition_serialization_versions: StateTransitionSerializationVersions {

@@ -1,9 +1,9 @@
 mod v0;
 
+use crate::drive::Drive;
+use crate::error::{DriveError, Error};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::Transaction;
-use crate::drive::Drive;
-use crate::error::{Error, DriveError};
 
 impl Drive {
     /// Handles the rollback of a transaction.
@@ -19,7 +19,11 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
-    pub fn rollback_transaction(&self, transaction: &Transaction, drive_version: &DriveVersion) -> Result<(), Error> {
+    pub fn rollback_transaction(
+        &self,
+        transaction: &Transaction,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
         match drive_version.methods.operations.rollback_transaction {
             0 => self.rollback_transaction_v0(transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

@@ -1,25 +1,22 @@
-use std::collections::BTreeMap;
-use std::ops::AddAssign;
-use std::sync::Arc;
-use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use grovedb::{Element, TransactionArg};
-use grovedb::query_result_type::{QueryResultElement, QueryResultType};
-use dpp::block::epoch::Epoch;
-use dpp::data_contract::DataContract;
-use dpp::serialization_traits::PlatformDeserializable;
-use dpp::version::drive_versions::DriveVersion;
 use crate::common::decode::decode_u64;
-use crate::drive::contract::{ContractFetchInfo, paths};
+use crate::drive::contract::{paths, ContractFetchInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
-
+use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
+use dpp::block::epoch::Epoch;
+use dpp::data_contract::DataContract;
+use dpp::serialization_traits::PlatformDeserializable;
+use dpp::version::drive_versions::DriveVersion;
+use grovedb::query_result_type::{QueryResultElement, QueryResultType};
+use grovedb::{Element, TransactionArg};
+use std::collections::BTreeMap;
+use std::ops::AddAssign;
+use std::sync::Arc;
 
 impl Drive {
-
-
     /// Fetches a contract along with its history.
     ///
     /// # Arguments
@@ -61,7 +58,7 @@ impl Drive {
         limit: Option<u16>,
         offset: Option<u16>,
         drive_version: &DriveVersion,
-    ) -> Result<BTreeMap<u64,DataContract>, Error> {
+    ) -> Result<BTreeMap<u64, DataContract>, Error> {
         let mut ops = Vec::new();
 
         let path_query =
@@ -99,7 +96,7 @@ impl Drive {
                     "contract path did not refer to a contract element",
                 ))),
             })
-            .collect::<Result<BTreeMap<u64,DataContract>, Error>>();
+            .collect::<Result<BTreeMap<u64, DataContract>, Error>>();
 
         // Left like this for future additions if needed
         contracts
