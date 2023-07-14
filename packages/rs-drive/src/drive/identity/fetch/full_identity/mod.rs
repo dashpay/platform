@@ -19,6 +19,7 @@ use dpp::version::drive_versions::DriveVersion;
 impl Drive {
     /// Fetches an identity with all its information and
     /// the cost it took from storage.
+    // TODO(doc): what is the cost? Do we pay for viewing data as well?
     pub(super) fn fetch_full_identity_with_costs_v0(
         &self,
         identity_id: [u8; 32],

@@ -6,6 +6,7 @@ use grovedb::{PathQuery, TransactionArg};
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {
+    // TODO(doc): add info that it proves identity presence/absence
     /// Fetches an identity with all its information from storage.
     pub(super) fn prove_full_identity_by_unique_public_key_hash_v0(
         &self,

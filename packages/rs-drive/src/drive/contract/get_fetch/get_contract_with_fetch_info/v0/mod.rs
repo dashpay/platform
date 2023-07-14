@@ -23,7 +23,8 @@ impl Drive {
     ///   for fetching the contract.
     ///
     /// # Returns
-    ///
+    /// TODO(doc): returns ContractFetchInfo, not Contract. Do we really need to write it in the doc since it's
+    /// provided in the return argument?
     /// * `Result<Option<Arc<Contract>>, Error>` - If successful, returns an `Option` containing a
     ///   reference to the fetched `Contract`. If an error occurs during the contract fetching,
     ///   returns an `Error`.
@@ -47,7 +48,7 @@ impl Drive {
     }
 
     /// Retrieves the specified contract along with its fetch info and calculates the fee if an epoch is provided.
-    ///
+    /// TODO(doc): probably it worth explaining reasoning of why we having fee for fetch method.
     /// # Arguments
     ///
     /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
@@ -61,7 +62,7 @@ impl Drive {
     ///   for fetching the contract.
     ///
     /// # Returns
-    ///
+    ///  // TODO(doc): Do we really need to write return type in the Doc?
     /// * `Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error>` - If successful,
     ///   returns a tuple containing an `Option` with the `FeeResult` (if an epoch was provided) and
     ///   an `Option` containing an `Arc` to the fetched `ContractFetchInfo`. If an error occurs

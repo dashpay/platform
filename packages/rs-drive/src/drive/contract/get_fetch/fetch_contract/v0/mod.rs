@@ -16,7 +16,9 @@ impl Drive {
     /// Retrieves the specified contract from storage and inserts it into the cache.
     ///
     /// This function fetches the contract with the given ID from storage and, if successful,
-    /// inserts the contract into the cache. Additionally, the fee for the contract operations
+    /// inserts the contract into the cache.
+    /// TODO(doc): probably it worth explaining reasoning of adding fee if epoch is passed to the function.
+    /// Additionally, the fee for the contract operations
     /// is calculated if an epoch is provided.
     ///
     /// # Arguments

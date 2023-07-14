@@ -9,6 +9,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 impl Drive {
+    // TODO(doc): probably it worth explaining what "add_to_operations" means.
     /// Performs the operations to add a document to a contract.
     pub(super) fn add_document_for_contract_apply_and_add_to_operations_v0(
         &self,

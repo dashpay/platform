@@ -13,6 +13,8 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 
 impl Drive {
+    // TODO(doc): Elaborate more on associated fee? Is it always a refund (negative fee)
+    //  Or could be positive as well?
     /// Deletes a document and returns the associated fee.
     pub(super) fn delete_document_for_contract_v0(
         &self,
