@@ -7,7 +7,7 @@ use crate::{
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 
-use crate::data_contract::CreatedDataContract;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use data_contracts::SystemDataContract;
 
 pub fn get_dashpay_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {

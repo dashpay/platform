@@ -9,7 +9,7 @@ impl IdentityCreditWithdrawalTransitionActionV0 {
         identity_credit_withdrawal: &IdentityCreditWithdrawalTransitionV0,
         creation_time_ms: u64,
     ) -> Self {
-        let document_id = generate_document_id::generate_document_id(
+        let document_id = generate_document_id::generate_document_id_v0(
             &withdrawals_contract::CONTRACT_ID,
             &identity_credit_withdrawal.identity_id,
             withdrawals_contract::document_types::WITHDRAWAL,

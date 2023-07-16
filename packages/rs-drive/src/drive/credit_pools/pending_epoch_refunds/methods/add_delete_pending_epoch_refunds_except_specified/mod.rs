@@ -6,7 +6,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::epoch::CreditsPerEpoch;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::{GroveDbOpBatch, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Adds operations to delete pending epoch refunds except epochs from provided collection based on the drive version

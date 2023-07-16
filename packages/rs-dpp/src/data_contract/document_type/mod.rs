@@ -8,6 +8,8 @@ mod index;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+#[cfg(feature = "random-documents")]
+pub mod random_document;
 pub mod v0;
 
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;

@@ -44,7 +44,16 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let drive_version = DriveVersion::latest();
 
-        let identity = Identity::random_identity(Some(0), 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
 
         drive
             .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)

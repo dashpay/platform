@@ -3,21 +3,36 @@ mod tests {
     use super::*;
     use dpp::prelude::*;
 
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
 
-    use crate::{
-        common::helpers::identities::create_test_identity,
-        tests::helpers::setup::setup_drive_with_initial_state_structure,
-    };
-
     mod add_to_identity_balance {
+        use dpp::block::block_info::BlockInfo;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::version::PlatformVersion;
+
+        use crate::fee::op::LowLevelDriveOperation;
+
         use super::*;
 
         #[test]
         fn should_add_to_balance() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let platform_version = PlatformVersion::latest();
+
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let old_balance = identity.balance;
 
@@ -38,6 +53,7 @@ mod tests {
                     &block_info,
                     true,
                     Some(&db_transaction),
+                    &platform_version.drive,
                 )
                 .expect("expected to add to identity balance");
 
@@ -57,7 +73,13 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block_info, true, None)
+                .fetch_identity_balance_with_costs(
+                    identity.id.to_buffer(),
+                    &block_info,
+                    true,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get balance");
 
             assert_eq!(balance.unwrap(), old_balance + amount);
@@ -67,9 +89,18 @@ mod tests {
         fn should_fail_if_balance_is_not_persisted() {
             let drive = setup_drive_with_initial_state_structure();
 
+            let platform_version = PlatformVersion::latest();
+
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
-            let result = drive.add_to_identity_balance([0; 32], 300, &block_info, true, None);
+            let result = drive.add_to_identity_balance(
+                [0; 32],
+                300,
+                &block_info,
+                true,
+                None,
+                &platform_version.drive,
+            );
 
             assert!(
                 matches!(result, Err(Error::Drive(DriveError::CorruptedCodeExecution(m))) if m == "there should always be a balance")
@@ -79,6 +110,8 @@ mod tests {
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
             let drive = setup_drive_with_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
+
             let identity = create_test_identity(&drive, [0; 32], Some(1), None);
 
             let added_balance = 300;
@@ -92,7 +125,13 @@ mod tests {
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
-                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    batch,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
                 .expect("should apply batch");
 
             let block_info = BlockInfo::default();
@@ -104,6 +143,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
+                    &platform_version.drive,
                 )
                 .expect("expected to add to identity balance");
 
@@ -118,7 +158,13 @@ mod tests {
             );
 
             let (updated_balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block_info, true, None)
+                .fetch_identity_balance_with_costs(
+                    identity.id.to_buffer(),
+                    &block_info,
+                    true,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get balance");
 
             assert_eq!(
@@ -132,6 +178,7 @@ mod tests {
                     true,
                     None,
                     &mut drive_operations,
+                    &platform_version.drive,
                 )
                 .expect("expected to get balance")
                 .expect("balance should present");
@@ -144,6 +191,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let identity = create_test_identity(&drive, [0; 32], Some(1), None);
 
+            let platform_version = PlatformVersion::latest();
+
             let added_balance = 50;
             let negative_amount = 100;
 
@@ -155,7 +204,13 @@ mod tests {
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
-                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    batch,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
                 .expect("should apply batch");
 
             let block_info = BlockInfo::default();
@@ -167,6 +222,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
+                    &platform_version.drive,
                 )
                 .expect("expected to add to identity balance");
 
@@ -181,7 +237,13 @@ mod tests {
             );
 
             let (updated_balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block_info, true, None)
+                .fetch_identity_balance_with_costs(
+                    identity.id.to_buffer(),
+                    &block_info,
+                    true,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get balance");
 
             assert_eq!(updated_balance.expect("balance should present"), 0);
@@ -192,6 +254,7 @@ mod tests {
                     true,
                     None,
                     &mut drive_operations,
+                    &platform_version.drive,
                 )
                 .expect("expected to get balance")
                 .expect("balance should present");
@@ -203,7 +266,18 @@ mod tests {
         fn should_estimate_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let platform_version = PlatformVersion::latest();
+
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -214,7 +288,14 @@ mod tests {
                 .expect("should return app hash");
 
             let fee_result = drive
-                .add_to_identity_balance(identity.id.to_buffer(), 300, &block, false, None)
+                .add_to_identity_balance(
+                    identity.id.to_buffer(),
+                    300,
+                    &block,
+                    false,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get estimated costs to update an identity balance");
 
             assert_eq!(
@@ -234,7 +315,13 @@ mod tests {
             assert_eq!(app_hash_after, app_hash_before);
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_costs(
+                    identity.id.to_buffer(),
+                    &block,
+                    true,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get balance");
 
             assert!(balance.is_none()); //shouldn't have changed
@@ -243,12 +330,26 @@ mod tests {
 
     mod remove_from_identity_balance {
         use super::*;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn should_remove_from_balance() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let platform_version = PlatformVersion::latest();
+
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let old_balance = identity.balance;
 
@@ -269,6 +370,7 @@ mod tests {
                     &block,
                     true,
                     Some(&db_transaction),
+                    &platform_version.drive,
                 )
                 .expect("expected to add to identity balance");
 
@@ -288,7 +390,13 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_costs(
+                    identity.id.to_buffer(),
+                    &block,
+                    true,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get balance");
 
             assert_eq!(balance.unwrap(), old_balance - amount);
@@ -298,7 +406,18 @@ mod tests {
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let platform_version = PlatformVersion::latest();
+
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -311,7 +430,14 @@ mod tests {
             let amount = 10;
 
             let fee_result = drive
-                .remove_from_identity_balance(identity.id.to_buffer(), amount, &block, false, None)
+                .remove_from_identity_balance(
+                    identity.id.to_buffer(),
+                    amount,
+                    &block,
+                    false,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to add to identity balance");
 
             let app_hash_after = drive
@@ -331,7 +457,13 @@ mod tests {
             );
 
             let (balance, _fee_cost) = drive
-                .fetch_identity_balance_with_costs(identity.id.to_buffer(), &block, true, None)
+                .fetch_identity_balance_with_costs(
+                    identity.id.to_buffer(),
+                    &block,
+                    true,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("expected to get balance");
 
             assert!(balance.is_none()); //shouldn't have changed
@@ -340,10 +472,14 @@ mod tests {
 
     mod apply_balance_change_from_fee_to_identity_operations {
         use super::*;
-        use crate::common::helpers::identities::create_test_identity;
-        use crate::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
+        use crate::drive::object_size_info::ElementInfo::Element;
+        use crate::fee::op::LowLevelDriveOperation;
+        use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
-        use dpp::fee::SignedCredits;
+        use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::fee::{Credits, SignedCredits};
+        use dpp::version::PlatformVersion;
         use grovedb::batch::Op;
         use nohash_hasher::IntMap;
         use std::collections::BTreeMap;
@@ -351,6 +487,8 @@ mod tests {
         #[test]
         fn should_do_nothing_if_there_is_no_balance_change() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
 
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
@@ -360,7 +498,11 @@ mod tests {
                 .into_balance_change(identity.id.to_buffer());
 
             let (drive_operations, fee_result_outcome) = drive
-                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .apply_balance_change_from_fee_to_identity_operations(
+                    fee_change,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should apply fee change");
 
             assert_eq!(drive_operations.len(), 0);
@@ -370,6 +512,8 @@ mod tests {
         #[test]
         fn should_add_to_balance() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
 
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
             let other_identity = create_test_identity(&drive, [1; 32], Some(16), None);
@@ -398,7 +542,11 @@ mod tests {
                 .into_balance_change(identity.id.to_buffer());
 
             let (drive_operations, fee_result_outcome) = drive
-                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .apply_balance_change_from_fee_to_identity_operations(
+                    fee_change,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should apply fee change");
 
             assert!(matches!(
@@ -429,11 +577,16 @@ mod tests {
         fn should_fail_if_balance_is_not_persisted() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let fee_result = FeeResult::default_with_fees(100000, 100);
-            let fee_change = fee_result.into_balance_change([0; 32]);
+            let platform_version = PlatformVersion::latest();
 
-            let result =
-                drive.apply_balance_change_from_fee_to_identity_operations(fee_change, None);
+            let fee_result = FeeResult::default_with_fees(100000, 100);
+            let fee_change = fee_result.into_balance_change([0; 32].into());
+
+            let result = drive.apply_balance_change_from_fee_to_identity_operations(
+                fee_change,
+                None,
+                &platform_version.drive,
+            );
 
             assert!(
                 matches!(result, Err(Error::Drive(DriveError::CorruptedCodeExecution(m))) if m == "there should always be a balance if apply is set to true")
@@ -443,6 +596,8 @@ mod tests {
         #[test]
         fn should_deduct_from_debt_if_balance_is_nil() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
 
             let removed_credits = 10000;
             let negative_amount = 1000;
@@ -457,7 +612,13 @@ mod tests {
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
-                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    batch,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
                 .expect("should apply batch");
 
             let credits_per_epoch: CreditsPerEpoch =
@@ -475,7 +636,11 @@ mod tests {
                 .into_balance_change(identity.id.to_buffer());
 
             let (drive_operations, fee_result_outcome) = drive
-                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .apply_balance_change_from_fee_to_identity_operations(
+                    fee_change,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should apply fee change");
 
             assert!(matches!(
@@ -505,6 +670,8 @@ mod tests {
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
             let drive = setup_drive_with_initial_state_structure();
 
+            let platform_version = PlatformVersion::latest();
+
             let removed_credits = 1000;
             let negative_amount = 3000;
 
@@ -518,7 +685,13 @@ mod tests {
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
-                .apply_batch_low_level_drive_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    batch,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
                 .expect("should apply batch");
 
             let credits_per_epoch: CreditsPerEpoch =
@@ -536,7 +709,11 @@ mod tests {
                 .into_balance_change(identity.id.to_buffer());
 
             let (drive_operations, fee_result_outcome) = drive
-                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .apply_balance_change_from_fee_to_identity_operations(
+                    fee_change,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should apply fee change");
 
             assert!(matches!(
@@ -560,6 +737,8 @@ mod tests {
         fn should_remove_from_balance_less_amount() {
             let drive = setup_drive_with_initial_state_structure();
 
+            let platform_version = PlatformVersion::latest();
+
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
             let initial_balance = 100;
@@ -571,6 +750,7 @@ mod tests {
                     &BlockInfo::default(),
                     true,
                     None,
+                    &platform_version.drive,
                 )
                 .expect("should set initial balance");
 
@@ -588,7 +768,11 @@ mod tests {
                 .into_balance_change(identity.id.to_buffer());
 
             let (drive_operations, fee_result_outcome) = drive
-                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .apply_balance_change_from_fee_to_identity_operations(
+                    fee_change,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should apply fee change");
 
             assert!(matches!(
@@ -608,6 +792,8 @@ mod tests {
         fn should_remove_from_balance_bigger_amount_and_get_into_debt() {
             let drive = setup_drive_with_initial_state_structure();
 
+            let platform_version = PlatformVersion::latest();
+
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
             let initial_balance = 100;
@@ -619,6 +805,7 @@ mod tests {
                     &BlockInfo::default(),
                     true,
                     None,
+                    &platform_version.drive,
                 )
                 .expect("should set initial balance");
 
@@ -634,7 +821,11 @@ mod tests {
             let fee_change = fee_result.into_balance_change(identity.id.to_buffer());
 
             let (drive_operations, fee_result_outcome) = drive
-                .apply_balance_change_from_fee_to_identity_operations(fee_change, None)
+                .apply_balance_change_from_fee_to_identity_operations(
+                    fee_change,
+                    None,
+                    &platform_version.drive,
+                )
                 .expect("should apply fee change");
 
             let expected_debt_bytes =
@@ -673,6 +864,8 @@ mod tests {
         fn should_return_error_if_required_amount_bigger_than_balance() {
             let drive = setup_drive_with_initial_state_structure();
 
+            let platform_version = PlatformVersion::latest();
+
             let identity = create_test_identity(&drive, [0; 32], Some(15), None);
 
             let processing_fee = 110;
@@ -686,8 +879,11 @@ mod tests {
 
             let fee_change = fee_result.into_balance_change(identity.id.to_buffer());
 
-            let result =
-                drive.apply_balance_change_from_fee_to_identity_operations(fee_change, None);
+            let result = drive.apply_balance_change_from_fee_to_identity_operations(
+                fee_change,
+                None,
+                &platform_version.drive,
+            );
 
             assert!(matches!(
                 result,

@@ -175,7 +175,16 @@ mod tests {
             .create_initial_state_structure(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(Some(0), 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
 
         drive
             .add_new_identity_v0(
@@ -201,7 +210,16 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let drive_version = &PlatformVersion::get(0).unwrap().drive;
 
-        let identity = Identity::random_identity(Some(0), 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
         let db_transaction = drive.grove.start_transaction();
 
         drive

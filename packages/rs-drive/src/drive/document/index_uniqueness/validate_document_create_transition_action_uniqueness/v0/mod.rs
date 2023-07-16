@@ -12,11 +12,11 @@ use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentCreateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 
 impl Drive {
     /// Validate that a document create transition action would be unique in the state

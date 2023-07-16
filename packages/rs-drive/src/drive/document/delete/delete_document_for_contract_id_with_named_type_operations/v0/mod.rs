@@ -42,8 +42,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
@@ -58,10 +60,10 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
-        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations)? else {
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations, platform_version)? else {
             return Err(Error::Document(DocumentError::ContractNotFound))
         };
 
@@ -70,11 +72,11 @@ impl Drive {
         self.delete_document_for_contract_operations(
             document_id,
             contract,
-            document_type,
+            &document_type,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )
     }
 }

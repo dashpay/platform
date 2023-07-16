@@ -214,7 +214,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DocumentOperationType::AddSerializedDocumentForContract {
@@ -238,7 +238,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         owner_id,
                     },
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 drive.add_document_for_contract_operations(
                     document_and_contract_info,
@@ -247,7 +247,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DocumentOperationType::AddDocument {
@@ -275,7 +275,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 let mut operations = drive.add_document_for_contract_operations(
                     document_and_contract_info,
@@ -284,7 +284,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )?;
                 drive_operations.append(&mut operations);
                 Ok(drive_operations)
@@ -310,7 +310,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DocumentOperationType::AddDocumentForContract {
@@ -323,7 +323,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 &mut None,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             DocumentOperationType::DeleteDocumentForContract {
                 document_id,
@@ -336,7 +336,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             DocumentOperationType::DeleteDocumentOfNamedTypeForContractId {
                 document_id,
@@ -350,7 +350,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             DocumentOperationType::DeleteDocumentOfNamedTypeForContract {
                 document_id,
@@ -363,7 +363,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 None,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             DocumentOperationType::UpdateSerializedDocumentForContract {
                 serialized_document,
@@ -385,7 +385,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         owner_id,
                     },
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
@@ -393,7 +393,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DocumentOperationType::UpdateDocumentForContract {
@@ -415,7 +415,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         owner_id,
                     },
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 drive.update_document_for_contract_operations(
                     document_and_contract_info,
@@ -423,7 +423,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType {
@@ -454,7 +454,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 &mut Some(&mut drive_operations),
                                 estimated_costs_only_with_layer_info,
                                 transaction,
-                                drive_version,
+                                platform_version,
                             )?;
                             drive_operations.append(&mut operations);
                         }
@@ -490,7 +490,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 &mut Some(&mut drive_operations),
                                 estimated_costs_only_with_layer_info,
                                 transaction,
-                                drive_version,
+                                platform_version,
                             )?;
                             drive_operations.append(&mut operations);
                         }
@@ -511,7 +511,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         true,
                         transaction,
                         &mut drive_operations,
-                        drive_version,
+                        platform_version,
                     )?
                     .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
@@ -522,7 +522,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 let mut operations = drive.update_document_for_contract_operations(
                     document_and_contract_info,
@@ -530,7 +530,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )?;
                 drive_operations.append(&mut operations);
                 Ok(drive_operations)

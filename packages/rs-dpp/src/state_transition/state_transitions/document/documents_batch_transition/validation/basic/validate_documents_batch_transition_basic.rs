@@ -21,7 +21,7 @@ use crate::{
         enrich_with_base_schema::{PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3},
         DataContract,
     },
-    document::generate_document_id::generate_document_id,
+    document::generate_document_id::generate_document_id_v0,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -308,8 +308,12 @@ fn validate_raw_transitions<'a>(
                     let document_id = raw_document_transition.get_identifier("$id")?;
                     let entropy = raw_document_transition.get_bytes("$entropy")?;
                     // validate the id  generation
-                    let generated_document_id =
-                        generate_document_id(&data_contract.id, &owner_id, document_type, &entropy);
+                    let generated_document_id = generate_document_id_v0(
+                        &data_contract.id,
+                        &owner_id,
+                        document_type,
+                        &entropy,
+                    );
 
                     if generated_document_id != document_id {
                         // dbg!(

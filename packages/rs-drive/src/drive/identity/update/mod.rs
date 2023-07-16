@@ -21,7 +21,16 @@ mod tests {
         fn should_add_one_new_key_to_identity() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -69,7 +78,16 @@ mod tests {
         fn should_add_two_dozen_new_keys_to_identity() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -117,7 +135,16 @@ mod tests {
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -167,7 +194,16 @@ mod tests {
         fn should_disable_a_few_keys() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -234,7 +270,16 @@ mod tests {
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -279,7 +324,16 @@ mod tests {
         fn estimated_costs_should_have_same_storage_cost() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             drive
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
@@ -323,7 +377,16 @@ mod tests {
         fn should_update_revision() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -372,7 +435,16 @@ mod tests {
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let identity = Identity::random_identity(5, Some(12345));
+            let identity = Identity::random_identity(
+                Some(
+                    platform_version
+                        .dpp
+                        .identity_versions
+                        .identity_structure_version,
+                ),
+                5,
+                Some(12345),
+            );
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 

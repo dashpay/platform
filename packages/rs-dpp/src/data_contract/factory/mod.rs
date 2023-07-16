@@ -3,9 +3,7 @@ mod v0;
 use crate::consensus::basic::UnsupportedVersionError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::contract_config::ContractConfigV0;
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::data_contract::CreatedDataContract;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 use crate::util::deserializer::ProtocolVersion;
 use crate::util::entropy_generator::EntropyGenerator;
@@ -13,6 +11,11 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 pub use v0::*;
+
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 /// # Data Contract Factory
 ///
@@ -34,100 +37,20 @@ pub enum DataContractFactory {
 impl DataContractFactory {
     /// Create a new data contract factory knowing versions
     pub fn new(
-        version: FeatureVersion,
-        preferred_default_data_contract_version: FeatureVersion,
-        entropy_generator: Option<Box<dyn EntropyGenerator>>,
-    ) -> Result<Self, ProtocolError> {
-        match version {
-            0 => Ok(DataContractFactoryV0::new(
-                preferred_default_data_contract_version,
-                entropy_generator,
-            )
-            .into()),
-            version => Err(ProtocolError::UnknownVersionError(format!(
-                "version {version} not known for data contract factory"
-            ))),
-        }
-    }
-
-    /// Create a new data contract factory knowing the protocol version
-    /// The preferred_default_data_contract_factory_version and the preferred_default_data_contract_version
-    /// can be given. If they are they must be valid for the protocol version.
-    pub fn new_from_protocol_version(
         protocol_version: u32,
-        preferred_default_data_contract_factory_version: Option<FeatureVersion>,
-        preferred_default_data_contract_version: Option<FeatureVersion>,
         entropy_generator: Option<Box<dyn EntropyGenerator>>,
     ) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
-        if let Some(preferred_default_data_contract_factory_version) =
-            preferred_default_data_contract_factory_version
+        match platform_version
+            .platform_architecture
+            .data_contract_factory_structure_version
         {
-            if !platform_version
-                .platform_architecture
-                .data_contract_factory
-                .bounds
-                .check_version(preferred_default_data_contract_factory_version)
-            {
-                // we are asking for a data contract factory version that isn't supported by the protocol version
-                return Err(ConsensusError::BasicError(
-                    UnsupportedVersionError::new(
-                        preferred_default_data_contract_factory_version,
-                        platform_version
-                            .platform_architecture
-                            .data_contract_factory
-                            .bounds
-                            .min_version,
-                        platform_version
-                            .platform_architecture
-                            .data_contract_factory
-                            .bounds
-                            .max_version,
-                    )
-                    .into(),
-                )
-                .into());
-            } else if let Some(preferred_default_data_contract_version) =
-                preferred_default_data_contract_version
-            {
-                if !platform_version
-                    .contract
-                    .check_version(preferred_default_data_contract_version)
-                {
-                    // we are asking for a data contract factory version that isn't supported by the protocol version
-                    return Err(ConsensusError::BasicError(
-                        UnsupportedVersionError::new(
-                            preferred_default_data_contract_version,
-                            platform_version.contract.min_version,
-                            platform_version.contract.max_version,
-                        )
-                        .into(),
-                    )
-                    .into());
-                } else {
-                    DataContractFactory::new(
-                        preferred_default_data_contract_factory_version,
-                        preferred_default_data_contract_version,
-                        entropy_generator,
-                    )
-                }
-            } else {
-                DataContractFactory::new(
-                    preferred_default_data_contract_factory_version,
-                    platform_version.contract.default_current_version,
-                    entropy_generator,
-                )
-            }
-        } else {
-            DataContractFactory::new(
-                platform_version
-                    .platform_architecture
-                    .data_contract_factory
-                    .bounds
-                    .default_current_version,
-                platform_version.contract.default_current_version,
-                entropy_generator,
-            )
+            0 => Ok(DataContractFactoryV0::new(protocol_version, entropy_generator).into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractFactory::new".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -169,6 +92,7 @@ impl DataContractFactory {
         }
     }
 
+    #[cfg(feature = "state-transitions")]
     /// Create a DataContractCreateTransition
     pub fn create_data_contract_create_transition(
         &self,
@@ -181,6 +105,7 @@ impl DataContractFactory {
         }
     }
 
+    #[cfg(feature = "state-transitions")]
     /// Create a DataContractUpdateTransition
     pub fn create_data_contract_update_transition(
         &self,

@@ -91,8 +91,8 @@ impl DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::created_data_contract::CreatedDataContract;
     use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
-    use crate::data_contract::CreatedDataContract;
     use integer_encoding::VarInt;
     use platform_value::Bytes32;
 

@@ -21,7 +21,7 @@ pub mod extra;
 
 mod generate_data_contract;
 
-#[cfg(feature = "state-transitions")]
+#[cfg(any(feature = "state-transitions", feature = "client"))]
 pub mod created_data_contract;
 pub mod document_type;
 
@@ -41,8 +41,6 @@ mod serialized_version;
 pub use data_contract_methods::*;
 pub(crate) mod accessors;
 
-#[cfg(feature = "state-transitions")]
-pub use created_data_contract::CreatedDataContract;
 pub use v0::*;
 
 use crate::consensus::basic::BasicError;
@@ -215,6 +213,12 @@ impl DataContract {
     pub fn id(&self) -> Identifier {
         match self {
             DataContract::V0(v0) => v0.id,
+        }
+    }
+
+    pub fn set_id(&mut self, id: Identifier) {
+        match self {
+            DataContract::V0(v0) => v0.id = id,
         }
     }
 

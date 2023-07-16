@@ -1141,6 +1141,7 @@ mod tests {
                 BlockInfo::default(),
                 &person_0_original,
                 transaction.as_ref(),
+                platform_version,
             );
 
             let removed_credits = deletion_fees
@@ -1277,6 +1278,7 @@ mod tests {
                 BlockInfo::default(),
                 &person_0_original,
                 transaction.as_ref(),
+                platform_version,
             );
 
             let removed_credits = deletion_fees
@@ -1707,6 +1709,7 @@ mod tests {
         block_info: BlockInfo,
         person: &Person,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> FeeResult {
         drive
             .delete_document_for_contract(

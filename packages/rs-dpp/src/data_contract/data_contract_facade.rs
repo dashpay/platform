@@ -1,6 +1,6 @@
 use crate::data_contract::{DataContract, DataContractFactory};
 
-use crate::data_contract::CreatedDataContract;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::prelude::Identifier;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;

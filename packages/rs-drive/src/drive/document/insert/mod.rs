@@ -132,9 +132,7 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::document_field::v0::{
-    encode_unsigned_integer, DocumentFieldType,
-};
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
@@ -168,12 +166,13 @@ impl Drive {
                     owner_id,
                 },
                 contract: &contract,
-                document_type,
+                document_type: &document_type,
             },
             override_document,
             block_info,
             apply,
             transaction,
+            platform_version,
         )
     }
 }
@@ -197,6 +196,7 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -287,7 +287,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -384,7 +384,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -451,7 +451,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -518,7 +518,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -566,6 +566,7 @@ mod tests {
                 BlockInfo::default(),
                 false,
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -584,7 +585,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -627,6 +628,7 @@ mod tests {
                 BlockInfo::default(),
                 false,
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -661,7 +663,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -716,6 +718,7 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 &mut fee_drive_operations,
+                platform_version,
             )
             .expect("expected to get back fee for document insertion successfully");
 
@@ -743,6 +746,7 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 &mut actual_drive_operations,
+                platform_version,
             )
             .expect("expected to get back fee for document insertion successfully");
 
@@ -756,7 +760,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -997,7 +1001,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -1012,6 +1016,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 

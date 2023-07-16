@@ -37,7 +37,16 @@ mod tests {
     fn should_prove_a_single_identity_id() {
         let drive = setup_drive_with_initial_state_structure();
         let drive_version = DriveVersion::latest();
-        let identity = Identity::random_identity(Some(0), 3, Some(14));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            3,
+            Some(14),
+        );
 
         let identity_id = identity.id.to_buffer();
         drive

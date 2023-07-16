@@ -1,8 +1,6 @@
 mod accessors;
 pub mod contract_config;
 mod conversion;
-#[cfg(feature = "state-transitions")]
-pub mod created_data_contract;
 pub mod data_contract;
 pub mod enrich_with_base_schema;
 mod methods;

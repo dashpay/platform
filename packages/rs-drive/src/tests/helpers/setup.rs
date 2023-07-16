@@ -111,7 +111,7 @@ pub fn setup_document(
     document_type: &DocumentTypeRef,
     transaction: TransactionArg,
 ) {
-    let drive_version = DriveVersion::latest();
+    let platform_version = PlatformVersion::latest();
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -126,7 +126,7 @@ pub fn setup_document(
             BlockInfo::default(),
             true,
             transaction,
-            &drive_version,
+            platform_version,
         )
         .unwrap();
 }

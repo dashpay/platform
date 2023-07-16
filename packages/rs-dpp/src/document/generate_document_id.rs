@@ -1,7 +1,7 @@
 use crate::{prelude::Identifier, util::hash::hash_to_vec};
 
 /// Generates the document ID
-pub fn generate_document_id(
+pub fn generate_document_id_v0(
     contract_id: &Identifier,
     owner_id: &Identifier,
     document_type: &str,

@@ -41,14 +41,8 @@ pub struct AbciStructureVersion {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DataContractFactoryVersion {
-    /// The bounds that the protocol version supports
-    pub bounds: FeatureVersionBounds,
-}
-
-#[derive(Clone, Debug, Default)]
 pub struct PlatformArchitectureVersion {
-    pub data_contract_factory: DataContractFactoryVersion,
+    pub data_contract_factory_structure_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug)]

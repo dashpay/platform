@@ -1,7 +1,8 @@
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::property_names::ENTROPY;
 use crate::data_contract::DataContract;
-use crate::state_transition::data_contract_create_transition::DATA_CONTRACT;
+
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::created_data_contract::fields::property_names::{DATA_CONTRACT, ENTROPY};
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};

@@ -2,6 +2,7 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
+#[cfg(feature = "state-transitions")]
 use data_contract::state_transition::property_names as st_prop;
 use platform_value::{Bytes32, Error, Value};
 
@@ -12,18 +13,21 @@ use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
-use crate::data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization_traits::{
+    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
+};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
-use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
+use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::{
     data_contract::{self},
     errors::ProtocolError,
@@ -37,7 +41,7 @@ use crate::{
 /// It uses a protocol_version, a DataContractValidator, and an EntropyGenerator for its operations.
 pub struct DataContractFactoryV0 {
     /// The feature version used by this factory.
-    data_contract_feature_version: FeatureVersion,
+    protocol_version: u32,
 
     /// An EntropyGenerator for generating entropy during data contract creation.
     entropy_generator: Box<dyn EntropyGenerator>,
@@ -45,11 +49,11 @@ pub struct DataContractFactoryV0 {
 
 impl DataContractFactoryV0 {
     pub fn new(
-        data_contract_feature_version: FeatureVersion,
+        protocol_version: u32,
         entropy_generator: Option<Box<dyn EntropyGenerator>>,
     ) -> Self {
         Self {
-            data_contract_feature_version,
+            protocol_version,
             entropy_generator: entropy_generator.unwrap_or(Box::new(DefaultEntropyGenerator)),
         }
     }
@@ -64,6 +68,8 @@ impl DataContractFactoryV0 {
     ) -> Result<CreatedDataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);
 
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+
         let data_contract_id =
             DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), entropy.to_buffer());
 
@@ -75,12 +81,13 @@ impl DataContractFactoryV0 {
             .unwrap_or_default();
 
         let config = config.unwrap_or_default();
-        let document_types = data_contract::get_document_types_from_value(
+        let document_types = DataContract::get_document_types_from_value(
             data_contract_id,
             &documents,
             &definition_references,
-            config.documents_keep_history_contract_default,
+            config.documents_keep_history_contract_defaul,
             config.documents_mutable_contract_default,
+            platform_version,
         )
         .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
 
@@ -110,26 +117,38 @@ impl DataContractFactoryV0 {
         } else {
             None
         };
-        let mut data_contract = DataContractV0 {
-            id: data_contract_id,
-            schema: data_contract::DATA_CONTRACT_SCHEMA_URI_V0.to_string(),
-            version: 1,
-            owner_id,
-            document_types,
-            metadata: None,
-            config,
-            documents,
-            defs: json_defs,
-            binary_properties: Default::default(),
-        }
-        .into();
+
+        let mut data_contract = match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
+            0 => DataContractV0 {
+                id: data_contract_id,
+                schema: data_contract::DATA_CONTRACT_SCHEMA_URI_V0.to_string(),
+                version: 1,
+                owner_id,
+                document_types,
+                metadata: None,
+                config,
+                documents,
+                defs: json_defs,
+                binary_properties: Default::default(),
+            }
+            .into(),
+            version => {
+                return Err(ProtocolError::UnknownVersionMismatch {
+                    method: "DataContractFactoryV0::create (for data_contract structure version)"
+                        .to_string(),
+                    known_versions: vec![0],
+                    received: version,
+                })
+            }
+        };
 
         data_contract.generate_binary_properties()?;
-        Ok(CreatedDataContractV0 {
-            data_contract,
-            entropy_used: entropy,
-        }
-        .into())
+
+        CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
     }
 
     #[cfg(feature = "platform-value")]
@@ -172,12 +191,16 @@ impl DataContractFactoryV0 {
         buffer: Vec<u8>,
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let data_contract: DataContract =
-            DataContract::deserialize(buffer.as_slice()).map_err(|e| {
-                ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                    SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
-                ))
-            })?;
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+        let data_contract: DataContract = DataContract::versioned_deserialize(
+            buffer.as_slice(),
+            platform_version,
+        )
+        .map_err(|e| {
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
+        })?;
 
         #[cfg(feature = "validation")]
         {
@@ -239,13 +262,12 @@ impl DataContractFactoryV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::property_names;
     use crate::serialization_traits::PlatformSerializable;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use crate::Convertible;
-    use std::sync::Arc;
 
     pub struct TestData {
         created_data_contract: CreatedDataContract,

@@ -872,7 +872,16 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(None, 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
 
         drive
             .add_new_identity(
@@ -901,7 +910,16 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(None, 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
 
         drive
             .add_new_identity(
@@ -938,7 +956,16 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(None, 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
 
         drive
             .add_new_identity(
@@ -975,7 +1002,16 @@ mod tests {
             .create_initial_state_structure_0(Some(&transaction))
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(None, 5, Some(12345));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            5,
+            Some(12345),
+        );
 
         drive
             .add_new_identity(

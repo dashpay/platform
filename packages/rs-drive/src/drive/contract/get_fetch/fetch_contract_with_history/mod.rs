@@ -88,6 +88,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
     use serde_json::json;
 
     struct TestData {
@@ -581,6 +582,8 @@ mod tests {
             drive,
         } = setup_test();
 
+        let platform_version = PlatformVersion::latest();
+
         let contract_id = if test_case.query_non_existent_contract_id {
             [0u8; 32]
         } else {
@@ -598,7 +601,7 @@ mod tests {
             test_case.start_at_date,
             test_case.limit,
             test_case.offset,
-            drive_version,
+            &platform_version.drive,
         );
 
         match &test_case.expected_error {

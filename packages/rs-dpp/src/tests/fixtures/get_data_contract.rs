@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use platform_value::platform_value;
 
-use crate::data_contract::CreatedDataContract;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::prelude::*;
 use crate::{
     data_contract::DataContractFactory,

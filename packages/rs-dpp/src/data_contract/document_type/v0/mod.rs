@@ -20,7 +20,9 @@ use serde::{Deserialize, Serialize};
 
 mod accessors;
 pub mod document_factory;
+#[cfg(feature = "random-documents")]
 pub mod random_document;
+#[cfg(feature = "random-document-types")]
 pub mod random_document_type;
 pub(crate) mod v0_methods;
 

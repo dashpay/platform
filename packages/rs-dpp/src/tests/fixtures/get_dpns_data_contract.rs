@@ -4,7 +4,7 @@ use data_contracts::{DataContractSource, SystemDataContract};
 use platform_value::platform_value;
 use serde_json::json;
 
-use crate::data_contract::CreatedDataContract;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::prelude::*;
 use crate::{
     data_contract::DataContractFactory,

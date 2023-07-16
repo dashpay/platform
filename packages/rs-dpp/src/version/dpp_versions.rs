@@ -36,6 +36,7 @@ pub struct ContractVersions {
     pub contract_serialization_version: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
+    pub created_data_contract_structure_version: FeatureVersion,
     pub document_type_versions: DocumentTypeVersions,
     pub contract_class_method_versions: ContractClassMethodVersions,
 }

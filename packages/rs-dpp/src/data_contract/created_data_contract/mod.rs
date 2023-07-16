@@ -1,13 +1,16 @@
+mod fields;
+mod v0;
+
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 use crate::data_contract::property_names::SYSTEM_VERSION;
-use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 use crate::prelude::DataContract;
-use crate::version::FeatureVersion;
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::Value;
+use platform_value::{Bytes32, Identifier, Value};
 
 #[derive(Clone, Debug, From)]
 pub enum CreatedDataContract {
@@ -15,9 +18,38 @@ pub enum CreatedDataContract {
 }
 
 impl CreatedDataContract {
+    pub fn set_data_contract_id(&mut self, id: Identifier) {
+        match self {
+            CreatedDataContract::V0(v0) => v0.data_contract.set_id(id),
+        }
+    }
+
     pub fn into_data_contract(self) -> DataContract {
         match self {
             CreatedDataContract::V0(created_data_contract) => created_data_contract.into(),
+        }
+    }
+
+    pub fn from_contract_and_entropy(
+        data_contract: DataContract,
+        entropy: Bytes32,
+        platform_version: &PlatformVersion,
+    ) -> Result<CreatedDataContract, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .created_data_contract_structure_version
+        {
+            0 => Ok(CreatedDataContractV0 {
+                data_contract,
+                entropy_used: entropy,
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "CreatedDataContract::from_contract_and_entropy".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 

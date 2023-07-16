@@ -42,7 +42,16 @@ mod tests {
     #[test]
     fn should_prove_a_single_identity() {
         let drive = setup_drive_with_initial_state_structure();
-        let identity = Identity::random_identity(Some(0), 3, Some(14));
+        let identity = Identity::random_identity(
+            Some(
+                platform_version
+                    .dpp
+                    .identity_versions
+                    .identity_structure_version,
+            ),
+            3,
+            Some(14),
+        );
 
         drive
             .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)

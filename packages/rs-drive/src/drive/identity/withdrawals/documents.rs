@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
 use dpp::contracts::withdrawals_contract;
-use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use lazy_static::__Deref;
@@ -20,6 +22,7 @@ impl Drive {
         &self,
         status: u8,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
@@ -29,6 +32,7 @@ impl Drive {
                 None,
                 true,
                 transaction,
+                &platform_version.drive,
             )?
             .1
             .ok_or_else(|| {
@@ -65,7 +69,7 @@ impl Drive {
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
-            document_type,
+            document_type: &document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
@@ -108,6 +112,7 @@ impl Drive {
         &self,
         original_transaction_id: &[u8],
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
@@ -117,6 +122,7 @@ impl Drive {
                 None,
                 true,
                 transaction,
+                &platform_version.drive,
             )?
             .1
             .ok_or_else(|| {
@@ -151,7 +157,7 @@ impl Drive {
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
-            document_type,
+            document_type: &document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
@@ -176,11 +182,13 @@ impl Drive {
         let documents = items
             .iter()
             .map(|document_cbor| {
-                Document::from_bytes(document_cbor, document_type).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedDriveState(
-                        "can't create document from bytes".to_string(),
-                    ))
-                })
+                Document::from_bytes(document_cbor, &document_type, platform_version).map_err(
+                    |_| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "can't create document from bytes".to_string(),
+                        ))
+                    },
+                )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
 
@@ -205,19 +213,20 @@ mod tests {
     use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     mod fetch_withdrawal_documents_by_status {
-
+        use super::*;
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::identity::core_script::CoreScript;
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-
-        use super::*;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_return_list_of_documents() {
             let drive = setup_drive_with_initial_state_structure();
 
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -228,6 +237,7 @@ mod tests {
                 .fetch_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to fetch documents by status");
 
@@ -258,7 +268,7 @@ mod tests {
                 &drive,
                 &document,
                 &data_contract,
-                document_type,
+                &document_type,
                 Some(&transaction),
             );
 
@@ -281,7 +291,7 @@ mod tests {
                 &drive,
                 &document,
                 &data_contract,
-                document_type,
+                &document_type,
                 Some(&transaction),
             );
 
@@ -289,6 +299,7 @@ mod tests {
                 .fetch_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to fetch documents by status");
 
@@ -298,6 +309,7 @@ mod tests {
                 .fetch_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to fetch documents by status");
 
@@ -306,11 +318,11 @@ mod tests {
     }
 
     mod find_document_by_transaction_id {
-
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::identity::core_script::CoreScript;
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::{platform_value, Bytes32};
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
 
         use super::*;
 
@@ -319,6 +331,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -351,7 +365,7 @@ mod tests {
                 &drive,
                 &document,
                 &data_contract,
-                document_type,
+                &document_type,
                 Some(&transaction),
             );
 
@@ -359,6 +373,7 @@ mod tests {
                 .find_withdrawal_document_by_transaction_id(
                     Bytes32::default().as_slice(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to find document by it's transaction id");
 
