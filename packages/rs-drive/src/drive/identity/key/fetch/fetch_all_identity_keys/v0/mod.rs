@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::{IdentityPublicKey, KeyID, IDENTITY_MAX_KEYS};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -30,7 +31,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let key_request =
             IdentityKeysRequest::new_all_keys_query(&identity_id, Some(IDENTITY_MAX_KEYS));
@@ -38,7 +39,7 @@ impl Drive {
             key_request,
             transaction,
             drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 }

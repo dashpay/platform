@@ -10,8 +10,6 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 pub mod bincode;
-#[cfg(feature = "cbor")]
-pub mod cbor;
 
 impl Serialize for DataContractV0 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

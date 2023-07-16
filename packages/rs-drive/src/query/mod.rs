@@ -1620,7 +1620,7 @@ impl<'a> DriveQuery<'a> {
             self.start_at.is_some(),
             transaction,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
         self.verify_proof_keep_serialized(proof.as_slice())
     }
@@ -1765,12 +1765,12 @@ mod tests {
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::data_contract::DataContract;
 
-    use dpp::util::cbor_serializer;
     use serde_json::Value::Null;
 
     use crate::drive::config::DriveConfig;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
 
     fn setup_family_contract() -> (Drive, DataContract) {

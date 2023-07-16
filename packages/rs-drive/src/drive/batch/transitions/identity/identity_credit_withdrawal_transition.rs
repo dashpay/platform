@@ -5,8 +5,6 @@ use crate::drive::object_size_info::{DocumentInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
 use dpp::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use dpp::version::PlatformVersion;
 

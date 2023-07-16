@@ -31,7 +31,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::get_overflow_error;
+
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;

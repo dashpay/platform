@@ -46,7 +46,7 @@ impl Document {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    pub fn try_from_replace_transition(
+    pub(super) fn try_from_replace_transition_v0(
         value: &DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -93,7 +93,7 @@ impl Document {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    pub fn try_from_owned_replace_transition(
+    pub(super) fn try_from_owned_replace_transition_v0(
         value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,

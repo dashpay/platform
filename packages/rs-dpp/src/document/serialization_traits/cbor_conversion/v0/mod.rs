@@ -13,7 +13,9 @@ pub trait DocumentCborMethodsV0 {
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     fn to_cbor_value(&self) -> Result<CborValue, ProtocolError>;
     /// Serializes the Document to CBOR.
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;

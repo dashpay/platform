@@ -6,8 +6,6 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::identity::IdentityPublicKey;
 
-use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use dpp::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use dpp::version::PlatformVersion;
 

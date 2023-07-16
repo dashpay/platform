@@ -644,6 +644,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         identity_versions: IdentityVersions {
             identity_structure_version: 0,
+            identity_key_structure_version: 0,
         },
     },
 };

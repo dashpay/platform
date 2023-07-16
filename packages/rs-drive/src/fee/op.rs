@@ -16,11 +16,6 @@ use crate::drive::fee::get_overflow_error;
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::default_costs::EpochCosts;
-use crate::fee::default_costs::KnownCostItem::{
-    StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
-    StorageSeekCost,
-};
 use crate::fee::op::LowLevelDriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };

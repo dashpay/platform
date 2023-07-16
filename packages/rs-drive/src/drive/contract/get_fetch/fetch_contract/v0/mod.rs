@@ -1,4 +1,5 @@
-use crate::drive::contract::{paths, ContractFetchInfo};
+use crate::drive::contract::{paths, ContractFetchInfo, DataContractFetchInfo};
+use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -6,7 +7,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::DataContract;
+use dpp::serialization_traits::PlatformDeserializableFromVersionedStructure;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -29,7 +33,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `CostResult<Option<Arc<ContractFetchInfo>>, Error>` - If successful, returns a `CostResult`
+    /// * `CostResult<Option<Arc<DataContractFetchInfo>>, Error>` - If successful, returns a `CostResult`
     ///   containing an `Option` with an `Arc` to the fetched `ContractFetchInfo`. If an error occurs
     ///   during the contract fetching or fee calculation, returns an `Error`.
     ///
@@ -42,7 +46,8 @@ impl Drive {
         epoch: Option<&Epoch>,
         known_keeps_history: Option<bool>,
         transaction: TransactionArg,
-    ) -> CostResult<Option<Arc<ContractFetchInfo>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> CostResult<Option<Arc<DataContractFetchInfo>>, Error> {
         // As we want deterministic costs, we want the cost to always be the same for
         // fetching the contract.
         // We need to pass allow cache to false
@@ -68,7 +73,7 @@ impl Drive {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
-                    DataContract::deserialize_no_limit(&stored_contract_bytes)
+                    DataContract::versioned_deserialize(&stored_contract_bytes, platform_version)
                         .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
@@ -85,7 +90,7 @@ impl Drive {
                     &cost,
                     StorageFlags::map_some_element_flags_ref(&element_flag)
                 );
-                let contract_fetch_info = Arc::new(ContractFetchInfo {
+                let contract_fetch_info = Arc::new(DataContractFetchInfo {
                     contract,
                     storage_flags,
                     cost: cost.clone(),
@@ -130,7 +135,7 @@ impl Drive {
                             StorageFlags::map_some_element_flags_ref(&element_flag)
                         );
 
-                        let contract_fetch_info = Arc::new(ContractFetchInfo {
+                        let contract_fetch_info = Arc::new(DataContractFetchInfo {
                             contract,
                             storage_flags,
                             cost: cost.clone(),
@@ -171,13 +176,14 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
         let mut cost = OperationCost::default();
 
         //todo: there is a cost here that isn't returned on error
         // we should investigate if this could be a problem
         let maybe_contract_fetch_info = self
-            .fetch_contract_v0(contract_id, epoch, None, transaction)
+            .fetch_contract_v0(contract_id, epoch, None, transaction, platform_version)
             .unwrap_add_cost(&mut cost)?;
 
         if let Some(contract_fetch_info) = &maybe_contract_fetch_info {

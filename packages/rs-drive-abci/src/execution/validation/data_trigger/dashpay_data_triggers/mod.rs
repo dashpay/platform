@@ -6,10 +6,11 @@ use crate::execution::validation::data_trigger::{
 };
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
-use dpp::document::document_transition::DocumentTransitionAction;
+
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::{get_from_transition_action, ProtocolError};
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
@@ -144,6 +145,7 @@ mod test {
     use dpp::platform_value::platform_value;
     use dpp::state_transition::documents_batch_transition::document_transition::DocumentCreateTransitionAction;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use dpp::tests::fixtures::{
         get_contact_request_document_fixture, get_dashpay_contract_fixture,
         get_document_transitions_fixture, identity_fixture,

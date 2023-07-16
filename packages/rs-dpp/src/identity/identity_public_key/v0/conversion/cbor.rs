@@ -3,6 +3,7 @@ use crate::identity::identity_public_key::conversion::platform_value::IdentityPu
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::util::cbor_serializer;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
+use crate::version::PlatformVersion;
 use crate::{Convertible, ProtocolError};
 use ciborium::Value as CborValue;
 use platform_value::{BinaryData, ValueMapHelper};
@@ -19,7 +20,10 @@ impl IdentityPublicKeyCborConversionMethodsV0 for IdentityPublicKeyV0 {
         cbor_serializer::serializable_value_to_cbor(&object, None)
     }
 
-    fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
+    fn from_cbor_value(
+        cbor_value: &CborValue,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let key_value_map = cbor_value.as_map().ok_or_else(|| {
             ProtocolError::DecodingError(String::from(
                 "Expected identity public key to be a key value map",

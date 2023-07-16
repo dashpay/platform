@@ -119,7 +119,7 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        platform_version: PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let contract = DataContract::from_cbor(contract_cbor)?;
 
@@ -174,15 +174,17 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::{defaults, Drive};
-    use crate::fee::credits::Creditable;
+
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_document;
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
     use dpp::serialization_traits::PlatformSerializable;
+    use dpp::util::cbor_serializer;
     use dpp::version::drive_versions::DriveVersion;
 
     #[test]
@@ -191,7 +193,7 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -206,6 +208,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -241,6 +244,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("should update alice profile");
     }
@@ -250,7 +254,8 @@ mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
+        let db_transaction = drive.grove.start_transaction();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -267,6 +272,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -325,6 +331,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should update alice profile");
 
@@ -342,7 +349,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -359,6 +366,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -412,7 +420,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -431,11 +439,12 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("should update alice profile");
 
         let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -454,7 +463,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -471,6 +480,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -524,7 +534,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -542,7 +552,7 @@ mod tests {
             .expect("expected to delete document");
 
         let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -553,7 +563,7 @@ mod tests {
             .expect("expected to rollback transaction");
 
         let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -572,6 +582,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("should update alice profile");
     }
@@ -581,7 +592,7 @@ mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let db_transaction = drive.grove.start_transaction();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("should create root tree");
@@ -635,6 +646,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should create a contract");
 
@@ -704,6 +716,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should update document");
 
@@ -736,7 +749,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -758,6 +771,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
             &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -786,12 +800,13 @@ mod tests {
             .update_document_for_contract(
                 &dashpay_cr_document,
                 &contract,
-                document_type,
+                &document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect_err("expected not to be able to update a non mutable document");
 
@@ -824,7 +839,7 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -846,6 +861,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
             &document_type,
+            platform_version,
         )
         .expect("expected to get cbor document");
 
@@ -853,6 +869,7 @@ mod tests {
             "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
             Some(random_owner_id.into()),
             &document_type,
+            platform_version,
         )
         .expect("expected to get cbor document");
 
@@ -887,6 +904,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to update a document with history successfully");
     }
@@ -899,6 +917,7 @@ mod tests {
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
+        let platform_version = PlatformVersion::latest();
 
         let drive: Drive =
             Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
@@ -910,7 +929,7 @@ mod tests {
         };
 
         drive
-            .create_initial_state_structure(transaction.as_ref())
+            .create_initial_state_structure(transaction.as_ref(), platform_version)
             .expect("expected to create root tree successfully");
 
         let path = if using_history {
@@ -953,7 +972,7 @@ mod tests {
         let document: Document = platform_value::from_value(value).expect("value to document");
 
         let document_serialized = document
-            .serialize_consume(&document_type)
+            .serialize_consume(&document_type, platform_version)
             .expect("expected to serialize document");
 
         assert_eq!(document_serialized.len(), 115);
@@ -964,6 +983,7 @@ mod tests {
             &person_0_original,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         let original_bytes = original_fees.storage_fee
             / Epoch::new(0)
@@ -1125,7 +1145,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(owner_id.as_bytes())
+                .get(&owner_id)
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1147,6 +1167,7 @@ mod tests {
                 &person_0_original,
                 true,
                 transaction.as_ref(),
+                platform_version,
             );
 
             let original_bytes = original_fees.storage_fee
@@ -1165,6 +1186,7 @@ mod tests {
             &person_0_updated,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
@@ -1186,6 +1208,8 @@ mod tests {
         };
         let tmp_dir = TempDir::new().unwrap();
 
+        let platform_version = PlatformVersion::latest();
+
         let drive: Drive =
             Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
 
@@ -1196,7 +1220,7 @@ mod tests {
         };
 
         drive
-            .create_initial_state_structure(transaction.as_ref())
+            .create_initial_state_structure(transaction.as_ref(), platform_version)
             .expect("expected to create root tree successfully");
 
         let path = if using_history {
@@ -1237,6 +1261,7 @@ mod tests {
             &person_0_original,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         let original_bytes = original_fees.storage_fee
             / Epoch::new(0)
@@ -1256,7 +1281,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(owner_id.as_bytes())
+                .get(&owner_id)
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1278,6 +1303,7 @@ mod tests {
                 &person_0_original,
                 true,
                 transaction.as_ref(),
+                platform_version,
             );
 
             let original_bytes = original_fees.storage_fee
@@ -1296,6 +1322,7 @@ mod tests {
             &person_0_updated,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
@@ -1306,7 +1333,7 @@ mod tests {
 
         let removed_credits = update_fees
             .fee_refunds
-            .get(owner_id.as_bytes())
+            .get(&owner_id)
             .unwrap()
             .get(&0)
             .unwrap();
@@ -1376,6 +1403,8 @@ mod tests {
         };
         let tmp_dir = TempDir::new().unwrap();
 
+        let platform_version = PlatformVersion::latest();
+
         let drive: Drive =
             Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
 
@@ -1386,7 +1415,7 @@ mod tests {
         };
 
         drive
-            .create_initial_state_structure_0(transaction.as_ref())
+            .create_initial_state_structure(transaction.as_ref(), platform_version)
             .expect("expected to create root tree successfully");
 
         let path = if using_history {
@@ -1427,6 +1456,7 @@ mod tests {
             &person_0_original,
             false,
             transaction.as_ref(),
+            platform_version,
         );
         let original_bytes = original_fees.storage_fee
             / Epoch::new(0)
@@ -1583,6 +1613,7 @@ mod tests {
             &person_0_updated,
             false,
             transaction.as_ref(),
+            platform_version,
         );
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
@@ -1636,6 +1667,7 @@ mod tests {
         person: &Person,
         apply: bool,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> FeeResult {
         let document_type = contract
             .document_type_for_name("person")
@@ -1664,6 +1696,7 @@ mod tests {
                 block_info,
                 apply,
                 transaction,
+                platform_version,
             )
             .expect("expected to add document")
     }
@@ -1683,6 +1716,7 @@ mod tests {
                 block_info,
                 true,
                 transaction,
+                platform_version,
             )
             .expect("expected to remove person")
     }
@@ -1700,6 +1734,8 @@ mod tests {
         };
         let tmp_dir = TempDir::new().unwrap();
 
+        let platform_version = PlatformVersion::latest();
+
         let drive: Drive =
             Drive::open(&tmp_dir, Some(config)).expect("expected to open Drive successfully");
 
@@ -1710,7 +1746,7 @@ mod tests {
         };
 
         drive
-            .create_initial_state_structure_0(transaction.as_ref())
+            .create_initial_state_structure(transaction.as_ref(), platform_version)
             .expect("expected to create root tree successfully");
 
         let path = if using_history {
@@ -1769,6 +1805,7 @@ mod tests {
             &person_0_original,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         apply_person(
             &drive,
@@ -1777,6 +1814,7 @@ mod tests {
             &person_1_original,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         apply_person(
             &drive,
@@ -1785,6 +1823,7 @@ mod tests {
             &person_0_updated,
             true,
             transaction.as_ref(),
+            platform_version,
         );
         apply_person(
             &drive,
@@ -1793,6 +1832,7 @@ mod tests {
             &person_1_updated,
             true,
             transaction.as_ref(),
+            platform_version,
         );
     }
 
@@ -1843,7 +1883,7 @@ mod tests {
         let drive: Drive =
             Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
@@ -1895,6 +1935,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should apply contract");
 
@@ -1953,6 +1994,7 @@ mod tests {
                 block_info,
                 true,
                 None,
+                platform_version,
             )
             .expect("should create document");
 
@@ -1974,6 +2016,7 @@ mod tests {
                 false,
                 storage_flags,
                 None,
+                platform_version,
             )
             .expect("should update document");
 

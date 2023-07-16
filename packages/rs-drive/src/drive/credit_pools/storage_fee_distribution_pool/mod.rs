@@ -37,7 +37,7 @@ use dpp::fee::Credits;
 use grovedb::{Element, TransactionArg};
 
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
+
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
 impl Drive {

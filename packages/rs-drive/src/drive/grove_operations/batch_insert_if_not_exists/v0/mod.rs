@@ -35,7 +35,7 @@ impl Drive {
                     apply_type.to_direct_query_type(),
                     transaction,
                     drive_operations,
-                    platform_version,
+                    drive_version,
                 )?;
                 if !has_raw {
                     drive_operations.push(
@@ -55,7 +55,7 @@ impl Drive {
                     apply_type.to_direct_query_type(),
                     transaction,
                     drive_operations,
-                    platform_version,
+                    drive_version,
                 )?;
                 if !has_raw {
                     drive_operations.push(
@@ -73,7 +73,7 @@ impl Drive {
                     apply_type.to_direct_query_type(),
                     transaction,
                     drive_operations,
-                    platform_version,
+                    drive_version,
                 )?;
                 if !has_raw {
                     let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();

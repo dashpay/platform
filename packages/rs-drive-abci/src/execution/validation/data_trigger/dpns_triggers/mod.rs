@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;

@@ -42,8 +42,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
@@ -57,7 +59,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -108,7 +110,7 @@ impl Drive {
             direct_query_type,
             transaction,
             &mut batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         let document_info = if let DirectQueryType::StatelessDirectQuery { query_target, .. } =
@@ -117,7 +119,8 @@ impl Drive {
             DocumentEstimatedAverageSize(query_target.len())
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
-                let document = Document::from_bytes(data.as_slice(), document_type)?;
+                let document =
+                    Document::from_bytes(data.as_slice(), document_type, platform_version)?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentOwnedInfo((document, storage_flags))
             } else {
@@ -139,7 +142,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         let document_and_contract_info = DocumentAndContractInfo {
@@ -157,7 +160,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
         Ok(batch_operations)
     }

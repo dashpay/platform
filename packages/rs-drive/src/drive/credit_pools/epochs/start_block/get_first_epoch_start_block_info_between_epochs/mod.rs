@@ -16,6 +16,7 @@ use crate::fee_pools::epochs::epoch_key_constants::{
 };
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Returns the index and start block platform and core heights of the first epoch between
@@ -36,9 +37,10 @@ impl Drive {
         from_epoch_index: EpochIndex,
         to_epoch_index: EpochIndex,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<StartBlockInfo>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .credit_pools
             .epochs

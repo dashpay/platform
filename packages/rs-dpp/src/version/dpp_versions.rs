@@ -79,6 +79,7 @@ pub struct DocumentTypeVersions {
 pub struct IdentityVersions {
     /// This is the structure of the Identity as it is defined for code paths
     pub identity_structure_version: FeatureVersion,
+    pub identity_key_structure_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -30,7 +30,6 @@ pub mod version;
 pub mod errors;
 
 pub mod schema;
-#[cfg(feature = "validation")]
 pub mod validation;
 
 #[cfg(feature = "client")]

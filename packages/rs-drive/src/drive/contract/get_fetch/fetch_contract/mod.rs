@@ -9,6 +9,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -32,7 +33,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `CostResult<Option<Arc<ContractFetchInfo>>, Error>` - If successful, returns a `CostResult`
+    /// * `CostResult<Option<Arc<DataContractFetchInfo>>, Error>` - If successful, returns a `CostResult`
     ///   containing an `Option` with an `Arc` to the fetched `ContractFetchInfo`. If an error occurs
     ///   during the contract fetching or fee calculation, returns an `Error`.
     ///
@@ -47,7 +48,7 @@ impl Drive {
         known_keeps_history: Option<bool>,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> CostResult<Option<Arc<ContractFetchInfo>>, Error> {
+    ) -> CostResult<Option<Arc<DataContractFetchInfo>>, Error> {
         match drive_version.methods.contract.get.fetch_contract {
             0 => self.fetch_contract_v0(contract_id, epoch, known_keeps_history, transaction),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
@@ -76,7 +77,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<Option<Arc<ContractFetchInfo>>, Error>` - If successful, returns an `Option` with an `Arc`
+    /// * `Result<Option<Arc<DataContractFetchInfo>>, Error>` - If successful, returns an `Option` with an `Arc`
     ///   to the fetched `ContractFetchInfo`. If an error occurs during the contract fetching or operation adding,
     ///   returns an `Error`.
     ///
@@ -90,14 +91,15 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
-        match drive_version.methods.contract.get.fetch_contract {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
+        match platform_version.drive.methods.contract.get.fetch_contract {
             0 => self.fetch_contract_and_add_operations_v0(
                 contract_id,
                 epoch,
                 transaction,
                 drive_operations,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_contract_and_add_operations".to_string(),

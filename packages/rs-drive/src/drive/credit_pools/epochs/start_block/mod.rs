@@ -71,16 +71,22 @@ mod tests {
 
     mod get_epoch_start_block_height {
         use super::*;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::latest();
+
             let non_initiated_epoch = Epoch::new(7000).unwrap();
 
-            let result =
-                drive.get_epoch_start_block_height(&non_initiated_epoch, Some(&transaction));
+            let result = drive.get_epoch_start_block_height(
+                &non_initiated_epoch,
+                Some(&transaction),
+                &platform_version.drive,
+            );
 
             assert!(matches!(
                 result,
@@ -93,9 +99,15 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::latest();
+
             let epoch = Epoch::new(0).unwrap();
 
-            let result = drive.get_epoch_start_block_height(&epoch, Some(&transaction));
+            let result = drive.get_epoch_start_block_height(
+                &epoch,
+                Some(&transaction),
+                &platform_version.drive,
+            );
 
             assert!(matches!(result, Err(Error::GroveDB(_))));
         }
@@ -104,6 +116,8 @@ mod tests {
         fn test_error_if_value_has_invalid_length() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let epoch = Epoch::new(0).unwrap();
 
@@ -119,7 +133,11 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_block_height(&epoch, Some(&transaction));
+            let result = drive.get_epoch_start_block_height(
+                &epoch,
+                Some(&transaction),
+                &platform_version.drive,
+            );
 
             assert!(matches!(
                 result,
@@ -131,6 +149,8 @@ mod tests {
         fn test_error_if_value_has_invalid_length_core_height() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let epoch = Epoch::new(0).unwrap();
 
@@ -146,7 +166,11 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_block_core_height(&epoch, Some(&transaction));
+            let result = drive.get_epoch_start_block_core_height(
+                &epoch,
+                Some(&transaction),
+                &platform_version.drive,
+            );
 
             assert!(matches!(
                 result,
@@ -158,6 +182,8 @@ mod tests {
         fn test_error_if_element_has_invalid_type() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let epoch = Epoch::new(0).unwrap();
 
@@ -173,7 +199,11 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_block_height(&epoch, Some(&transaction));
+            let result = drive.get_epoch_start_block_height(
+                &epoch,
+                Some(&transaction),
+                &platform_version.drive,
+            );
 
             assert!(matches!(
                 result,
@@ -184,6 +214,8 @@ mod tests {
         #[test]
         fn test_error_if_element_has_invalid_type_core_height() {
             let drive = setup_drive_with_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
+
             let transaction = drive.grove.start_transaction();
 
             let epoch = Epoch::new(0).unwrap();
@@ -200,7 +232,11 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_block_core_height(&epoch, Some(&transaction));
+            let result = drive.get_epoch_start_block_core_height(
+                &epoch,
+                Some(&transaction),
+                &platform_version.drive,
+            );
 
             assert!(matches!(
                 result,
@@ -213,11 +249,14 @@ mod tests {
         use super::*;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_next_block_height() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let epoch_tree_0 = Epoch::new(0).unwrap();
             let epoch_tree_1 = Epoch::new(1).unwrap();
@@ -234,7 +273,12 @@ mod tests {
                 .expect("should apply batch");
 
             let next_epoch_start_block_height_option = drive
-                .get_first_epoch_start_block_info_between_epochs(0, 2, Some(&transaction))
+                .get_first_epoch_start_block_info_between_epochs(
+                    0,
+                    2,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should find next start_block_height");
 
             assert_eq!(
@@ -252,8 +296,15 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::latest();
+
             let next_epoch_start_block_height = drive
-                .get_first_epoch_start_block_info_between_epochs(0, 4, Some(&transaction))
+                .get_first_epoch_start_block_info_between_epochs(
+                    0,
+                    4,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should find next start_block_height");
 
             assert!(next_epoch_start_block_height.is_none());
@@ -262,6 +313,9 @@ mod tests {
         #[test]
         fn test_none_if_start_block_height_is_outside_of_specified_epoch_range() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
+
             let transaction = drive.grove.start_transaction();
 
             let epoch_tree_0 = Epoch::new(0).unwrap();
@@ -277,7 +331,12 @@ mod tests {
                 .expect("should apply batch");
 
             let next_epoch_start_block_height = drive
-                .get_first_epoch_start_block_info_between_epochs(0, 2, Some(&transaction))
+                .get_first_epoch_start_block_info_between_epochs(
+                    0,
+                    2,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should find next start_block_height");
 
             assert!(next_epoch_start_block_height.is_none());
@@ -286,6 +345,9 @@ mod tests {
         #[test]
         fn test_start_block_height_in_two_epoch_in_case_of_gaps() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
+
             let transaction = drive.grove.start_transaction();
 
             let epoch_tree_0 = Epoch::new(0).unwrap();
@@ -303,7 +365,12 @@ mod tests {
                 .expect("should apply batch");
 
             let next_epoch_start_block_height = drive
-                .get_first_epoch_start_block_info_between_epochs(0, 4, Some(&transaction))
+                .get_first_epoch_start_block_info_between_epochs(
+                    0,
+                    4,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should find next start_block_height doesn't error")
                 .expect("should find next start_block_height");
 

@@ -25,8 +25,8 @@ pub struct DriveCache {
 /// DataContract cache that handle both non global and block data
 #[cfg(feature = "full")]
 pub struct DataContractCache {
-    global_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
-    block_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
+    global_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
+    block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
 }
 
 #[cfg(feature = "full")]
@@ -41,7 +41,7 @@ impl DataContractCache {
 
     /// Inserts DataContract to block cache
     /// otherwise to goes to global cache
-    pub fn insert(&mut self, fetch_info: Arc<ContractFetchInfo>, is_block_cache: bool) {
+    pub fn insert(&mut self, fetch_info: Arc<DataContractFetchInfo>, is_block_cache: bool) {
         let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
 
         if is_block_cache {
@@ -58,7 +58,7 @@ impl DataContractCache {
         &self,
         contract_id: [u8; 32],
         is_block_cache: bool,
-    ) -> Option<Arc<ContractFetchInfo>> {
+    ) -> Option<Arc<DataContractFetchInfo>> {
         let maybe_fetch_info = if is_block_cache {
             self.block_cache.get(&contract_id)
         } else {
@@ -88,13 +88,14 @@ mod tests {
 
     mod get {
         use super::*;
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
 
         #[test]
         fn test_get_from_global_cache_when_block_cache_is_not_requested() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             // Create global contract
-            let fetch_info_global = Arc::new(ContractFetchInfo::default());
+            let fetch_info_global = Arc::new(DataContractFetchInfo::default());
 
             let contract_id = fetch_info_global.contract.id().to_buffer();
 
@@ -124,7 +125,7 @@ mod tests {
         fn test_get_from_global_cache_when_block_cache_does_not_have_contract() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            let fetch_info_global = Arc::new(ContractFetchInfo::default());
+            let fetch_info_global = Arc::new(DataContractFetchInfo::default());
 
             let contract_id = fetch_info_global.contract.id().to_buffer();
 
@@ -143,7 +144,7 @@ mod tests {
         fn test_get_from_block_cache() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            let fetch_info_block = Arc::new(ContractFetchInfo::default());
+            let fetch_info_block = Arc::new(DataContractFetchInfo::default());
 
             let contract_id = fetch_info_block.contract.id().to_buffer();
 

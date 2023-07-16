@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use super::OperationLike;
 
-use crate::fee::default_costs::constants::{PROCESSING_CREDIT_PER_BYTE, READ_BASE_PROCESSING_COST};
 use crate::fee::Credits;
 use crate::{state_transition::fee::Refunds, NonConsensusError};
 

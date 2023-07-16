@@ -13,7 +13,7 @@ pub use key_type::KeyType;
 pub use purpose::Purpose;
 pub use security_level::SecurityLevel;
 pub mod accessors;
-mod conversion;
+pub(crate) mod conversion;
 mod fields;
 mod v0;
 use crate::ProtocolError;

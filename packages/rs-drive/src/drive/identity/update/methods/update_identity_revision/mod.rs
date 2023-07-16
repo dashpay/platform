@@ -79,7 +79,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_version: &DriveVersion,
-    ) -> LowLevelDriveOperation {
+    ) -> Result<LowLevelDriveOperation, Error> {
         match drive_version
             .methods
             .identity

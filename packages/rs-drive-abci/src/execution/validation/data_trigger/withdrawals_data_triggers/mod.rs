@@ -6,7 +6,7 @@ use crate::execution::validation::data_trigger::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
-use dpp::document::document_transition::DocumentTransitionAction;
+
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 use dpp::{get_from_transition_action, ProtocolError};

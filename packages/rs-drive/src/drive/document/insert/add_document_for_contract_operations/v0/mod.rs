@@ -59,7 +59,7 @@ impl Drive {
                 query_type,
                 transaction,
                 &mut batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?
         {
             let update_operations = self.update_document_for_contract_operations(

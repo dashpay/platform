@@ -29,7 +29,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<BTreeMap<[u8; 32], Option<Arc<ContractFetchInfo>>>, Error>` - If successful,
+    /// * `Result<BTreeMap<[u8; 32], Option<Arc<DataContractFetchInfo>>>, Error>` - If successful,
     ///   returns a `BTreeMap` where the keys are the contract IDs and the values are `Option`s
     ///   containing `Arc`s to the corresponding `ContractFetchInfo`. If an error occurs during the contract fetching,
     ///   an `Error` is returned.
@@ -44,7 +44,7 @@ impl Drive {
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<Arc<ContractFetchInfo>>>, Error> {
+    ) -> Result<BTreeMap<[u8; 32], Option<Arc<DataContractFetchInfo>>>, Error> {
         match drive_version
             .methods
             .contract

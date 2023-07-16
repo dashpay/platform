@@ -38,6 +38,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
+use dpp::version::PlatformVersion;
 use tempfile::TempDir;
 
 /// A test platform builder.
@@ -116,6 +117,7 @@ impl TempPlatform<MockCoreRPCLike> {
                 Default::default(),
                 static_system_identity_public_keys_v0().into(),
                 None,
+                PlatformVersion::latest(),
             )
             .expect("should create root tree successfully");
 

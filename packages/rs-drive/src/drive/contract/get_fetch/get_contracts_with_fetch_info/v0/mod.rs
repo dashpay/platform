@@ -34,7 +34,7 @@ impl Drive {
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<BTreeMap<[u8; 32], Option<Arc<ContractFetchInfo>>>, Error> {
+    ) -> Result<BTreeMap<[u8; 32], Option<Arc<DataContractFetchInfo>>>, Error> {
         contract_ids
             .iter()
             .map(|contract_id| {

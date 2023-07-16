@@ -4,8 +4,6 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionAction;
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionAction;
 use dpp::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 use dpp::version::PlatformVersion;
 

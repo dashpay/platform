@@ -1,6 +1,6 @@
 use crate::error::Error;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
-use dpp::document::document_transition::DocumentTransitionAction;
+
 use dpp::validation::SimpleValidationResult;
 use dpp::{get_from_transition_action, prelude::Identifier};
 

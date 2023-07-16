@@ -1,11 +1,7 @@
-use crate::fee::default_costs::constants::DEFAULT_USER_TIP;
 use crate::fee::fee_result::FeeResult;
+use crate::state_transition::fee::calculate_operation_fees::calculate_operation_fees;
+use crate::state_transition::fee::operations::Operation;
 use crate::{prelude::Identifier, NonConsensusError};
-
-use super::{
-    calculate_operation_fees::calculate_operation_fees, operations::Operation, DummyFeesResult,
-    FeeResult,
-};
 
 pub fn calculate_state_transition_fee_from_operations(
     operations: &[Operation],

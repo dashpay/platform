@@ -3,8 +3,7 @@ use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_pat
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::Creditable;
-use crate::fee::get_overflow_error;
+
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
@@ -60,13 +59,15 @@ mod tests {
     use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::fee::epoch::CreditsPerEpoch;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use grovedb::batch::Op;
 
     #[test]
     fn should_add_delete_operations_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -86,7 +87,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("should apply batch");
 
@@ -101,7 +102,7 @@ mod tests {
                 &mut batch,
                 &new_pending_refunds,
                 Some(&transaction),
-                &drive_version,
+                &platform_version.drive,
             )
             .expect("should fetch and merge pending updates");
 

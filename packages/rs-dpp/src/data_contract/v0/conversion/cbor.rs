@@ -1,13 +1,15 @@
-use crate::data_contract::conversion::DataContractCborConversionMethodsV0;
+use crate::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::data_contract_methods::identifiers_and_binary_paths::v0::DataContractIdentifiersAndBinaryPathsMethodsV0;
-use crate::data_contract::{contract_config, property_names, DataContract, DataContractV0Methods};
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
+use crate::data_contract::{contract_config, property_names, DataContract};
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::{cbor_serializer, deserializer};
 use crate::version::PlatformVersion;
 use crate::{Convertible, ProtocolError};
 use ciborium::Value as CborValue;
+use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use serde_json::Value as JsonValue;
@@ -88,13 +90,13 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
             config: mutability,
         };
 
-        data_contract.generate_binary_properties()?;
+        data_contract.generate_binary_properties(platform_version)?;
 
         Ok(data_contract)
     }
 
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = self.data_contract_protocol_version.encode_var_vec();
+        let mut buf = 1.encode_var_vec();
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
@@ -120,20 +122,20 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
         Ok(buf)
     }
 
-    /// Returns Data Contract as a Buffer
-    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut object = self.to_object()?;
-        if self.defs.is_none() {
-            object.remove(property_names::DEFINITIONS)?;
-        }
-        object
-            .to_map_mut()
-            .unwrap()
-            .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
-
-        // we are on version 0 here
-        cbor_serializer::serializable_value_to_cbor(&object, Some(0))
-    }
+    // /// Returns Data Contract as a Buffer
+    // fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    //     let mut object = self.to_object()?;
+    //     if self.defs.is_none() {
+    //         object.remove(property_names::DEFINITIONS)?;
+    //     }
+    //     object
+    //         .to_map_mut()
+    //         .unwrap()
+    //         .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
+    //
+    //     // we are on version 0 here
+    //     cbor_serializer::serializable_value_to_cbor(&object, Some(0))
+    // }
 
     fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError> {
         let mut contract_cbor_map = CborCanonicalMap::new();

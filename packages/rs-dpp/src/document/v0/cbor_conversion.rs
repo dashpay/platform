@@ -10,8 +10,10 @@ use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
-use crate::document::serialization_traits::DocumentCborMethodsV0;
-use crate::document::v0::{DocumentV0, DocumentV0Methods};
+use crate::document::serialization_traits::{
+    DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
+};
+use crate::document::v0::DocumentV0;
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};

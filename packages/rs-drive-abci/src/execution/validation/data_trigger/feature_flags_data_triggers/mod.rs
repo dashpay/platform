@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::data_trigger::create_error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use dpp::document::document_transition::DocumentTransitionAction;
+
 use dpp::get_from_transition_action;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
@@ -92,7 +92,7 @@ mod test {
     use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::document::document_transition::DocumentTransitionAction;
+
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::get_data_contract_fixture;
 

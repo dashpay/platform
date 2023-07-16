@@ -7,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::TransactionArg;
 
@@ -76,9 +77,10 @@ impl Drive {
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys
@@ -89,7 +91,7 @@ impl Drive {
                 key_request,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_keys_operations".to_string(),

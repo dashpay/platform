@@ -8,6 +8,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::sync::Arc;
 
@@ -30,7 +31,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error>` - If successful,
+    /// * `Result<(Option<FeeResult>, Option<Arc<DataContractFetchInfo>>), Error>` - If successful,
     ///   returns a tuple containing an `Option` with the `FeeResult` (if an epoch was provided) and
     ///   an `Option` containing an `Arc` to the fetched `ContractFetchInfo`. If an error occurs
     ///   during the contract fetching or fee calculation, returns an `Error`.
@@ -46,7 +47,7 @@ impl Drive {
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error> {
+    ) -> Result<(Option<FeeResult>, Option<Arc<DataContractFetchInfo>>), Error> {
         match drive_version
             .methods
             .contract
@@ -84,7 +85,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<Option<Arc<ContractFetchInfo>>, Error>` - If successful, returns an `Option` containing a
+    /// * `Result<Option<Arc<DataContractFetchInfo>>, Error>` - If successful, returns an `Option` containing a
     ///   reference to the fetched `Contract`. If an error occurs during the contract fetching,
     ///   returns an `Error`.
     ///
@@ -98,7 +99,7 @@ impl Drive {
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
         match drive_version
             .methods
             .contract
@@ -136,7 +137,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<Option<Arc<ContractFetchInfo>>, Error>` - If successful, returns an `Option` containing a
+    /// * `Result<Option<Arc<DataContractFetchInfo>>, Error>` - If successful, returns an `Option` containing a
     ///   reference to the fetched `Contract` and related operations. If an error occurs during the contract fetching,
     ///   returns an `Error`.
     ///
@@ -152,8 +153,8 @@ impl Drive {
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
         match drive_version
             .methods
             .contract
@@ -166,7 +167,7 @@ impl Drive {
                 add_to_cache_if_pulled,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_contract_with_fetch_info_and_add_to_operations".to_string(),

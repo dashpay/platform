@@ -63,6 +63,7 @@ rev = "fb887722c14432a18fbab82afb2f245bceb7fca0"
 
 [dev-dependencies]
 criterion = "0.3.5"
+dpp = { path = "../rs-dpp", features = ["drive", "cbor"]}
 
 [[bench]]
 name = "benchmarks"

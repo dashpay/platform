@@ -4,7 +4,7 @@ use crate::execution::validation::data_trigger::get_data_triggers_factory::{
 use crate::execution::validation::data_trigger::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::document::document_transition::DocumentTransitionAction;
+
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
 use dpp::ProtocolError;
 

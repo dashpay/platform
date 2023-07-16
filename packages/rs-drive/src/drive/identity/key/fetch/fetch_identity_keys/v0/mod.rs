@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::TransactionArg;
 
@@ -30,7 +31,7 @@ impl Drive {
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
         match &key_request.request_type {
             AllKeys => {
@@ -41,10 +42,10 @@ impl Drive {
                     transaction,
                     QueryPathKeyElementTrioResultType,
                     drive_operations,
-                    drive_version,
+                    &platform_version.drive,
                 )?;
 
-                T::try_from_query_results(result)
+                T::try_from_query_results(result, platform_version)
             }
             SpecificKeys(_) => {
                 let path_query = key_request.into_path_query();
@@ -53,10 +54,10 @@ impl Drive {
                     &path_query,
                     transaction,
                     drive_operations,
-                    drive_version,
+                    &platform_version.drive,
                 )?;
 
-                T::try_from_path_key_optional(result)
+                T::try_from_path_key_optional(result, platform_version)
             }
             SearchKey(_) => {
                 let path_query = key_request.into_path_query();
@@ -65,10 +66,10 @@ impl Drive {
                     &path_query,
                     transaction,
                     drive_operations,
-                    drive_version,
+                    &platform_version.drive,
                 )?;
 
-                T::try_from_path_key_optional(result)
+                T::try_from_path_key_optional(result, platform_version)
             }
         }
     }

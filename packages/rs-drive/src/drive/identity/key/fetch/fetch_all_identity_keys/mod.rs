@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -65,9 +66,10 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys
@@ -78,7 +80,7 @@ impl Drive {
                 identity_id,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_all_identity_keys_operations".to_string(),

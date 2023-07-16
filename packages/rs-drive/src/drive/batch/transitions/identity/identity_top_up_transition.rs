@@ -4,8 +4,6 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperation
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 use dpp::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use dpp::version::PlatformVersion;
 

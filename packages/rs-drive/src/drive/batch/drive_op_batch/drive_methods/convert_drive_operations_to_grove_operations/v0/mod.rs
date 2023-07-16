@@ -1,10 +1,12 @@
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::GroveDbOp;
 use grovedb::TransactionArg;
 use itertools::Itertools;
@@ -42,7 +44,7 @@ impl Drive {
                     &mut None,
                     block_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )?;
                 Ok(LowLevelDriveOperation::grovedb_operations_consume(
                     inner_drive_operations,

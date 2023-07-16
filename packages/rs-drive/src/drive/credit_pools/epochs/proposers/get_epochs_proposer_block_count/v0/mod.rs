@@ -47,6 +47,7 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use grovedb::Element;
 
+    use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::fee_pools::epochs::paths::EpochProposers;

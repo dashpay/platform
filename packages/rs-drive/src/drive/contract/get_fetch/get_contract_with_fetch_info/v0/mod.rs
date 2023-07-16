@@ -7,6 +7,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::sync::Arc;
 
@@ -36,13 +37,15 @@ impl Drive {
         contract_id: [u8; 32],
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
         self.get_contract_with_fetch_info_and_add_to_operations_v0(
             contract_id,
             None,
             add_to_cache_if_pulled,
             transaction,
             &mut vec![],
+            platform_version,
         )
     }
 
@@ -62,7 +65,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error>` - If successful,
+    /// * `Result<(Option<FeeResult>, Option<Arc<DataContractFetchInfo>>), Error>` - If successful,
     ///   returns a tuple containing an `Option` with the `FeeResult` (if an epoch was provided) and
     ///   an `Option` containing an `Arc` to the fetched `ContractFetchInfo`. If an error occurs
     ///   during the contract fetching or fee calculation, returns an `Error`.
@@ -76,8 +79,8 @@ impl Drive {
         epoch: Option<&Epoch>,
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<FeeResult>, Option<Arc<DataContractFetchInfo>>), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = Vec::new();
 
         let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations_v0(
@@ -86,7 +89,7 @@ impl Drive {
             add_to_cache_if_pulled,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
         let fee_result = epoch.map_or(Ok(None), |epoch| {
             calculate_fee(None, Some(drive_operations), epoch).map(Some)
@@ -102,8 +105,8 @@ impl Drive {
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
         let cache = self.cache.read().unwrap();
 
         match cache
@@ -116,7 +119,7 @@ impl Drive {
                     epoch,
                     transaction,
                     drive_operations,
-                    drive_version,
+                    platform_version,
                 )?;
 
                 if add_to_cache_if_pulled {
@@ -141,7 +144,7 @@ impl Drive {
                         let op = vec![CalculatedCostOperation(contract_fetch_info.cost.clone())];
                         let fee = calculate_fee(None, Some(op), epoch)?;
 
-                        let updated_contract_fetch_info = Arc::new(ContractFetchInfo {
+                        let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {
                             contract: contract_fetch_info.contract.clone(),
                             storage_flags: contract_fetch_info.storage_flags.clone(),
                             cost: contract_fetch_info.cost.clone(),

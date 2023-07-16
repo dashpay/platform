@@ -3,9 +3,10 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::document_type::ArrayFieldType::Identifier;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
+use dpp::platform_value::Identifier;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::borrow::Cow;
 
@@ -26,11 +27,19 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
         let contract =
             DataContract::from_cbor_with_id(contract_cbor, contract_id.map(Identifier::from))?;
 
-        self.apply_contract(&contract, block_info, apply, storage_flags, transaction)
+        self.apply_contract(
+            &contract,
+            block_info,
+            apply,
+            storage_flags,
+            transaction,
+            platform_version,
+        )
     }
 }

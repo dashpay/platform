@@ -10,6 +10,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -21,14 +22,14 @@ impl Drive {
         identity_id: [u8; 32],
         epoch: &Epoch,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<Identity>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let maybe_identity = self.fetch_full_identity_operations(
             identity_id,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
         let fee = calculate_fee(None, Some(drive_operations), epoch)?;
         Ok((maybe_identity, fee))
@@ -93,14 +94,14 @@ impl Drive {
         &self,
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
         identity_ids
             .iter()
             .map(|identity_id| {
                 Ok((
                     *identity_id,
-                    self.fetch_full_identity(*identity_id, transaction, drive_version)?,
+                    self.fetch_full_identity(*identity_id, transaction, platform_version)?,
                 ))
             })
             .collect()
@@ -111,14 +112,14 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_full_identity_operations(
             identity_id,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -128,7 +129,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {
         // let's start by getting the balance
         let balance = self.fetch_identity_balance_operations(
@@ -158,7 +159,7 @@ impl Drive {
             identity_id,
             transaction,
             drive_operations,
-            drive_version,
+            platform_version,
         )?;
         Ok(Some(Identity {
             feature_version: PROTOCOL_VERSION,

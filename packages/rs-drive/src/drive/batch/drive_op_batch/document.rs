@@ -7,6 +7,7 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
@@ -263,6 +264,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         true,
                         transaction,
                         &mut drive_operations,
+                        platform_version,
                     )?
                     .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
@@ -299,7 +301,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 drive.add_document_for_contract_operations(
                     document_and_contract_info,

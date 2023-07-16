@@ -235,6 +235,8 @@ pub(crate) mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::prelude::DataContract;
+    use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     /// Setup Dashpay
     pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, DataContract) {
@@ -242,9 +244,9 @@ pub(crate) mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let dashpay_path = if mutable_contact_requests {
@@ -263,6 +265,7 @@ pub(crate) mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 

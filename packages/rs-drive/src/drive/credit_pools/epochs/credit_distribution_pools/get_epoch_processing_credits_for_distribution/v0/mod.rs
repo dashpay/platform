@@ -4,8 +4,7 @@ use std::ops::Range;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
-use crate::fee::get_overflow_error;
+
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 
@@ -41,6 +40,8 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::fee_pools::epochs::epoch_key_constants;
     use crate::fee_pools::epochs::paths::EpochProposers;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

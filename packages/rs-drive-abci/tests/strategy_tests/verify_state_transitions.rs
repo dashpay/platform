@@ -1,6 +1,5 @@
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 
-use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionLike};

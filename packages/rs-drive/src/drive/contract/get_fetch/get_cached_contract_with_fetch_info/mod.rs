@@ -21,8 +21,8 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// * `Option<Arc<ContractFetchInfo>>` - An `Option` wrapping an `Arc` to the `ContractFetchInfo`.
-    /// If a contract with the given ID exists in the cache, the function returns `Some(Arc<ContractFetchInfo>)`,
+    /// * `Option<Arc<DataContractFetchInfo>>` - An `Option` wrapping an `Arc` to the `ContractFetchInfo`.
+    /// If a contract with the given ID exists in the cache, the function returns `Some(Arc<DataContractFetchInfo>)`,
     /// otherwise it returns `None`.
     ///
     /// # Errors
@@ -33,7 +33,7 @@ impl Drive {
         contract_id: [u8; 32],
         transaction: TransactionArg,
         drive_version: &DriveVersion,
-    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+    ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
         match drive_version
             .methods
             .contract

@@ -29,14 +29,14 @@ impl Drive {
             None,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )
     }
 }

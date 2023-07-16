@@ -14,13 +14,15 @@ pub trait DataContractCborConversionMethodsV0 {
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     fn from_cbor(
         cbor_bytes: impl AsRef<[u8]>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;
-    /// Returns Data Contract as a Buffer
-    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError>;
     fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError>;
 }

@@ -1,5 +1,3 @@
-use dpp::document::document_transition::DocumentTransitionAction;
-
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 

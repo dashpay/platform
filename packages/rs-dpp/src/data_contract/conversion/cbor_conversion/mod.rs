@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::data_contract::conversion::DataContractCborConversionMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::prelude::DataContract;
 use crate::util::cbor_value::CborCanonicalMap;
@@ -52,7 +51,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
 
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_cbor_buffer(),
+            DataContract::V0(v0) => v0.to_cbor(),
         }
     }
 

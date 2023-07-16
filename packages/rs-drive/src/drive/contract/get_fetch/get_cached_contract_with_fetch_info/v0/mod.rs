@@ -9,7 +9,7 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
-    ) -> Option<Arc<ContractFetchInfo>> {
+    ) -> Option<Arc<DataContractFetchInfo>> {
         self.cache
             .read()
             .unwrap()

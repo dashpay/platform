@@ -6,6 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -81,6 +82,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let drive_version = &platform_version.drive;
         match self {
             IdentityOperationType::AddNewIdentity { identity } => drive
                 .add_new_identity_operations(
@@ -89,6 +91,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                     &mut None,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    platform_version,
                 ),
             IdentityOperationType::AddToIdentityBalance {
                 identity_id,
@@ -98,6 +101,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 added_balance,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             IdentityOperationType::RemoveFromIdentityBalance {
                 identity_id,
@@ -107,6 +111,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 balance_to_remove,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             IdentityOperationType::AddNewKeysToIdentity {
                 identity_id,
@@ -119,6 +124,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 true,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             IdentityOperationType::DisableIdentityKeys {
                 identity_id,
@@ -130,6 +136,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 disable_at,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             IdentityOperationType::ReEnableIdentityKeys {
                 identity_id,
@@ -139,6 +146,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 keys_ids,
                 estimated_costs_only_with_layer_info,
                 transaction,
+                drive_version,
             ),
             IdentityOperationType::UpdateIdentityRevision {
                 identity_id,
@@ -147,7 +155,8 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 identity_id,
                 revision,
                 estimated_costs_only_with_layer_info,
-            )]),
+                drive_version,
+            )?]),
         }
     }
 }

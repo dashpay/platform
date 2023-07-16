@@ -22,8 +22,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Prepares the operations for deleting a document.
@@ -37,17 +39,17 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.delete_document_for_contract_operations(
             document_id,
             contract,
-            document_type,
+            &document_type,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )
     }
 }

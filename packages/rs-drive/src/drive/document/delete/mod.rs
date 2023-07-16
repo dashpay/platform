@@ -151,7 +151,7 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::Drive;
-    use crate::fee::credits::Creditable;
+
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
