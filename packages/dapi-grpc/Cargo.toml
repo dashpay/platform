@@ -15,6 +15,8 @@ license = "MIT"
 [dependencies]
 prost = "0.11.9"
 tonic = { version = "0.9.2", no-default-features = true, features = ["codegen", "prost"] }
+num-derive = "0.4.0"
+num-traits = "0.2.15"
 
 [build-dependencies]
 tonic-build = "0.9.2"

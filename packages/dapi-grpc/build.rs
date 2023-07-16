@@ -53,6 +53,7 @@ fn generate1(
     tonic_build::configure()
         .build_client(true)
         .build_server(false)
+        .type_attribute("WhereOperator", "#[derive(num_derive::FromPrimitive)]")
         .out_dir(out_dir)
         .compile(files, proto_includes)?;
     Ok(())
