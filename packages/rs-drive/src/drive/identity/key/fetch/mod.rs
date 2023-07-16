@@ -27,8 +27,6 @@ use crate::error::identity::IdentityError;
 #[cfg(feature = "full")]
 use crate::error::Error;
 #[cfg(feature = "full")]
-use crate::fee::credits::Credits;
-#[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::query::{Query, QueryItem};
@@ -38,6 +36,7 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
 use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
+#[cfg(feature = "full")]
 use dpp::fee::Credits;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
@@ -777,7 +776,7 @@ impl IdentityKeysRequest {
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
 

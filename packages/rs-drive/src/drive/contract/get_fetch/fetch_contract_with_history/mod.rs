@@ -84,7 +84,7 @@ mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use serde_json::json;

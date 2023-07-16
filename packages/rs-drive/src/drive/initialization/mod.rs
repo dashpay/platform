@@ -38,9 +38,11 @@ use crate::drive::batch::GroveDbOpBatch;
 
 use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
 use crate::drive::{Drive, RootTree};
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
 
@@ -51,15 +53,15 @@ impl Drive {
     pub fn create_initial_state_structure(
         &self,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match drive_version
             .methods
             .initialization
             .create_initial_state_structure
         {
-            0 => self.create_initial_state_structure_0(transaction),
-            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+            0 => self.create_initial_state_structure_0(transaction, platform_version),
+            version => Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_initial_state_structure".to_string(),
                 known_versions: vec![0],
                 received: version,

@@ -34,7 +34,7 @@ impl Drive {
         self.clear_version_information_operations_v0(
             transaction,
             &mut batch_operations,
-            platform_version,
+            drive_version,
         )?;
         let grove_db_operations =
             LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);

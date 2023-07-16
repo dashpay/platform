@@ -2,7 +2,7 @@ mod v0;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
-use crate::error::{DriveError, Error};
+use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -27,7 +27,7 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
-    pub(in crate::drive::operations) fn apply_batch_grovedb_operations(
+    pub(in crate::drive) fn apply_batch_grovedb_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

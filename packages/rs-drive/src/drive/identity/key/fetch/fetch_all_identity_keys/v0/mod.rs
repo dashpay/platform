@@ -2,7 +2,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::identity::{IdentityPublicKey, KeyID, IDENTITY_MAX_KEYS};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;

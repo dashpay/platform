@@ -1,17 +1,14 @@
 use crate::drive::defaults::PROTOCOL_VERSION;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
 use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
-
-use crate::fee::calculate_fee;
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
@@ -183,7 +180,7 @@ mod tests {
 
     mod fetch_full_identities {
         use super::*;
-        use dpp::block::extended_block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         #[test]
         fn should_get_full_identities() {
@@ -218,7 +215,7 @@ mod tests {
 
     mod fetch_full_identity {
         use super::*;
-        use dpp::block::extended_block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         #[test]
         fn should_return_none_if_identity_is_not_present() {

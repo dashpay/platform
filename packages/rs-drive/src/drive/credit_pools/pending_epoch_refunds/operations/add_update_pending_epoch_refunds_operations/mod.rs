@@ -5,6 +5,7 @@ use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_pat
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::fee::epoch::CreditsPerEpoch;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::Element;
 

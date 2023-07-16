@@ -32,7 +32,7 @@ impl Drive {
         drive_batch_operations: Vec<DriveOperation>,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
         let ops = drive_batch_operations
             .into_iter()

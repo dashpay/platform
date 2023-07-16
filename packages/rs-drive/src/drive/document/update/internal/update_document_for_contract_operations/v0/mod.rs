@@ -4,28 +4,31 @@ use crate::drive::document::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path, make_document_reference,
 };
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
 use crate::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
-use crate::drive::object_size_info::DriveKeyInfo::{KeyRef, KeySize};
+use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
+    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -44,8 +47,9 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         if !document_and_contract_info.document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
@@ -67,7 +71,7 @@ impl Drive {
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             );
         }
 
@@ -134,13 +138,16 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
-            drive_version,
+            platform_version,
         )?;
 
         let old_document_info = if let Some(old_document_element) = old_document_element {
             if let Element::Item(old_serialized_document, element_flags) = old_document_element {
-                let document =
-                    Document::from_bytes(old_serialized_document.as_slice(), document_type)?;
+                let document = Document::from_bytes(
+                    old_serialized_document.as_slice(),
+                    document_type,
+                    platform_version,
+                )?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
                 Ok(DocumentOwnedInfo((document, storage_flags.map(Cow::Owned))))
             } else {
@@ -172,11 +179,22 @@ impl Drive {
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
             let document_top_field = document
-                .get_raw_for_document_type(&top_index_property.name, document_type, owner_id)?
+                .get_raw_for_document_type(
+                    &top_index_property.name,
+                    document_type,
+                    owner_id,
+                    platform_version,
+                )?
                 .unwrap_or_default();
 
             let old_document_top_field = old_document_info
-                .get_raw_for_document_type(&top_index_property.name, document_type, owner_id, None)?
+                .get_raw_for_document_type(
+                    &top_index_property.name,
+                    document_type,
+                    owner_id,
+                    None,
+                    platform_version,
+                )?
                 .unwrap_or_default();
 
             // if we are not applying that means we are trying to get worst case costs
@@ -206,6 +224,7 @@ impl Drive {
                         transaction,
                         previous_batch_operations,
                         &mut batch_operations,
+                        drive_version,
                     )?;
                     if inserted {
                         batch_insertion_cache.insert(qualified_path);
@@ -231,11 +250,22 @@ impl Drive {
                 ))?;
 
                 let document_index_field = document
-                    .get_raw_for_document_type(&index_property.name, document_type, owner_id)?
+                    .get_raw_for_document_type(
+                        &index_property.name,
+                        document_type,
+                        owner_id,
+                        platform_version,
+                    )?
                     .unwrap_or_default();
 
                 let old_document_index_field = old_document_info
-                    .get_raw_for_document_type(&index_property.name, document_type, owner_id, None)?
+                    .get_raw_for_document_type(
+                        &index_property.name,
+                        document_type,
+                        owner_id,
+                        None,
+                        platform_version,
+                    )?
                     .unwrap_or_default();
 
                 // if we are not applying that means we are trying to get worst case costs
@@ -344,6 +374,7 @@ impl Drive {
                         transaction,
                         previous_batch_operations,
                         &mut batch_operations,
+                        drive_version,
                     )?;
                 } else {
                     // here we should return an error if the element already exists
@@ -372,6 +403,7 @@ impl Drive {
                         transaction,
                         previous_batch_operations,
                         &mut batch_operations,
+                        drive_version,
                     )?;
                     index_path.push(vec![0]);
 
@@ -383,6 +415,7 @@ impl Drive {
                             document_reference.clone(),
                         )),
                         &mut batch_operations,
+                        drive_version,
                     )?;
                 } else {
                     // in one update you can't insert an element twice, so need to check the cache
@@ -392,6 +425,7 @@ impl Drive {
                         BatchInsertApplyType::StatefulBatchInsert,
                         transaction,
                         &mut batch_operations,
+                        drive_version,
                     )?;
                     if !inserted {
                         return Err(Error::Drive(DriveError::CorruptedContractIndexes(
@@ -417,6 +451,7 @@ impl Drive {
                         document_reference.clone(),
                         trust_refresh_reference,
                         &mut batch_operations,
+                        drive_version,
                     )?;
                 } else {
                     self.batch_refresh_reference(

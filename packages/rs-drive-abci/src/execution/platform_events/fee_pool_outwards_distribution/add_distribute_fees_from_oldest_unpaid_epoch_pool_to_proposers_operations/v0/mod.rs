@@ -166,7 +166,7 @@ mod tests {
 
         platform
             .drive
-            .grove_apply_batch(batch, false, Some(&transaction))
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let proposers = create_test_masternode_identities_and_add_them_as_epoch_block_proposers(

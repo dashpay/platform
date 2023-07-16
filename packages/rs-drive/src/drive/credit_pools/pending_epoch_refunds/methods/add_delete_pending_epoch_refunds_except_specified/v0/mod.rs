@@ -59,7 +59,7 @@ mod tests {
     use crate::drive::batch::GroveDbOpBatch;
     use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::drive_versions::DriveVersion;
     use grovedb::batch::Op;
 

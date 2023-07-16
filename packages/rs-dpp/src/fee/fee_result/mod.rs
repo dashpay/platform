@@ -37,6 +37,7 @@
 
 use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::consensus::fee::fee_error::FeeError;
+use crate::consensus::ConsensusError;
 use crate::fee::fee_result::refunds::FeeRefunds;
 use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
 use crate::fee::Credits;
@@ -140,7 +141,10 @@ impl BalanceChangeForIdentity {
     }
 
     /// The fee result outcome based on user balance
-    pub fn fee_result_outcome(self, user_balance: u64) -> Result<FeeResult, ProtocolError> {
+    pub fn fee_result_outcome<E>(self, user_balance: u64) -> Result<FeeResult, E>
+    where
+        E: From<FeeError>,
+    {
         match self.change {
             AddToBalance { .. } => {
                 // when we add balance we are sure that all the storage fee and processing fee has

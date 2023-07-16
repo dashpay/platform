@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
@@ -7,11 +8,8 @@ use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
@@ -80,8 +78,14 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        drive_version: &DriveVersion,
     ) -> LowLevelDriveOperation {
-        match drive_version.methods.identity.update.revision_operation {
+        match drive_version
+            .methods
+            .identity
+            .update
+            .update_identity_revision
+        {
             0 => self.update_identity_revision_operation_v0(
                 identity_id,
                 revision,

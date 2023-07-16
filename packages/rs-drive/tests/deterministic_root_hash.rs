@@ -67,7 +67,7 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 

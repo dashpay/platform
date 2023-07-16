@@ -2,11 +2,12 @@ use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
+use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::document_type::IndexLevel;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -44,6 +45,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
+                drive_version,
             )?;
         }
 

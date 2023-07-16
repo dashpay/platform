@@ -1,15 +1,14 @@
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::{identity_tree_path, Drive};
 use crate::error::identity::IdentityError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -93,13 +92,10 @@ impl Drive {
 
         let identity_tree_path = identity_tree_path();
 
-        let Identity {
-            id,
-            public_keys,
-            revision,
-            balance,
-            ..
-        } = identity;
+        let id = identity.id();
+        let revision = identity.revision();
+        let balance = identity.balance();
+        let public_keys = identity.public_keys_owned();
 
         let apply_type = if estimated_costs_only_with_layer_info.is_none() {
             BatchInsertTreeApplyType::StatefulBatchInsertTree
@@ -161,7 +157,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::identity::Identity;
 
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
     use tempfile::TempDir;

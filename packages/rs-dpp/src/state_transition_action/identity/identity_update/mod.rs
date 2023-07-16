@@ -27,6 +27,14 @@ impl IdentityUpdateTransitionAction {
         }
     }
 
+    pub fn public_keys_to_add_and_disable_owned(self) -> (Vec<IdentityPublicKey>, Vec<KeyID>) {
+        match self {
+            IdentityUpdateTransitionAction::V0(transition) => {
+                (transition.add_public_keys, transition.disable_public_keys)
+            }
+        }
+    }
+
     // Public Keys Disabled At
     pub fn public_keys_disabled_at(&self) -> Option<TimestampMillis> {
         match self {

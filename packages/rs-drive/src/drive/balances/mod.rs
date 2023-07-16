@@ -59,7 +59,7 @@ pub use calculate_total_credits_balance::*;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::RootTree;
-use crate::fee::credits::Credits;
+use dpp::fee::Credits;
 
 /// Storage fee pool key
 #[cfg(feature = "full")]
@@ -87,15 +87,18 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
+    use dpp::version::drive_versions::DriveVersion;
     use tempfile::TempDir;
 
     #[test]
     fn verify_total_credits_structure() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let db_transaction = drive.grove.start_transaction();
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let credits_match_expected = drive

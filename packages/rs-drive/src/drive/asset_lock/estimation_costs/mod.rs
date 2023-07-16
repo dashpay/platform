@@ -16,7 +16,6 @@ use std::collections::HashMap;
 
 impl Drive {
     pub(crate) fn add_estimation_costs_for_adding_asset_lock(
-        &self,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -26,7 +25,7 @@ impl Drive {
             .add_estimation_costs_for_adding_asset_lock
         {
             0 => {
-                self.add_estimation_costs_for_adding_asset_lock_v0(
+                Self::add_estimation_costs_for_adding_asset_lock_v0(
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())

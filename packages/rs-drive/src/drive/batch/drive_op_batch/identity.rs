@@ -2,7 +2,7 @@ use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use dpp::version::drive_versions::DriveVersion;
@@ -79,7 +79,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             IdentityOperationType::AddNewIdentity { identity } => drive

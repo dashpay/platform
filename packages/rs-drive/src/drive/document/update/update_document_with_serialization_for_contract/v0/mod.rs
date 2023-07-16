@@ -1,15 +1,17 @@
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -28,7 +30,7 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
@@ -49,13 +51,13 @@ impl Drive {
                     owner_id,
                 },
                 contract,
-                document_type,
+                document_type: &document_type,
             },
             &block_info,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)

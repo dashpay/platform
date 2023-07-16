@@ -8,14 +8,10 @@ use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniq
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
-use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
-};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;

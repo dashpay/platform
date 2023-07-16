@@ -1,16 +1,17 @@
 use crate::drive::contract::paths;
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
@@ -23,7 +24,7 @@ impl Drive {
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -37,7 +38,7 @@ impl Drive {
         };
 
         let contract_element = Element::Item(
-            contract.serialize()?,
+            contract.serialize_with_platform_version(platform_version)?,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
@@ -48,7 +49,7 @@ impl Drive {
             apply,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
 
         calculate_fee(None, Some(drive_operations), &block_info.epoch).map_err(Error::Protocol)
@@ -64,7 +65,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -76,14 +77,14 @@ impl Drive {
             contract,
             block_info,
             &mut estimated_costs_only_with_layer_info,
-            drive_version,
+            platform_version,
         )?;
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )
     }
 
@@ -99,14 +100,14 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let batch_operations = self.insert_contract_operations_v0(
             contract_element,
             contract,
             block_info,
             estimated_costs_only_with_layer_info,
-            drive_version,
+            platform_version,
         )?;
         drive_operations.extend(batch_operations);
         Ok(())
@@ -123,7 +124,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -134,7 +135,7 @@ impl Drive {
             KeyRef(contract.id().as_bytes()),
             storage_flags.as_ref(),
             &mut batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         self.add_contract_to_storage(
@@ -145,7 +146,7 @@ impl Drive {
             &mut batch_operations,
             true,
             None, // we are not inserting into history, hence the transaction will not be used, we can pass None
-            drive_version,
+            &platform_version.drive,
         )?;
 
         // the documents
@@ -156,7 +157,7 @@ impl Drive {
             key_info,
             storage_flags.as_ref(),
             &mut batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         // next we should store each document type
@@ -170,7 +171,7 @@ impl Drive {
                 KeyRef(type_key.as_bytes()),
                 storage_flags.as_ref(),
                 &mut batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
 
             let type_path = [
@@ -187,7 +188,7 @@ impl Drive {
                 key_info,
                 storage_flags.as_ref(),
                 &mut batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
 
             let mut index_cache: HashSet<&[u8]> = HashSet::new();
@@ -201,7 +202,7 @@ impl Drive {
                         KeyRef(index_bytes),
                         storage_flags.as_ref(),
                         &mut batch_operations,
-                        drive_version,
+                        &platform_version.drive,
                     )?;
                     index_cache.insert(index_bytes);
                 }
@@ -212,7 +213,7 @@ impl Drive {
             Self::add_estimation_costs_for_contract_insertion(
                 contract,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                platform_version,
             )?;
         }
 

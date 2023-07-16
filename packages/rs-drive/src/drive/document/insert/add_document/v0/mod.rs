@@ -1,11 +1,11 @@
+use crate::drive::fee::calculate_fee;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;

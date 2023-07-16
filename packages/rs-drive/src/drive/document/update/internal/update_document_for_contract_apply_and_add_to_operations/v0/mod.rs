@@ -3,6 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -18,6 +19,7 @@ impl Drive {
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
@@ -31,6 +33,7 @@ impl Drive {
             transaction,
             batch_operations,
             drive_operations,
+            &platform_version.drive,
         )
     }
 }

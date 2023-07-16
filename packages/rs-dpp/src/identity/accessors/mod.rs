@@ -65,35 +65,6 @@ impl IdentityGettersV0 for Identity {
         }
     }
 
-    /// Returns a reference to the asset lock proof of the identity.
-    ///
-    /// # Returns
-    ///
-    /// An `Option` containing a reference to the `AssetLockProof`, if it exists.
-    fn asset_lock_proof(&self) -> Option<&AssetLockProof> {
-        match self {
-            Identity::V0(identity) => identity.asset_lock_proof.as_ref(),
-        }
-    }
-
-    /// Remove the asset lock proof of the identity.
-    fn remove_asset_lock_proof(&mut self) {
-        match self {
-            Identity::V0(identity) => identity.asset_lock_proof = None,
-        }
-    }
-
-    /// Returns a reference to the metadata of the identity.
-    ///
-    /// # Returns
-    ///
-    /// An `Option` containing a reference to the `Metadata`, if it exists.
-    fn metadata(&self) -> Option<&Metadata> {
-        match self {
-            Identity::V0(identity) => identity.metadata.as_ref(),
-        }
-    }
-
     /// Returns the identifier of the identity.
     ///
     /// # Returns
@@ -169,17 +140,6 @@ impl IdentitySettersV0 for Identity {
         }
     }
 
-    /// Sets the asset lock proof of the identity.
-    ///
-    /// # Arguments
-    ///
-    /// * `new_asset_lock_proof` - An `Option` containing the new `AssetLockProof`, if it exists.
-    fn set_asset_lock_proof(&mut self, new_asset_lock_proof: AssetLockProof) {
-        match self {
-            Identity::V0(identity) => identity.asset_lock_proof = Some(new_asset_lock_proof),
-        }
-    }
-
     /// Sets the balance of the identity.
     ///
     /// # Arguments
@@ -199,17 +159,6 @@ impl IdentitySettersV0 for Identity {
     fn set_revision(&mut self, new_revision: Revision) {
         match self {
             Identity::V0(identity) => identity.revision = new_revision,
-        }
-    }
-
-    /// Sets the metadata of the identity.
-    ///
-    /// # Arguments
-    ///
-    /// * `new_metadata` - An `Option` containing the new `Metadata`, if it exists.
-    fn set_metadata(&mut self, new_metadata: Option<Metadata>) {
-        match self {
-            Identity::V0(identity) => identity.metadata = new_metadata,
         }
     }
 

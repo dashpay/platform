@@ -6,18 +6,18 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
+use dpp::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
+        _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let IdentityTopUpTransitionAction {
-            top_up_balance_amount,
-            identity_id,
-            asset_lock_outpoint,
-            ..
-        } = self;
+        let top_up_balance_amount = self.top_up_balance_amount();
+        let identity_id = self.identity_id();
+        let asset_lock_outpoint = self.asset_lock_outpoint();
 
         let drive_operations = vec![
             IdentityOperation(IdentityOperationType::AddToIdentityBalance {

@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::drive::contract::ContractFetchInfo;
+use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -188,18 +188,26 @@ mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::prelude::Identifier;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use std::sync::Arc;
 
     #[test]
     fn should_get_contract_from_global_and_block_cache() {
         let (drive, mut contract) = setup_reference_contract();
+        let platform_version = PlatformVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
         contract.increment_version();
 
         drive
-            .update_contract(&contract, BlockInfo::default(), true, Some(&transaction))
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should update contract");
 
         let fetch_info_from_database = drive
@@ -296,8 +304,8 @@ mod tests {
 
         // Create a deep placed contract
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
-        let deep_contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get cbor document");
+        let deep_contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get cbor document");
         drive
             .apply_contract(
                 &deep_contract,

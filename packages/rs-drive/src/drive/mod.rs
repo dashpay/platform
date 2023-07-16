@@ -129,13 +129,13 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 #[cfg(feature = "full")]
 use crate::drive::system_contracts_cache::SystemContracts;
 #[cfg(feature = "full")]
-use crate::fee::result::FeeResult;
-#[cfg(feature = "full")]
 use crate::query::GroveError;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
 #[cfg(feature = "full")]
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]

@@ -6,8 +6,6 @@ use std::ops::Range;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
-use crate::fee::get_overflow_error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 
@@ -41,7 +39,11 @@ impl Drive {
             .epochs
             .get_epoch_total_credits_for_distribution
         {
-            0 => self.get_epoch_total_credits_for_distribution_v0(epoch_tree, transaction),
+            0 => self.get_epoch_total_credits_for_distribution_v0(
+                epoch_tree,
+                transaction,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_total_credits_for_distribution".to_string(),
                 known_versions: vec![0],

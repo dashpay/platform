@@ -103,8 +103,7 @@ impl TempPlatform<MockCoreRPCLike> {
     /// A function which sets initial state structure for Platform.
     pub fn set_initial_state_structure(self) -> Self {
         self.platform
-            .drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("should create root tree successfully");
 
         self

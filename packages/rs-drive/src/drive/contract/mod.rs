@@ -64,6 +64,7 @@ pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 #[cfg(test)]
 mod tests {
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use rand::Rng;
     use std::borrow::Cow;
     use std::option::Option::None;
@@ -78,6 +79,7 @@ mod tests {
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::data_contract::DataContract;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
@@ -86,15 +88,15 @@ mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
             .create_initial_state_structure(None, &drive_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get a contract");
+        let contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get a contract");
         drive
             .apply_contract(
                 &contract,
@@ -113,7 +115,7 @@ mod tests {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         drive
             .create_initial_state_structure(None, &drive_version)
@@ -121,8 +123,8 @@ mod tests {
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get a contract");
+        let contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get a contract");
         drive
             .apply_contract(
                 &contract,
@@ -140,7 +142,7 @@ mod tests {
     fn setup_reference_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         drive
             .create_initial_state_structure(None, &drive_version)
@@ -149,8 +151,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get a contract");
+        let contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get a contract");
         drive
             .apply_contract(
                 &contract,
@@ -169,7 +171,7 @@ mod tests {
     fn test_create_and_update_contract() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         drive
             .create_initial_state_structure(None, &drive_version)
@@ -205,7 +207,7 @@ mod tests {
     #[test]
     fn test_create_deep_nested_contract_50() {
         let (drive, contract) = setup_deep_nested_50_contract();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let document_type = contract
             .document_type_for_name("nest")
@@ -228,7 +230,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -242,7 +244,7 @@ mod tests {
     #[test]
     fn test_create_reference_contract() {
         let (drive, contract) = setup_reference_contract();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let document_type = contract
             .document_type_for_name("note")
@@ -265,7 +267,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -280,7 +282,7 @@ mod tests {
     fn test_create_reference_contract_without_apply() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         drive
             .create_initial_state_structure(None, &drive_version)
@@ -289,8 +291,8 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get cbor document");
+        let contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get cbor document");
         drive
             .apply_contract(
                 &contract,
@@ -307,18 +309,18 @@ mod tests {
     fn test_create_reference_contract_with_history_without_apply() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &drive_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path =
             "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get contract");
+        let contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get contract");
         drive
             .apply_contract(
                 &contract,
@@ -335,17 +337,17 @@ mod tests {
     fn test_update_reference_contract_without_apply() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &drive_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract =
-            json_document_to_contract(contract_path, 0).expect("expected to get cbor document");
+        let contract = json_document_to_contract(contract_path, platform_version)
+            .expect("expected to get cbor document");
 
         // Create a contract first
         drive
@@ -355,13 +357,19 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &drive_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
         // Update existing contract
         drive
-            .update_contract(&contract, BlockInfo::default(), false, None, &drive_version)
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                false,
+                None,
+                &platform_version,
+            )
             .expect("expected to apply contract successfully");
     }
 }

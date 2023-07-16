@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
@@ -7,13 +8,13 @@ use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
@@ -50,9 +51,15 @@ impl Drive {
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.contract.update.update_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .update
+            .update_contract
+        {
             0 => self.update_contract_v0(contract, block_info, apply, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),
@@ -97,9 +104,15 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.contract.update.update_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .update
+            .update_contract
+        {
             0 => self.update_contract_element_v0(
                 contract_element,
                 contract,
@@ -107,7 +120,7 @@ impl Drive {
                 block_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_element".to_string(),
@@ -157,7 +170,7 @@ impl Drive {
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match drive_version.methods.contract.update.update_contract {
             0 => self.update_contract_add_operations_v0(
@@ -168,7 +181,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_add_operations".to_string(),
@@ -215,9 +228,15 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.contract.update.update_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .update
+            .update_contract
+        {
             0 => self.update_contract_operations_v0(
                 contract_element,
                 contract,
@@ -225,7 +244,7 @@ impl Drive {
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_operations".to_string(),

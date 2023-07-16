@@ -3,10 +3,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::quote;
 use std::str::FromStr;
-use syn::{
-    parse_macro_input, Data, DataEnum, DataStruct, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
-    Path, Type,
-};
+use syn::{Data, DataEnum, DeriveInput, LitInt, LitStr, Meta, Path, Type};
 
 pub(super) fn derive_platform_serialize_enum(
     input: &DeriveInput,

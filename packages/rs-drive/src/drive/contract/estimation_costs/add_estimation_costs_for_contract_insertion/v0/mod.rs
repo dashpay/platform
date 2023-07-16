@@ -9,7 +9,9 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 use dpp::data_contract::DataContract;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
@@ -22,11 +24,12 @@ impl Drive {
     pub(super) fn add_estimation_costs_for_contract_insertion_v0(
         contract: &DataContract,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
             contract,
             estimated_costs_only_with_layer_info,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         // we only store the owner_id storage
@@ -72,7 +75,10 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
-                            contract.serialize().unwrap().len() as u32, //todo: fix this
+                            contract
+                                .serialize_with_platform_version(platform_version)
+                                .unwrap()
+                                .len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),
@@ -81,5 +87,7 @@ impl Drive {
                 },
             );
         }
+
+        Ok(())
     }
 }

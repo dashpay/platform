@@ -13,7 +13,9 @@ mod tests {
 
     mod add_new_keys_to_identity {
         use super::*;
+        use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
+        use dpp::fee::fee_result::FeeResult;
 
         #[test]
         fn should_add_one_new_key_to_identity() {

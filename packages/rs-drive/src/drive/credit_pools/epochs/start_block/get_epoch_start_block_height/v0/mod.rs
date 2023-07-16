@@ -4,7 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::epochs::paths;
 use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::EpochIndex;
+
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 

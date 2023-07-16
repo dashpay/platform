@@ -151,7 +151,7 @@ mod tests {
         // Apply new pool structure
         platform
             .drive
-            .grove_apply_batch(batch, false, Some(&transaction))
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let mut batch = vec![];

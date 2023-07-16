@@ -7,6 +7,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -51,9 +52,10 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .apply
@@ -66,7 +68,7 @@ impl Drive {
                 apply,
                 storage_flags,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization".to_string(),
@@ -114,9 +116,10 @@ impl Drive {
         >,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .apply
@@ -129,7 +132,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 storage_flags,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_with_serialization_operations".to_string(),

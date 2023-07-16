@@ -34,7 +34,7 @@
 
 use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -42,6 +42,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use tempfile::TempDir;
 
@@ -89,7 +90,7 @@ pub fn setup_system_data_contract(
     data_contract: &DataContract,
     transaction: TransactionArg,
 ) {
-    let drive_version = DriveVersion::latest();
+    let platform_version = PlatformVersion::latest();
     drive
         .apply_contract(
             data_contract,
@@ -97,7 +98,7 @@ pub fn setup_system_data_contract(
             true,
             None,
             transaction,
-            &drive_version,
+            &platform_version,
         )
         .unwrap();
 }

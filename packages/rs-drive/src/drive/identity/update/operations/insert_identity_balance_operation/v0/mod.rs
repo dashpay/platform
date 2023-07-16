@@ -3,6 +3,7 @@ use crate::drive::Drive;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::balances::credits::MAX_CREDITS;
 use dpp::fee::Credits;
 use grovedb::Element;
 

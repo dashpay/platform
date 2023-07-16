@@ -6,7 +6,7 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::fee::credits::Credits;
+use dpp::fee::Credits;
 
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;

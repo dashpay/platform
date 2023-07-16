@@ -8,6 +8,7 @@ use crate::drive::document::{
     contract_document_type_path_vec, contract_documents_primary_key_path, document_reference_size,
     unique_event_id,
 };
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
@@ -24,14 +25,13 @@ use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;

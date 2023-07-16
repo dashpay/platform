@@ -1,5 +1,5 @@
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::contract::ContractFetchInfo;
+use crate::drive::contract::DataContractFetchInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::TimestampMillis;
 #[cfg(any(feature = "full", feature = "verify"))]

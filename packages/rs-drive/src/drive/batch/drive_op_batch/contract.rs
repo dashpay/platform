@@ -3,10 +3,11 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Identifier;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
@@ -57,7 +58,7 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DataContractOperationType::ApplyContractCbor {
@@ -78,7 +79,7 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                     estimated_costs_only_with_layer_info,
                     storage_flags,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DataContractOperationType::ApplyContractWithSerialization {
@@ -92,7 +93,7 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                 estimated_costs_only_with_layer_info,
                 storage_flags,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             DataContractOperationType::ApplyContract {
                 contract,
@@ -103,7 +104,7 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                 estimated_costs_only_with_layer_info,
                 storage_flags,
                 transaction,
-                drive_version,
+                platform_version,
             ),
         }
     }

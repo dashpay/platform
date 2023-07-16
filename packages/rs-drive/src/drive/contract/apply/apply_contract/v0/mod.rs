@@ -5,8 +5,11 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization_traits::{
+    PlatformDeserializable, PlatformSerializable, PlatformSerializableWithPlatformVersion,
+};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -45,16 +48,16 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         self.apply_contract_with_serialization(
             contract,
-            contract.serialize()?,
+            contract.serialize_with_platform_version(platform_version)?,
             block_info,
             apply,
             storage_flags,
             transaction,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -70,9 +73,11 @@ impl Drive {
         >,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let serialized_contract = contract.serialize().map_err(Error::Protocol)?;
+        let serialized_contract = contract
+            .serialize_with_platform_version(platform_version)
+            .map_err(Error::Protocol)?;
         self.apply_contract_with_serialization_operations(
             contract,
             serialized_contract,
@@ -80,7 +85,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             storage_flags,
             transaction,
-            drive_version,
+            platform_version,
         )
     }
 }

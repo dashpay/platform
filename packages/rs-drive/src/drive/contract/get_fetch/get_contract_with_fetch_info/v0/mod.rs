@@ -1,7 +1,7 @@
-use crate::drive::contract::ContractFetchInfo;
+use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 use dpp::block::epoch::Epoch;

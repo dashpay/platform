@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use dpp::data_contract::DataContract;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
@@ -18,11 +19,10 @@ use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
-use crate::fee::result::FeeResult;
 use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 
 impl Drive {

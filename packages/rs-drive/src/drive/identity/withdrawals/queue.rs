@@ -93,8 +93,8 @@ mod tests {
         drive::batch::DriveOperation,
         tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
+    use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
-    use dpp::block::extended_block_info::BlockInfo;
 
     #[test]
     fn test_enqueue_and_dequeue() {

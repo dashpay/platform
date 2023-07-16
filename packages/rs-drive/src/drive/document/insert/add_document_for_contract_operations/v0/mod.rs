@@ -1,12 +1,13 @@
 use crate::drive::document::contract_documents_primary_key_path;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::DocumentAndContractInfo;
+use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -23,7 +24,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let primary_key_path = contract_documents_primary_key_path(
@@ -67,7 +68,7 @@ impl Drive {
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             )?;
             batch_operations.extend(update_operations);
             return Ok(batch_operations);
@@ -78,7 +79,8 @@ impl Drive {
                 Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(
                     document_and_contract_info.contract,
                     estimated_costs_only_with_layer_info,
-                );
+                    &platform_version.drive,
+                )?;
             }
             // if we have override_document set that means we already checked if it exists
             self.add_document_to_primary_storage(
@@ -88,7 +90,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
 
@@ -98,7 +100,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
-            drive_version,
+            platform_version,
         )?;
         Ok(batch_operations)
     }

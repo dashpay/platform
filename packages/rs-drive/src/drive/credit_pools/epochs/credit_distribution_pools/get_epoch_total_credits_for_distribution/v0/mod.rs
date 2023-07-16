@@ -1,13 +1,13 @@
 use grovedb::{Element, TransactionArg};
 use std::ops::Range;
 
+use crate::drive::fee::get_overflow_error;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
-use crate::fee::get_overflow_error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
+use dpp::version::drive_versions::DriveVersion;
 
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
@@ -18,12 +18,19 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Credits, Error> {
-        let storage_pool_credits =
-            self.get_epoch_storage_credits_for_distribution(epoch_tree, transaction)?;
+        let storage_pool_credits = self.get_epoch_storage_credits_for_distribution(
+            epoch_tree,
+            transaction,
+            drive_version,
+        )?;
 
-        let processing_pool_credits =
-            self.get_epoch_processing_credits_for_distribution(epoch_tree, transaction)?;
+        let processing_pool_credits = self.get_epoch_processing_credits_for_distribution(
+            epoch_tree,
+            transaction,
+            drive_version,
+        )?;
 
         storage_pool_credits
             .checked_add(processing_pool_credits)
@@ -70,7 +77,7 @@ mod tests {
             .expect("should apply batch");
 
         let retrieved_combined_fee = drive
-            .get_epoch_total_credits_for_distribution(&epoch, Some(&transaction))
+            .get_epoch_total_credits_for_distribution(&epoch, Some(&transaction), &drive_version)
             .expect("should get combined fee");
 
         assert_eq!(retrieved_combined_fee, processing_fee + storage_fee);

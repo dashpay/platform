@@ -12,13 +12,16 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo, PathKeyElementInfo,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -29,7 +32,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.
-    fn add_indices_for_top_index_level_for_contract_operations(
+    pub(crate) fn add_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
@@ -38,13 +41,15 @@ impl Drive {
         >,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let index_level = &document_and_contract_info.document_type.index_structure;
+        let drive_version = &platform_version.drive;
+        let index_level = &document_and_contract_info.document_type.index_structure();
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
         let document_type = document_and_contract_info.document_type;
-        let storage_flags = if document_type.documents_mutable || contract.config.can_be_deleted {
+        let storage_flags = if document_type.documents_mutable() || contract.config().can_be_deleted
+        {
             document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -185,6 +190,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
+                drive_version,
             )?;
         }
         Ok(())

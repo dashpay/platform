@@ -1,6 +1,7 @@
 use crate::drive::identity::identity_key_tree_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
 use dpp::serialization_traits::PlatformSerializable;
 use grovedb::Element;

@@ -1,4 +1,4 @@
-use crate::drive::contract::ContractFetchInfo;
+use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use grovedb::TransactionArg;
 use std::sync::Arc;

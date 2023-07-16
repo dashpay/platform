@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -23,13 +24,14 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_total_system_credits_update(
                 estimated_costs_only_with_layer_info,
-            );
+                &platform_version.drive,
+            )?;
         }
         let path_holding_total_credits = misc_path();
         let total_credits_in_platform = self
@@ -39,7 +41,7 @@ impl Drive {
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                &platform_version.drive,
             )?
             .ok_or(Error::Drive(DriveError::CriticalCorruptedState(
                 "Credits not found in Platform",

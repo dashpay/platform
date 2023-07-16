@@ -8,6 +8,7 @@ use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefEleme
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -38,14 +39,14 @@ impl Drive {
                 identity_id,
                 estimated_costs_only_with_layer_info,
                 drive_version,
-            );
+            )?;
 
             Self::add_estimation_costs_for_purpose_in_key_reference_tree(
                 identity_id,
                 estimated_costs_only_with_layer_info,
                 purpose,
                 drive_version,
-            );
+            )?;
 
             if matches!(purpose, Purpose::AUTHENTICATION) {
                 Self::add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree(
@@ -53,7 +54,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     security_level,
                     drive_version,
-                );
+                )?;
             }
         }
 

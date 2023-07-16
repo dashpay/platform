@@ -23,10 +23,11 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
@@ -38,11 +39,10 @@ use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
-use crate::fee::result::FeeResult;
 use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_remove_document_to_primary_storage_v0(

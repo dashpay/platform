@@ -1,5 +1,5 @@
-use crate::data_contract::document_type::document_field::DocumentFieldType;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::DocumentFieldType;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::DocumentV0Getters;
 use crate::version::PlatformVersion;

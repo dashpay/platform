@@ -1,18 +1,19 @@
 mod v0;
 
 use crate::drive::contract::paths;
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::{contract_documents_path, Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
@@ -26,7 +27,7 @@ impl Drive {
     /// * `block_info` - Information about the current block.
     /// * `apply` - A boolean indicating whether the insertion should be applied.
     /// * `transaction` - A `TransactionArg` object representing the transaction for the insertion.
-    /// * `drive_version` - The version of the drive.
+    /// * `platform_version` - The version of the Platform.
     ///
     /// # Returns
     ///
@@ -43,10 +44,18 @@ impl Drive {
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.contract.insert.insert_contract {
-            0 => self.insert_contract_v0(contract, block_info, apply, transaction, drive_version),
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
+            0 => {
+                self.insert_contract_v0(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract".to_string(),
                 known_versions: vec![0],
@@ -82,9 +91,15 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.contract.insert.insert_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
             0 => self.insert_contract_element_v0(
                 contract_element,
                 contract,
@@ -92,7 +107,7 @@ impl Drive {
                 apply,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_element".to_string(),
@@ -111,7 +126,7 @@ impl Drive {
     /// * `block_info` - A reference to information about the current block.
     /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
     /// * `drive_operations` - A mutable reference to a `Vec` of `LowLevelDriveOperation` objects to perform.
-    /// * `drive_version` - The version of the drive.
+    /// * `platform_version` - The version of Platform.
     ///
     /// # Returns
     ///
@@ -129,16 +144,22 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.contract.insert.insert_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
             0 => self.insert_contract_add_operations_v0(
                 contract_element,
                 contract,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_add_operations".to_string(),
@@ -156,7 +177,7 @@ impl Drive {
     /// * `contract` - A reference to the `DataContract` to be inserted.
     /// * `block_info` - A reference to information about the current block.
     /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
-    /// * `drive_version` - The version of the drive.
+    /// * `platform_version` - The version of Platform.
     ///
     /// # Returns
     ///
@@ -173,15 +194,21 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.contract.insert.insert_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .insert
+            .insert_contract
+        {
             0 => self.insert_contract_operations_v0(
                 contract_element,
                 contract,
                 block_info,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_operations".to_string(),

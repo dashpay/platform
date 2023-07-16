@@ -42,7 +42,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_version_path(state_transitions.identity_state_transition)]
+#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
 #[serde(untagged)]
 pub enum IdentityCreditWithdrawalTransition {
     #[versioned(0)]

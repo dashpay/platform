@@ -27,7 +27,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
 
     use crate::drive::Drive;
     use dpp::identity::Identity;

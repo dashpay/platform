@@ -221,7 +221,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let pro_tx_hashes =

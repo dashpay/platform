@@ -90,8 +90,9 @@ use dpp::platform_value::Value;
 use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
 #[cfg(feature = "full")]
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::platform_value;
 
 #[cfg(feature = "full")]
@@ -257,7 +258,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -325,7 +326,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -394,7 +395,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -774,7 +775,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 BlockInfo::genesis(),
@@ -823,7 +824,7 @@ fn test_query_many() {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -1310,7 +1311,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1367,7 +1368,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1419,7 +1420,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1472,7 +1473,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -1533,7 +1534,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1582,7 +1583,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1643,7 +1644,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1703,7 +1704,7 @@ fn test_family_basic_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -2435,7 +2436,7 @@ fn test_family_starts_at_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
 
     let reduced_names_after: Vec<String> = results
@@ -2495,7 +2496,7 @@ fn test_family_starts_at_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
 
     let reduced_names_after: Vec<String> = results
@@ -2549,7 +2550,7 @@ fn test_family_starts_at_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
 
     let reduced_names_after: Vec<String> = results
@@ -2609,7 +2610,7 @@ fn test_family_starts_at_queries() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -2926,7 +2927,6 @@ fn test_family_with_nulls_query() {
                     .expect("expected to get 32 bytes"),
                 &contract,
                 "person",
-                None,
                 BlockInfo::genesis(),
                 true,
                 Some(&db_transaction),

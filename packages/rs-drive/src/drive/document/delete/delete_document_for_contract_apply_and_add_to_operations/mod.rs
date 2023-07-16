@@ -6,6 +6,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -31,15 +32,15 @@ impl Drive {
         document_id: [u8; 32],
         contract: &DataContract,
         document_type_name: &str,
-        owner_id: Option<[u8; 32]>,
         mut estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .delete
@@ -49,11 +50,10 @@ impl Drive {
                 document_id,
                 contract,
                 document_type_name,
-                owner_id,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_apply_and_add_to_operations".to_string(),

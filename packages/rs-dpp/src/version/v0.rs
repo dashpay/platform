@@ -1,7 +1,7 @@
 use crate::version::dpp_versions::{
     ContractClassMethodVersions, ContractVersions, DPPVersion, DocumentClassMethodVersions,
     DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions,
-    StateTransitionSerializationVersions,
+    IdentityVersions, StateTransitionSerializationVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -26,15 +26,17 @@ use crate::version::drive_versions::{
     DriveDocumentMethodVersions, DriveDocumentUpdateMethodVersions,
     DriveEstimatedCostsMethodVersions, DriveGroveApplyMethodVersions,
     DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
-    DriveGroveMethodVersions, DriveIdentityFetchAttributesMethodVersions,
-    DriveIdentityFetchMethodVersions, DriveIdentityFetchPublicKeyHashesMethodVersions,
+    DriveGroveMethodVersions, DriveIdentityCostEstimationMethodVersions,
+    DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchMethodVersions,
+    DriveIdentityFetchPublicKeyHashesMethodVersions,
     DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
     DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveStructureVersion,
-    DriveSystemProtocolVersionMethodVersions, DriveVersion,
+    DriveSystemEstimationCostsMethodVersions, DriveSystemProtocolVersionMethodVersions,
+    DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{
@@ -277,6 +279,15 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     apply_balance_change_from_fee_to_identity: 0,
                     remove_from_identity_balance: 0,
                 },
+                cost_estimation: DriveIdentityCostEstimationMethodVersions {
+                    for_authentication_keys_security_level_in_key_reference_tree: 0,
+                    for_balances: 0,
+                    for_keys_for_identity_id: 0,
+                    for_negative_credit: 0,
+                    for_purpose_in_key_reference_tree: 0,
+                    for_root_key_reference_tree: 0,
+                    for_update_revision: 0,
+                },
             },
             platform_system: DrivePlatformSystemMethodVersions {
                 protocol_version: DriveSystemProtocolVersionMethodVersions {
@@ -284,6 +295,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     set_current_protocol_version_operations: 0,
                     fetch_next_protocol_version: 0,
                     set_next_protocol_version_operations: 0,
+                },
+                estimation_costs: DriveSystemEstimationCostsMethodVersions {
+                    for_total_system_credits_update: 0,
                 },
             },
             operations: DriveOperationsMethodVersion {
@@ -627,6 +641,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             document_class_method_versions: DocumentClassMethodVersions {
                 get_identifiers_and_binary_paths: 0,
             },
+        },
+        identity_versions: IdentityVersions {
+            identity_structure_version: 0,
         },
     },
 };

@@ -12,6 +12,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
@@ -32,17 +33,19 @@ impl Drive {
         self.clear_version_information_operations_v0(
             transaction,
             &mut batch_operations,
-            platform_version,
+            &platform_version.drive,
         )?;
         self.set_current_protocol_version_operations(
             current_version,
             transaction,
             &mut batch_operations,
+            &platform_version.drive,
         )?;
         self.set_next_protocol_version_operations(
             next_version,
             transaction,
             &mut batch_operations,
+            &platform_version.drive,
         )?;
         let grove_db_operations =
             LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
@@ -52,6 +55,7 @@ impl Drive {
                 transaction,
                 grove_db_operations,
                 &mut vec![],
+                &platform_version.drive,
             )?;
         }
         Ok(())

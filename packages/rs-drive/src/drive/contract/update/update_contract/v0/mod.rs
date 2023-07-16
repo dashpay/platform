@@ -1,3 +1,4 @@
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
@@ -5,13 +6,13 @@ use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
@@ -46,14 +47,22 @@ impl Drive {
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         if !apply {
-            return self.insert_contract(contract, block_info, false, transaction);
+            return self.insert_contract(
+                contract,
+                block_info,
+                false,
+                transaction,
+                platform_version,
+            );
         }
+        let drive_version = &platform_version.drive;
+
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract_bytes = contract.serialize()?;
+        let contract_bytes = contract.serialize_with_platform_version(platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
@@ -92,7 +101,7 @@ impl Drive {
             &block_info,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
 
         // Update DataContracts cache with the new contract
@@ -126,7 +135,7 @@ impl Drive {
         block_info: &BlockInfo,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info =
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
@@ -137,14 +146,14 @@ impl Drive {
             block_info,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )
     }
 
@@ -160,7 +169,7 @@ impl Drive {
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let batch_operations = self.update_contract_operations_v0(
             contract_element,
@@ -169,7 +178,7 @@ impl Drive {
             block_info,
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         drive_operations.extend(batch_operations);
         Ok(())
@@ -186,9 +195,12 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        let drive_version = &platform_version.drive;
+
         if original_contract.config.readonly {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",

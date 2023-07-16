@@ -54,7 +54,7 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_version_path(state_transitions.contract_create_state_transition)]
+#[platform_serialize(platform_version_path = state_transitions.contract_create_state_transition)]
 #[serde(untagged)]
 pub enum DataContractCreateTransition {
     #[versioned(0)]

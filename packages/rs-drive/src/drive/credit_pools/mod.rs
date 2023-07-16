@@ -31,24 +31,25 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::credits::SignedCredits;
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
-use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
+use dpp::block::epoch::{Epoch, EpochIndex};
+use dpp::fee::epoch::SignedCreditsPerEpoch;
+use dpp::fee::SignedCredits;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use itertools::Itertools;
 
 /// Epochs module
 pub mod epochs;
-mod paths;
+pub(crate) mod paths;
 pub mod pending_epoch_refunds;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
 
+use crate::drive::fee::get_overflow_error;
 pub use paths::*;
 
 impl Drive {
@@ -169,11 +170,11 @@ mod tests {
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
-        use crate::fee::credits::Credits;
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use dpp::block::epoch::EpochIndex;
-        use dpp::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
+        use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
         use dpp::fee::Credits;
+        use dpp::version::PlatformVersion;
         use grovedb::batch::Op;
 
         #[test]
@@ -219,7 +220,7 @@ mod tests {
             let batch = GroveDbOpBatch::from_operations(operations);
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
@@ -260,6 +261,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::latest();
+
             const TO_EPOCH_INDEX: EpochIndex = 10;
 
             // Store initial epoch storage pool values
@@ -278,7 +281,7 @@ mod tests {
             let batch = GroveDbOpBatch::from_operations(operations);
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut credits_to_epochs: SignedCreditsPerEpoch = (GENESIS_EPOCH_INDEX

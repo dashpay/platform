@@ -232,7 +232,7 @@ pub(crate) mod tests {
 
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::prelude::DataContract;
 
@@ -242,8 +242,9 @@ pub(crate) mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let dashpay_path = if mutable_contact_requests {

@@ -35,7 +35,7 @@ impl Drive {
                     apply_type.to_direct_query_type(),
                     transaction,
                     drive_operations,
-                    platform_version,
+                    drive_version,
                 )?;
                 let needs_insert = match &previous_element {
                     None => true,
@@ -59,7 +59,7 @@ impl Drive {
                     apply_type.to_direct_query_type(),
                     transaction,
                     drive_operations,
-                    platform_version,
+                    drive_version,
                 )?;
                 let needs_insert = match &previous_element {
                     None => true,
@@ -81,7 +81,7 @@ impl Drive {
                     apply_type.to_direct_query_type(),
                     transaction,
                     drive_operations,
-                    platform_version,
+                    drive_version,
                 )?;
                 let needs_insert = match &previous_element {
                     None => true,

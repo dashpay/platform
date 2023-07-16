@@ -12,10 +12,9 @@ use dpp::document::document_transition::{
 };
 use dpp::document::Document;
 use dpp::prelude::Identifier;
-use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentBaseTransitionAction, DocumentCreateTransitionAction,
-};
 use std::borrow::Cow;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_document_drive_operations<'a>(

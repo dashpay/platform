@@ -37,4 +37,13 @@ impl IdentityCreditWithdrawalTransitionAction {
             }
         }
     }
+
+    // Recipient Id
+    pub fn prepared_withdrawal_document_owned(self) -> Document {
+        match self {
+            IdentityCreditWithdrawalTransitionAction::V0(transition) => {
+                transition.prepared_withdrawal_document
+            }
+        }
+    }
 }

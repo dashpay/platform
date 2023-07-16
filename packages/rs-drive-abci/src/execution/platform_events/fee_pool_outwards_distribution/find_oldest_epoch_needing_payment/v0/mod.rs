@@ -174,7 +174,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
@@ -207,7 +207,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let cached_current_epoch_start_block_height = Some(2);
@@ -263,7 +263,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
@@ -317,7 +317,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
@@ -364,7 +364,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let cached_current_epoch_start_block_height = Some(2);
@@ -415,7 +415,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform.find_oldest_epoch_needing_payment_v0(

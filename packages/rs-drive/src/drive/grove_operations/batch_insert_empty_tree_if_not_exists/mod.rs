@@ -12,7 +12,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::query_result_type::PathKey;
 use grovedb::TransactionArg;
 
 impl Drive {

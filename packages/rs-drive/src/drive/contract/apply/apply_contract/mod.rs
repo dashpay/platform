@@ -7,6 +7,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -30,7 +31,7 @@ impl Drive {
     /// * `storage_flags` - An optional `Cow<StorageFlags>` containing the storage flags for the contract.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used
     ///   for applying the contract.
-    /// * `drive_version` - The `DriveVersion` to determine which version of contract application to use.
+    /// * `platform_version` - The `PlatformVersion` to determine which version of the platform to use.
     ///
     /// # Returns
     ///
@@ -49,7 +50,7 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         match drive_version.methods.contract.apply.apply_contract {
             0 => self.apply_contract_v0(
@@ -58,10 +59,10 @@ impl Drive {
                 apply,
                 storage_flags,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "apply_contract".to_string(),
+                method: "Drive::apply_contract".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -103,7 +104,7 @@ impl Drive {
         >,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match drive_version.methods.contract.apply.apply_contract {
             0 => self.apply_contract_operations_v0(
@@ -112,7 +113,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 storage_flags,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_contract_operations".to_string(),

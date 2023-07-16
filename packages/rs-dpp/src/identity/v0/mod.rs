@@ -34,12 +34,6 @@ pub struct IdentityV0 {
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
-    #[bincode(with_serde)]
-    #[serde(skip)]
-    pub asset_lock_proof: Option<AssetLockProof>,
-    #[bincode(with_serde)]
-    #[serde(skip)]
-    pub metadata: Option<Metadata>,
 }
 
 impl Hash for IdentityV0 {

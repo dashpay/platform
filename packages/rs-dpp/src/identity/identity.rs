@@ -25,7 +25,6 @@ use std::collections::{BTreeMap, BTreeSet};
     From,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_deserialize_limit(15000)]
 #[platform_serialize(limit = 15000, allow_nested)]
 #[serde(untagged)]
 pub enum Identity {

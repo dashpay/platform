@@ -36,7 +36,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_UNPAID_EPOCH_INDEX;
 use dpp::block::epoch::EpochIndex;
-use dpp::fee::epoch::EpochIndex;
+
 use grovedb::{Element, TransactionArg};
 
 impl Drive {

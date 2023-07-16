@@ -39,7 +39,7 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
 
     mod prove_identity_balance {
@@ -72,7 +72,7 @@ mod tests {
 
     mod prove_many_identity_balances {
         use super::*;
-        use crate::fee::credits::Credits;
+        use dpp::fee::Credits;
         use std::collections::BTreeMap;
 
         #[test]

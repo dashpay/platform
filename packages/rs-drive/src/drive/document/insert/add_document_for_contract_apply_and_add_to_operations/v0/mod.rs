@@ -4,6 +4,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -19,7 +20,7 @@ impl Drive {
         stateful: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if stateful {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -34,14 +35,14 @@ impl Drive {
                 &mut None,
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             )?;
             self.apply_batch_low_level_drive_operations(
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
                 drive_operations,
-                drive_version,
+                &platform_version.drive,
             )
         } else {
             let batch_operations = self.add_document_for_contract_operations(
@@ -51,14 +52,14 @@ impl Drive {
                 &mut Some(drive_operations),
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             )?;
             self.apply_batch_low_level_drive_operations(
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
                 drive_operations,
-                drive_version,
+                &platform_version.drive,
             )
         }
     }

@@ -15,6 +15,7 @@ pub(super) fn derive_platform_serialize_struct(
     name: &Ident,
 ) -> TokenStream {
     let VersionAttributes {
+        crate_name,
         platform_serialize_limit,
         platform_serialize_into,
         platform_version_path,
@@ -64,7 +65,7 @@ pub(super) fn derive_platform_serialize_struct(
 
     let expanded = if let Some(limit) = platform_serialize_limit {
         quote! {
-            impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
             {
                 fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
@@ -88,7 +89,7 @@ pub(super) fn derive_platform_serialize_struct(
         }
     } else {
         quote! {
-            impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
             {
                 fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_no_limit();

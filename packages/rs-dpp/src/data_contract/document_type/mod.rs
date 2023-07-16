@@ -1,15 +1,15 @@
 pub(crate) mod accessors;
 pub mod array_field;
-pub mod document_field;
+mod document_field;
+pub use document_field::*;
 pub mod document_type_class_methods;
 pub mod document_type_methods;
-pub mod index;
-pub mod index_level;
+mod index;
+pub use index::*;
+mod index_level;
+pub use index_level::IndexLevel;
 pub mod v0;
 
-use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
-use crate::data_contract::document_type::index::{Index, IndexProperty};
-use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
@@ -49,6 +49,12 @@ pub enum DocumentTypeMutRef<'a> {
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
+}
+
+impl Default for DocumentType {
+    fn default() -> Self {
+        DocumentType::V0(DocumentTypeV0::default())
+    }
 }
 
 impl DocumentType {

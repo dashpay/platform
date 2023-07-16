@@ -35,14 +35,14 @@ mod system;
 mod withdrawals;
 
 use crate::drive::batch::GroveDbOpBatch;
+use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 
-pub use contract::ContractOperationType;
+pub use contract::DataContractOperationType;
 pub use document::DocumentOperation;
 pub use document::DocumentOperationType;
 pub use document::DocumentOperationsForContractDocumentType;
@@ -53,10 +53,9 @@ pub use withdrawals::WithdrawalOperationType;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
@@ -72,7 +71,7 @@ pub trait DriveLowLevelOperationConverter {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error>;
 }
 
@@ -86,7 +85,7 @@ pub struct DriveOperationContext {
 #[derive(Clone, Debug)]
 pub enum DriveOperation<'a> {
     /// A contract operation
-    DataContractOperation(ContractOperationType<'a>),
+    DataContractOperation(DataContractOperationType<'a>),
     /// A document operation
     DocumentOperation(DocumentOperationType<'a>),
     /// Withdrawal operation
@@ -110,7 +109,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DriveOperation::ContractOperation(contract_operation_type) => contract_operation_type
@@ -119,7 +118,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 ),
             DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
                 .into_low_level_drive_operations(
@@ -127,7 +126,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 ),
             DriveOperation::WithdrawalOperation(withdrawal_operation_type) => {
                 withdrawal_operation_type.into_low_level_drive_operations(
@@ -135,7 +134,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 )
             }
             DriveOperation::IdentityOperation(identity_operation_type) => identity_operation_type
@@ -144,7 +143,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 ),
             DriveOperation::SystemOperation(system_operation_type) => system_operation_type
                 .into_low_level_drive_operations(
@@ -152,7 +151,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
-                    drive_version,
+                    platform_version,
                 ),
             DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
@@ -176,6 +175,7 @@ mod tests {
     use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
 
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::serialization_traits::PlatformSerializable;
     use dpp::util::cbor_serializer;
     use rand::Rng;
@@ -191,9 +191,9 @@ mod tests {
     use crate::drive::batch::drive_op_batch::document::{
         DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
-    use crate::drive::batch::ContractOperationType::ApplyContract;
+    use crate::drive::batch::DataContractOperationType::ApplyContract;
     use crate::drive::batch::DocumentOperationType::AddDocumentForContract;
-    use crate::drive::batch::DriveOperation::{ContractOperation, DocumentOperation};
+    use crate::drive::batch::DriveOperation::{DataContractOperation, DocumentOperation};
     use crate::drive::config::DriveConfig;
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
@@ -205,18 +205,18 @@ mod tests {
     fn test_add_dashpay_documents() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            0,
+            platform_version,
         )
         .expect("expected to get contract");
 
@@ -224,7 +224,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        drive_operations.push(ContractOperation(ApplyContract {
+        drive_operations.push(DataContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
             storage_flags: None,
         }));
@@ -238,7 +238,8 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -252,7 +253,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type,
+                document_type: &document_type,
             },
             override_document: false,
         }));
@@ -263,7 +264,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                &platform_version,
             )
             .expect("expected to insert contract and document");
 
@@ -301,7 +302,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -321,18 +322,18 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            0,
+            platform_version,
         )
         .expect("expected to get contract");
 
@@ -340,7 +341,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        drive_operations.push(ContractOperation(ApplyContract {
+        drive_operations.push(DataContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
             storage_flags: None,
         }));
@@ -349,7 +350,8 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get contract");
 
@@ -360,7 +362,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: contract
+                document_type: &contract
                     .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
@@ -372,7 +374,8 @@ mod tests {
         let dashpay_cr_1_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get contract");
 
@@ -383,7 +386,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: contract
+                document_type: &contract
                     .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
@@ -396,7 +399,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                &platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -414,7 +417,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -434,18 +437,18 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            0,
+            platform_version,
         )
         .expect("expected to get contract");
 
@@ -453,7 +456,7 @@ mod tests {
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        drive_operations.push(ContractOperation(ApplyContract {
+        drive_operations.push(DataContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
             storage_flags: None,
         }));
@@ -463,14 +466,16 @@ mod tests {
         let document0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document 0");
 
         let document1 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document 1");
 
@@ -503,7 +508,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
             },
         ));
@@ -514,7 +519,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -552,7 +557,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -572,13 +577,13 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -597,7 +602,8 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -606,7 +612,8 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3.json",
             Some(random_owner_id1.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -641,7 +648,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
             },
         ));
@@ -652,7 +659,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -670,7 +677,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -690,13 +697,13 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -715,7 +722,8 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -724,7 +732,8 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3.json",
             Some(random_owner_id1.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -757,7 +766,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
             },
         ));
@@ -768,7 +777,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -781,7 +790,8 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0-older.json",
             Some(random_owner_id0.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -790,7 +800,8 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3-older.json",
             Some(random_owner_id1.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -815,7 +826,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
             },
         ));
@@ -826,7 +837,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                &platform_version,
             )
             .expect("expected to be able to update documents");
 
@@ -844,7 +855,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -867,7 +878,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -890,7 +901,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -910,13 +921,13 @@ mod tests {
             }),
         )
         .expect("expected to open Drive successfully");
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -935,7 +946,8 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -944,7 +956,8 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3-older.json",
             Some(random_owner_id1.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -977,7 +990,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
             },
         ));
@@ -988,7 +1001,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                &platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -999,14 +1012,16 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0-older.json",
             Some(random_owner_id0.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3.json",
             Some(random_owner_id1.into()),
-            document_type,
+            &document_type,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -1031,7 +1046,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
             },
         ));
@@ -1042,7 +1057,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &drive_version,
+                &platform_version,
             )
             .expect("expected to be able to update documents");
 
@@ -1061,7 +1076,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -1084,7 +1099,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
@@ -1107,7 +1122,7 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                document_type,
+                &document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),

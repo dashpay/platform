@@ -321,7 +321,7 @@ mod tests {
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_block_count = drive
@@ -346,7 +346,7 @@ mod tests {
 
             // Apply proposers tree
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -355,7 +355,7 @@ mod tests {
 
             // Apply proposer block count
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -372,7 +372,7 @@ mod tests {
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_block_count = drive
@@ -399,7 +399,8 @@ mod tests {
                 .add_init_empty_operations(&mut batch)
                 .expect("should init empty epoch");
 
-            let result = drive.grove_apply_batch(batch, false, Some(&transaction));
+            let result =
+                drive.grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive);
 
             assert!(matches!(
                 result,
@@ -421,7 +422,7 @@ mod tests {
                 .expect("should init empty epoch");
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let storage_fee = drive
@@ -462,7 +463,7 @@ mod tests {
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_multiplier = drive
@@ -517,7 +518,7 @@ mod tests {
 
             // Apply init current
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -525,7 +526,7 @@ mod tests {
             epoch.add_mark_as_paid_operations(&mut batch);
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let result = drive
@@ -577,7 +578,7 @@ mod tests {
             batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, block_count));
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_block_count = drive
@@ -602,7 +603,7 @@ mod tests {
         batch.push(epoch_tree.update_start_time_operation(start_time_ms));
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction))
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let actual_start_time_ms = drive
@@ -766,7 +767,7 @@ mod tests {
 
             // Apply proposers tree
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -774,7 +775,7 @@ mod tests {
             batch.push(epoch.delete_proposers_tree_operation());
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let error = drive
@@ -810,7 +811,7 @@ mod tests {
 
             // Apply proposers tree
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let pro_tx_hashes: Vec<[u8; 32]> = (0..10).map(|_| rand::random()).collect();
@@ -823,7 +824,7 @@ mod tests {
 
             // Apply proposers block count updates
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut stored_proposers = drive
@@ -856,7 +857,7 @@ mod tests {
 
             // Apply proposers deletion
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_proposers = drive

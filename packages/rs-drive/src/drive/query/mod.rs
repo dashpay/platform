@@ -35,10 +35,10 @@
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -48,8 +48,8 @@ use dpp::document::Document;
 
 use dpp::ProtocolError;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
 
 #[derive(Debug, Default)]
 /// The outcome of a query

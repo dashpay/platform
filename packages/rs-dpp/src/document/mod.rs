@@ -15,8 +15,8 @@ mod json_conversion;
 #[cfg(feature = "platform-value")]
 mod platform_value_conversion;
 mod serde_serialize;
-pub(crate) mod serialization_traits;
-mod serialize;
+pub mod serialization_traits;
+pub mod serialize;
 mod v0;
 
 pub use accessors::*;

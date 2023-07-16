@@ -112,6 +112,7 @@ pub struct DriveContractCostsMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformSystemMethodVersions {
     pub protocol_version: DriveSystemProtocolVersionMethodVersions,
+    pub estimation_costs: DriveSystemEstimationCostsMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -137,6 +138,11 @@ pub struct DriveSystemProtocolVersionMethodVersions {
     pub set_current_protocol_version_operations: FeatureVersion,
     pub fetch_next_protocol_version: FeatureVersion,
     pub set_next_protocol_version_operations: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveSystemEstimationCostsMethodVersions {
+    pub for_total_system_credits_update: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -301,6 +307,18 @@ pub struct DriveIdentityMethodVersions {
     pub prove: DriveIdentityProveMethodVersions,
     pub keys: DriveIdentityKeysMethodVersions,
     pub update: DriveIdentityUpdateMethodVersions,
+    pub cost_estimation: DriveIdentityCostEstimationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityCostEstimationMethodVersions {
+    pub for_authentication_keys_security_level_in_key_reference_tree: FeatureVersion,
+    pub for_balances: FeatureVersion,
+    pub for_keys_for_identity_id: FeatureVersion,
+    pub for_negative_credit: FeatureVersion,
+    pub for_purpose_in_key_reference_tree: FeatureVersion,
+    pub for_root_key_reference_tree: FeatureVersion,
+    pub for_update_revision: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

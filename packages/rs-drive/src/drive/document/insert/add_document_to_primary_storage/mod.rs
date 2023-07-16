@@ -24,6 +24,7 @@ use crate::drive::document::{
     contract_documents_primary_key_path, document_reference_size, make_document_reference,
     unique_event_id,
 };
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
@@ -41,7 +42,6 @@ use crate::drive::object_size_info::{
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::DataContract;
 
@@ -50,6 +50,7 @@ use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, State
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -75,9 +76,10 @@ impl Drive {
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .insert
@@ -90,7 +92,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_document_to_primary_storage".to_string(),

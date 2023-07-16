@@ -100,7 +100,7 @@ mod tests {
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let result = drive.get_storage_fees_from_distribution_pool(Some(&transaction));
@@ -123,7 +123,7 @@ mod tests {
             batch.add_delete(pools_vec_path(), KEY_STORAGE_FEE_POOL.to_vec());
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let result = drive

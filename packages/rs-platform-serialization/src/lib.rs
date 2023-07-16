@@ -138,7 +138,7 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     }
 
     if force_prepend_version && allow_prepend_version {
-        panic!("The 'allow_prepend_version' attribute cannot be used with 'force_prepend_version', only one should be choosed");
+        panic!("The 'allow_prepend_version' attribute cannot be used with 'force_prepend_version', only one should be chosen");
     }
 
     let version_attributes = VersionAttributes {
@@ -205,11 +205,7 @@ impl VersionAttributes {
 
 #[proc_macro_derive(
     PlatformDeserialize,
-    attributes(
-        platform_error_type,
-        platform_deserialize_limit,
-        platform_deserialize_from
-    )
+    attributes(platform_error_type, platform_serialize)
 )]
 pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -232,27 +228,64 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
         })
         .unwrap_or_else(|| syn::parse_str("Error").unwrap());
 
-    // Extract the platform_deserialize_limit attribute, if provided.
-    let platform_deserialize_limit: Option<usize> = input.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident("platform_deserialize_limit") {
-            Some(
-                attr.parse_args::<syn::LitInt>()
-                    .unwrap()
-                    .base10_parse()
-                    .unwrap(),
-            )
-        } else {
-            None
-        }
-    });
+    let platform_serialize_attr = input
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("platform_serialize"))
+        .expect("Expected 'platform_serialize' attribute");
 
-    let platform_deserialize_from: Option<syn::Path> = input.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident("platform_deserialize_from") {
-            Some(attr.parse_args::<syn::Path>().unwrap())
-        } else {
-            None
-        }
-    });
+    let mut passthrough = false;
+    let mut nested = false;
+    let mut platform_deserialize_limit = None;
+    let mut untagged = false;
+    let mut platform_deserialize_from = None;
+    //let mut platform_version_path = None;
+    let mut crate_name: Ident = Ident::new("crate", Span::call_site()); // default value is "crate"
+    let mut allow_prepend_version = false;
+    let mut force_prepend_version = false;
+
+    platform_serialize_attr
+        .parse_nested_meta(|meta| {
+            if meta.path.is_ident("crate_name") {
+                let value = meta.value()?;
+                let crate_name_str: LitStr = value.parse()?;
+                crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
+            } else if meta.path.is_ident("passthrough") {
+                passthrough = true;
+            } else if meta.path.is_ident("allow_nested") {
+                nested = true;
+            } else if meta.path.is_ident("allow_prepend_version") {
+                allow_prepend_version = true;
+            } else if meta.path.is_ident("force_prepend_version") {
+                force_prepend_version = true;
+            } else if meta.path.is_ident("limit") {
+                let value = meta.value()?;
+                let parsed_limit: LitInt = value.parse()?;
+                platform_deserialize_limit = Some(
+                    parsed_limit
+                        .base10_parse::<usize>()
+                        .expect("Expected a number for 'limit'"),
+                );
+            } else if meta.path.is_ident("untagged") {
+                untagged = true;
+            } else if meta.path.is_ident("from") {
+                let value = meta.value()?;
+                let parsed_into: LitStr = value.parse()?;
+                platform_deserialize_from = Some(
+                    parsed_into
+                        .parse::<syn::Path>()
+                        .expect("Expected a valid path for 'from'"),
+                );
+            } else if meta.path.is_ident("platform_version_path") {
+                // let value = meta.value()?;
+                // platform_version_path = Some(value.parse()?);
+            } else {
+                return Err(meta
+                    .error(format!("unsupported parameter {:?}", meta.path.get_ident()).as_str()));
+            }
+            Ok(())
+        })
+        .expect("expected to parse nested meta");
 
     let deserialize_from_inner = match platform_deserialize_from {
         Some(inner) => quote! {
@@ -271,109 +304,15 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     };
 
     let config = match platform_deserialize_limit {
-        Some(limit) => quote! { config::standard().with_big_endian().with_limit::<{ #limit }>() },
-        None => quote! { config::standard().with_big_endian().with_no_limit() },
+        Some(limit) => {
+            quote! { bincode::config::standard().with_big_endian().with_limit::<{ #limit }>() }
+        }
+        None => quote! { bincode::config::standard().with_big_endian().with_no_limit() },
     };
 
     let expanded = quote! {
-        impl PlatformDeserializable for #impl_generics #name #ty_generics #where_clause {
+        impl crate::serialization_traits::PlatformDeserializable for #impl_generics #name #ty_generics #where_clause {
             fn deserialize(data: &[u8]) -> Result<Self, #platform_error_type> {
-                let config = #config;
-                #deserialize_from_inner.map_err(|e| {
-                    #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-                })
-            }
-        }
-    };
-
-    TokenStream::from(expanded)
-}
-
-#[proc_macro_derive(
-    PlatformVersionedDeserialize,
-    attributes(
-        platform_error_type,
-        platform_deserialize_limit,
-        platform_deserialize_from_base,
-        platform_deserialize_from_versions,
-    )
-)]
-pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
-
-    // Extract the generics.
-    let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    // Extract the platform_error_type attribute, if provided.
-    let platform_error_type = input
-        .attrs
-        .iter()
-        .find_map(|attr| {
-            if attr.path().is_ident("platform_error_type") {
-                Some(attr.parse_args::<syn::Type>().unwrap())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| syn::parse_str("Error").unwrap());
-
-    // Extract the platform_deserialize_limit attribute, if provided.
-    let platform_deserialize_limit: Option<usize> = input.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident("platform_deserialize_limit") {
-            Some(
-                attr.parse_args::<syn::LitInt>()
-                    .unwrap()
-                    .base10_parse()
-                    .unwrap(),
-            )
-        } else {
-            None
-        }
-    });
-
-    let platform_deserialize_from_base: Option<syn::Path> = input.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident("platform_deserialize_from_base") {
-            Some(attr.parse_args::<syn::Path>().unwrap())
-        } else {
-            None
-        }
-    });
-
-    let platform_deserialize_from_versions: Option<syn::Path> =
-        input.attrs.iter().find_map(|attr| {
-            if attr.path().is_ident("platform_deserialize_from_versions") {
-                Some(attr.parse_args::<syn::Path>().unwrap())
-            } else {
-                None
-            }
-        });
-
-    let deserialize_from_inner = match platform_deserialize_from_base {
-        Some(inner) => quote! {
-            let inner: #inner = bincode::decode_from_slice(data, config).map_err(|e| {
-                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-            }).map(|(a, _)| a)?;
-            inner.try_into().map_err(|e: #platform_error_type| {
-                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-            })
-        },
-        None => quote! {
-            bincode::decode_from_slice(data, config).map(|(a, _)| a).map_err(|e| {
-                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-            })
-        },
-    };
-
-    let config = match platform_deserialize_limit {
-        Some(limit) => quote! { config::standard().with_big_endian().with_limit::<{ #limit }>() },
-        None => quote! { config::standard().with_big_endian().with_no_limit() },
-    };
-
-    let expanded = quote! {
-        impl PlatformDeserializableFromVersionedStructure for #impl_generics #name #ty_generics #where_clause {
-            fn versioned_deserialize(data: &[u8], system_version: FeatureVersion) -> Result<Self, #platform_error_type> {
                 let config = #config;
                 #deserialize_from_inner.map_err(|e| {
                     #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))

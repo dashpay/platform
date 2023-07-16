@@ -1,13 +1,14 @@
+use crate::drive::fee::calculate_fee;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -19,6 +20,7 @@ impl Drive {
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_document_for_contract_apply_and_add_to_operations(
@@ -29,6 +31,7 @@ impl Drive {
             apply,
             transaction,
             &mut drive_operations,
+            platform_version,
         )?;
         let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)

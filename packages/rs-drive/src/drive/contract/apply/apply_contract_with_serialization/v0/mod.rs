@@ -1,20 +1,23 @@
 use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
+use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{DirectQueryType, QueryType};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization_traits::{
+    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
+};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
@@ -31,7 +34,7 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut cost_operations = vec![];
         let mut estimated_costs_only_with_layer_info = if apply {
@@ -46,7 +49,7 @@ impl Drive {
             &mut estimated_costs_only_with_layer_info,
             storage_flags,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         let fetch_cost = LowLevelDriveOperation::combine_cost_operations(&batch_operations);
         self.apply_batch_low_level_drive_operations(
@@ -54,7 +57,7 @@ impl Drive {
             transaction,
             batch_operations,
             &mut cost_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
         let fees = calculate_fee(None, Some(cost_operations), &block_info.epoch)?;
@@ -74,7 +77,7 @@ impl Drive {
         >,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -101,7 +104,7 @@ impl Drive {
             direct_query_type,
             transaction,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         ) {
             Ok(Some(stored_element)) => {
                 match stored_element {
@@ -123,7 +126,7 @@ impl Drive {
                                 QueryType::StatefulQuery,
                                 transaction,
                                 &mut drive_operations,
-                                drive_version,
+                                &platform_version.drive,
                             )?
                             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                                 "we should have an element for the contract",
@@ -168,7 +171,10 @@ impl Drive {
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
-                let original_contract = DataContract::deserialize(&original_contract_stored_data)?;
+                let original_contract = DataContract::versioned_deserialize(
+                    &original_contract_stored_data,
+                    platform_version,
+                )?;
                 // if the contract is not mutable update_contract will return an error
                 self.update_contract_add_operations(
                     contract_element,
@@ -178,7 +184,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     transaction,
                     &mut drive_operations,
-                    drive_version,
+                    platform_version,
                 )?;
             }
         } else {
@@ -188,7 +194,7 @@ impl Drive {
                 block_info,
                 estimated_costs_only_with_layer_info,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(drive_operations)

@@ -28,7 +28,7 @@ impl Drive {
 mod tests {
     use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
     use std::collections::BTreeMap;

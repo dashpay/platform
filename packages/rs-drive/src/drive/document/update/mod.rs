@@ -85,6 +85,7 @@ use crate::drive::object_size_info::DocumentInfo::{
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
+use crate::drive::fee::calculate_fee;
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
     DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
@@ -92,20 +93,19 @@ use crate::drive::object_size_info::{
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::fee::fee_result::FeeResult;
+use dpp::version::PlatformVersion;
 
 use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
-
-use crate::fee::result::FeeResult;
-use dpp::prelude::DataContract;
 
 impl Drive {
     /// Updates a serialized document given a contract CBOR and returns the associated fee.
@@ -119,6 +119,7 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
+        platform_version: PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let contract = DataContract::from_cbor(contract_cbor)?;
 
@@ -138,6 +139,7 @@ impl Drive {
             apply,
             storage_flags,
             transaction,
+            platform_version,
         )
     }
 }
@@ -145,7 +147,6 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
     use dpp::state_repository::MockStateRepositoryLike;
     use grovedb::TransactionArg;
     use std::default::Default;
@@ -159,7 +160,8 @@ mod tests {
     use dpp::platform_value::{platform_value, Identifier, Value};
 
     use dpp::block::block_info::BlockInfo;
-    use dpp::util::cbor_serializer;
+
+    use dpp::balances::credits::Creditable;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
@@ -181,6 +183,7 @@ mod tests {
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
     use dpp::serialization_traits::PlatformSerializable;
+    use dpp::version::drive_versions::DriveVersion;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -188,9 +191,9 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let db_transaction = drive.grove.start_transaction();
-
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
@@ -247,8 +250,9 @@ mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
@@ -287,12 +291,13 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::default(),
                 true,
                 None,
+                &platform_version,
             )
             .expect("should create alice profile");
 
@@ -301,7 +306,7 @@ mod tests {
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -324,7 +329,7 @@ mod tests {
             .expect("should update alice profile");
 
         let (results_no_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -337,8 +342,9 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
@@ -377,12 +383,13 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
+                &platform_version,
             )
             .expect("should create alice profile");
 
@@ -397,7 +404,7 @@ mod tests {
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -447,8 +454,9 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
@@ -487,12 +495,13 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
+                &platform_version,
             )
             .expect("should create alice profile");
 
@@ -507,7 +516,7 @@ mod tests {
             .expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -525,10 +534,10 @@ mod tests {
                 alice_profile.id.to_buffer(),
                 &contract,
                 "profile",
-                None,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
+                &platform_version,
             )
             .expect("expected to delete document");
 
@@ -571,9 +580,10 @@ mod tests {
     fn test_create_update_and_delete_document() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-
+        let db_transaction = drive.grove.start_transaction();
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("should create root tree");
 
         let contract = json!({
@@ -711,10 +721,10 @@ mod tests {
                 document_id,
                 &contract,
                 "indexedDocument",
-                None,
                 BlockInfo::default(),
                 true,
                 None,
+                &platform_version,
             )
             .expect("should delete document");
     }
@@ -726,8 +736,9 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -746,7 +757,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
         )
         .expect("expected to get document");
 
@@ -761,12 +772,13 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
+                &platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -794,12 +806,13 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
+                &platform_version,
             )
             .expect_err("expected not to be able to override a non mutable document");
     }
@@ -811,8 +824,9 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(Some(&db_transaction))
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -831,14 +845,14 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
         )
         .expect("expected to get cbor document");
 
         let dashpay_profile_updated_public_message_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
             Some(random_owner_id.into()),
-            document_type,
+            &document_type,
         )
         .expect("expected to get cbor document");
 
@@ -853,12 +867,13 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
+                &platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -866,7 +881,7 @@ mod tests {
             .update_document_for_contract(
                 &dashpay_profile_updated_public_message_document,
                 &contract,
-                document_type,
+                &document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -895,7 +910,7 @@ mod tests {
         };
 
         drive
-            .create_initial_state_structure_0(transaction.as_ref())
+            .create_initial_state_structure(transaction.as_ref())
             .expect("expected to create root tree successfully");
 
         let path = if using_history {
@@ -938,7 +953,7 @@ mod tests {
         let document: Document = platform_value::from_value(value).expect("value to document");
 
         let document_serialized = document
-            .serialize_consume(document_type)
+            .serialize_consume(&document_type)
             .expect("expected to serialize document");
 
         assert_eq!(document_serialized.len(), 115);
@@ -1181,7 +1196,7 @@ mod tests {
         };
 
         drive
-            .create_initial_state_structure_0(transaction.as_ref())
+            .create_initial_state_structure(transaction.as_ref())
             .expect("expected to create root tree successfully");
 
         let path = if using_history {
@@ -1643,7 +1658,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 true,
                 block_info,
@@ -1665,7 +1680,6 @@ mod tests {
                 person.id.to_buffer(),
                 contract,
                 "person",
-                Some(person.owner_id.to_buffer()),
                 block_info,
                 true,
                 transaction,
@@ -1829,8 +1843,9 @@ mod tests {
         let drive: Drive =
             Drive::open(&tmp_dir, None).expect("expected to open Drive successfully");
 
+        let drive_version = DriveVersion::latest();
         drive
-            .create_initial_state_structure_0(None)
+            .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("expected to create root tree successfully");
 
         // Create a contract
@@ -1932,7 +1947,7 @@ mod tests {
                         owner_id: Some(owner_id.to_buffer()),
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 block_info,

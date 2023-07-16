@@ -28,17 +28,9 @@ pub trait IdentityGettersV0 {
     /// Returns the revision of the identity.
     fn revision(&self) -> Revision;
 
-    /// Returns a reference to the asset lock proof of the identity.
-    fn asset_lock_proof(&self) -> Option<&AssetLockProof>;
-
-    /// Returns a reference to the metadata of the identity.
-    fn metadata(&self) -> Option<&Metadata>;
-
     /// Returns the identifier of the identity.
     fn id(&self) -> Identifier;
 
-    /// Remove the asset lock proof of the identity.
-    fn remove_asset_lock_proof(&mut self);
     /// Returns a public key for a given id
     fn get_public_key_by_id(&self, key_id: KeyID) -> Option<&IdentityPublicKey>;
     /// Returns a public key for a given id
@@ -66,12 +58,6 @@ pub trait IdentitySettersV0 {
 
     /// Sets the revision of the identity.
     fn set_revision(&mut self, new_revision: Revision);
-
-    /// Sets the asset lock proof of the identity.
-    fn set_asset_lock_proof(&mut self, new_asset_lock_proof: AssetLockProof);
-
-    /// Sets the metadata of the identity.
-    fn set_metadata(&mut self, new_metadata: Option<Metadata>);
 
     /// Sets the identifier of the identity.
     fn set_id(&mut self, new_id: Identifier);

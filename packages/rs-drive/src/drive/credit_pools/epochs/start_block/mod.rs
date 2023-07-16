@@ -41,8 +41,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee_pools::epochs::paths;
-use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::EpochIndex;
+use dpp::block::epoch::{Epoch, EpochIndex};
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
@@ -231,7 +230,7 @@ mod tests {
             batch.push(epoch_tree_1.update_start_block_core_height_operation(2));
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let next_epoch_start_block_height_option = drive
@@ -274,7 +273,7 @@ mod tests {
             batch.push(epoch_tree_3.update_start_block_height_operation(3));
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let next_epoch_start_block_height = drive
@@ -300,7 +299,7 @@ mod tests {
             batch.push(epoch_tree_3.update_start_block_core_height_operation(5));
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let next_epoch_start_block_height = drive

@@ -6,18 +6,18 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionAction;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionAction;
+use dpp::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreditTransferTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
+        _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let IdentityCreditTransferTransitionAction {
-            recipient_id,
-            identity_id,
-            transfer_amount,
-            ..
-        } = self;
+        let recipient_id = self.recipient_id();
+        let identity_id = self.identity_id();
+        let transfer_amount = self.transfer_amount();
 
         let drive_operations = vec![
             IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {

@@ -1,32 +1,3 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
 //! Fee Refunds
 //!
 //! Fee refunds are calculated based on removed bytes per epoch.
@@ -39,7 +10,8 @@ use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_lef
 use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::config;
+use bincode::{config, Decode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
@@ -55,7 +27,20 @@ const MIN_REFUND_LIMIT_BYTES: u64 = 32;
 pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Default,
+    Decode,
+    Serialize,
+    Deserialize,
+    PlatformSerialize,
+    PlatformDeserialize,
+)]
+#[platform_error_type(ProtocolError)]
+#[platform_serialize(allow_nested)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
@@ -71,15 +56,13 @@ impl FeeRefunds {
                     .into_iter()
                     .filter(|(_, bytes)| bytes >= &MIN_REFUND_LIMIT_BYTES)
                     .map(|(encoded_epoch_index, bytes)| {
-                        let epoch_index = u16::try_from(encoded_epoch_index).map_err(|_| get_overflow_error("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
+                        let epoch_index = u16::try_from(encoded_epoch_index).map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
 
                         // TODO We should use multipliers
 
                         let credits: Credits = (bytes as Credits)
                             .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
-                            .ok_or_else(|| {
-                                get_overflow_error("storage written bytes cost overflow")
-                            })?;
+                            .ok_or(ProtocolError::Overflow("storage written bytes cost overflow"))?;
 
                         let (amount, _) = calculate_storage_fee_refund_amount_and_leftovers(
                             credits,
@@ -187,39 +170,11 @@ impl FeeRefunds {
 
         Some(credits)
     }
-
-    /// Serialize the structure
-    pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
-        let config = config::standard().with_big_endian().with_no_limit();
-        bincode::encode_to_vec(&self.0, config).map_err(|_| {
-            Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
-                "unable to serialize",
-            ))
-        })
-    }
-
-    /// Returns serialized size
-    pub fn serialized_size(&self) -> Result<u64, Error> {
-        self.serialize().map(|a| a.len() as u64)
-    }
-
-    /// Deserialized struct from bytes
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        let config = config::standard().with_big_endian().with_limit::<15000>();
-        let refund = bincode::decode_from_slice(bytes, config)
-            .map_err(|_e| {
-                Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
-                    "unable to deserialize",
-                ))
-            })
-            .map(|(a, _)| a)?;
-        Ok(FeeRefunds(refund))
-    }
 }
 
 impl IntoIterator for FeeRefunds {
     type Item = (Identifier, CreditsPerEpoch);
-    type IntoIter = IntoIter<Identifier, CreditsPerEpoch>;
+    type IntoIter = std::collections::btree_map::IntoIter<Identifier, CreditsPerEpoch>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

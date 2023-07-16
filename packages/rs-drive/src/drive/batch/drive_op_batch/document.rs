@@ -6,7 +6,7 @@ use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
@@ -178,7 +178,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         >,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddSerializedDocumentForSerializedContract {
@@ -204,7 +204,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                         owner_id,
                     },
                     contract: &contract,
-                    document_type,
+                    document_type: &document_type,
                 };
                 drive.add_document_for_contract_operations(
                     document_and_contract_info,

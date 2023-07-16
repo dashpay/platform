@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::drive::Drive;
-use crate::error::{DriveError, Error};
+use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::drive_versions::DriveVersion;

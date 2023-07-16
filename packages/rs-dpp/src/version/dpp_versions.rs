@@ -6,6 +6,7 @@ pub struct DPPVersion {
     pub state_transition_serialization_versions: StateTransitionSerializationVersions,
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
+    pub identity_versions: IdentityVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -72,6 +73,12 @@ pub struct DocumentTypeVersions {
     pub field_can_be_null: FeatureVersion,
     pub initial_revision: FeatureVersion,
     pub requires_revision: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IdentityVersions {
+    /// This is the structure of the Identity as it is defined for code paths
+    pub identity_structure_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

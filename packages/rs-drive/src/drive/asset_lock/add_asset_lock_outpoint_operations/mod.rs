@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -32,13 +33,13 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match drive_version.methods.asset_lock.add_asset_lock_outpoint {
             0 => self.add_asset_lock_outpoint_operations_v0(
                 outpoint,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_asset_lock_outpoint_operations".to_string(),

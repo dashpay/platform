@@ -78,7 +78,7 @@ use drive::error::{query::QuerySyntaxError, Error};
 use drive::query::DriveQuery;
 
 #[cfg(feature = "full")]
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "full")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
@@ -567,7 +567,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -618,7 +618,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -665,7 +665,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -746,7 +746,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     assert_eq!(results.len(), 3);
 
@@ -801,7 +801,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -850,7 +850,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -893,7 +893,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -969,7 +969,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -1024,7 +1024,7 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()

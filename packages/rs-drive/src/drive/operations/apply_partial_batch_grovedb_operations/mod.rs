@@ -2,7 +2,7 @@ mod v0;
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
-use crate::error::{DriveError, Error};
+use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use costs::storage_cost::StorageCost;

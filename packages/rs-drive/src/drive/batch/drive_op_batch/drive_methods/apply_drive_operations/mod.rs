@@ -1,29 +1,19 @@
 mod v0;
 
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
+use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
-use crate::error::{DriveError, Error};
-use crate::fee::calculate_fee;
+use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::FeeResult;
-use dpp::block::extended_block_info::BlockInfo;
-
-pub use contract::ContractOperationType;
-pub use document::DocumentOperation;
-pub use document::DocumentOperationType;
-pub use document::DocumentOperationsForContractDocumentType;
-pub use document::UpdateOperationInfo;
-pub use identity::IdentityOperationType;
-pub use system::SystemOperationType;
-pub use withdrawals::WithdrawalOperationType;
+use dpp::block::block_info::BlockInfo;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
-use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashMap};
@@ -53,9 +43,10 @@ impl Drive {
         apply: bool,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .batch_operations
             .apply_drive_operations
@@ -65,7 +56,7 @@ impl Drive {
                 apply,
                 block_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_drive_operations".to_string(),

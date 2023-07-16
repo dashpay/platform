@@ -27,7 +27,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
 
     use dpp::identity::Identity;
     use grovedb::query_result_type::QueryResultType;
@@ -38,7 +38,6 @@ mod tests {
     use std::ops::RangeFull;
 
     use crate::drive::Drive;
-    use dpp::block::block_info::BlockInfo;
     use dpp::version::drive_versions::DriveVersion;
 
     #[test]

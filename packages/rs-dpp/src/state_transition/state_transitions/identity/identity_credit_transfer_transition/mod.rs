@@ -41,7 +41,7 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_version_path(state_transitions.identity_state_transition)]
+#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
 #[serde(untagged)]
 pub enum IdentityCreditTransferTransition {
     #[versioned(0)]
