@@ -5,5 +5,5 @@ services:
     build:
       context: ${PLATFORM_DAPI_API_DOCKER_BUILD_CONTEXT:?err}
       dockerfile: ${PLATFORM_DAPI_API_DOCKER_BUILD_DOCKER_FILE:?err}
-      target: ${PLATFORM_DAPI_API_DOCKER_BUILD_DOCKER_TARGET}
+      target: ${PLATFORM_DAPI_API_DOCKER_BUILD_TARGET}
     image: dapi:local

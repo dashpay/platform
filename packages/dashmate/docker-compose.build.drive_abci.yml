@@ -5,5 +5,5 @@ services:
     build:
       context: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_CONTEXT:?err}
       dockerfile: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_DOCKER_FILE:?err}
-      target: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_DOCKER_TARGET}
+      target: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_TARGET}
     image: drive:local

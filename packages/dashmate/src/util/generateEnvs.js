@@ -18,14 +18,8 @@ const convertObjectToEnvs = require('../config/convertObjectToEnvs');
  * }}
  */
 function generateEnvs(configFile, config, options = {}) {
-  const dockerComposeFiles = [];
+  const dockerComposeFiles = ['docker-compose.yml'];
   const profiles = [];
-
-  dockerComposeFiles.push('docker-compose.yml');
-
-  if (config.get('dashmate.helper.docker.build.enabled')) {
-    dockerComposeFiles.push('docker-compose.build.dashmate_helper.yml');
-  }
 
   if (!options.platformOnly) {
     profiles.push('core');
@@ -33,6 +27,10 @@ function generateEnvs(configFile, config, options = {}) {
     if (config.get('core.masternode.enable')) {
       profiles.push('masternode');
     }
+  }
+
+  if (config.get('dashmate.helper.docker.build.enabled')) {
+    dockerComposeFiles.push('docker-compose.build.dashmate_helper.yml');
   }
 
   if (config.get('platform.enable')) {
