@@ -14,10 +14,10 @@ function renderServiceTemplatesFactory() {
    * @typedef {renderServiceTemplates}
    * @param {Config} config
    *
-   * @param options
+   * @param {object} options
    * @return {Object<string,string>}
    */
-  function renderServiceTemplates(config, options = { reindex: false }) {
+  function renderServiceTemplates(config, options) {
     dots.templateSettings.strip = false;
 
     const templatesPath = path.join(__dirname, '..', '..', 'templates');
