@@ -75,7 +75,7 @@ pub enum DapiError<TE, PE> {
 }
 
 impl DapiClient {
-    /// Execute the [Request] handling.
+    /// Execute the [DapiRequest] handling.
     #[tracing::instrument]
     pub async fn execute<'c, R>(
         &'c mut self,

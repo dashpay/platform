@@ -10,8 +10,8 @@ const DEFAULT_RETRIES: usize = 5;
 /// There are four levels of settings where each next level can override all previous ones:
 ///
 /// 1. Defaults for this library;
-/// 2. [DapiClient] settings;
-/// 3. [Request]-specific settings;
+/// 2. [crate::DapiClient] settings;
+/// 3. [crate::DapiRequest]-specific settings;
 /// 4. settings for an exact request execution call.
 #[derive(Debug, Clone, Copy)]
 pub struct Settings {
@@ -24,7 +24,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// Create empty [Setttings], which means no overrides will be applied.
+    /// Create empty [Settings], which means no overrides will be applied.
     /// Actually does the same as [Default], but it's `const`.
     pub const fn default() -> Self {
         Settings {

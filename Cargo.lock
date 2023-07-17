@@ -3356,7 +3356,9 @@ name = "rs-dapi-client"
 version = "0.1.0"
 dependencies = [
  "backon",
+ "ciborium",
  "dapi-grpc",
+ "drive",
  "futures",
  "http",
  "rand",
