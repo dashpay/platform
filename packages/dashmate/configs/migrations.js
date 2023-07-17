@@ -616,7 +616,7 @@ module.exports = {
   '0.24.16': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        delete config.core.reindex.containerId;
+        delete config.core.reindex;
       });
     return configFile;
   },

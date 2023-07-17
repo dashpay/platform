@@ -88,12 +88,7 @@ function reindexNodeTaskFactory(
       {
         title: 'Start Core in reindex mode',
         task: async () => {
-          // TODO: Set this option through render functions
-          // Write dashd.conf with reindex 1
-          config.set('core.reindex.enable', 1);
-
-          configFileRepository.write(configFile);
-          const configFiles = renderServiceTemplates(config);
+          const configFiles = renderServiceTemplates(config, { reindex: true });
           writeServiceConfigs(config.getName(), configFiles);
 
           const coreContainer = await getCoreContainer(config);
@@ -127,11 +122,7 @@ function reindexNodeTaskFactory(
 
           await waitForCoreStart(ctx.coreService);
 
-          // TODO: Do not use config
-          config.set('core.reindex.enable', 0);
-
           // Write configs
-          configFileRepository.write(configFile);
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
         },

@@ -95,9 +95,6 @@ module.exports = {
     },
     logIps: 0,
     indexes: true,
-    reindex: {
-      enable: false,
-    },
   },
   platform: {
     dapi: {

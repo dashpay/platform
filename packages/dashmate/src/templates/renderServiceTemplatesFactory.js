@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const dots = require('dot');
 const glob = require('glob');
+const _ = require('lodash');
 
 /**
  * @return {renderServiceTemplates}
@@ -13,9 +14,10 @@ function renderServiceTemplatesFactory() {
    * @typedef {renderServiceTemplates}
    * @param {Config} config
    *
+   * @param options
    * @return {Object<string,string>}
    */
-  function renderServiceTemplates(config) {
+  function renderServiceTemplates(config, options = { reindex: false }) {
     dots.templateSettings.strip = false;
 
     const templatesPath = path.join(__dirname, '..', '..', 'templates');
@@ -36,7 +38,7 @@ function renderServiceTemplatesFactory() {
         .substring(templatesPath.length + 1)
         .replace('.dot', '');
 
-      configFiles[configPath] = template(config.options);
+      configFiles[configPath] = template(_.merge(config.options, options));
     }
 
     return configFiles;
