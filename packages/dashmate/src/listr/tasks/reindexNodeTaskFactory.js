@@ -33,7 +33,7 @@ function reindexNodeTaskFactory(
   /**
    * Gets dashcore docker container from the node
    * @param config
-   * @return {Promise<*>}
+   * @return {Promise<null|Container>}
    */
   async function getCoreContainer(config) {
     const { docker } = dockerCompose;
@@ -44,6 +44,10 @@ function reindexNodeTaskFactory(
         all: true,
         filterServiceNames: 'core',
       });
+
+    if (!containerId) {
+      return null;
+    }
 
     return docker.getContainer(containerId);
   }
@@ -59,58 +63,48 @@ function reindexNodeTaskFactory(
         task: async (ctx, task) => {
           const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
+          let header;
           if (isNodeRunning) {
-            ctx.coreContainer = await getCoreContainer(config);
+            header = `Node found running. The node will be unavailable until reindex is complete.\n`
+          } else {
+            header = `Node is not running. The node will be automatically started and available after reindex is complete.\n`
+          }
 
-            const info = await ctx.coreContainer.inspect();
+          const agreement = await task.prompt({
+            type: 'toggle',
+            name: 'confirm',
+            header,
+            message: 'Start reindex?',
+            enabled: 'Yes',
+            disabled: 'No',
+          });
 
-            // If core is running, we need to stop it first
-            if (info.State.Status !== 'exited') {
-              let agreed;
-
-              if (!ctx.isDetached) {
-                const agreement = await task.prompt({
-                  type: 'toggle',
-                  name: 'confirm',
-                  header: `Node found running, Dash Core will be restarted and the node will be unavailable until reindex is complete:
-
-Select "No" to cancel operation.\n`,
-                  message: 'Stop Dash Core and proceed to reindex?',
-                  enabled: 'Yes',
-                  disabled: 'No',
-                });
-
-                agreed = agreement === 'true';
-              }
-
-              if (ctx.isDetached || agreed) {
-                await ctx.coreContainer.stop();
-              } else {
-                // eslint-disable-next-line no-param-reassign
-                task.title = 'Cancelled';
-                ctx.cancel = true;
-              }
-            }
+          if (agreement) {
+            throw new Error('Opearation is cancelled');
           }
         },
       },
       {
-        enabled: (ctx) => !ctx.cancel,
+        title: 'Start Core in reindex mode',
         task: async () => {
+          // TODO: Set this option through render functions
+          // Write dashd.conf with reindex 1
           config.set('core.reindex.enable', 1);
 
-          // Write configs
           configFileRepository.write(configFile);
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
-        },
-      },
-      {
-        title: 'Start core',
-        enabled: (ctx) => !ctx.cancel,
-        task: async (ctx) => {
-          if (ctx.coreContainer) {
-            return ctx.coreContainer.start();
+
+          const coreContainer = await getCoreContainer(config);
+          if (coreContainer) {
+            const info = await coreContainer.inspect();
+
+            // If core is running, we need to stop it first
+            if (info.State.Status !== 'exited') {
+              await coreContainer.restart();
+
+              return;
+            }
           }
 
           return startNodeTask(config);
@@ -118,7 +112,6 @@ Select "No" to cancel operation.\n`,
       },
       {
         title: 'Wait for Core start',
-        enabled: (ctx) => !ctx.cancel,
         task: async (ctx) => {
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
@@ -132,11 +125,8 @@ Select "No" to cancel operation.\n`,
           ctx.coreService = new CoreService(config, rpcClient, container);
 
           await waitForCoreStart(ctx.coreService);
-        },
-      },
-      {
-        enabled: (ctx) => !ctx.cancel,
-        task: async () => {
+
+          // TODO: Do not use config
           config.set('core.reindex.enable', 0);
 
           // Write configs
@@ -146,14 +136,15 @@ Select "No" to cancel operation.\n`,
         },
       },
       {
-        enabled: (ctx) => !ctx.cancel && !ctx.isDetached,
+        title: 'Wait for Core reindex finished',
+        enabled: (ctx) => !ctx.isDetached,
         task: async (ctx) => new Observable(async (observer) => {
-          observer.next(`Reindexing Core for ${config.getName()}`);
+          observer.next(`Starting reindex...`);
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
             const { percent, blocks, headers } = verificationProgress;
 
-            observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`);
+            observer.next(`${(percent * 100).toFixed(4)}%, ${blocks} / ${headers}`);
           });
 
           await new Promise((res) => setTimeout(res, 2000));
