@@ -23,6 +23,7 @@ module.exports = {
           minLength: 1,
         },
         build: {
+          type: 'object',
           properties: {
             enabled: {
               type: 'boolean',
