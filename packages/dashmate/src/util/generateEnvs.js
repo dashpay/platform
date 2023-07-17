@@ -58,7 +58,7 @@ function generateEnvs(configFile, config, options = {}) {
   // we need this for compatibility with old configs
   const projectIdWithPrefix = configFile.getProjectId() ? `_${configFile.getProjectId()}` : '';
 
-  let envs = {
+  return {
     COMPOSE_PROJECT_NAME: `dashmate${projectIdWithPrefix}_${config.getName()}`,
     CONFIG_NAME: config.getName(),
     COMPOSE_FILE: dockerComposeFiles.join(':'),
@@ -69,32 +69,20 @@ function generateEnvs(configFile, config, options = {}) {
     CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
       config.get('core.log.file.path'),
     ),
+    PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
+      config.get('platform.drive.abci.log.prettyFile.path'),
+    ),
+    PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
+      config.get('platform.drive.abci.log.jsonFile.path'),
+    ),
+    PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
+      config.get('platform.drive.abci.log.prettyFile.path'),
+    ),
+    PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
+      config.get('platform.drive.abci.log.jsonFile.path'),
+    ),
     ...convertObjectToEnvs(config.getOptions()),
   };
-
-  if (config.get('platform.enable')) {
-    envs = {
-      ...envs,
-
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
-        config.get('platform.drive.abci.log.prettyFile.path'),
-      ),
-
-      PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
-        config.get('platform.drive.abci.log.jsonFile.path'),
-      ),
-
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
-        config.get('platform.drive.abci.log.prettyFile.path'),
-      ),
-
-      PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
-        config.get('platform.drive.abci.log.jsonFile.path'),
-      ),
-    };
-  }
-
-  return envs;
 }
 
 module.exports = generateEnvs;
