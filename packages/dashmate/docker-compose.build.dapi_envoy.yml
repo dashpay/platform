@@ -7,5 +7,5 @@ services:
     build:
       context: ${PLATFORM_DAPI_ENVOY_DOCKER_BUILD_CONTEXT:?err}
       dockerfile: ${PLATFORM_DAPI_ENVOY_DOCKER_BUILD_DOCKER_FILE:?err}
-      target: ${PLATFORM_DAPI_ENVOY_DOCKER_BUILD_TARGET:?err}
+      target: ${PLATFORM_DAPI_ENVOY_DOCKER_BUILD_TARGET}
     image: envoy:local

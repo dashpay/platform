@@ -739,6 +739,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
+      required: ['helper'],
+      additionalProperties: false,
     },
     externalIp: {
       type: ['string', 'null'],
