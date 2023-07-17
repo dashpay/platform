@@ -38,16 +38,22 @@ fn to_proto_start(start_clause: StartClause) -> platform_proto::get_documents_re
 
 /// Request documents bytes.
 #[derive(Debug)]
-pub struct GetDocumentsRequest {
+pub struct GetDocuments {
+    /// Data contract ID
     pub data_contract_id: Vec<u8>,
+    /// Document type for the data contract
     pub document_type: String,
+    /// `where` clauses for the query
     pub where_clauses: Vec<WhereClause>,
+    /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
+    /// queryset limit
     pub limit: u32,
+    /// TODO start
     pub start: Option<StartClause>,
 }
 
-impl DapiRequest for GetDocumentsRequest {
+impl DapiRequest for GetDocuments {
     type DapiResponse = GetDocumentsResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
@@ -108,16 +114,22 @@ pub struct GetDocumentsResponse {
 
 /// Request documents with proof.
 #[derive(Debug)]
-pub struct GetDocumentsProofRequest {
+pub struct GetDocumentsProof {
+    /// Data contract ID
     pub data_contract_id: Vec<u8>,
+    /// Document type for the data contract
     pub document_type: String,
+    /// `where` clauses for the query
     pub where_clauses: Vec<WhereClause>,
+    /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
+    /// queryset limit
     pub limit: u32,
+    /// TODO start
     pub start: Option<StartClause>,
 }
 
-impl DapiRequest for GetDocumentsProofRequest {
+impl DapiRequest for GetDocumentsProof {
     type DapiResponse = GetDocumentsProofResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
