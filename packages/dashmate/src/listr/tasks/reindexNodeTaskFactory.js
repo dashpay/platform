@@ -60,14 +60,15 @@ function reindexNodeTaskFactory(
     return new Listr([
       {
         title: 'Check services are not running',
+        enabled: (ctx) => !ctx.isDetached,
         task: async (ctx, task) => {
           const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
           let header;
           if (isNodeRunning) {
-            header = `Node found running. The node will be unavailable until reindex is complete.\n`
+            header = 'Node found running. The node will be unavailable until reindex is complete.\n';
           } else {
-            header = `Node is not running. The node will be automatically started and available after reindex is complete.\n`
+            header = 'Node is not running. The node will be automatically started and available after reindex is complete.\n';
           }
 
           const agreement = await task.prompt({
@@ -79,7 +80,7 @@ function reindexNodeTaskFactory(
             disabled: 'No',
           });
 
-          if (agreement) {
+          if (!agreement) {
             throw new Error('Opearation is cancelled');
           }
         },
@@ -103,7 +104,7 @@ function reindexNodeTaskFactory(
             if (info.State.Status !== 'exited') {
               await coreContainer.restart();
 
-              return;
+              return Promise.resolve();
             }
           }
 
@@ -139,7 +140,7 @@ function reindexNodeTaskFactory(
         title: 'Wait for Core reindex finished',
         enabled: (ctx) => !ctx.isDetached,
         task: async (ctx) => new Observable(async (observer) => {
-          observer.next(`Starting reindex...`);
+          observer.next('Starting reindex...');
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
             const { percent, blocks, headers } = verificationProgress;
