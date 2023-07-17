@@ -243,6 +243,26 @@
              responseClass:[GetDataContractResponse class]];
 }
 
+#pragma mark getDataContractHistory(GetDataContractHistoryRequest) returns (GetDataContractHistoryResponse)
+
+- (void)getDataContractHistoryWithRequest:(GetDataContractHistoryRequest *)request handler:(void(^)(GetDataContractHistoryResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetDataContractHistoryWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetDataContractHistoryWithRequest:(GetDataContractHistoryRequest *)request handler:(void(^)(GetDataContractHistoryResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getDataContractHistory"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetDataContractHistoryResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getDataContractHistoryWithMessage:(GetDataContractHistoryRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getDataContractHistory"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetDataContractHistoryResponse class]];
+}
+
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (void)getDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler{
