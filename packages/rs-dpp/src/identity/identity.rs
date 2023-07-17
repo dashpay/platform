@@ -1,7 +1,7 @@
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
-use crate::prelude::Revision;
+use crate::prelude::{AssetLockProof, Revision};
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::util::hash;
 use crate::ProtocolError;
@@ -12,6 +12,7 @@ use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use crate::version::PlatformVersion;
 
 #[derive(
     Debug,
@@ -47,5 +48,26 @@ impl Identity {
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+    }
+
+    /// Created a new identity based on asset locks and keys
+    pub fn new_with_asset_lock_and_keys(        asset_lock_proof: AssetLockProof,
+                                                public_keys: BTreeMap<KeyID, IdentityPublicKey>, platform_version: &PlatformVersion) -> Result<Identity, ProtocolError> {
+        match platform_version.dpp.identity_versions.identity_structure_version {
+            0 => {
+                let identity_v0 = IdentityV0  {
+                    id: asset_lock_proof.create_identifier()?,
+                    public_keys,
+                    balance: 0,
+                    revision: 0,
+                };
+                Ok(identity_v0.into())
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::new_with_asset_lock_and_keys".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 }

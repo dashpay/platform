@@ -33,7 +33,7 @@ fn create_data_contract(
 
     data_contract.set_data_contract_id(id);
 
-    Ok(data_contract.data_contract)
+    Ok(data_contract.data_contract_owned())
 }
 
 pub fn load_system_data_contract(

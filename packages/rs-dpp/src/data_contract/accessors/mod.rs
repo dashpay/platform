@@ -1,5 +1,4 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::metadata::Metadata;
@@ -9,6 +8,7 @@ use platform_value::Identifier;
 use serde_json::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config::DataContractConfig;
 
 pub mod v0;
 impl DataContractV0Getters for DataContract {
@@ -60,7 +60,7 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn config(&self) -> &ContractConfigV0 {
+    fn config(&self) -> &DataContractConfig {
         match self {
             DataContract::V0(v0) => v0.config(),
         }

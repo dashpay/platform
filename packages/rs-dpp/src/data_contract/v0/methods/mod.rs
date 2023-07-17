@@ -13,6 +13,7 @@ use itertools::{Either, Itertools};
 use platform_value::string_encoding::Encoding;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl DataContractBaseMethodsV0 for DataContractV0 {
     /// Increments version of Data Contract
@@ -205,8 +206,8 @@ impl DataContractDocumentSchemaMethodsV0 for DataContractV0 {
             &doc_type,
             document_type_value_map,
             &BTreeMap::new(),
-            self.config.documents_keep_history_contract_default,
-            self.config.documents_mutable_contract_default,
+            self.config.documents_keep_history_contract_default(),
+            self.config.documents_mutable_contract_default(),
             &platform_version
                 .dpp
                 .contract_versions

@@ -25,6 +25,10 @@ mod methods;
 pub mod random;
 mod v0;
 pub mod versions;
+#[cfg(feature = "client")]
+mod identity_facade;
+#[cfg(feature = "factories")]
+mod identity_factory;
 
 pub use fields::*;
 

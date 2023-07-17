@@ -1,4 +1,4 @@
-use crate::data_contract::contract_config::ContractConfigV0;
+
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::metadata::Metadata;
@@ -6,6 +6,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config::DataContractConfig;
 
 pub trait DataContractV0Getters {
     /// Returns the unique identifier for the data contract.
@@ -33,7 +34,7 @@ pub trait DataContractV0Getters {
     fn metadata_mut(&mut self) -> Option<&mut Metadata>;
 
     /// Returns the internal configuration for the contract.
-    fn config(&self) -> &ContractConfigV0;
+    fn config(&self) -> &DataContractConfig;
 
     /// Returns a mapping of document names to their corresponding JSON schemas.
     fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError>;
@@ -80,7 +81,7 @@ pub trait DataContractV0Setters {
     fn set_metadata(&mut self, metadata: Option<Metadata>);
 
     /// Sets the internal configuration for the contract.
-    fn set_config(&mut self, config: ContractConfigV0);
+    fn set_config(&mut self, config: DataContractConfig);
 
     /// Sets the mapping of document names to their corresponding JSON schemas.
     fn set_documents(&mut self, documents: BTreeMap<DocumentName, JsonSchema>);

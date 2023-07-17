@@ -1,10 +1,7 @@
 mod fields;
 mod v0;
 
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
-use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::prelude::DataContract;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -12,9 +9,22 @@ use derive_more::From;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Identifier, Value};
 
+/// The created data contract is a intermediate structure that can be consumed by a
+/// contract create state transition.
+///
+///
+
 #[derive(Clone, Debug, From)]
 pub enum CreatedDataContract {
     V0(CreatedDataContractV0),
+}
+
+impl From<CreatedDataContract> for DataContract {
+    fn from(value: CreatedDataContract) -> Self {
+        match value {
+            CreatedDataContract::V0(created_data_contract) => created_data_contract.data_contract,
+        }
+    }
 }
 
 impl CreatedDataContract {
@@ -24,9 +34,15 @@ impl CreatedDataContract {
         }
     }
 
-    pub fn into_data_contract(self) -> DataContract {
+    pub fn data_contract_owned(self) -> DataContract {
         match self {
-            CreatedDataContract::V0(created_data_contract) => created_data_contract.into(),
+            CreatedDataContract::V0(v0) => v0.data_contract,
+        }
+    }
+
+    pub fn data_contract(&self) -> &DataContract {
+        match self {
+            CreatedDataContract::V0(v0) => &v0.data_contract,
         }
     }
 
@@ -54,35 +70,14 @@ impl CreatedDataContract {
     }
 
     #[cfg(feature = "platform-value")]
-    pub fn from_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
-        let data_contract_system_version =
-            match raw_object.remove_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
-                Ok(Some(data_contract_system_version)) => data_contract_system_version,
-                Ok(None) => {
-                    return Err(ProtocolError::ConsensusError(
-                        ConsensusError::BasicError(BasicError::VersionError(
-                            "no system version found on data contract object".into(),
-                        ))
-                        .into(),
-                    ));
-                }
-                Err(e) => {
-                    return Err(ProtocolError::ConsensusError(
-                        ConsensusError::BasicError(BasicError::VersionError(
-                            format!("version error: {}", e.to_string()).into(),
-                        ))
-                        .into(),
-                    ));
-                }
-            };
-        match data_contract_system_version {
-            0 => Ok(CreatedDataContractV0::from_object(raw_object).into()),
-            _ => Err(ProtocolError::ConsensusError(
-                ConsensusError::BasicError(BasicError::VersionError(
-                    "system version found on data contract object".into(),
-                ))
-                .into(),
-            )),
+    pub fn from_object(mut raw_object: Value, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version.dpp.contract_versions.created_data_contract_structure_version {
+            0 => Ok(CreatedDataContractV0::from_object(raw_object, platform_version)?.into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "CreatedDataContract::from_object".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 }

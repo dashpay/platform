@@ -6,6 +6,7 @@ use crate::data_contract::created_data_contract::fields::property_names::{DATA_C
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
+use crate::version::PlatformVersion;
 
 #[derive(Clone, Debug)]
 pub struct CreatedDataContractV0 {
@@ -15,7 +16,7 @@ pub struct CreatedDataContractV0 {
 
 impl CreatedDataContractV0 {
     #[cfg(feature = "platform-value")]
-    pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
+    pub fn from_object(raw_object: Value, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let mut raw_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
@@ -28,10 +29,10 @@ impl CreatedDataContractV0 {
             .remove_bytes_32(ENTROPY)
             .map_err(ProtocolError::ValueError)?;
 
-        let data_contract = DataContractV0::from_object(raw_data_contract)?;
+        let data_contract = DataContract::from_object(raw_data_contract, platform_version)?;
 
         Ok(Self {
-            data_contract: data_contract.into(),
+            data_contract,
             entropy_used,
         })
     }

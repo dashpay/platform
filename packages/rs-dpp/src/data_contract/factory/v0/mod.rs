@@ -1,14 +1,13 @@
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use derive_more::From;
 
 #[cfg(feature = "state-transitions")]
 use data_contract::state_transition::property_names as st_prop;
 use platform_value::{Bytes32, Error, Value};
 
 use crate::data_contract::errors::InvalidDataContractError;
-
-use crate::data_contract::property_names::SYSTEM_VERSION;
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
@@ -34,6 +33,9 @@ use crate::{
     prelude::Identifier,
     Convertible,
 };
+use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -80,13 +82,19 @@ impl DataContractFactoryV0 {
             .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
 
-        let config = config.unwrap_or_default();
+        // We need to transform the value into a data contract config
+        let config = if let Some(config_value) = config {
+            DataContractConfig::from_value(config_value, platform_version)?
+        } else {
+            DataContractConfig::default_for_version(platform_version)?
+        };
+
         let document_types = DataContract::get_document_types_from_value(
             data_contract_id,
             &documents,
             &definition_references,
-            config.documents_keep_history_contract_defaul,
-            config.documents_mutable_contract_default,
+            config.documents_keep_history_contract_default(),
+            config.documents_mutable_contract_default(),
             platform_version,
         )
         .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
@@ -118,7 +126,7 @@ impl DataContractFactoryV0 {
             None
         };
 
-        let mut data_contract = match platform_version
+        let mut data_contract : DataContract = match platform_version
             .dpp
             .contract_versions
             .contract_structure_version
@@ -146,7 +154,7 @@ impl DataContractFactoryV0 {
             }
         };
 
-        data_contract.generate_binary_properties()?;
+        data_contract.generate_binary_properties(platform_version)?;
 
         CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
     }
@@ -164,24 +172,14 @@ impl DataContractFactoryV0 {
                 self.validate_data_contract(&data_contract_object)?;
             }
         }
-        let Some(version) = !data_contract_object
-            .get_optional_integer::<u16>(SYSTEM_VERSION)
-            .map_err(ProtocolError::ValueError)? else {
-
-            data_contract_object
-                .insert(
-                    SYSTEM_VERSION.to_string(),
-                    Value::U16(self.data_contract_feature_version),
-                )
-                .map_err(ProtocolError::ValueError)?;
-
-            self.data_contract_feature_version
-        };
-        match version {
-            0 => Ok(DataContractV0::from_object(data_contract_object)?.into()),
-            _ => Err(ProtocolError::UnknownVersionError(
-                "unknown contract version when creating from object in factory".to_string(),
-            )),
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+        match platform_version.dpp.contract_versions.contract_structure_version {
+            0 => Ok(DataContractV0::from_object(data_contract_object, platform_version)?.into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractFactoryV0::create_from_object".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 

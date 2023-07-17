@@ -1,6 +1,5 @@
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::{property_names, DataContract, DocumentName, PropertyPath};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -8,11 +7,12 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
-        value.set_into_value(SYSTEM_VERSION, 0u16)?;
+        let value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
         Ok(value)
     }
 
@@ -25,8 +25,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
     }
 
     fn into_object(self) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
-        value.set_into_value(SYSTEM_VERSION, 0u16)?;
+        let value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
         Ok(value)
     }
 
@@ -42,15 +41,15 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             .remove_identifier(property_names::ID)
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = Self::get_contract_configuration_properties(&data_contract_map)?;
+        let mutability = DataContractConfig::get_contract_configuration_properties(&data_contract_map, platform_version)?;
         let definition_references =
             DataContract::get_definitions(&data_contract_map, platform_version)?;
         let document_types = DataContract::get_document_types_from_contract(
             id,
             &data_contract_map,
             &definition_references,
-            mutability.documents_keep_history_contract_default,
-            mutability.documents_mutable_contract_default,
+            mutability.documents_keep_history_contract_default(),
+            mutability.documents_mutable_contract_default(),
             platform_version,
         )?;
 
@@ -60,7 +59,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             .transpose()?
             .unwrap_or_default();
 
-        let mutability = Self::get_contract_configuration_properties(&data_contract_map)?;
+        let mutability = DataContractConfig::get_contract_configuration_properties(&data_contract_map, platform_version)?;
 
         // Defs
         let defs =

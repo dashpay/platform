@@ -1,5 +1,4 @@
 mod accessors;
-pub mod contract_config;
 mod conversion;
 pub mod data_contract;
 pub mod enrich_with_base_schema;

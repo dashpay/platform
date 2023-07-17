@@ -8,6 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 pub mod bincode;
 
@@ -75,8 +76,8 @@ impl DataContractV0 {
                 })
                 .transpose()?
                 .unwrap_or_default(),
-            config.documents_keep_history_contract_default,
-            config.documents_mutable_contract_default,
+            config.documents_keep_history_contract_default(),
+            config.documents_mutable_contract_default(),
             platform_version,
         )?;
 

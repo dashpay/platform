@@ -1,5 +1,4 @@
 use crate::data_contract::property_names;
-use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;

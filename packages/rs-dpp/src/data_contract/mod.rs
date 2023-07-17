@@ -21,15 +21,15 @@ pub mod extra;
 
 mod generate_data_contract;
 
-#[cfg(any(feature = "state-transitions", feature = "client"))]
+#[cfg(any(feature = "state-transitions", feature = "factories"))]
 pub mod created_data_contract;
 pub mod document_type;
 
 mod v0;
 
-#[cfg(feature = "client")]
+#[cfg(feature = "factories")]
 mod factory;
-#[cfg(feature = "client")]
+#[cfg(feature = "factories")]
 pub use factory::*;
 mod data_contract_class_methods;
 pub use data_contract_class_methods::*;
@@ -40,6 +40,7 @@ mod data_contract_methods;
 mod serialized_version;
 pub use data_contract_methods::*;
 pub(crate) mod accessors;
+pub mod data_contract_config;
 
 pub use v0::*;
 
@@ -47,7 +48,6 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::property_names::SYSTEM_VERSION;
 use crate::data_contract::serialized_version::{
     DataContractSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
@@ -63,7 +63,6 @@ use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde_json::Value as JsonValue;
 
 pub mod property_names {
-    pub const SYSTEM_VERSION: &str = "systemVersion";
     pub const ID: &str = "$id";
     pub const OWNER_ID: &str = "ownerId";
     pub const VERSION: &str = "version";
@@ -259,34 +258,13 @@ impl DataContract {
         mut raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContract, ProtocolError> {
-        let data_contract_system_version =
-            match raw_object.remove_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
-                Ok(Some(data_contract_system_version)) => data_contract_system_version,
-                Ok(None) => {
-                    return Err(ProtocolError::ConsensusError(
-                        ConsensusError::BasicError(BasicError::VersionError(
-                            "no system version found on data contract object".into(),
-                        ))
-                        .into(),
-                    ));
-                }
-                Err(e) => {
-                    return Err(ProtocolError::ConsensusError(
-                        ConsensusError::BasicError(BasicError::VersionError(
-                            format!("version error: {}", e.to_string()).into(),
-                        ))
-                        .into(),
-                    ));
-                }
-            };
-        match data_contract_system_version {
+        match platform_version.dpp.contract_versions.contract_structure_version {
             0 => Ok(DataContractV0::from_object(raw_object, platform_version)?.into()),
-            _ => Err(ProtocolError::ConsensusError(
-                ConsensusError::BasicError(BasicError::VersionError(
-                    "system version found on data contract object".into(),
-                ))
-                .into(),
-            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContract::from_object".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 

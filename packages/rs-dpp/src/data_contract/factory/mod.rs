@@ -1,8 +1,8 @@
 mod v0;
 
+use derive_more::From;
 use crate::consensus::basic::UnsupportedVersionError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
 use crate::util::deserializer::ProtocolVersion;
@@ -10,7 +10,8 @@ use crate::util::entropy_generator::EntropyGenerator;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
-pub use v0::*;
+
+pub use v0::DataContractFactoryV0;
 
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -29,6 +30,7 @@ use crate::state_transition::data_contract_update_transition::DataContractUpdate
 /// dependencies of the contract. Versioning allows for these changes to be
 /// tracked and managed effectively, providing flexibility to handle different
 /// versions of data contracts as needed.
+#[derive(From)]
 pub enum DataContractFactory {
     /// The version 0 implementation of the data contract factory.
     V0(DataContractFactoryV0),
@@ -67,28 +69,46 @@ impl DataContractFactory {
         }
     }
 
+    #[cfg(feature = "platform-value")]
     /// Create a DataContract from a plain object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         data_contract_object: Value,
+        #[cfg(feature = "validation")]
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         match self {
             DataContractFactory::V0(v0) => {
-                v0.create_from_object(data_contract_object, skip_validation)
-                    .await
+                #[cfg(feature = "validation")]
+                {
+                    v0.create_from_object(data_contract_object, skip_validation)
+                }
+                #[cfg(not(feature = "validation"))]
+                {
+                    v0.create_from_object(data_contract_object)
+                }
             }
         }
     }
 
     /// Create a DataContract from a buffer
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
+        #[cfg(feature = "validation")]
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         match self {
-            DataContractFactory::V0(v0) => v0.create_from_buffer(buffer, skip_validation).await,
+            DataContractFactory::V0(v0) => {
+                #[cfg(feature = "validation")]
+                {
+                    v0.create_from_buffer(buffer, skip_validation)
+                }
+                #[cfg(not(feature = "validation"))]
+                {
+                    v0.create_from_buffer(buffer)
+                }
+            },
         }
     }
 

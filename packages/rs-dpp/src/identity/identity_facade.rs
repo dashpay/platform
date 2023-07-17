@@ -3,21 +3,27 @@ use platform_value::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::identity::factory::IdentityFactory;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::Identifier;
 
-use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
+use crate::identity::identity_factory::IdentityFactory;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 
 #[derive(Clone)]
 pub struct IdentityFacade<T: BlsModule> {
-    identity_validator: Arc<IdentityValidator<PublicKeysValidator<T>>>,
     factory: IdentityFactory<T>,
 }
 
@@ -27,17 +33,9 @@ where
 {
     pub fn new(
         protocol_version: u32,
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
-        public_keys_validator: Arc<PublicKeysValidator<T>>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
-        let identity_validator = Arc::new(IdentityValidator::new(
-            protocol_version_validator,
-            public_keys_validator,
-        )?);
-
         Ok(Self {
-            identity_validator: identity_validator.clone(),
-            factory: IdentityFactory::new(protocol_version, identity_validator),
+            factory: IdentityFactory::new(protocol_version),
         })
     }
 
@@ -93,6 +91,7 @@ where
         IdentityFactory::<T>::create_chain_asset_lock_proof(core_chain_locked_height, out_point)
     }
 
+    #[cfg(feature = "state-transitions")]
     pub fn create_identity_create_transition(
         &self,
         identity: Identity,
@@ -100,6 +99,7 @@ where
         self.factory.create_identity_create_transition(identity)
     }
 
+    #[cfg(feature = "state-transitions")]
     pub fn create_identity_topup_transition(
         &self,
         identity_id: Identifier,
@@ -109,6 +109,7 @@ where
             .create_identity_topup_transition(identity_id, asset_lock_proof)
     }
 
+    #[cfg(feature = "state-transitions")]
     pub fn create_identity_credit_transfer_transition(
         &self,
         identity_id: Identifier,
@@ -119,6 +120,7 @@ where
             .create_identity_credit_transfer_transition(identity_id, recipient_id, amount)
     }
 
+    #[cfg(feature = "state-transitions")]
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,

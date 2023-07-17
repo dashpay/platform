@@ -15,14 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::contract_config::{
-    ContractConfigV0, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
-    DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
-    DEFAULT_CONTRACT_MUTABILITY,
-};
-use crate::data_contract::{
-    contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath,
-};
+use crate::data_contract::{data_contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
@@ -31,9 +24,9 @@ use crate::util::cbor_serializer;
 use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
-
+use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::property_names::{SYSTEM_VERSION, VERSION};
+use crate::data_contract::property_names::VERSION;
 use crate::data_contract::serialized_version::DataContractSerializationFormat;
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::PlatformVersion;
@@ -55,7 +48,7 @@ pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 ///
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.
@@ -77,7 +70,7 @@ pub struct DataContractV0 {
     pub metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
-    pub config: ContractConfigV0,
+    pub config: DataContractConfig,
 
     /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
@@ -89,56 +82,6 @@ pub struct DataContractV0 {
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 }
 
-impl DataContractV0 {
-    /// Retrieve contract configuration properties.
-    ///
-    /// This method takes a BTreeMap representing a contract and retrieves
-    /// the configuration properties based on the values found in the map.
-    ///
-    /// The process of retrieving contract configuration properties is versioned,
-    /// and the version is determined by the platform version parameter.
-    /// If the version is not supported, an error is returned.
-    ///
-    /// # Parameters
-    ///
-    /// * `contract`: BTreeMap representing the contract.
-    /// * `platform_version`: The platform version being used.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<ContractConfig, ProtocolError>`: On success, a ContractConfig.
-    ///   On failure, a ProtocolError.
-    pub(in crate::data_contract::v0) fn get_contract_configuration_properties(
-        contract: &BTreeMap<String, Value>,
-    ) -> Result<ContractConfigV0, ProtocolError> {
-        let keeps_history = contract
-            .get_optional_bool(contract_config::property::KEEPS_HISTORY)?
-            .unwrap_or(DEFAULT_CONTRACT_KEEPS_HISTORY);
-        let can_be_deleted = contract
-            .get_optional_bool(contract_config::property::CAN_BE_DELETED)?
-            .unwrap_or(DEFAULT_CONTRACT_CAN_BE_DELETED);
-
-        let readonly = contract
-            .get_optional_bool(contract_config::property::READONLY)?
-            .unwrap_or(!DEFAULT_CONTRACT_MUTABILITY);
-
-        let documents_keep_history_contract_default = contract
-            .get_optional_bool(contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT)?
-            .unwrap_or(DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY);
-
-        let documents_mutable_contract_default = contract
-            .get_optional_bool(contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT)?
-            .unwrap_or(DEFAULT_CONTRACT_DOCUMENT_MUTABILITY);
-
-        Ok(ContractConfigV0 {
-            can_be_deleted,
-            readonly,
-            keeps_history,
-            documents_keep_history_contract_default,
-            documents_mutable_contract_default,
-        })
-    }
-}
 
 //
 // #[cfg(feature = "json-object")]

@@ -2,7 +2,7 @@ use crate::data_contract::conversion::cbor_conversion::DataContractCborConversio
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
-use crate::data_contract::{contract_config, property_names, DataContract};
+use crate::data_contract::{property_names, DataContract, data_contract_config};
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::{cbor_serializer, deserializer};
@@ -14,6 +14,8 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl DataContractCborConversionMethodsV0 for DataContractV0 {
     fn from_cbor_with_id(
@@ -63,7 +65,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
             .get_inner_str_json_value_map("documents")
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = Self::get_contract_configuration_properties(&data_contract_map)
+        let mutability = DataContractConfig::get_contract_configuration_properties(&data_contract_map, platform_version)
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references =
             DataContract::get_definitions(&data_contract_map, platform_version)?;
@@ -71,8 +73,8 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
             contract_id,
             &data_contract_map,
             &definition_references,
-            mutability.documents_keep_history_contract_default,
-            mutability.documents_mutable_contract_default,
+            mutability.documents_keep_history_contract_default(),
+            mutability.documents_mutable_contract_default(),
             platform_version,
         )
         .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
@@ -100,18 +102,18 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
 
         let mut contract_cbor_map = self.to_cbor_canonical_map()?;
 
-        contract_cbor_map.insert(contract_config::property::READONLY, self.config.readonly);
+        contract_cbor_map.insert(data_contract_config::property::READONLY, self.config.readonly());
         contract_cbor_map.insert(
-            contract_config::property::KEEPS_HISTORY,
-            self.config.keeps_history,
+            data_contract_config::property::KEEPS_HISTORY,
+            self.config.keeps_history(),
         );
         contract_cbor_map.insert(
-            contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
-            self.config.documents_keep_history_contract_default,
+            data_contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
+            self.config.documents_keep_history_contract_default(),
         );
         contract_cbor_map.insert(
-            contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
-            self.config.documents_mutable_contract_default,
+            data_contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
+            self.config.documents_mutable_contract_default(),
         );
 
         let mut contract_buf = contract_cbor_map

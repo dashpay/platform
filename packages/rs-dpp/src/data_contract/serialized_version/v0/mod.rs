@@ -1,10 +1,11 @@
-use crate::data_contract::contract_config::ContractConfigV0;
+
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName, PropertyPath};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config::DataContractConfig;
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +15,7 @@ pub struct DataContractSerializationFormatV0 {
     pub id: Identifier,
 
     /// Internal configuration for the contract.
-    pub config: ContractConfigV0,
+    pub config: DataContractConfig,
 
     /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]

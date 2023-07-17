@@ -40,7 +40,7 @@ use crate::version::drive_versions::{
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{
-    AbciStructureVersion, DataContractFactoryVersion, PlatformArchitectureVersion,
+    AbciStructureVersion, PlatformArchitectureVersion,
     StateTransitionSigningVersion,
 };
 use std::collections::BTreeMap;
@@ -366,13 +366,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     platform_architecture: PlatformArchitectureVersion {
-        data_contract_factory: DataContractFactoryVersion {
-            bounds: FeatureVersionBounds {
-                min_version: 0,
-                max_version: 0,
-                default_current_version: 0,
-            },
-        },
+        data_contract_factory_structure_version: 0,
     },
     drive_abci: DriveAbciVersion {
         methods: DriveAbciMethodVersions {
@@ -593,6 +587,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
             contract_structure_version: 0,
+            created_data_contract_structure_version: 0,
+            config_version: 0,
             document_type_versions: DocumentTypeVersions {
                 document_type_structure_version: 0,
                 find_identifier_and_binary_paths: 0,
