@@ -97,6 +97,8 @@ const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureN
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
 const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
+const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
+const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -259,6 +261,14 @@ async function createDIContainer() {
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
     createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
+  });
+
+  /**
+   * Tests
+   */
+  container.register({
+    assertLocalServicesRunning: asFunction(assertLocalServicesRunningFactory).singleton(),
+    assertServiceRunning: asFunction(assertServiceRunningFactory).singleton(),
   });
 
   return container;

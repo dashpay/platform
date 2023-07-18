@@ -7,70 +7,38 @@ const { asValue } = require('awilix');
 const constants = require('../../src/constants');
 
 const createDIContainer = require('../../src/createDIContainer');
-const assertServiceRunningFactory = require('../../src/test/asserts/assertServiceRunningFactory');
-const assertLocalServicesRunningFactory = require('../../src/test/asserts/assertLocalServicesRunningFactory');
 
-describe.skip('Local Network', function main() {
+describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
   let container;
-  let setupLocalPresetTask;
-  let resetNodeTask;
-  let group;
+  let configGroup;
   let configFile;
-  let startGroupNodesTask;
-  let dockerCompose;
   let assertLocalServicesRunning;
-  let stopNodeTask;
-  let restartNodeTask;
 
   const groupName = 'local';
 
   before(async () => {
-    constants.HOME_DIR_PATH = path.resolve(os.tmpdir(), '.dashmate');
+    constants.HOME_DIR_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-'));
     constants.CONFIG_FILE_PATH = path.join(constants.HOME_DIR_PATH, 'config.json');
 
     container = await createDIContainer();
 
+    // Create config file
     const createSystemConfigs = container.resolve('createSystemConfigs');
 
     configFile = createSystemConfigs();
+
+    // Enable dashmate helper docker build for local group
+    const localConfig = configFile.getConfig(groupName);
+    localConfig.set('dashmate.helper.docker.build.enabled', true);
 
     container.register({
       configFile: asValue(configFile),
     });
 
-    const defaultGroupName = configFile.getDefaultGroupName();
-
-    group = configFile.getGroupConfigs(defaultGroupName);
-
-    container.register({
-      configGroup: asValue(group),
-    });
-
-    const renderServiceTemplates = container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = container.resolve('writeServiceConfigs');
-
-    for (const config of group) {
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
-    }
-
-    setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
-    resetNodeTask = await container.resolve('resetNodeTask');
-    startGroupNodesTask = await container.resolve('startGroupNodesTask');
-    restartNodeTask = await container.resolve('restartNodeTask');
-    stopNodeTask = await container.resolve('stopNodeTask');
-
-    dockerCompose = await container.resolve('dockerCompose');
-
-    const assertServiceRunning = assertServiceRunningFactory(
-      configFile,
-      dockerCompose,
-    );
-
-    assertLocalServicesRunning = assertLocalServicesRunningFactory(assertServiceRunning);
+    assertLocalServicesRunning = container.resolve('assertLocalServicesRunning');
   });
 
   after(async () => {
@@ -78,7 +46,9 @@ describe.skip('Local Network', function main() {
       return;
     }
 
-    for (const config of group) {
+    const resetNodeTask = await container.resolve('resetNodeTask');
+
+    for (const config of configFile.getGroupConfigs(groupName)) {
       const resetTask = resetNodeTask(config);
 
       await resetTask.run({
@@ -95,6 +65,7 @@ describe.skip('Local Network', function main() {
     it('should setup local network', async () => {
       // TODO: Refactor setup command to extract setup logic to
       //  setupTask function and use it here
+      const setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
       const setupTask = setupLocalPresetTask();
 
       await setupTask.run({
@@ -104,26 +75,41 @@ describe.skip('Local Network', function main() {
         isVerbose: true,
       });
 
-      configFile = container.resolve('configFile');
-
       const configExists = configFile.isGroupExists(groupName);
 
-      group = configFile.getGroupConfigs(groupName);
-
       expect(configExists).to.be.true();
+
+      // Store config group for further usage
+      configGroup = configFile.getGroupConfigs(groupName);
+
+      container.register({
+        configGroup: asValue(configGroup),
+      });
+
+      // Write service configs
+      const renderServiceTemplates = container.resolve('renderServiceTemplates');
+      const writeServiceConfigs = container.resolve('writeServiceConfigs');
+
+      for (const config of configGroup) {
+        config.set('dashmate.helper.docker.build.enabled', true);
+
+        const serviceConfigFiles = renderServiceTemplates(config);
+        writeServiceConfigs(config.getName(), serviceConfigFiles);
+      }
     });
   });
 
   describe('start', () => {
     it('should start local network', async () => {
-      const task = startGroupNodesTask(group);
+      const startGroupNodesTask = await container.resolve('startGroupNodesTask');
+      const task = startGroupNodesTask(configGroup);
 
       await task.run({
         isVerbose: true,
         waitForReadiness: true,
       });
 
-      await assertLocalServicesRunning(group);
+      await assertLocalServicesRunning(configGroup);
     });
   });
 
@@ -131,14 +117,16 @@ describe.skip('Local Network', function main() {
     it('should restart local network', async () => {
       // TODO: Refactor group restart command to extract group restart logic
       //  to restartGroupNodesTask function and use it here
-      for (const config of group) {
+      const restartNodeTask = await container.resolve('restartNodeTask');
+
+      for (const config of configGroup) {
         const task = restartNodeTask(config);
         await task.run({
           isVerbose: true,
         });
       }
 
-      await assertLocalServicesRunning(group);
+      await assertLocalServicesRunning(configGroup);
     });
   });
 
@@ -146,14 +134,16 @@ describe.skip('Local Network', function main() {
     it('should stop local network', async () => {
       // TODO: Refactor group stop command to extract group stop logic
       //  to restartGroupNodesTask function and use it here
-      for (const config of group.reverse()) {
+      const stopNodeTask = await container.resolve('stopNodeTask');
+
+      for (const config of configGroup.reverse()) {
         const task = stopNodeTask(config);
         await task.run({
           isVerbose: true,
         });
       }
 
-      await assertLocalServicesRunning(group, false);
+      await assertLocalServicesRunning(configGroup, false);
     });
   });
 });
