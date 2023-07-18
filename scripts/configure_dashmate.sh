@@ -11,7 +11,6 @@ ROOT_PATH=$(dirname "$DIR_PATH")
 # build Drive, DAPI and Dashmate helper from sources
 yarn dashmate config set --config=${CONFIG_NAME} platform.drive.abci.docker.build.enabled true
 yarn dashmate config set --config=${CONFIG_NAME} platform.dapi.api.docker.build.enabled true
-yarn dashmate config set --config=${CONFIG_NAME} platform.dapi.envoy.docker.build.enabled true
 yarn dashmate config set --config=${CONFIG_NAME} dashmate.helper.docker.build.enabled true
 
 # create tenderdash blocks every 10s to speed up test suite
