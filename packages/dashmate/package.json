@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.11",
+  "version": "0.24.15",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -76,6 +76,7 @@
     "hasbin": "^1.2.3",
     "is-wsl": "2.2.0",
     "jayson": "^3.3.4",
+    "js-yaml": "^4.1.0",
     "listr2": "5.0.7",
     "lodash": "^4.17.21",
     "memory-streams": "^0.1.3",

@@ -1,3 +1,74 @@
+### [0.24.15](https://github.com/dashpay/platform/compare/v0.24.14...v0.24.15) (2023-07-10)
+
+
+### Features
+
+* **dashmate:** interface binding configuration ([#1220](https://github.com/dashpay/platform/issues/1220))
+
+### Bug Fixes
+
+* **dashmate:** service name variable name ([#1225](https://github.com/dashpay/platform/issues/1225))
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash genesis for testnet ([#1223](https://github.com/dashpay/platform/issues/1223))
+
+### Continuous Integration
+
+* temporary ignore gRPC JS vulnerability ([#1221](https://github.com/dashpay/platform/issues/1221))
+
+
+### [0.24.14](https://github.com/dashpay/platform/compare/v0.24.13...v0.24.14) (2023-07-05)
+
+
+### Features
+
+* **dashmate:** report pulled images during update ([#1186](https://github.com/dashpay/platform/issues/1186), [#1213](https://github.com/dashpay/platform/issues/1213))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** bump Core version to 19.2.0 ([#1211](https://github.com/dashpay/platform/issues/1211))
+
+### [0.24.13](https://github.com/dashpay/platform/compare/v0.24.12...v0.24.13) (2023-06-29)
+
+
+### Bug Fixes
+
+* **dashmate:** invalid migration ([#1209](https://github.com/dashpay/platform/issues/1209))
+
+### [0.24.12](https://github.com/dashpay/platform/compare/v0.24.11...v0.24.12) (2023-06-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** Default dashmate helper port changed from 9000 to 9100 (#1194)
+
+### Features
+
+* **dashmate:** configure tenderdash pprof ([#1201](https://github.com/dashpay/platform/issues/1201))
+* **dashmate:** setup masternode with DMT ([#1203](https://github.com/dashpay/platform/issues/1203))
+
+
+### Bug Fixes
+
+* **dashmate:** helper default port was bound to Windows print port ([#1194](https://github.com/dashpay/platform/issues/1194))
+
+
+### Code Refactoring
+
+* unwanted usage of x11-hash-js ([#1191](https://github.com/dashpay/platform/issues/1191))
+
+
+### Miscellaneous Chores
+
+* **drive:** downgrade grovedb to supported version ([#1202](https://github.com/dashpay/platform/issues/1202))
+
+
+### Tests
+
+* **dashmate:** e2e tests ([#1152](https://github.com/dashpay/platform/issues/1152))
+
 ### [0.24.11](https://github.com/dashpay/platform/compare/v0.24.10...v0.24.11) (2023-06-23)
 
 

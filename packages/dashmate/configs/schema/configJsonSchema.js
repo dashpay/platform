@@ -18,20 +18,33 @@ module.exports = {
     dockerBuild: {
       type: 'object',
       properties: {
+        enabled: {
+          type: 'boolean',
+        },
+        context: {
+          type: 'string',
+          minLength: 1,
+        },
+        dockerFile: {
+          type: 'string',
+          minLength: 1,
+        },
+        target: {
+          type: 'string',
+        },
+      },
+      required: ['enabled', 'context', 'dockerFile', 'target'],
+      additionalProperties: false,
+    },
+    dockerWithBuild: {
+      type: 'object',
+      properties: {
         image: {
           type: 'string',
           minLength: 1,
         },
         build: {
-          type: 'object',
-          properties: {
-            path: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          additionalProperties: false,
-          required: ['path'],
+          $ref: '#/definitions/dockerBuild',
         },
       },
       required: ['image', 'build'],
@@ -95,9 +108,13 @@ module.exports = {
             subnet: {
               type: 'string',
             },
+            bindIp: {
+              type: 'string',
+              format: 'ipv4',
+            },
           },
           additionalProperties: false,
-          required: ['subnet'],
+          required: ['subnet', 'bindIp'],
         },
       },
       additionalProperties: false,
@@ -296,8 +313,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'log', 'reindex', 'logIps', 'indexes'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'sentinel', 'devnet',
+        'log', 'logIps', 'indexes', 'reindex'],
       additionalProperties: false,
     },
     platform: {
@@ -310,7 +327,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
                 http: {
                   type: 'object',
@@ -386,7 +403,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
               },
               required: ['docker'],
@@ -403,7 +420,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
                 log: {
                   type: 'object',
@@ -706,7 +723,14 @@ module.exports = {
           type: 'object',
           properties: {
             docker: {
-              $ref: '#/definitions/docker',
+              type: 'object',
+              properties: {
+                build: {
+                  $ref: '#/definitions/dockerBuild',
+                },
+              },
+              required: ['build'],
+              additionalProperties: false,
             },
             api: {
               type: 'object',
@@ -726,6 +750,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
+      required: ['helper'],
+      additionalProperties: false,
     },
     externalIp: {
       type: ['string', 'null'],
@@ -740,6 +766,6 @@ module.exports = {
       enum: ['development', 'production'],
     },
   },
-  required: ['description', 'group', 'core', 'externalIp', 'network', 'environment'],
+  required: ['description', 'group', 'docker', 'core', 'externalIp', 'network', 'environment'],
   additionalProperties: false,
 };

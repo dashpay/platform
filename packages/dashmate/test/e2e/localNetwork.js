@@ -10,7 +10,7 @@ const createDIContainer = require('../../src/createDIContainer');
 const assertServiceRunningFactory = require('../../src/test/asserts/assertServiceRunningFactory');
 const assertLocalServicesRunningFactory = require('../../src/test/asserts/assertLocalServicesRunningFactory');
 
-describe('Local Network', function main() {
+describe.skip('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 

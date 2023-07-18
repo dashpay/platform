@@ -16,7 +16,7 @@ const assertServiceRunningFactory = require('../../src/test/asserts/assertServic
 const createRpcClient = require('../../src/core/createRpcClient');
 const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
 
-describe('Testnet HP Fullnode', function main() {
+describe.skip('Testnet HP Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 

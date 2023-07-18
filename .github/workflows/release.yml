@@ -602,7 +602,7 @@ jobs:
       - name: Build and push Docker image for Envoy
         uses: docker/build-push-action@v3
         with:
-          context: .
+          context: ./packages/dashmate/docker/envoy
           builder: ${{ steps.buildx.outputs.name }}
           file: ./packages/dashmate/docker/envoy/Dockerfile
           push: true

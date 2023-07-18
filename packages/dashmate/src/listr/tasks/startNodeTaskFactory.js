@@ -3,6 +3,7 @@ const { Observable } = require('rxjs');
 
 const { NETWORK_LOCAL } = require('../../constants');
 const generateEnvs = require('../../util/generateEnvs');
+const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
 
 /**
  *
@@ -63,8 +64,9 @@ function startNodeTaskFactory(
     return new Listr([
       {
         title: 'Check node is not started',
+        enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          if (await dockerCompose.isServiceRunning(
+          if (await dockerCompose.isNodeRunning(
             generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
           )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -82,8 +84,7 @@ function startNodeTaskFactory(
       },
       {
         enabled: (ctx) => !ctx.skipBuildServices
-          && config.get('platform.enable')
-          && config.get('platform.sourcePath') !== null,
+          && isServiceBuildRequired(config),
         task: () => buildServicesTask(config),
       },
       {

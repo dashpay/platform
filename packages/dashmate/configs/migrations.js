@@ -578,19 +578,59 @@ module.exports = {
     let i = 0;
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
-        // Update ports
-        config.platform.dashmate.helper.api.port = systemConfigs.base.platform
-          .dashmate.helper.api.port;
+        // Update dashmate helper port
+        config.dashmate.helper.api.port = systemConfigs.base.dashmate.helper.api.port;
 
+        // Add pprof config
+        config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
+          .drive.tenderdash.pprof;
+
+        // Set different ports for local netwrok if exists
         if (config.group === 'local') {
-          config.set('platform.drive.tenderdash.pprof.port', systemConfigs.base.platform
-            .drive.tenderdash.pprof + (i * 100));
+          config.platform.drive.tenderdash.pprof.port += i * 100;
+
           i++;
-        } else {
-          config.platform.drive.tenderdash.pprof = systemConfigs.base.platform
-            .drive.tenderdash.pprof;
         }
       });
+    return configFile;
+  },
+  '0.24.13': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+      });
+    return configFile;
+  },
+  '0.24.15': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
+
+        // eslint-disable-next-line max-len
+        config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
+        // eslint-disable-next-line max-len
+        config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+      });
+    return configFile;
+  },
+  '0.24.16': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.platform.dapi.envoy.docker.build = systemConfigs.base.platform.dapi.envoy
+          .docker.build;
+
+        config.platform.dapi.api.docker.build = systemConfigs.base.platform.dapi.api
+          .docker.build;
+
+        config.platform.drive.abci.docker.build = systemConfigs.base.platform.drive.abci
+          .docker.build;
+
+        config.dashmate.helper.docker.build = systemConfigs.base.dashmate.helper
+          .docker.build;
+
+        delete config.dashmate.helper.docker.image;
+      });
+
     return configFile;
   },
 };
