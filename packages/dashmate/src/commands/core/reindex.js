@@ -59,7 +59,7 @@ ReindexCommand.flags = {
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
   detach: Flags.boolean({
     char: 'd',
-    description: 'detach from the process and keep reindexing in the background',
+    description: 'run the reindex process in the background',
     default: false,
   }),
 };
