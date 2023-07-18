@@ -193,6 +193,8 @@ function setupLocalPresetTaskFactory(
                 // the miner interval to be able to sync mocked time
                 config.set('core.miner.interval', ctx.minerInterval);
 
+                config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
+
                 if (config.getName() === 'local_seed') {
                   config.set('description', 'seed node for local network');
 
@@ -258,8 +260,6 @@ function setupLocalPresetTaskFactory(
                     masternodeRewardSharesDerivedSecondPrivateKey.privateKey
                       .toPublicKey().toString(),
                   );
-
-                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
                 }
               },
               options: {

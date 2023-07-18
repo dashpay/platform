@@ -3,6 +3,7 @@ const { Observable } = require('rxjs');
 
 const { NETWORK_LOCAL } = require('../../constants');
 const generateEnvs = require('../../util/generateEnvs');
+const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
 
 /**
  *
@@ -78,8 +79,7 @@ function startNodeTaskFactory(
       },
       {
         enabled: (ctx) => !ctx.skipBuildServices
-          && config.get('platform.enable')
-          && config.get('platform.sourcePath') !== null,
+          && isServiceBuildRequired(config),
         task: () => buildServicesTask(config),
       },
       {

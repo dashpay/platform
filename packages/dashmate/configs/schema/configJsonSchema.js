@@ -25,13 +25,23 @@ module.exports = {
         build: {
           type: 'object',
           properties: {
-            path: {
-              type: ['string', 'null'],
+            enabled: {
+              type: 'boolean',
+            },
+            context: {
+              type: 'string',
               minLength: 1,
             },
+            dockerFile: {
+              type: 'string',
+              minLength: 1,
+            },
+            target: {
+              type: 'string',
+            },
           },
+          required: ['enabled', 'context', 'dockerFile', 'target'],
           additionalProperties: false,
-          required: ['path'],
         },
       },
       required: ['image', 'build'],
@@ -299,7 +309,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerBuild',
                 },
                 http: {
                   type: 'object',
@@ -375,7 +385,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerBuild',
                 },
               },
               required: ['docker'],
@@ -392,7 +402,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerBuild',
                 },
                 log: {
                   type: 'object',
@@ -695,7 +705,7 @@ module.exports = {
           type: 'object',
           properties: {
             docker: {
-              $ref: '#/definitions/docker',
+              $ref: '#/definitions/dockerBuild',
             },
             api: {
               type: 'object',
@@ -715,6 +725,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
+      required: ['helper'],
+      additionalProperties: false,
     },
     externalIp: {
       type: ['string', 'null'],

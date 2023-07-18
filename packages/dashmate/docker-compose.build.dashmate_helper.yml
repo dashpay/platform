@@ -1,0 +1,9 @@
+version: '3.7'
+
+services:
+  dashmate_helper:
+    build:
+      context: ${DASHMATE_HELPER_DOCKER_BUILD_CONTEXT:?err}
+      dockerfile: ${DASHMATE_HELPER_DOCKER_BUILD_DOCKER_FILE:?err}
+      target: ${DASHMATE_HELPER_DOCKER_BUILD_TARGET}
+    image: dashmate_helper:local

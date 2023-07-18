@@ -616,8 +616,21 @@ module.exports = {
   '0.24.16': (configFile) => {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
+        config.platform.dapi.envoy.docker.build = systemConfigs.base.platform.dapi.envoy
+          .docker.build;
+
+        config.platform.dapi.api.docker.build = systemConfigs.base.platform.dapi.api
+          .docker.build;
+
+        config.platform.drive.abci.docker.build = systemConfigs.base.platform.drive.abci
+          .docker.build;
+
+        config.dashmate.helper.docker.build = systemConfigs.base.dashmate.helper
+          .docker.build;
+
         delete config.core.reindex;
       });
+
     return configFile;
   },
 };
