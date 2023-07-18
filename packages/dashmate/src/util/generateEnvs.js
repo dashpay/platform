@@ -43,9 +43,6 @@ function generateEnvs(configFile, config, options = {}) {
 
     if (config.get('platform.dapi.api.docker.build.enabled')) {
       dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
-    }
-
-    if (config.get('platform.dapi.api.docker.build.context')) {
       dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
     }
 
