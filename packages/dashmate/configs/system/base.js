@@ -105,6 +105,12 @@ module.exports = {
       envoy: {
         docker: {
           image: `dashpay/envoy:${dockerImageVersion}`,
+          build: {
+            enabled: false,
+            context: path.join(__dirname, '..', '..', 'docker', 'envoy'),
+            dockerFile: path.join(__dirname, '..', '..', 'docker', 'envoy', 'Dockerfile'),
+            target: '',
+          },
         },
         http: {
           port: 443,
@@ -129,6 +135,12 @@ module.exports = {
       api: {
         docker: {
           image: `dashpay/dapi:${dockerImageVersion}`,
+          build: {
+            enabled: false,
+            context: path.join(__dirname, '..', '..', '..', '..'),
+            dockerFile: path.join(__dirname, '..', '..', '..', 'dapi', 'Dockerfile'),
+            target: '',
+          },
         },
       },
     },
@@ -136,6 +148,12 @@ module.exports = {
       abci: {
         docker: {
           image: `dashpay/drive:${dockerImageVersion}`,
+          build: {
+            enabled: false,
+            context: path.join(__dirname, '..', '..', '..', '..'),
+            dockerFile: path.join(__dirname, '..', '..', '..', 'js-drive', 'Dockerfile'),
+            target: '',
+          },
         },
         log: {
           stdout: {
@@ -253,7 +271,13 @@ module.exports = {
   dashmate: {
     helper: {
       docker: {
-        image: `dashpay/dashmate-helper:${dockerImageVersion}`,
+        image: `dashpay/dashmate-helper:${version}`,
+        build: {
+          enabled: false,
+          context: path.join(__dirname, '..', '..', '..', '..'),
+          dockerFile: path.join(__dirname, '..', '..', 'Dockerfile'),
+          target: '',
+        },
       },
       api: {
         enable: false,

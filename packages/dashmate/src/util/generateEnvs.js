@@ -18,64 +18,69 @@ const convertObjectToEnvs = require('../config/convertObjectToEnvs');
  * }}
  */
 function generateEnvs(configFile, config, options = {}) {
-  const dockerComposeFiles = [];
+  const dockerComposeFiles = ['docker-compose.yml'];
+  const profiles = [];
 
   if (!options.platformOnly) {
-    // TODO: it should contain only the dashmate helper that must be ran always
-    dockerComposeFiles.push('docker-compose.yml');
+    profiles.push('core');
 
-    if (config.get('core.masternode.enable') === true) {
-      dockerComposeFiles.push('docker-compose.sentinel.yml');
+    if (config.get('core.masternode.enable')) {
+      profiles.push('masternode');
     }
   }
 
-  if (config.get('platform.enable')) {
-    dockerComposeFiles.push('docker-compose.platform.yml');
+  if (config.get('dashmate.helper.docker.build.enabled')) {
+    dockerComposeFiles.push('docker-compose.build.dashmate_helper.yml');
+  }
 
-    if (config.get('platform.sourcePath') !== null) {
-      dockerComposeFiles.push('docker-compose.platform.build.yml');
+  if (config.get('platform.enable')) {
+    profiles.push('platform');
+
+    if (config.get('platform.drive.abci.docker.build.enabled')) {
+      dockerComposeFiles.push('docker-compose.build.drive_abci.yml');
+    }
+
+    if (config.get('platform.dapi.api.docker.build.enabled')) {
+      dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
+    }
+
+    if (config.get('platform.dapi.api.docker.build.context')) {
+      dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
+    }
+
+    if (config.get('platform.dapi.envoy.docker.build.enabled')) {
+      dockerComposeFiles.push('docker-compose.build.dapi_envoy.yml');
     }
   }
 
   // we need this for compatibility with old configs
   const projectIdWithPrefix = configFile.getProjectId() ? `_${configFile.getProjectId()}` : '';
 
-  let envs = {
+  return {
     COMPOSE_PROJECT_NAME: `dashmate${projectIdWithPrefix}_${config.getName()}`,
     CONFIG_NAME: config.getName(),
     COMPOSE_FILE: dockerComposeFiles.join(':'),
+    COMPOSE_PROFILES: profiles.join(','),
     COMPOSE_PATH_SEPARATOR: ':',
     DOCKER_BUILDKIT: 1,
     COMPOSE_DOCKER_CLI_BUILD: 1,
     CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
       config.get('core.log.file.path'),
     ),
+    PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
+      config.get('platform.drive.abci.log.prettyFile.path'),
+    ),
+    PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
+      config.get('platform.drive.abci.log.jsonFile.path'),
+    ),
+    PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
+      config.get('platform.drive.abci.log.prettyFile.path'),
+    ),
+    PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
+      config.get('platform.drive.abci.log.jsonFile.path'),
+    ),
     ...convertObjectToEnvs(config.getOptions()),
   };
-
-  if (config.get('platform.enable')) {
-    envs = {
-      ...envs,
-
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
-        config.get('platform.drive.abci.log.prettyFile.path'),
-      ),
-
-      PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
-        config.get('platform.drive.abci.log.jsonFile.path'),
-      ),
-
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
-        config.get('platform.drive.abci.log.prettyFile.path'),
-      ),
-
-      PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
-        config.get('platform.drive.abci.log.jsonFile.path'),
-      ),
-    };
-  }
-
-  return envs;
 }
 
 module.exports = generateEnvs;
