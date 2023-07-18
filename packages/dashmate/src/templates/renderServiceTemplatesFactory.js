@@ -38,7 +38,7 @@ function renderServiceTemplatesFactory() {
         .substring(templatesPath.length + 1)
         .replace('.dot', '');
 
-      configFiles[configPath] = template(_.merge(config.options, options));
+      configFiles[configPath] = template(_.merge(_.cloneDeep(config.options), options));
     }
 
     return configFiles;

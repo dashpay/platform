@@ -81,7 +81,7 @@ function reindexNodeTaskFactory(
           });
 
           if (!agreement) {
-            throw new Error('Opearation is cancelled');
+            throw new Error('Operation is cancelled');
           }
         },
       },

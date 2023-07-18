@@ -423,10 +423,9 @@ The `group core reindex` reindexes all your local dash core containers
 Reindex group Core data
 
 USAGE
-  $ dashmate group core reindex [-v] [--group <value>] [-d]
+  $ dashmate group core reindex [-v] [--group <value>]
 
 FLAGS
-  -d, --detach     detach from the process and keep reindexing in the background
   -v, --verbose    use verbose mode for output
   --group=<value>  group name to use
 
