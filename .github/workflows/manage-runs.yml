@@ -1,13 +1,12 @@
 name: Manage runs
 on:
-  push:
-    branches:
-      - master
-      - v[0-9]+\.[0-9]+-dev
+  pull_request:
+    types:
+      - closed
 
 jobs:
-  cancel-merged-pr-runs:
-    name: Cancel runs for already merged PRs
+  cancel-merged-or-closed-pr-runs:
+    name: Cancel runs for merged or closed PRs
     runs-on: ubuntu-22.04
     steps:
       - uses: octokit/request-action@v2.x
