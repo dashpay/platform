@@ -1,5 +1,5 @@
 [package]
-name = "rs-drive-light-client-bindings"
+name = "drive-light-client-bindings"
 version = "0.1.0"
 edition = "2021"
 description = "This crate is only used to build bindings (using build.rs) for rs-drive-light-client and save them into bindings/"
@@ -7,6 +7,6 @@ description = "This crate is only used to build bindings (using build.rs) for rs
 [dependencies]
 [build-dependencies]
 
-rs-drive-light-client = { path = "../rs-drive-light-client", features = [
+drive-light-client = { path = "../rs-drive-light-client", features = [
     "bindgen",
 ] }

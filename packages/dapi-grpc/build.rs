@@ -9,6 +9,7 @@ fn main() {
     generate().expect("failed to compile protobuf definitions");
 
     println!("cargo:rerun-if-changed=./protos");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
 }
 
 struct MappingConfig {
