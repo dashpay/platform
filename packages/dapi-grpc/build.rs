@@ -8,8 +8,6 @@ fn main() {
     generate().expect("failed to compile protobuf definitions");
 
     println!("cargo:rerun-if-changed=./protos");
-    println!("cargo:rerun-if-changed=./src/core/proto");
-    println!("cargo:rerun-if-changed=./src/platform/proto");
 }
 
 /// Generate Rust definitions from Protobuf definitions
@@ -50,13 +48,16 @@ fn generate1(
     proto_includes: &[PathBuf],
     out_dir: &PathBuf,
 ) -> Result<(), std::io::Error> {
-    tonic_build::configure()
-        .build_client(true)
+    let pb = tonic_build::configure()
         .build_server(false)
-        .type_attribute("WhereOperator", "#[derive(num_derive::FromPrimitive)]")
         .out_dir(out_dir)
-        .compile(files, proto_includes)?;
-    Ok(())
+        .protoc_arg("--experimental_allow_proto3_optional");
+    #[cfg(feature = "client")]
+    let pb = pb.build_client(true).build_transport(true);
+    #[cfg(not(feature = "client"))]
+    let pb = pb.build_client(false).build_transport(false);
+
+    pb.compile(files, proto_includes)
 }
 
 fn abs_path(path: &PathBuf) -> PathBuf {

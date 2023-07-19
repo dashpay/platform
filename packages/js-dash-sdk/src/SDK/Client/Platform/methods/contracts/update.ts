@@ -21,9 +21,7 @@ export default async function update(
   const { dpp } = this;
 
   // Clone contract
-  const updatedDataContract = await dpp.dataContract.createFromObject(
-    dataContract.toObject(),
-  );
+  const updatedDataContract = dataContract.clone();
 
   updatedDataContract.incrementVersion();
 

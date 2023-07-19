@@ -5,9 +5,10 @@ const generateEnvs = require('../../util/generateEnvs');
 /**
  * @param {DockerCompose} dockerCompose
  * @param {ConfigFile} configFile
+ * @param getServiceList
  * @returns {getServicesScopeFactory}
  */
-function getServicesScopeFactory(dockerCompose, configFile) {
+function getServicesScopeFactory(dockerCompose, configFile, getServiceList) {
   /**
    * Get platform status scope
    *
@@ -16,29 +17,11 @@ function getServicesScopeFactory(dockerCompose, configFile) {
    * @returns {Promise<Object>}
    */
   async function getServicesScope(config) {
-    const services = {};
+    const services = getServiceList(config);
 
-    const serviceHumanNames = {
-      core: 'Core',
-    };
+    const scope = {};
 
-    if (config.get('core.masternode.enable')) {
-      Object.assign(serviceHumanNames, {
-        sentinel: 'Sentinel',
-      });
-    }
-
-    if (config.get('platform.enable')) {
-      Object.assign(serviceHumanNames, {
-        drive_abci: 'Drive ABCI',
-        drive_tenderdash: 'Drive Tenderdash',
-        dapi_api: 'DAPI API',
-        dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
-        dapi_envoy: 'DAPI Envoy',
-      });
-    }
-
-    for (const [serviceName, serviceDescription] of Object.entries(serviceHumanNames)) {
+    for (const { name, title } of services) {
       let containerId;
       let status;
       let image;
@@ -52,10 +35,10 @@ function getServicesScopeFactory(dockerCompose, configFile) {
           Config: {
             Image: image,
           },
-        } = await dockerCompose.inspectService(generateEnvs(configFile, config), serviceName));
+        } = await dockerCompose.inspectService(generateEnvs(configFile, config), name));
 
-        services[serviceName] = {
-          humanName: serviceDescription,
+        scope[name] = {
+          title,
           containerId: containerId ? containerId.slice(0, 12) : null,
           image,
           status,
@@ -70,8 +53,8 @@ function getServicesScopeFactory(dockerCompose, configFile) {
           console.error(e);
         }
 
-        services[serviceName] = {
-          humanName: serviceDescription,
+        scope[name] = {
+          title,
           containerId: null,
           image: null,
           status,
@@ -79,7 +62,7 @@ function getServicesScopeFactory(dockerCompose, configFile) {
       }
     }
 
-    return services;
+    return scope;
   }
 
   return getServicesScope;
