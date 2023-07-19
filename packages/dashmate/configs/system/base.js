@@ -104,7 +104,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: `dashpay/envoy:v1.22.11`,
+          image: `dashpay/envoy:1.22.11`,
         },
         http: {
           port: 443,
