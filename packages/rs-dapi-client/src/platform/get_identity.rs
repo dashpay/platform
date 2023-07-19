@@ -16,13 +16,13 @@ pub struct GetIdentity {
 #[derive(Debug)]
 pub struct GetIdentityResponse {
     /// Serialized Identity
-    pub identity_bytes: Vec<u8>,
+    pub identity_bytes: Option<Vec<u8>>,
     /// Response metadata
     pub metadata: ResponseMetadata,
 }
 
 impl DapiRequest for GetIdentity {
-    type DapiResponse = Option<GetIdentityResponse>;
+    type DapiResponse = GetIdentityResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
 
@@ -44,14 +44,20 @@ impl DapiRequest for GetIdentity {
         use platform_proto::GetIdentityResponse as GrpcResponse;
 
         match transport_response {
-            GrpcResponse { result: None, .. } => Ok(None),
+            GrpcResponse {
+                result: None,
+                metadata: Some(metadata),
+            } => Ok(GetIdentityResponse {
+                metadata,
+                identity_bytes: None,
+            }),
             GrpcResponse {
                 result: Some(GrpcResponseBody::Identity(identity_bytes)),
                 metadata: Some(metadata),
-            } => Ok(Some(GetIdentityResponse {
-                identity_bytes,
+            } => Ok(GetIdentityResponse {
+                identity_bytes: Some(identity_bytes),
                 metadata,
-            })),
+            }),
             _ => Err(IncompleteMessage),
         }
     }

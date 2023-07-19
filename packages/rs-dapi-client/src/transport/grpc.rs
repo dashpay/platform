@@ -116,6 +116,13 @@ link_grpc_method!(
 );
 
 link_grpc_method!(
+    platform_proto::GetDataContractHistoryRequest,
+    platform_proto::GetDataContractHistoryResponse,
+    PlatformGrpcClient,
+    get_data_contract_history
+);
+
+link_grpc_method!(
     platform_proto::BroadcastStateTransitionRequest,
     platform_proto::BroadcastStateTransitionResponse,
     PlatformGrpcClient,
