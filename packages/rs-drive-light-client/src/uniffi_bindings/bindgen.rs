@@ -47,5 +47,5 @@ fn drive_library_path() -> Utf8PathBuf {
         .parent()
         .expect("cannot get parrent of .../build/ dir");
 
-    artifacts_dir.join("librs_drive_light_client.rlib")
+    artifacts_dir.join("libdrive_light_client.rlib")
 }
