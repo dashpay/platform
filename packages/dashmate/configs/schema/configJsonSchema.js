@@ -324,7 +324,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/docker',
                 },
                 http: {
                   type: 'object',
