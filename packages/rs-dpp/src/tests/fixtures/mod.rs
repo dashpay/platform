@@ -44,3 +44,4 @@ mod get_public_keys_validator_fixture;
 mod identity_credit_withdrawal_transition_fixture;
 mod identity_fixture;
 mod identity_topup_transition_fixture;
+mod get_dpns_register_fixture;

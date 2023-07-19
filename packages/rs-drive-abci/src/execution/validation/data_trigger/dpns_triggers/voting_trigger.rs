@@ -28,29 +28,30 @@ pub fn run_name_register_trigger(
     context: &DataTriggerExecutionContext<'_>,
     _: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let mut data_tirgger_execution_result = DataTriggerExecutionResult::default();
+    let mut data_trigger_execution_result = DataTriggerExecutionResult::default();
     
     let current_epoch = context.current_epoch();
 
     if current_epoch.index != 0 {
         // As per spec, the voting for names is only allowed in the first epoch.
-        return Ok(data_tirgger_execution_result);
+        return Ok(data_trigger_execution_result);
     }
 
     let DocumentTransitionAction::CreateAction(document_create_action) = document_transition else {
         // Not a name registration actions, as it doesn't create a document.
-        return Ok(data_tirgger_execution_result);
+        return Ok(data_trigger_execution_result);
     };
 
-    // TODO: take const from DPNS contract
-    if document_create_action.base.document_type_name != "registerName" {
+    // TODO: I guess preorders can be cretaed, it's the actual domain document that needs to be
+    //  voted on
+    if document_create_action.base.document_type_name != "domain" {
         // Not a name registration document.
-        return Ok(data_tirgger_execution_result);
+        return Ok(data_trigger_execution_result);
     };
 
-    // Execute the trigger only if the document is being created.
+    // Execute the trigger only if the document is being created.j
     
-    Ok(data_tirgger_execution_result)
+    Ok(data_trigger_execution_result)
 }
 
 // /// Creates a data trigger for handling contact request documents.
@@ -207,7 +208,7 @@ mod test {
             config: &platform.config,
         };
 
-        let mut contact_request_document = get_contact_request_document_fixture(None, None);
+        let mut contact_request_document = get_dpns_parent_document_fixture(None, None);
         contact_request_document
             .set(
                 super::property_names::CORE_HEIGHT_CREATED_AT,
@@ -226,7 +227,7 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let data_contract = get_dashpay_contract_fixture(None);
+        let data_contract = get_dpns_data_contract_fixture(None);
 
         let transition_execution_context = StateTransitionExecutionContext::default();
 
