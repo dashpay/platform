@@ -1,12 +1,10 @@
-use std::{fs::File, path::PathBuf};
-
 use dapi_grpc::platform::v0::{
     GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
     GetIdentityRequest, GetIdentityResponse,
 };
-
 use dpp::prelude::Identity;
 use drive_light_client::proof::from_proof::{FromProof, MockQuorumInfoProvider};
+use std::{fs::File, path::PathBuf};
 use tracing::Level;
 
 #[test]
@@ -17,6 +15,13 @@ fn get_identities_by_hashes_notfound() {
         MockQuorumInfoProvider,
     ) = load("vectors/get_identities_by_hashes_notfound.json");
 
+    let ids = drive_light_client::proof::from_proof::IdentitiesByPublicKeyHashes::maybe_from_proof(
+        &req,
+        &resp,
+        Box::new(provider),
+    )
+    .unwrap();
+    assert!(ids.is_none())
     // Vec<Identity>::from_proof(req, resp, provider)
 }
 

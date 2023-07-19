@@ -9,12 +9,12 @@ use drive::drive::Drive;
 
 use super::verify::verify_tenderdash_proof;
 
-type Identities = Vec<Option<Identity>>;
-type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
-type DataContracts = Vec<Option<DataContract>>;
-type IdentityBalance = u64;
-type IdentityBalanceAndRevision = (u64, Revision);
-type Documents = Vec<Document>;
+pub type Identities = Vec<Option<Identity>>;
+pub type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
+pub type DataContracts = Vec<Option<DataContract>>;
+pub type IdentityBalance = u64;
+pub type IdentityBalanceAndRevision = (u64, Revision);
+pub type Documents = Vec<Document>;
 
 // #[cfg(feature = "mockall")]
 
