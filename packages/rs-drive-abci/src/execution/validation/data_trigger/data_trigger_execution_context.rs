@@ -3,6 +3,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
+use dpp::block::epoch::Epoch;
 use drive::grovedb::TransactionArg;
 
 /// DataTriggerExecutionContext represents the context in which a data trigger is executed.
@@ -37,5 +38,9 @@ impl<'a> DataTriggerExecutionContext<'a> {
             data_contract,
             state_transition_execution_context,
         }
+    }
+
+    pub fn current_epoch(&self) -> Epoch {
+        self.platform.epoch()
     }
 }

@@ -1,3 +1,5 @@
+mod voting_trigger;
+
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
 
@@ -12,6 +14,8 @@ use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
+
+pub use voting_trigger::run_name_register_trigger;
 
 const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 const PROPERTY_LABEL: &str = "label";

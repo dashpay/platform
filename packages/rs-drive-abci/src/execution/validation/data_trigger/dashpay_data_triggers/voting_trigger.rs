@@ -10,8 +10,6 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::{get_from_transition_action, ProtocolError};
 
-// pub use voting_trigger::
-
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
     pub const TO_USER_ID: &str = "toUserId";
@@ -196,7 +194,7 @@ mod test {
             &data_trigger_context,
             None,
         )
-        .expect("the execution result should be returned");
+            .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }
@@ -266,7 +264,7 @@ mod test {
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
-        .expect("data trigger result should be returned");
+            .expect("data trigger result should be returned");
 
         assert!(!result.is_valid());
 
@@ -342,7 +340,7 @@ mod test {
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
-        .expect("data trigger result should be returned");
+            .expect("data trigger result should be returned");
 
         assert!(!result.is_valid());
         let data_trigger_error = &result.errors[0];
