@@ -33,7 +33,6 @@ const { version } = require('../../package.json');
 
 const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
 const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
-const envoyImageVersion = `${semver.major(version)}`;
 
 module.exports = {
   description: 'base config for use as template',
@@ -105,7 +104,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: `dashpay/envoy:${envoyImageVersion}`,
+          image: `dashpay/envoy:v1.22.11`,
           build: {
             enabled: false,
             context: path.join(__dirname, '..', '..', 'docker', 'envoy'),
