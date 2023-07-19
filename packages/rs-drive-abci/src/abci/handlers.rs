@@ -553,7 +553,13 @@ where
 
         self.commit_transaction()?;
 
-        self.platform.create_snapshot(height)?;
+        /// Create a snapshot of the current state for the height
+        match self.snapshot_manager.borrow().as_ref() {
+            Some(snapshot_manager) => {
+                snapshot_manager.create_snapshot(&self.platform.drive.grove, height)?
+            }
+            _ => {}
+        };
 
         Ok(ResponseFinalizeBlock {
             events: vec![],
@@ -683,7 +689,7 @@ where
         &self,
         request: RequestListSnapshots,
     ) -> Result<ResponseListSnapshots, ResponseException> {
-        match self.platform.snapshot_manager.as_ref() {
+        match self.snapshot_manager.borrow().as_ref() {
             Some(manager) => match manager.get_snapshots(&self.platform.drive.grove) {
                 Ok(snapshots) => Ok(ResponseListSnapshots {
                     snapshots: snapshots
