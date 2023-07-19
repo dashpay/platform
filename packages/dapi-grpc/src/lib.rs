@@ -13,3 +13,7 @@ pub mod platform {
         include!("platform/proto/org.dash.platform.dapi.v0.rs");
     }
 }
+
+#[cfg(feature = "serde")]
+// Serde deserialization logic
+pub mod deserialization;

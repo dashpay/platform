@@ -1,27 +1,45 @@
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Proof {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
     pub grovedb_proof: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
     pub quorum_hash: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
     pub signature: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "4")]
     pub round: u32,
+    #[prost(bytes = "vec", tag = "5")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
+    pub block_id_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "6")]
+    pub quorum_type: u32,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResponseMetadata {
     #[prost(uint64, tag = "1")]
+    #[serde(deserialize_with = "crate::deserialization::from_string")]
     pub height: u64,
     #[prost(uint32, tag = "2")]
     pub core_chain_locked_height: u32,
     #[prost(uint64, tag = "3")]
+    #[serde(deserialize_with = "crate::deserialization::from_string")]
     pub time_ms: u64,
     #[prost(uint32, tag = "4")]
     pub protocol_version: u32,
+    #[prost(string, tag = "5")]
+    pub chain_id: ::prost::alloc::string::String,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StateTransitionBroadcastError {
@@ -32,23 +50,32 @@ pub struct StateTransitionBroadcastError {
     #[prost(bytes = "vec", tag = "3")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BroadcastStateTransitionRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub state_transition: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BroadcastStateTransitionResponse {}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityResponse {
@@ -59,6 +86,8 @@ pub struct GetIdentityResponse {
 }
 /// Nested message and enum types in `GetIdentityResponse`.
 pub mod get_identity_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -68,6 +97,8 @@ pub mod get_identity_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesRequest {
@@ -76,6 +107,8 @@ pub struct GetIdentitiesRequest {
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesResponse {
@@ -86,12 +119,16 @@ pub struct GetIdentitiesResponse {
 }
 /// Nested message and enum types in `GetIdentitiesResponse`.
 pub mod get_identities_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityValue {
         #[prost(bytes = "vec", tag = "1")]
         pub value: ::prost::alloc::vec::Vec<u8>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityEntry {
@@ -100,12 +137,16 @@ pub mod get_identities_response {
         #[prost(message, optional, tag = "2")]
         pub value: ::core::option::Option<IdentityValue>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Identities {
         #[prost(message, repeated, tag = "1")]
         pub identity_entries: ::prost::alloc::vec::Vec<IdentityEntry>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -115,6 +156,8 @@ pub mod get_identities_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceResponse {
@@ -125,6 +168,8 @@ pub struct GetIdentityBalanceResponse {
 }
 /// Nested message and enum types in `GetIdentityBalanceResponse`.
 pub mod get_identity_balance_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -134,6 +179,8 @@ pub mod get_identity_balance_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceAndRevisionResponse {
@@ -146,6 +193,8 @@ pub struct GetIdentityBalanceAndRevisionResponse {
 }
 /// Nested message and enum types in `GetIdentityBalanceAndRevisionResponse`.
 pub mod get_identity_balance_and_revision_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct BalanceAndRevision {
@@ -154,6 +203,8 @@ pub mod get_identity_balance_and_revision_response {
         #[prost(message, optional, tag = "2")]
         pub revision: ::core::option::Option<u64>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -163,6 +214,8 @@ pub mod get_identity_balance_and_revision_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct KeyRequestType {
@@ -171,6 +224,8 @@ pub struct KeyRequestType {
 }
 /// Nested message and enum types in `KeyRequestType`.
 pub mod key_request_type {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Request {
@@ -182,21 +237,29 @@ pub mod key_request_type {
         SearchKey(super::SearchKey),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AllKeys {}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SpecificKeys {
     #[prost(uint32, repeated, tag = "1")]
     pub key_ids: ::prost::alloc::vec::Vec<u32>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchKey {
     #[prost(map = "uint32, message", tag = "1")]
     pub purpose_map: ::std::collections::HashMap<u32, SecurityLevelMap>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SecurityLevelMap {
@@ -208,6 +271,8 @@ pub struct SecurityLevelMap {
 }
 /// Nested message and enum types in `SecurityLevelMap`.
 pub mod security_level_map {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[derive(
         Clone,
         Copy,
@@ -247,6 +312,8 @@ pub mod security_level_map {
         }
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysRequest {
@@ -261,6 +328,8 @@ pub struct GetIdentityKeysRequest {
     #[prost(bool, tag = "5")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysResponse {
@@ -271,12 +340,16 @@ pub struct GetIdentityKeysResponse {
 }
 /// Nested message and enum types in `GetIdentityKeysResponse`.
 pub mod get_identity_keys_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Keys {
         #[prost(bytes = "vec", repeated, tag = "1")]
         pub keys_bytes: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -286,6 +359,8 @@ pub mod get_identity_keys_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesKeysRequest {
@@ -302,6 +377,8 @@ pub struct GetIdentitiesKeysRequest {
 }
 /// Nested message and enum types in `GetIdentitiesKeysRequest`.
 pub mod get_identities_keys_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SecurityLevelMap {
@@ -313,6 +390,8 @@ pub mod get_identities_keys_request {
     }
     /// Nested message and enum types in `SecurityLevelMap`.
     pub mod security_level_map {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
         #[derive(
             Clone,
             Copy,
@@ -350,6 +429,8 @@ pub mod get_identities_keys_request {
         }
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesKeysResponse {
@@ -360,12 +441,16 @@ pub struct GetIdentitiesKeysResponse {
 }
 /// Nested message and enum types in `GetIdentitiesKeysResponse`.
 pub mod get_identities_keys_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PublicKey {
         #[prost(bytes = "vec", tag = "1")]
         pub value: ::prost::alloc::vec::Vec<u8>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PublicKeyEntry {
@@ -374,12 +459,16 @@ pub mod get_identities_keys_response {
         #[prost(message, optional, tag = "2")]
         pub value: ::core::option::Option<PublicKey>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PublicKeyEntries {
         #[prost(message, repeated, tag = "1")]
         pub public_key_entries: ::prost::alloc::vec::Vec<PublicKeyEntry>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -389,6 +478,8 @@ pub mod get_identities_keys_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProofsRequest {
@@ -401,6 +492,8 @@ pub struct GetProofsRequest {
 }
 /// Nested message and enum types in `GetProofsRequest`.
 pub mod get_proofs_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DocumentRequest {
@@ -413,6 +506,8 @@ pub mod get_proofs_request {
         #[prost(bytes = "vec", tag = "4")]
         pub document_id: ::prost::alloc::vec::Vec<u8>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityRequest {
@@ -423,6 +518,8 @@ pub mod get_proofs_request {
     }
     /// Nested message and enum types in `IdentityRequest`.
     pub mod identity_request {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
         #[derive(
             Clone,
             Copy,
@@ -463,6 +560,8 @@ pub mod get_proofs_request {
             }
         }
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct ContractRequest {
@@ -470,6 +569,8 @@ pub mod get_proofs_request {
         pub contract_id: ::prost::alloc::vec::Vec<u8>,
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProofsResponse {
@@ -478,14 +579,19 @@ pub struct GetProofsResponse {
     #[prost(message, optional, tag = "2")]
     pub metadata: ::core::option::Option<ResponseMetadata>,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractResponse {
@@ -496,6 +602,8 @@ pub struct GetDataContractResponse {
 }
 /// Nested message and enum types in `GetDataContractResponse`.
 pub mod get_data_contract_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -505,6 +613,8 @@ pub mod get_data_contract_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsRequest {
@@ -513,6 +623,8 @@ pub struct GetDataContractsRequest {
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsResponse {
@@ -523,12 +635,16 @@ pub struct GetDataContractsResponse {
 }
 /// Nested message and enum types in `GetDataContractsResponse`.
 pub mod get_data_contracts_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContractValue {
         #[prost(bytes = "vec", tag = "1")]
         pub value: ::prost::alloc::vec::Vec<u8>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContractEntry {
@@ -537,12 +653,16 @@ pub mod get_data_contracts_response {
         #[prost(message, optional, tag = "2")]
         pub value: ::core::option::Option<DataContractValue>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContracts {
         #[prost(message, repeated, tag = "1")]
         pub data_contract_entries: ::prost::alloc::vec::Vec<DataContractEntry>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -552,10 +672,13 @@ pub mod get_data_contracts_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(deserialize_with = "crate::deserialization::from_base64")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "2")]
     pub limit: u32,
@@ -566,6 +689,8 @@ pub struct GetDataContractHistoryRequest {
     #[prost(bool, tag = "5")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryResponse {
@@ -576,6 +701,8 @@ pub struct GetDataContractHistoryResponse {
 }
 /// Nested message and enum types in `GetDataContractHistoryResponse`.
 pub mod get_data_contract_history_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContractHistoryEntry {
@@ -584,12 +711,16 @@ pub mod get_data_contract_history_response {
         #[prost(bytes = "vec", tag = "2")]
         pub value: ::prost::alloc::vec::Vec<u8>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DataContractHistory {
         #[prost(message, repeated, tag = "1")]
         pub data_contract_entries: ::prost::alloc::vec::Vec<DataContractHistoryEntry>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -599,6 +730,8 @@ pub mod get_data_contract_history_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsRequest {
@@ -619,6 +752,8 @@ pub struct GetDocumentsRequest {
 }
 /// Nested message and enum types in `GetDocumentsRequest`.
 pub mod get_documents_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Start {
@@ -628,6 +763,8 @@ pub mod get_documents_request {
         StartAt(::prost::alloc::vec::Vec<u8>),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsResponse {
@@ -638,12 +775,16 @@ pub struct GetDocumentsResponse {
 }
 /// Nested message and enum types in `GetDocumentsResponse`.
 pub mod get_documents_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Documents {
         #[prost(bytes = "vec", repeated, tag = "1")]
         pub documents: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -653,14 +794,19 @@ pub mod get_documents_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesByPublicKeyHashesRequest {
     #[prost(bytes = "vec", repeated, tag = "1")]
+    #[serde(deserialize_with = "crate::deserialization::from_seq_base64")]
     pub public_key_hashes: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesByPublicKeyHashesResponse {
@@ -676,12 +822,16 @@ pub struct GetIdentitiesByPublicKeyHashesResponse {
 }
 /// Nested message and enum types in `GetIdentitiesByPublicKeyHashesResponse`.
 pub mod get_identities_by_public_key_hashes_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Identities {
         #[prost(bytes = "vec", repeated, tag = "1")]
         pub identities: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -691,6 +841,8 @@ pub mod get_identities_by_public_key_hashes_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashesRequest {
@@ -699,6 +851,8 @@ pub struct GetIdentityByPublicKeyHashesRequest {
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashesResponse {
@@ -711,6 +865,8 @@ pub struct GetIdentityByPublicKeyHashesResponse {
 }
 /// Nested message and enum types in `GetIdentityByPublicKeyHashesResponse`.
 pub mod get_identity_by_public_key_hashes_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -720,6 +876,8 @@ pub mod get_identity_by_public_key_hashes_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitForStateTransitionResultRequest {
@@ -728,6 +886,8 @@ pub struct WaitForStateTransitionResultRequest {
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitForStateTransitionResultResponse {
@@ -740,6 +900,8 @@ pub struct WaitForStateTransitionResultResponse {
 }
 /// Nested message and enum types in `WaitForStateTransitionResultResponse`.
 pub mod wait_for_state_transition_result_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Result {
@@ -749,6 +911,8 @@ pub mod wait_for_state_transition_result_response {
         Proof(super::Proof),
     }
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusParamsBlock {
@@ -759,6 +923,8 @@ pub struct ConsensusParamsBlock {
     #[prost(string, tag = "3")]
     pub time_iota_ms: ::prost::alloc::string::String,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConsensusParamsEvidence {
@@ -769,6 +935,8 @@ pub struct ConsensusParamsEvidence {
     #[prost(string, tag = "3")]
     pub max_bytes: ::prost::alloc::string::String,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetConsensusParamsRequest {
@@ -777,6 +945,8 @@ pub struct GetConsensusParamsRequest {
     #[prost(bool, tag = "2")]
     pub prove: bool,
 }
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetConsensusParamsResponse {
