@@ -18,30 +18,33 @@ module.exports = {
     dockerBuild: {
       type: 'object',
       properties: {
+        enabled: {
+          type: 'boolean',
+        },
+        context: {
+          type: 'string',
+          minLength: 1,
+        },
+        dockerFile: {
+          type: 'string',
+          minLength: 1,
+        },
+        target: {
+          type: 'string',
+        },
+      },
+      required: ['enabled', 'context', 'dockerFile', 'target'],
+      additionalProperties: false,
+    },
+    dockerWithBuild: {
+      type: 'object',
+      properties: {
         image: {
           type: 'string',
           minLength: 1,
         },
         build: {
-          type: 'object',
-          properties: {
-            enabled: {
-              type: 'boolean',
-            },
-            context: {
-              type: 'string',
-              minLength: 1,
-            },
-            dockerFile: {
-              type: 'string',
-              minLength: 1,
-            },
-            target: {
-              type: 'string',
-            },
-          },
-          required: ['enabled', 'context', 'dockerFile', 'target'],
-          additionalProperties: false,
+          $ref: '#/definitions/dockerBuild',
         },
       },
       required: ['image', 'build'],
@@ -309,7 +312,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
                 http: {
                   type: 'object',
@@ -385,7 +388,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
               },
               required: ['docker'],
@@ -402,7 +405,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/dockerBuild',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
                 log: {
                   type: 'object',
@@ -705,7 +708,14 @@ module.exports = {
           type: 'object',
           properties: {
             docker: {
-              $ref: '#/definitions/dockerBuild',
+              type: 'object',
+              properties: {
+                build: {
+                  $ref: '#/definitions/dockerBuild',
+                },
+              },
+              required: ['build'],
+              additionalProperties: false,
             },
             api: {
               type: 'object',

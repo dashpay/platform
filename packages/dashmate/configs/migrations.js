@@ -628,6 +628,8 @@ module.exports = {
         config.dashmate.helper.docker.build = systemConfigs.base.dashmate.helper
           .docker.build;
 
+        delete config.dashmate.helper.docker.image;
+
         delete config.core.reindex;
       });
 

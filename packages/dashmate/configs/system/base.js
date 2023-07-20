@@ -264,7 +264,6 @@ module.exports = {
   dashmate: {
     helper: {
       docker: {
-        image: `dashpay/dashmate-helper:${version}`,
         build: {
           enabled: false,
           context: path.join(__dirname, '..', '..', '..', '..'),
