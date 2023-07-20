@@ -83,7 +83,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 # Configure Node.js
 RUN npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
-    corepack prepare yarn@3.3.0 --activate && \
     corepack enable
 
 # Switch to clang
