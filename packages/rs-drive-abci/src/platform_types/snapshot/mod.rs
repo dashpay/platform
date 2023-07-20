@@ -29,13 +29,9 @@ pub struct Snapshot {
 
 impl From<Snapshot> for abci::Snapshot {
     fn from(snapshot: Snapshot) -> Self {
-        // TODO: after regenerate proto files in rs-tenderdash-abci needs
-        //  1. replace "format" on "version"
-        //  2. remove "chunks"
         abci::Snapshot {
             height: snapshot.height as u64,
-            format: snapshot.version as u32,
-            chunks: 0,
+            version: snapshot.version as u32,
             hash: snapshot.hash.into(),
             metadata: snapshot.metadata,
         }

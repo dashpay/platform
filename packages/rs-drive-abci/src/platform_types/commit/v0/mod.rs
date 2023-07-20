@@ -162,10 +162,7 @@ mod test {
             app_hash,
             app_version: 1,
             core_chain_locked_height: 3,
-            time: Some(tenderdash_abci::proto::google::protobuf::Timestamp {
-                seconds: 0,
-                nanos: 0,
-            }),
+            time: 0,
         };
 
         let block_id = BlockId {

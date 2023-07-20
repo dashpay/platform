@@ -2115,7 +2115,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.21.2",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -3862,8 +3862,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
+version = "0.13.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#8ed01885be6fc01ebbf9d79633fa6af129a22d1a"
 dependencies = [
  "bytes",
  "futures",
@@ -3882,8 +3882,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.12.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
+version = "0.13.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#8ed01885be6fc01ebbf9d79633fa6af129a22d1a"
 dependencies = [
  "bytes",
  "chrono",
@@ -3901,7 +3901,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#29b505669545153206a7c4c9154f0b738c5b5654"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#8ed01885be6fc01ebbf9d79633fa6af129a22d1a"
 dependencies = [
  "fs_extra",
  "prost-build",
