@@ -26,6 +26,7 @@ const semver = require('semver');
 
 const {
   NETWORK_TESTNET,
+  PACKAGE_ROOT_DIR,
 } = require('../../../constants');
 
 const { version } = require('../../../../package.json');
@@ -118,8 +119,8 @@ function getBaseConfigFactory(homeDir) {
               image: `dashpay/envoy:${dockerImageVersion}`,
               build: {
                 enabled: false,
-                context: path.join(__dirname, '..', '..', 'docker', 'envoy'),
-                dockerFile: path.join(__dirname, '..', '..', 'docker', 'envoy', 'Dockerfile'),
+                context: path.join(PACKAGE_ROOT_DIR, 'docker', 'envoy'),
+                dockerFile: path.join(PACKAGE_ROOT_DIR, 'docker', 'envoy', 'Dockerfile'),
                 target: '',
               },
             },
@@ -148,8 +149,8 @@ function getBaseConfigFactory(homeDir) {
               image: `dashpay/dapi:${dockerImageVersion}`,
               build: {
                 enabled: false,
-                context: path.join(__dirname, '..', '..', '..', '..'),
-                dockerFile: path.join(__dirname, '..', '..', '..', 'dapi', 'Dockerfile'),
+                context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
+                dockerFile: path.join(PACKAGE_ROOT_DIR, '..', 'dapi', 'Dockerfile'),
                 target: '',
               },
             },
@@ -161,8 +162,8 @@ function getBaseConfigFactory(homeDir) {
               image: `dashpay/drive:${dockerImageVersion}`,
               build: {
                 enabled: false,
-                context: path.join(__dirname, '..', '..', '..', '..'),
-                dockerFile: path.join(__dirname, '..', '..', '..', 'js-drive', 'Dockerfile'),
+                context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
+                dockerFile: path.join(PACKAGE_ROOT_DIR, '..', 'js-drive', 'Dockerfile'),
                 target: '',
               },
             },
@@ -281,8 +282,8 @@ function getBaseConfigFactory(homeDir) {
           docker: {
             build: {
               enabled: false,
-              context: path.join(__dirname, '..', '..', '..', '..'),
-              dockerFile: path.join(__dirname, '..', '..', 'Dockerfile'),
+              context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
+              dockerFile: path.join(PACKAGE_ROOT_DIR, 'Dockerfile'),
               target: '',
             },
           },
