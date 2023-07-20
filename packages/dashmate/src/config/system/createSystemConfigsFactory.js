@@ -1,29 +1,23 @@
-const Config = require('../Config');
-
 const ConfigFile = require('../configFile/ConfigFile');
 
 const packageJson = require('../../../package.json');
 const getShortHash = require('../../util/getShortHash');
-const { HOME_DIR_PATH } = require('../../constants');
 
 /**
- * @param {Object} systemConfigs
+ * @param {SystemConfigs} systemConfigs
+ * @param {HomeDir} homeDir
  * @return {createSystemConfigs}
  */
-function createSystemConfigsFactory(systemConfigs) {
+function createSystemConfigsFactory(systemConfigs, homeDir) {
   /**
    * @typedef {createSystemConfigs}
    * @returns {ConfigFile}
    */
   function createSystemConfigs() {
-    const projectId = getShortHash(HOME_DIR_PATH);
-
-    const configs = Object.entries(systemConfigs).map(([name, options]) => (
-      new Config(name, options)
-    ));
+    const projectId = getShortHash(homeDir.getPath());
 
     return new ConfigFile(
-      configs,
+      systemConfigs.getAll(),
       packageJson.version,
       projectId,
       null,

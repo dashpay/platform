@@ -10,7 +10,6 @@ class ResetCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {isSystemConfig} isSystemConfig
    * @param {Config} config
    * @param {resetNodeTask} resetNodeTask
    *
@@ -24,7 +23,6 @@ class ResetCommand extends ConfigBaseCommand {
       force: isForce,
       platform: isPlatformOnlyReset,
     },
-    isSystemConfig,
     config,
     resetNodeTask,
   ) {

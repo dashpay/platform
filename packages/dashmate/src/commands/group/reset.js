@@ -10,7 +10,6 @@ class GroupResetCommand extends GroupBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {isSystemConfig} isSystemConfig
    * @param {resetNodeTask} resetNodeTask
    * @param {Config[]} configGroup
    * @param {configureCoreTask} configureCoreTask
@@ -27,7 +26,6 @@ class GroupResetCommand extends GroupBaseCommand {
       force: isForce,
       platform: isPlatformOnlyReset,
     },
-    isSystemConfig,
     resetNodeTask,
     configGroup,
     configureCoreTask,

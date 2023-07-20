@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const dots = require('dot');
-const { HOME_DIR_PATH } = require('../../../constants');
 
 class VerificationServer {
   /**
@@ -9,11 +8,13 @@ class VerificationServer {
    * @param {Docker} docker
    * @param {dockerPull} dockerPull
    * @param {StartedContainers} startedContainers
+   * @param {HomeDir} homeDir
    */
-  constructor(docker, dockerPull, startedContainers) {
+  constructor(docker, dockerPull, startedContainers, homeDir) {
     this.docker = docker;
     this.dockerPull = dockerPull;
     this.startedContainers = startedContainers;
+    this.homeDir = homeDir;
     this.server = null;
     this.configPath = null;
     this.isRunning = false;
@@ -41,7 +42,7 @@ class VerificationServer {
 
     // set up envoy config
     const envoyConfig = template({ route, body });
-    const configDir = path.join(HOME_DIR_PATH, config.getName());
+    const configDir = this.homeDir.joinPath(config.getName());
     const configName = path.basename(templatePath, '.dot');
     this.configPath = path.join(configDir, configName);
 

@@ -9,14 +9,12 @@ const {
 const Docker = require('dockerode');
 
 const getServiceListFactory = require('./docker/getServiceListFactory');
-const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
 const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
-const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
-const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFactory');
-const migrateConfigFile = require('./config/configFile/migrateConfigFile');
-const systemConfigs = require('../configs/system');
+const createSystemConfigsFactory = require('./config/system/createSystemConfigsFactory');
+const migrateConfigFileFactory = require('./config/configFile/migrations/migrateConfigFileFactory');
+const SystemConfigs = require('./config/system/SystemConfigs');
 
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
 const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
@@ -97,8 +95,19 @@ const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureN
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
 const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
+const HomeDir = require('./config/HomeDir');
+const getBaseConfigFactory = require('./config/system/configs/getBaseConfigFactory');
+const getLocalConfigFactory = require('./config/system/configs/getLocalConfigFactory');
+const getTestnetConfigFactory = require('./config/system/configs/getTestnetConfigFactory');
+const getMainnetConfigFactory = require('./config/system/configs/getMainnetConfigFactory');
+const getConfigFileMigrationsFactory = require('./config/configFile/migrations/getConfigFileMigrationsFactory');
 
-async function createDIContainer() {
+/**
+ * @param [options]
+ * @param [options.DASHMATE_HOME_DIR]
+ * @returns {Promise<AwilixContainer<any>>}
+ */
+async function createDIContainer(options = {}) {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
   });
@@ -107,15 +116,32 @@ async function createDIContainer() {
    * Config
    */
   container.register({
+    // TODO: It creates a directory on the disk when we create DI container. Doesn't smell good
+    homeDir: asFunction(() => (
+      HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
+    )).singleton(),
     getServiceList: asFunction(getServiceListFactory).singleton(),
-    ensureHomeDir: asFunction(ensureHomeDirFactory).singleton(),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
-    systemConfigs: asValue(systemConfigs),
+    getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
+    getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
+    getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
+    getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
+    systemConfigs: asFunction((
+      getBaseConfig,
+      getLocalConfig,
+      getTestnetConfig,
+      getMainnetConfig,
+    ) => new SystemConfigs([
+      getBaseConfig,
+      getLocalConfig,
+      getTestnetConfig,
+      getMainnetConfig,
+    ])).singleton(),
     createSystemConfigs: asFunction(createSystemConfigsFactory).singleton(),
-    isSystemConfig: asFunction(isSystemConfigFactory).singleton(),
-    migrateConfigFile: asValue(migrateConfigFile),
+    getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
+    migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
-    getConnectionHost: asClass(getConnectionHostFactory).singleton(),
+    getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });

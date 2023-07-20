@@ -1,8 +1,8 @@
 const BlsSignatures = require('@dashevo/bls');
 
-const createPlatformNodeKeyInput = require('../createPlatformNodeKeyInput');
-const createIpAndPortsForm = require('../createIpAndPortsForm');
-const validateBLSPrivateKeyFactory = require('../validators/validateBLSPrivateKeyFactory');
+const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNodeKeyInput');
+const createIpAndPortsForm = require('../../../../prompts/createIpAndPortsForm');
+const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
 
 /**
  * Print prompts to collect masternode registration data with DMT

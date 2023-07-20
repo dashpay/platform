@@ -3,15 +3,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const wait = require('../../util/wait');
 const generateEnvs = require('../../util/generateEnvs');
-const { HOME_DIR_PATH } = require('../../constants');
 
 /**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
- * @param {systemConfigs} systemConfigs
+ * @param {SystemConfigs} systemConfigs
  * @param {ConfigFile} configFile
+ * @param {HomeDir} homeDir
  * @return {resetNodeTask}
  */
 function resetNodeTaskFactory(
@@ -21,6 +21,7 @@ function resetNodeTaskFactory(
   generateToAddressTask,
   systemConfigs,
   configFile,
+  homeDir,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -124,13 +125,13 @@ function resetNodeTaskFactory(
         task: (ctx) => {
           const baseConfigName = config.get('group') || config.getName();
 
-          if (systemConfigs[baseConfigName]) {
+          if (systemConfigs.has(baseConfigName)) {
             // Reset config if the corresponding base config exists
             if (ctx.isPlatformOnlyReset) {
-              const { platform: systemPlatformConfig } = systemConfigs[baseConfigName];
+              const systemPlatformConfig = systemConfigs.get(baseConfigName).get('platform');
               config.set('platform', systemPlatformConfig);
             } else {
-              config.setOptions(systemConfigs[baseConfigName]);
+              config.setOptions(systemConfigs.get(baseConfigName).getOptions());
             }
           } else {
             // Delete config if no base config
@@ -138,7 +139,7 @@ function resetNodeTaskFactory(
           }
 
           // Remove service configs
-          let serviceConfigsPath = path.join(HOME_DIR_PATH, baseConfigName);
+          let serviceConfigsPath = homeDir.joinPath(baseConfigName);
 
           if (ctx.isPlatformOnlyReset) {
             serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
@@ -150,7 +151,7 @@ function resetNodeTaskFactory(
           });
 
           // Remove SSL files
-          fs.rmSync(path.join(HOME_DIR_PATH, 'ssl', baseConfigName), {
+          fs.rmSync(homeDir.joinPath('ssl', baseConfigName), {
             recursive: true,
             force: true,
           });

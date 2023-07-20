@@ -10,7 +10,6 @@ class ReindexCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {isSystemConfig} isSystemConfig
    * @param {Config} config
    * @param {reindexNodeTask} reindexNodeTask
    *
@@ -21,7 +20,6 @@ class ReindexCommand extends ConfigBaseCommand {
     {
       verbose: isVerbose,
     },
-    isSystemConfig,
     config,
     reindexNodeTask,
   ) {

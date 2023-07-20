@@ -16,17 +16,21 @@ const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError'
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
-const { HOME_DIR_PATH, PACKAGE_ROOT_DIR } = require('../constants');
+const { PACKAGE_ROOT_DIR } = require('../constants');
 
 class DockerCompose {
+  #homeDir;
+
   /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
+   * @param {HomeDir} homeDir
    */
-  constructor(docker, startedContainers) {
+  constructor(docker, startedContainers, homeDir) {
     this.docker = docker;
     this.startedContainers = startedContainers;
     this.isDockerSetupVerified = false;
+    this.#homeDir = homeDir;
   }
 
   /**
@@ -456,7 +460,7 @@ class DockerCompose {
     const env = {
       ...process.env,
       ...envs,
-      DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      DASHMATE_HOME_DIR: this.#homeDir.getPath(),
       LOCAL_UID: uid,
       LOCAL_GID: gid,
     };
@@ -465,11 +469,11 @@ class DockerCompose {
       // Solving issue under WSL when after restart container volume is not being mounted properly
       // https://github.com/docker/for-win/issues/4812
       // Following fix forces container recreation
-      env.WSL2_FIX = (new Date()).getTime();
+      env.WSL2_FIX = Date.now();
     }
 
     return {
-      cwd: path.join(__dirname, '..', '..'),
+      cwd: PACKAGE_ROOT_DIR,
       env,
     };
   }
