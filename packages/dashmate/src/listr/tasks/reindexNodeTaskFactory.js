@@ -8,7 +8,7 @@ const { TEMPLATES_DIR } = require('../../constants');
 /**
  * @param {DockerCompose} dockerCompose
  * @param {startNodeTask} startNodeTask
- * @param {stopNodeTask} stopNodeTask
+ * @param {restartNodeTask} restartNodeTask
  * @param {waitForCoreStart} waitForCoreStart
  * @param {waitForCoreSync} waitForCoreSync
  * @param {createRpcClient} createRpcClient
@@ -23,7 +23,7 @@ const { TEMPLATES_DIR } = require('../../constants');
 function reindexNodeTaskFactory(
   dockerCompose,
   startNodeTask,
-  stopNodeTask,
+  restartNodeTask,
   waitForCoreStart,
   waitForCoreSync,
   createRpcClient,
@@ -103,12 +103,17 @@ function reindexNodeTaskFactory(
           if (coreContainer) {
             const info = await coreContainer.inspect();
 
-            if (info.State.Status === 'exited') {
-              await coreContainer.start();
+            if (info.State.Status !== 'exited') {
+              await coreContainer.restart();
               return Promise.resolve();
             }
-            await coreContainer.restart();
+            await coreContainer.start();
             return Promise.resolve();
+          }
+          const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
+
+          if (isNodeRunning) {
+            return restartNodeTask(config);
           }
 
           return startNodeTask(config);
