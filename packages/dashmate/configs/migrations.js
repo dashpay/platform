@@ -628,8 +628,7 @@ module.exports = {
         config.dashmate.helper.docker.build = systemConfigs.base.dashmate.helper
           .docker.build;
 
-        // eslint-disable-next-line max-len
-        config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
+        delete config.dashmate.helper.docker.image;
       });
 
     return configFile;
