@@ -145,5 +145,5 @@ pub enum DriveError {
 
     /// Error
     #[error("snapshot error")]
-    Snapshot(String)
+    Snapshot(String),
 }
