@@ -34,7 +34,7 @@ impl Default for ParentDocumentOptions {
     }
 }
 
-pub fn get_dpns_parent_document_fixture(options: ParentDocumentOptions) -> ExtendedDocument {
+pub fn get_dpns_preorder_document_fixture(options: ParentDocumentOptions) -> ExtendedDocument {
     let document_factory = DocumentFactory::new(
         LATEST_VERSION,
         get_document_validator_fixture(),

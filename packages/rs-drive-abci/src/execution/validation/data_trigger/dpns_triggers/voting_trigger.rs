@@ -4,10 +4,7 @@ use crate::execution::validation::data_trigger::{
 };
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::epoch::Epoch;
-use dpp::consensus::state::data_trigger::data_trigger_error::{DataTriggerActionError, DataTriggerError};
-use dpp::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
-use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::ConsensusError;
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
@@ -53,15 +50,7 @@ pub fn run_name_register_trigger(
         return Ok(data_trigger_execution_result);
     };
 
-    // ConsensusError::StateError(
-    //     StateError::DataTriggerError(DataTriggerError::DataTriggerExecutionError(
-    //         DataTriggerExecutionError::new(
-    //             context.data_contract.id.clone(),
-    //             document_create_action.base.id.clone(),
-    //             "Vote didn't happen".to_string(),
-    //         ),
-    //     )),
-    // )
+    println!("document_create_action: {:?}", document_create_action);
 
     // Check votes here
     data_trigger_execution_result.add_error(DataTriggerActionError::DataTriggerExecutionError {
@@ -75,115 +64,6 @@ pub fn run_name_register_trigger(
 
     Ok(data_trigger_execution_result)
 }
-
-// /// Creates a data trigger for handling contact request documents.
-// ///
-// /// The trigger is executed whenever a new contact request document is created on the blockchain.
-// /// It sends a notification to the user specified in the document, notifying them that someone
-// /// has requested to add them as a contact.
-// ///
-// /// # Arguments
-// ///
-// /// * `document_transition` - A reference to the document transition that triggered the data trigger.
-// /// * `context` - A reference to the data trigger execution context.
-// /// * `_` - An unused parameter for the owner ID (which is not needed for this trigger).
-// ///
-// /// # Returns
-// ///
-// /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-// pub fn create_contact_request_data_trigger(
-//     document_transition: &DocumentTransitionAction,
-//     context: &DataTriggerExecutionContext<'_>,
-//     _: Option<&Identifier>,
-// ) -> Result<DataTriggerExecutionResult, Error> {
-//     let mut result = DataTriggerExecutionResult::default();
-//     let is_dry_run = context.state_transition_execution_context.is_dry_run();
-//     let owner_id = context.owner_id;
-//
-//     let document_create_transition = match document_transition {
-//         DocumentTransitionAction::CreateAction(d) => d,
-//         _ => {
-//             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
-//                 format!(
-//                     "the Document Transition {} isn't 'CREATE",
-//                     get_from_transition_action!(document_transition, id)
-//                 ),
-//             )))
-//         }
-//     };
-//     let data = &document_create_transition.data;
-//
-//     let maybe_core_height_created_at: Option<u32> = data
-//         .get_optional_integer(CORE_HEIGHT_CREATED_AT)
-//         .map_err(ProtocolError::ValueError)?;
-//     let to_user_id = data
-//         .get_identifier(property_names::TO_USER_ID)
-//         .map_err(ProtocolError::ValueError)?;
-//
-//     if !is_dry_run {
-//         if owner_id == &to_user_id {
-//             let err = DataTriggerActionError::DataTriggerConditionError {
-//                 data_contract_id: context.data_contract.id,
-//                 document_transition_id: document_create_transition.base.id,
-//                 message: format!("Identity {to_user_id} must not be equal to owner id"),
-//                 document_transition: Some(DocumentTransitionAction::CreateAction(
-//                     document_create_transition.clone(),
-//                 )),
-//                 owner_id: Some(*context.owner_id),
-//             };
-//             result.add_error(err);
-//             return Ok(result);
-//         }
-//
-//         if let Some(core_height_created_at) = maybe_core_height_created_at {
-//             let core_chain_locked_height = context.platform.state.core_height();
-//
-//             let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
-//             let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
-//
-//             if core_height_created_at < height_window_start
-//                 || core_height_created_at > height_window_end
-//             {
-//                 let err = DataTriggerActionError::DataTriggerConditionError {
-//                     data_contract_id: context.data_contract.id,
-//                     document_transition_id: document_create_transition.base.id,
-//                     message: format!(
-//                         "Core height {} is out of block height window from {} to {}",
-//                         core_height_created_at, height_window_start, height_window_end
-//                     ),
-//                     document_transition: Some(DocumentTransitionAction::CreateAction(
-//                         document_create_transition.clone(),
-//                     )),
-//                     owner_id: Some(*context.owner_id),
-//                 };
-//                 result.add_error(err);
-//                 return Ok(result);
-//             }
-//         }
-//     }
-//
-//     //  toUserId identity exits
-//     let identity = context
-//         .platform
-//         .drive
-//         .fetch_identity_balance(to_user_id.to_buffer(), context.transaction)?;
-//
-//     if !is_dry_run && identity.is_none() {
-//         let err = DataTriggerActionError::DataTriggerConditionError {
-//             data_contract_id: context.data_contract.id,
-//             document_transition_id: document_create_transition.base.id,
-//             message: format!("Identity {to_user_id} doesn't exist"),
-//             document_transition: Some(DocumentTransitionAction::CreateAction(
-//                 document_create_transition.clone(),
-//             )),
-//             owner_id: Some(*context.owner_id),
-//         };
-//         result.add_error(err);
-//         return Ok(result);
-//     }
-//
-//     Ok(result)
-// }
 
 #[cfg(test)]
 mod test {
@@ -199,7 +79,7 @@ mod test {
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, identity_fixture, ParentDocumentOptions};
+    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, get_dpns_preorder_document_fixture, identity_fixture, ParentDocumentOptions};
 
     #[test]
     fn should_return_error_if_can_not_get_epoch_info() {
@@ -226,17 +106,18 @@ mod test {
             config: &platform.config,
         };
 
-        let mut contact_request_document = get_dpns_parent_document_fixture(ParentDocumentOptions::default());
-        contact_request_document
+        let mut domain_document =
+            get_dpns_parent_document_fixture(ParentDocumentOptions::default());
+        domain_document
             .set(
                 super::property_names::CORE_HEIGHT_CREATED_AT,
                 platform_value!(10u32),
             )
             .expect("expected to set core height created at");
-        let owner_id = &contact_request_document.owner_id();
+        let owner_id = &domain_document.owner_id();
 
         let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+            get_document_transitions_fixture([(Action::Create, vec![domain_document])]);
         let document_transition = document_transitions
             .get(0)
             .expect("document transition should be present");
@@ -265,6 +146,62 @@ mod test {
             None,
         )
         .expect("the execution result should be returned");
+
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn should_always_return_valid_results_for_preorder_at_epoch_0() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let state_read_guard = platform.state.read().unwrap();
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
+        let mut domain_document =
+            get_dpns_preorder_document_fixture(ParentDocumentOptions::default());
+        domain_document
+            .set(
+                super::property_names::CORE_HEIGHT_CREATED_AT,
+                platform_value!(10u32),
+            )
+            .expect("expected to set core height created at");
+        let owner_id = &domain_document.owner_id();
+
+        let document_transitions =
+            get_document_transitions_fixture([(Action::Create, vec![domain_document])]);
+        let document_transition = document_transitions
+            .get(0)
+            .expect("document transition should be present");
+
+        let document_create_transition = document_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
+        let data_contract = get_dpns_data_contract_fixture(None);
+
+        let transition_execution_context = StateTransitionExecutionContext::default();
+
+        let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
+            data_contract: &data_contract.data_contract,
+            owner_id,
+            state_transition_execution_context: &transition_execution_context,
+            transaction: None,
+        };
+
+        transition_execution_context.enable_dry_run();
+
+        let result = run_name_register_trigger(
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &data_trigger_context,
+            None,
+        )
+            .expect("the execution result should be returned");
 
         assert!(!result.is_valid());
     }
