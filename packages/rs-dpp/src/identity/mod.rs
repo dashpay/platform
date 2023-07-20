@@ -20,15 +20,15 @@ pub mod signer;
 pub mod accessors;
 mod conversion;
 mod fields;
+#[cfg(feature = "client")]
+mod identity_facade;
+#[cfg(feature = "factories")]
+mod identity_factory;
 mod methods;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod random;
 mod v0;
 pub mod versions;
-#[cfg(feature = "client")]
-mod identity_facade;
-#[cfg(feature = "factories")]
-mod identity_factory;
 
 pub use fields::*;
 

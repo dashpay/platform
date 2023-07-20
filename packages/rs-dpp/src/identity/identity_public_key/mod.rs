@@ -30,7 +30,6 @@ pub type TimestampMillis = u64;
     Clone,
     Eq,
     PartialEq,
-    Decode,
     Serialize,
     Deserialize,
     PlatformDeserialize,

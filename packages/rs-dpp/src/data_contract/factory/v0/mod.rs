@@ -1,7 +1,7 @@
+use derive_more::From;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use derive_more::From;
 
 #[cfg(feature = "state-transitions")]
 use data_contract::state_transition::property_names as st_prop;
@@ -15,6 +15,9 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::DataContract;
 use crate::serialization_traits::{
     PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
@@ -33,9 +36,6 @@ use crate::{
     prelude::Identifier,
     Convertible,
 };
-use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
-use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -126,7 +126,7 @@ impl DataContractFactoryV0 {
             None
         };
 
-        let mut data_contract : DataContract = match platform_version
+        let mut data_contract: DataContract = match platform_version
             .dpp
             .contract_versions
             .contract_structure_version
@@ -173,7 +173,11 @@ impl DataContractFactoryV0 {
             }
         }
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        match platform_version.dpp.contract_versions.contract_structure_version {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
             0 => Ok(DataContractV0::from_object(data_contract_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),

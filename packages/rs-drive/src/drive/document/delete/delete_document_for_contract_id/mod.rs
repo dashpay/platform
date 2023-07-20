@@ -29,7 +29,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
@@ -46,6 +45,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -59,7 +59,7 @@ impl Drive {
     /// * `block_info`: The block information.
     /// * `apply`: Boolean flag indicating if the operation should be applied.
     /// * `transaction`: The transaction argument.
-    /// * `drive_version`: The drive version to select the correct function version to run.
+    /// * `platform_version`: The platform version to select the correct function version to run.
     ///
     /// # Returns
     /// * `Ok(FeeResult)` if the operation was successful.
@@ -69,13 +69,13 @@ impl Drive {
         document_id: [u8; 32],
         contract_id: [u8; 32],
         document_type_name: &str,
-        owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .delete
@@ -85,11 +85,10 @@ impl Drive {
                 document_id,
                 contract_id,
                 document_type_name,
-                owner_id,
                 block_info,
                 apply,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_document_for_contract_id".to_string(),

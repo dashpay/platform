@@ -1,13 +1,14 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -21,7 +22,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -32,7 +33,7 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
@@ -43,7 +44,7 @@ impl Drive {
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info,
             contract,
-            document_type,
+            document_type: &document_type,
         };
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_document_for_contract_apply_and_add_to_operations(
@@ -54,9 +55,14 @@ impl Drive {
             apply,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok(fees)
     }
 }

@@ -12,7 +12,7 @@ impl Drive {
     /// Must be used only to create initial key-value. To update balance
     /// use `add_to_identity_balance`, `remove_from_identity_balance`,
     /// and `apply_balance_change_from_fee_to_identity`
-    pub(in crate::drive::identity::update) fn insert_identity_balance_operation_v0(
+    pub(crate) fn insert_identity_balance_operation_v0(
         &self,
         identity_id: [u8; 32],
         balance: Credits,

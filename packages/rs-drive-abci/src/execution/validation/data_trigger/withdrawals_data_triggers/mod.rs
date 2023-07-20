@@ -7,8 +7,10 @@ use crate::execution::validation::data_trigger::{
 };
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
@@ -48,7 +50,7 @@ pub fn delete_withdrawal_data_trigger(
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
-        document_type,
+        document_type: &document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: Some(WhereClause {
@@ -122,12 +124,14 @@ mod tests {
     use dpp::document::document_transition::{
         DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
     };
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::Document;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::{platform_value, Bytes32};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
+    use dpp::version::PlatformVersion;
     use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
@@ -172,6 +176,8 @@ mod tests {
             .expect("to load system data contract");
         let owner_id = data_contract.owner_id;
 
+        let platform_version = PlatformVersion::first();
+
         let document_type = data_contract
             .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
             .expect("expected to get withdrawal document type");
@@ -193,9 +199,10 @@ mod tests {
         .expect("expected withdrawal document");
 
         let serialized = document
-            .serialize(document_type)
+            .serialize(&document_type, platform_version)
             .expect("expected to serialize document");
-        Document::from_bytes(&serialized, document_type).expect("expected to deserialize document");
+        Document::from_bytes(&serialized, &document_type, platform_version)
+            .expect("expected to deserialize document");
     }
 
     #[test]
@@ -247,12 +254,13 @@ mod tests {
                         owner_id: Some(owner_id.to_buffer()),
                     },
                     contract: &data_contract,
-                    document_type,
+                    document_type: &document_type,
                 },
                 false,
                 BlockInfo::genesis(),
                 true,
                 None,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 

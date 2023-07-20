@@ -13,9 +13,9 @@ use crate::{
 macro_rules! get_from_transition {
     ($document_transition:expr, $property:ident) => {
         match $document_transition {
-            DocumentTransition::Create(d) => &d.base.$property,
-            DocumentTransition::Delete(d) => &d.base.$property,
-            DocumentTransition::Replace(d) => &d.base.$property,
+            DocumentTransition::Create(d) => &d.base().$property,
+            DocumentTransition::Delete(d) => &d.base().$property,
+            DocumentTransition::Replace(d) => &d.base().$property,
         }
     };
 }
@@ -25,9 +25,9 @@ macro_rules! get_from_transition {
 macro_rules! get_from_transition_action {
     ($document_transition_action:expr, $property:ident) => {
         match $document_transition_action {
-            DocumentTransitionAction::CreateAction(d) => &d.base.$property,
-            DocumentTransitionAction::DeleteAction(d) => &d.base.$property,
-            DocumentTransitionAction::ReplaceAction(d) => &d.base.$property,
+            DocumentTransitionAction::CreateAction(d) => &d.base().$property,
+            DocumentTransitionAction::DeleteAction(d) => &d.base().$property,
+            DocumentTransitionAction::ReplaceAction(d) => &d.base().$property,
         }
     };
 }

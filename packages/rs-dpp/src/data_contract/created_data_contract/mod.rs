@@ -70,8 +70,15 @@ impl CreatedDataContract {
     }
 
     #[cfg(feature = "platform-value")]
-    pub fn from_object(mut raw_object: Value, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
-        match platform_version.dpp.contract_versions.created_data_contract_structure_version {
+    pub fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .created_data_contract_structure_version
+        {
             0 => Ok(CreatedDataContractV0::from_object(raw_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "CreatedDataContract::from_object".to_string(),

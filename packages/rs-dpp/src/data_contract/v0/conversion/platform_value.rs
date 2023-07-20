@@ -1,5 +1,7 @@
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::{property_names, DataContract, DocumentName, PropertyPath};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -7,8 +9,6 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
@@ -41,7 +41,10 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             .remove_identifier(property_names::ID)
             .map_err(ProtocolError::ValueError)?;
 
-        let mutability = DataContractConfig::get_contract_configuration_properties(&data_contract_map, platform_version)?;
+        let mutability = DataContractConfig::get_contract_configuration_properties(
+            &data_contract_map,
+            platform_version,
+        )?;
         let definition_references =
             DataContract::get_definitions(&data_contract_map, platform_version)?;
         let document_types = DataContract::get_document_types_from_contract(
@@ -59,7 +62,10 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             .transpose()?
             .unwrap_or_default();
 
-        let mutability = DataContractConfig::get_contract_configuration_properties(&data_contract_map, platform_version)?;
+        let mutability = DataContractConfig::get_contract_configuration_properties(
+            &data_contract_map,
+            platform_version,
+        )?;
 
         // Defs
         let defs =

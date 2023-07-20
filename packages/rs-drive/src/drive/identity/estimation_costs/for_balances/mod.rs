@@ -24,7 +24,7 @@ impl Drive {
     ///
     /// # Errors
     /// This function will return an error if the method version doesn't match any known versions.
-    pub(super) fn add_estimation_costs_for_balances(
+    pub(crate) fn add_estimation_costs_for_balances(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

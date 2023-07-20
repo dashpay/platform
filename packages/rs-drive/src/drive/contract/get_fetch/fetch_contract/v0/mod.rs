@@ -1,5 +1,5 @@
 use crate::drive::contract::{paths, ContractFetchInfo, DataContractFetchInfo};
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -80,7 +80,12 @@ impl Drive {
                 let fee = if let Some(epoch) = epoch {
                     Some(cost_return_on_error_no_add!(
                         &cost,
-                        calculate_fee(None, Some(vec![drive_operation]), epoch)
+                        Drive::calculate_fee(
+                            None,
+                            Some(vec![drive_operation]),
+                            epoch,
+                            platform_version
+                        )
                     ))
                 } else {
                     None
@@ -124,7 +129,12 @@ impl Drive {
                         let fee = if let Some(epoch) = epoch {
                             Some(cost_return_on_error_no_add!(
                                 &cost,
-                                calculate_fee(None, Some(vec![drive_operation]), epoch)
+                                Drive::calculate_fee(
+                                    None,
+                                    Some(vec![drive_operation]),
+                                    epoch,
+                                    platform_version
+                                )
                             ))
                         } else {
                             None

@@ -1,5 +1,5 @@
 use crate::drive::contract::DataContractFetchInfo;
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -92,7 +92,7 @@ impl Drive {
             platform_version,
         )?;
         let fee_result = epoch.map_or(Ok(None), |epoch| {
-            calculate_fee(None, Some(drive_operations), epoch).map(Some)
+            Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version).map(Some)
         })?;
         Ok((fee_result, contract_fetch_info))
     }
@@ -142,7 +142,7 @@ impl Drive {
                     } else {
                         // we need to calculate new fee
                         let op = vec![CalculatedCostOperation(contract_fetch_info.cost.clone())];
-                        let fee = calculate_fee(None, Some(op), epoch)?;
+                        let fee = Drive::calculate_fee(None, Some(op), epoch, platform_version)?;
 
                         let updated_contract_fetch_info = Arc::new(DataContractFetchInfo {
                             contract: contract_fetch_info.contract.clone(),

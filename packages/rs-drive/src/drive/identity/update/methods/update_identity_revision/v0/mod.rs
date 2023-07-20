@@ -1,6 +1,5 @@
 use dpp::block::block_info::BlockInfo;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -55,7 +54,7 @@ impl Drive {
             drive_version,
         )?;
 
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
 
         Ok(fees)
     }

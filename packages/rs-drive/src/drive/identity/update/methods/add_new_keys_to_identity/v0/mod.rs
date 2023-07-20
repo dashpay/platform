@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -26,7 +27,8 @@ impl Drive {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-            );
+                drive_version,
+            )?;
         }
 
         for key in unique_keys_to_add {

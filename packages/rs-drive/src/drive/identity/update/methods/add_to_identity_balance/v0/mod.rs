@@ -1,4 +1,3 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -7,6 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -33,7 +33,7 @@ impl Drive {
             added_balance,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -42,10 +42,15 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
 
         Ok(fees)
     }

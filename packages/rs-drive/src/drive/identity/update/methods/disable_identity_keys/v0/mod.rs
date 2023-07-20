@@ -1,6 +1,5 @@
 use dpp::block::block_info::BlockInfo;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -15,13 +14,14 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
     /// Disable identity keys
-    pub fn disable_identity_keys_v0(
+    pub(super) fn disable_identity_keys_v0(
         &self,
         identity_id: [u8; 32],
         keys_ids: Vec<KeyID>,
@@ -29,7 +29,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -43,7 +43,7 @@ impl Drive {
             disable_at,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -53,10 +53,15 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            &platform_version,
+        )?;
 
         Ok(fees)
     }

@@ -1,29 +1,44 @@
-pub mod v0;
 mod fields;
+pub mod v0;
 
-use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config::v0::{
+    DataContractConfigGettersV0, DataContractConfigV0,
+};
+use crate::version::{FeatureVersion, PlatformVersion};
+use crate::ProtocolError;
 use bincode::Decode;
 use derive_more::From;
-use serde::{Deserialize, Serialize};
 pub use fields::*;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
-use crate::data_contract::data_contract_config::v0::{DataContractConfigGettersV0, DataContractConfigV0};
-use crate::ProtocolError;
-use crate::version::{FeatureVersion, PlatformVersion};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-#[derive(Serialize, Deserialize, Decode, PlatformSerialize, PlatformDeserialize, Debug, Clone, Copy, PartialEq, Eq, From)]
+#[derive(
+    Serialize,
+    Deserialize,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    From,
+)]
 #[serde(untagged)]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(allow_nested, passthrough, allow_prepend_version)]
+#[platform_serialize(allow_nested)]
 pub enum DataContractConfig {
-    V0(DataContractConfigV0)
+    V0(DataContractConfigV0),
 }
 
 impl DataContractConfig {
-    pub fn default_for_version(platform_version: &PlatformVersion) -> Result<DataContractConfig, ProtocolError> {
+    pub fn default_for_version(
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractConfig, ProtocolError> {
         match platform_version.dpp.contract_versions.config_version {
-            0 => DataContractConfigV0::default().into(),
+            0 => Ok(DataContractConfigV0::default().into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::default_for_version".to_string(),
                 known_versions: vec![0],
@@ -32,12 +47,15 @@ impl DataContractConfig {
         }
     }
 
-    pub fn from_value(value: Value, platform_version: &PlatformVersion)  -> Result<DataContractConfig, ProtocolError> {
+    pub fn from_value(
+        value: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractConfig, ProtocolError> {
         match platform_version.dpp.contract_versions.config_version {
             0 => {
-                let config : DataContractConfigV0 = platform_value::from_value(value)?;
+                let config: DataContractConfigV0 = platform_value::from_value(value)?;
                 Ok(config.into())
-            },
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::from_value".to_string(),
                 known_versions: vec![0],
@@ -46,58 +64,69 @@ impl DataContractConfig {
         }
     }
 
-        /// Retrieve contract configuration properties.
-        ///
-        /// This method takes a BTreeMap representing a contract and retrieves
-        /// the configuration properties based on the values found in the map.
-        ///
-        /// The process of retrieving contract configuration properties is versioned,
-        /// and the version is determined by the platform version parameter.
-        /// If the version is not supported, an error is returned.
-        ///
-        /// # Parameters
-        ///
-        /// * `contract`: BTreeMap representing the contract.
-        /// * `platform_version`: The platform version being used.
-        ///
-        /// # Returns
-        ///
-        /// * `Result<ContractConfig, ProtocolError>`: On success, a ContractConfig.
-        ///   On failure, a ProtocolError.
-        pub(in crate::data_contract) fn get_contract_configuration_properties(
-            contract: &BTreeMap<String, Value>,
-            platform_version: &PlatformVersion,
-        ) -> Result<DataContractConfig, ProtocolError> {
-            match platform_version.dpp.contract_versions.config_version {
-                0 => Ok(DataContractConfigV0::get_contract_configuration_properties_v0(contract)?.into()),
-                version => Err(ProtocolError::UnknownVersionMismatch {
-                    method: "DataContractConfig::get_contract_configuration_properties".to_string(),
-                    known_versions: vec![0],
-                    received: version,
-                }),
-            }
-
+    /// Retrieve contract configuration properties.
+    ///
+    /// This method takes a BTreeMap representing a contract and retrieves
+    /// the configuration properties based on the values found in the map.
+    ///
+    /// The process of retrieving contract configuration properties is versioned,
+    /// and the version is determined by the platform version parameter.
+    /// If the version is not supported, an error is returned.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract`: BTreeMap representing the contract.
+    /// * `platform_version`: The platform version being used.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ContractConfig, ProtocolError>`: On success, a ContractConfig.
+    ///   On failure, a ProtocolError.
+    pub(in crate::data_contract) fn get_contract_configuration_properties(
+        contract: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<DataContractConfig, ProtocolError> {
+        match platform_version.dpp.contract_versions.config_version {
+            0 => Ok(
+                DataContractConfigV0::get_contract_configuration_properties_v0(contract)?.into(),
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractConfig::get_contract_configuration_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
+    }
 }
 
 impl DataContractConfigGettersV0 for DataContractConfig {
     fn can_be_deleted(&self) -> bool {
-        match self { DataContractConfig::V0(v0) => v0.can_be_deleted }
+        match self {
+            DataContractConfig::V0(v0) => v0.can_be_deleted,
+        }
     }
 
     fn readonly(&self) -> bool {
-        match self { DataContractConfig::V0(v0) => v0.readonly }
+        match self {
+            DataContractConfig::V0(v0) => v0.readonly,
+        }
     }
 
     fn keeps_history(&self) -> bool {
-        match self { DataContractConfig::V0(v0) => v0.keeps_history }
+        match self {
+            DataContractConfig::V0(v0) => v0.keeps_history,
+        }
     }
 
     fn documents_keep_history_contract_default(&self) -> bool {
-        match self { DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default }
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default,
+        }
     }
 
     fn documents_mutable_contract_default(&self) -> bool {
-        match self { DataContractConfig::V0(v0) => v0.documents_mutable_contract_default }
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_mutable_contract_default,
+        }
     }
 }

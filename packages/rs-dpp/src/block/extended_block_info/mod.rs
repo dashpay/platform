@@ -19,7 +19,6 @@ pub mod v0;
     Debug,
     PartialEq,
     Eq,
-    Decode,
     Serialize,
     Deserialize,
     PlatformSerialize,

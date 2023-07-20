@@ -30,13 +30,22 @@ pub(super) fn derive_platform_serialize_enum(
     let serialize_into;
     let serialize_into_consume;
 
+    let with_limit = platform_serialize_limit.is_some();
+    let limit = platform_serialize_limit.unwrap_or_default();
+
+    let map_err = quote! {.map_err(|e| {
+    match e {
+        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize with limit {}: {}", stringify!(#name), e)),
+    }})};
+
     if passthrough {
         let match_exprs = data_enum
             .variants
             .iter()
             .map(|v| {
                 let ident = &v.ident;
-                quote! { #name::#ident(inner) => inner.serialize() }
+                quote! { #name::#ident(inner) => PlatformSerializable::serialize(inner) }
             })
             .collect::<Vec<_>>();
 
@@ -51,7 +60,7 @@ pub(super) fn derive_platform_serialize_enum(
             .iter()
             .map(|v| {
                 let ident = &v.ident;
-                quote! { #name::#ident(inner) => inner.serialize_consume() }
+                quote! { #name::#ident(inner) => PlatformSerializable::serialize_consume(inner) }
             })
             .collect::<Vec<_>>();
 
@@ -73,7 +82,7 @@ pub(super) fn derive_platform_serialize_enum(
         serialize_into = quote! {
             match self {
                 #( #match_exprs, )*
-            }
+            }#map_err
         };
 
         let match_exprs_consume = data_enum
@@ -88,11 +97,11 @@ pub(super) fn derive_platform_serialize_enum(
         serialize_into_consume = quote! {
             match self {
                 #( #match_exprs_consume, )*
-            }
+            }#map_err
         };
     } else {
-        serialize_into = quote! { bincode::encode_to_vec(self, config) };
-        serialize_into_consume = quote! { bincode::encode_to_vec(self, config) };
+        serialize_into = quote! { bincode::encode_to_vec(self, config)#map_err};
+        serialize_into_consume = quote! { bincode::encode_to_vec(self, config)#map_err};
     };
 
     let encode_body = if nested {
@@ -118,24 +127,17 @@ pub(super) fn derive_platform_serialize_enum(
         quote! {}
     };
 
-    let with_limit = platform_serialize_limit.is_some();
-    let limit = platform_serialize_limit.unwrap_or_default();
-
     let without_limit_body = quote! {
         impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
         {
             fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_no_limit();
-                #serialize_into.map_err(|e| {
-                    #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize without limit {}: {}", stringify!(#name), e))
-                })
+                #serialize_into
             }
 
             fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_no_limit();
-                #serialize_into_consume.map_err(|e| {
-                    #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize consume without limit {}: {}", stringify!(#name), e))
-                })
+                #serialize_into_consume
             }
         }
     };
@@ -145,20 +147,12 @@ pub(super) fn derive_platform_serialize_enum(
         {
             fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
-                #serialize_into.map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize with limit {}: {}", stringify!(#name), e)),
-                }})
+                #serialize_into
             }
 
             fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
-                #serialize_into_consume.map_err(|e| {
-                match e {
-                    bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                    _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize with limit {}: {}", stringify!(#name), e)),
-                }})
+                #serialize_into_consume
             }
         }
     };
@@ -168,12 +162,7 @@ pub(super) fn derive_platform_serialize_enum(
             fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
 
-                let mut serialized = #serialize_into.map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                    }
-                })?;
+                let mut serialized = #serialize_into;
 
                 let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
                     match e {
@@ -190,12 +179,7 @@ pub(super) fn derive_platform_serialize_enum(
             fn serialize_consume_with_prefix_version(self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
 
-                let mut serialized = #serialize_into_consume.map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                    }
-                })?;
+                let mut serialized = #serialize_into_consume;
 
                 let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
                     match e {
@@ -216,12 +200,7 @@ pub(super) fn derive_platform_serialize_enum(
             fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_no_limit();
 
-                let mut serialized = #serialize_into.map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                    }
-                })?;
+                let mut serialized = #serialize_into;
 
                 let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
                     match e {
@@ -238,12 +217,7 @@ pub(super) fn derive_platform_serialize_enum(
             fn serialize_consume_with_prefix_version(self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_no_limit();
 
-                let mut serialized = #serialize_into_consume.map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
-                    }
-                })?;
+                let mut serialized = #serialize_into_consume
 
                 let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
                     match e {
@@ -329,7 +303,7 @@ pub(super) fn derive_platform_serialize_enum(
             #bincode_encode_body
         };
     }
-    eprintln!("Processing variant: {}", &expanded);
+    //eprintln!("Processing variant: {}", &expanded);
 
     TokenStream::from(expanded)
 }

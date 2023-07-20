@@ -1,6 +1,5 @@
 use crate::drive::defaults::PROTOCOL_VERSION;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -31,7 +30,7 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
-        let fee = calculate_fee(None, Some(drive_operations), epoch)?;
+        let fee = Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
         Ok((maybe_identity, fee))
     }
 

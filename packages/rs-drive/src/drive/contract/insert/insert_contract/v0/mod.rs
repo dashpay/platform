@@ -1,5 +1,5 @@
 use crate::drive::contract::paths;
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::{contract_documents_path, Drive, RootTree};
@@ -52,7 +52,13 @@ impl Drive {
             platform_version,
         )?;
 
-        calculate_fee(None, Some(drive_operations), &block_info.epoch).map_err(Error::Protocol)
+        Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )
+        .map_err(Error::Protocol)
     }
 
     /// Adds a contract to storage using `add_contract_to_storage`

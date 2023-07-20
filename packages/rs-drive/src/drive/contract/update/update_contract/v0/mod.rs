@@ -1,4 +1,3 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
@@ -123,7 +122,13 @@ impl Drive {
             .cached_contracts
             .insert(updated_contract_fetch_info, transaction.is_some());
 
-        calculate_fee(None, Some(drive_operations), &block_info.epoch).map_err(Error::Protocol)
+        Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )
+        .map_err(Error::Protocol)
     }
 
     /// Updates a contract.

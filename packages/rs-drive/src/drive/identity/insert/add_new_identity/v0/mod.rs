@@ -1,4 +1,3 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
@@ -11,6 +10,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -23,7 +23,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_new_identity_add_to_operations_v0(
@@ -33,9 +33,14 @@ impl Drive {
             &mut None,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok(fees)
     }
 
@@ -48,7 +53,7 @@ impl Drive {
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -69,7 +74,7 @@ impl Drive {
             transaction,
             batch_operations,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )
     }
 
@@ -83,7 +88,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -115,7 +120,7 @@ impl Drive {
             transaction,
             previous_batch_operations,
             &mut batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         if !inserted {
@@ -125,13 +130,17 @@ impl Drive {
         }
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
+            Self::add_estimation_costs_for_balances(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
         }
 
         // We insert the balance
-        batch_operations.push(self.insert_identity_balance_operation(id.to_buffer(), balance)?);
+        batch_operations.push(self.insert_identity_balance_operation_v0(id.to_buffer(), balance)?);
 
-        batch_operations.push(self.initialize_negative_identity_balance_operation(id.to_buffer()));
+        batch_operations
+            .push(self.initialize_negative_identity_balance_operation_v0(id.to_buffer()));
 
         // We insert the revision
         // todo: we might not need the revision
@@ -167,12 +176,12 @@ mod tests {
     #[test]
     fn test_insert_and_fetch_identity_v0() {
         let drive = setup_drive(None);
-        let drive_version = &PlatformVersion::get(0).unwrap().drive;
+        let platform_version = PlatformVersion::first();
 
         let transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&transaction))
+            .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(
@@ -192,7 +201,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                drive_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 
@@ -223,7 +232,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), drive_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         drive
@@ -232,7 +241,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                drive_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 

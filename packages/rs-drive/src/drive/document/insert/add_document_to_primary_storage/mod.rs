@@ -24,7 +24,7 @@ use crate::drive::document::{
     contract_documents_primary_key_path, document_reference_size, make_document_reference,
     unique_event_id,
 };
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,

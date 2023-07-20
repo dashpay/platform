@@ -21,6 +21,7 @@ pub struct DriveMethodVersions {
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
     pub contract: DriveContractMethodVersions,
+    pub fees: DriveFeesMethodVersions,
     pub estimated_costs: DriveEstimatedCostsMethodVersions,
     pub asset_lock: DriveAssetLockMethodVersions,
     pub identity: DriveIdentityMethodVersions,
@@ -51,6 +52,11 @@ pub struct DriveAssetLockMethodVersions {
     pub add_asset_lock_outpoint: FeatureVersion,
     pub add_estimation_costs_for_adding_asset_lock: FeatureVersion,
     pub has_asset_lock_outpoint: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveFeesMethodVersions {
+    pub calculate_fee: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

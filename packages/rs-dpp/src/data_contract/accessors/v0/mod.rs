@@ -1,4 +1,4 @@
-
+use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::metadata::Metadata;
@@ -6,7 +6,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use crate::data_contract::data_contract_config::DataContractConfig;
 
 pub trait DataContractV0Getters {
     /// Returns the unique identifier for the data contract.

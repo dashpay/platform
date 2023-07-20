@@ -1,4 +1,3 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
@@ -33,7 +32,12 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok(fees)
     }
 }

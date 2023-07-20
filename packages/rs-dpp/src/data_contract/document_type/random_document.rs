@@ -115,8 +115,7 @@ impl CreateRandomDocument for DocumentType {
         match self {
             DocumentType::V0(v0) => {
                 v0.random_documents_with_params(count, identities, time_ms, rng, platform_version)
-            }
-            // Add more cases as necessary for other variants
+            } // Add more cases as necessary for other variants
         }
     }
 
@@ -164,8 +163,7 @@ impl CreateRandomDocument for DocumentType {
         match self {
             DocumentType::V0(v0) => {
                 v0.random_document_with_params(owner_id, entropy, time_ms, rng, platform_version)
-            }
-            // Add more cases as necessary for other variants
+            } // Add more cases as necessary for other variants
         }
     }
 

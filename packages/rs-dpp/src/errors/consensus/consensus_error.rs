@@ -18,7 +18,7 @@ use crate::ProtocolError;
 
 // TODO It must be versioned as all other serializable types
 
-#[derive(Error, Debug, Serialize, Deserialize, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(limit = 2000, allow_nested)]
 pub enum ConsensusError {

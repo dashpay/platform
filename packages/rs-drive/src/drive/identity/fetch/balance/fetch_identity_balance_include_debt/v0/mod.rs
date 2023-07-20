@@ -1,4 +1,3 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -8,6 +7,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::SignedCredits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -17,7 +17,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<SignedCredits>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_balance_include_debt_operations_v0(
@@ -25,7 +25,7 @@ impl Drive {
             true,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -38,7 +38,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<SignedCredits>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_balance_include_debt_operations_v0(
@@ -46,9 +46,14 @@ impl Drive {
             apply,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok((value, fees))
     }
 
@@ -60,7 +65,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<SignedCredits>, Error> {
         Ok(self
             .fetch_identity_balance_operations(
@@ -68,7 +73,7 @@ impl Drive {
                 apply,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             )?
             .map(|credits| {
                 if credits > 0 {
@@ -79,7 +84,7 @@ impl Drive {
                         apply,
                         transaction,
                         drive_operations,
-                        drive_version,
+                        platform_version,
                     )
                     .map(|negative_credits| {
                         let negative_credits = negative_credits.ok_or(Error::Drive(

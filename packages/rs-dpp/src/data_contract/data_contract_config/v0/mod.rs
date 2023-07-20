@@ -1,14 +1,17 @@
-use std::collections::BTreeMap;
+use crate::data_contract::data_contract_config;
+use crate::data_contract::data_contract_config::{
+    DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+    DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
+    DEFAULT_CONTRACT_MUTABILITY,
+};
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
-use crate::data_contract::data_contract_config;
-use crate::data_contract::data_contract_config::{DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY, DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY};
-use crate::ProtocolError;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DataContractConfigV0 {
     /// Can the contract ever be deleted. If the contract is deleted, so should be all
@@ -60,9 +63,7 @@ impl std::default::Default for DataContractConfigV0 {
 }
 
 impl DataContractConfigV0 {
-    pub fn from_object(
-        value: Value,
-    ) -> Result<Self, ProtocolError> {
+    pub fn from_object(value: Value) -> Result<Self, ProtocolError> {
         platform_value::from_value(value).map_err(ProtocolError::ValueError)
     }
 }
@@ -101,7 +102,9 @@ impl DataContractConfigV0 {
             .unwrap_or(!DEFAULT_CONTRACT_MUTABILITY);
 
         let documents_keep_history_contract_default = contract
-            .get_optional_bool(data_contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT)?
+            .get_optional_bool(
+                data_contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
+            )?
             .unwrap_or(DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY);
 
         let documents_mutable_contract_default = contract

@@ -10,7 +10,6 @@ use std::collections::HashMap;
 
 use dpp::data_contract::DataContract;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};

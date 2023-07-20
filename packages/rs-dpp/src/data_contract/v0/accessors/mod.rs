@@ -1,4 +1,5 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
@@ -7,7 +8,6 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
-use crate::data_contract::data_contract_config::DataContractConfig;
 
 impl DataContractV0Getters for DataContractV0 {
     fn id(&self) -> Identifier {

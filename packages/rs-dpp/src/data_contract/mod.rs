@@ -1,7 +1,7 @@
 use crate::serialization_traits::{
     PlatformDeserializableFromVersionedStructure,
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
-    PlatformSerializableIntoStructureVersion, PlatformSerializableWithPlatformVersion,
+    PlatformSerializableWithPlatformVersion,
 };
 use bincode::{config, Decode, Encode};
 pub use data_contract::*;
@@ -195,12 +195,6 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
     }
 }
 
-impl Default for DataContract {
-    fn default() -> Self {
-        DataContract::V0(DataContractV0::default())
-    }
-}
-
 impl DataContract {
     // Returns hash from Data Contract
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
@@ -258,7 +252,11 @@ impl DataContract {
         mut raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContract, ProtocolError> {
-        match platform_version.dpp.contract_versions.contract_structure_version {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
             0 => Ok(DataContractV0::from_object(raw_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_object".to_string(),

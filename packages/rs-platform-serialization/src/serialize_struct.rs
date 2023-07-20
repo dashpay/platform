@@ -18,9 +18,6 @@ pub(super) fn derive_platform_serialize_struct(
         crate_name,
         platform_serialize_limit,
         platform_serialize_into,
-        platform_version_path,
-        allow_prepend_version,
-        force_prepend_version,
         nested,
         ..
     } = version_attributes;
@@ -68,7 +65,7 @@ pub(super) fn derive_platform_serialize_struct(
             impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
             {
                 fn serialize(&self) -> Result<Vec<u8>, #error_type> {
-                    let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
+                    let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into.map_err(|e| {
                     match e {
                         bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
@@ -77,7 +74,7 @@ pub(super) fn derive_platform_serialize_struct(
                 }
 
                 fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
-                    let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
+                    let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into_consume.map_err(|e| {
                     match e {
                         bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
@@ -92,14 +89,14 @@ pub(super) fn derive_platform_serialize_struct(
             impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
             {
                 fn serialize(&self) -> Result<Vec<u8>, #error_type> {
-                    let config = config::standard().with_big_endian().with_no_limit();
+                    let config = bincode::config::standard().with_big_endian().with_no_limit();
                     #serialize_into.map_err(|e| {
                         #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
                     })
                 }
 
                 fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
-                    let config = config::standard().with_big_endian().with_no_limit();
+                    let config = bincode::config::standard().with_big_endian().with_no_limit();
                     #serialize_into_consume.map_err(|e| {
                         #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
                     })

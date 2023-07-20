@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;

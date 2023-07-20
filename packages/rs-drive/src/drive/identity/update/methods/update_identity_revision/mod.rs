@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };

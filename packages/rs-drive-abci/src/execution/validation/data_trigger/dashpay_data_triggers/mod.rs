@@ -12,6 +12,7 @@ use dpp::platform_value::Identifier;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::{get_from_transition_action, ProtocolError};
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -55,7 +56,7 @@ pub fn create_contact_request_data_trigger(
             )))
         }
     };
-    let data = &document_create_transition.data;
+    let data = &document_create_transition.data();
 
     let maybe_core_height_created_at: Option<u32> = data
         .get_optional_integer(CORE_HEIGHT_CREATED_AT)

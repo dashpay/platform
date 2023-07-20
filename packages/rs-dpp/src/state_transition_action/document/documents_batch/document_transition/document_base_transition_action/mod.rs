@@ -12,12 +12,6 @@ pub enum DocumentBaseTransitionAction {
     V0(DocumentBaseTransitionActionV0),
 }
 
-impl Default for DocumentBaseTransitionAction {
-    fn default() -> Self {
-        DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0::default())
-    }
-}
-
 impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
     fn id(&self) -> Identifier {
         match self {

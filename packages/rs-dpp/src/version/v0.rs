@@ -24,7 +24,7 @@ use crate::version::drive_versions::{
     DriveCreditPoolPendingEpochRefundsMethodVersions, DriveDocumentDeleteMethodVersions,
     DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertMethodVersions,
     DriveDocumentMethodVersions, DriveDocumentUpdateMethodVersions,
-    DriveEstimatedCostsMethodVersions, DriveGroveApplyMethodVersions,
+    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveGroveApplyMethodVersions,
     DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
     DriveGroveMethodVersions, DriveIdentityCostEstimationMethodVersions,
     DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchMethodVersions,
@@ -40,8 +40,7 @@ use crate::version::drive_versions::{
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{
-    AbciStructureVersion, PlatformArchitectureVersion,
-    StateTransitionSigningVersion,
+    AbciStructureVersion, PlatformArchitectureVersion, StateTransitionSigningVersion,
 };
 use std::collections::BTreeMap;
 
@@ -194,6 +193,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     get_contracts_with_fetch_info: 0,
                 },
             },
+            fees: DriveFeesMethodVersions { calculate_fee: 0 },
             estimated_costs: DriveEstimatedCostsMethodVersions {
                 add_estimation_costs_for_levels_up_to_contract: 0,
                 add_estimation_costs_for_levels_up_to_contract_document_type_excluded: 0,

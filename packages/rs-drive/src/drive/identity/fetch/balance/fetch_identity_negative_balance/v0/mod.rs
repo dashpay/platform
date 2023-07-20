@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 
@@ -17,7 +18,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Credits>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery
@@ -37,7 +38,7 @@ impl Drive {
             direct_query_type,
             transaction,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         ) {
             Ok(Some(Item(encoded_balance, _))) => {
                 let balance = Credits::from_be_bytes(

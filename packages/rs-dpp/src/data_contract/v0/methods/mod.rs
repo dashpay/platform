@@ -1,4 +1,5 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use crate::data_contract::data_contract_methods::base::DataContractBaseMethodsV0;
 use crate::data_contract::data_contract_methods::document_schema::DataContractDocumentSchemaMethodsV0;
 use crate::data_contract::data_contract_methods::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
@@ -13,7 +14,6 @@ use itertools::{Either, Itertools};
 use platform_value::string_encoding::Encoding;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl DataContractBaseMethodsV0 for DataContractV0 {
     /// Increments version of Data Contract

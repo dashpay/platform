@@ -76,7 +76,6 @@ use dpp::data_contract::document_type::{Index, IndexProperty};
 pub use ordering::OrderClause;
 
 #[cfg(feature = "full")]
-use crate::drive::fee::calculate_fee;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 #[cfg(feature = "full")]
@@ -1540,7 +1539,12 @@ impl<'a> DriveQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -1590,7 +1594,12 @@ impl<'a> DriveQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -1667,7 +1676,12 @@ impl<'a> DriveQuery<'a> {
             platform_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0

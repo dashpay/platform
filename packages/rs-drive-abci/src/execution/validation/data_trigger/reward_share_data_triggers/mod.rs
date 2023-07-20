@@ -1,6 +1,9 @@
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::version::PlatformVersion;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
@@ -36,6 +39,7 @@ pub fn create_masternode_reward_shares_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     _top_level_identifier: Option<&Identifier>,
+    platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
@@ -78,10 +82,11 @@ pub fn create_masternode_reward_shares_data_trigger(
         }
     }
 
-    let maybe_identity = context
-        .platform
-        .drive
-        .fetch_identity_balance(pay_to_id, context.transaction)?;
+    let maybe_identity = context.platform.drive.fetch_identity_balance(
+        pay_to_id,
+        context.transaction,
+        platform_version,
+    )?;
 
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
@@ -101,7 +106,7 @@ pub fn create_masternode_reward_shares_data_trigger(
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
-        document_type,
+        document_type: &document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: None,
@@ -127,7 +132,13 @@ pub fn create_masternode_reward_shares_data_trigger(
     let documents = context
         .platform
         .drive
-        .query_documents(drive_query, None, false, context.transaction)?
+        .query_documents(
+            drive_query,
+            None,
+            false,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?
         .documents;
 
     if is_dry_run {
@@ -196,6 +207,7 @@ mod test {
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
     use std::str::FromStr;
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 
     struct TestData {
         top_level_identifier: Identifier,
@@ -297,6 +309,8 @@ mod test {
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
+
+        let platform_version = PlatformVersion::first();
         let TestData {
             mut document_create_transition,
             extended_documents,
@@ -322,6 +336,7 @@ mod test {
                     true,
                     None,
                     None,
+                    platform_version,
                 )
                 .expect("expected to apply contract");
             let mut identity = Identity::random_identity(
@@ -376,6 +391,7 @@ mod test {
                     BlockInfo::default(),
                     true,
                     None,
+                    platform_version,
                 )
                 .expect("expected to add document");
         }
@@ -403,6 +419,7 @@ mod test {
             &document_create_transition.into(),
             &context,
             None,
+            platform_version,
         );
 
         let percentage_error = get_data_trigger_error(&result, 0);

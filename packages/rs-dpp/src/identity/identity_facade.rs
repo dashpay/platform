@@ -8,8 +8,6 @@ use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, Instan
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::Identifier;
 
-use crate::validation::SimpleConsensusValidationResult;
-use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
 use crate::identity::identity_factory::IdentityFactory;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -21,6 +19,8 @@ use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyI
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::validation::SimpleConsensusValidationResult;
+use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
 
 #[derive(Clone)]
 pub struct IdentityFacade<T: BlsModule> {
@@ -31,9 +31,7 @@ impl<T> IdentityFacade<T>
 where
     T: BlsModule,
 {
-    pub fn new(
-        protocol_version: u32,
-    ) -> Result<Self, DashPlatformProtocolInitError> {
+    pub fn new(protocol_version: u32) -> Result<Self, DashPlatformProtocolInitError> {
         Ok(Self {
             factory: IdentityFactory::new(protocol_version),
         })

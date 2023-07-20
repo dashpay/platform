@@ -85,7 +85,6 @@ use crate::drive::object_size_info::DocumentInfo::{
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::drive::object_size_info::{
     DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,

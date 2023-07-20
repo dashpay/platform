@@ -4,6 +4,7 @@ use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AssetLockProof, Revision};
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::util::hash;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
@@ -12,13 +13,14 @@ use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use crate::version::PlatformVersion;
 
+/// The identity is not stored inside of drive, because of this, the serialization is mainly for
+/// transport, the serialization of the identity will include the version, so no passthrough or
+/// untagged is needed here
 #[derive(
     Debug,
     Serialize,
     PlatformSerdeVersionedDeserialize,
-    Decode,
     Clone,
     PartialEq,
     PlatformDeserialize,
@@ -51,11 +53,18 @@ impl Identity {
     }
 
     /// Created a new identity based on asset locks and keys
-    pub fn new_with_asset_lock_and_keys(        asset_lock_proof: AssetLockProof,
-                                                public_keys: BTreeMap<KeyID, IdentityPublicKey>, platform_version: &PlatformVersion) -> Result<Identity, ProtocolError> {
-        match platform_version.dpp.identity_versions.identity_structure_version {
+    pub fn new_with_asset_lock_and_keys(
+        asset_lock_proof: AssetLockProof,
+        public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identity, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
             0 => {
-                let identity_v0 = IdentityV0  {
+                let identity_v0 = IdentityV0 {
                     id: asset_lock_proof.create_identifier()?,
                     public_keys,
                     balance: 0,

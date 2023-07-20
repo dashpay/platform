@@ -1,6 +1,5 @@
 mod v0;
 
-use derive_more::From;
 use crate::consensus::basic::UnsupportedVersionError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::created_data_contract::CreatedDataContract;
@@ -9,6 +8,7 @@ use crate::util::deserializer::ProtocolVersion;
 use crate::util::entropy_generator::EntropyGenerator;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
+use derive_more::From;
 use platform_value::{Identifier, Value};
 
 pub use v0::DataContractFactoryV0;
@@ -74,8 +74,7 @@ impl DataContractFactory {
     pub fn create_from_object(
         &self,
         data_contract_object: Value,
-        #[cfg(feature = "validation")]
-        skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         match self {
             DataContractFactory::V0(v0) => {
@@ -95,8 +94,7 @@ impl DataContractFactory {
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        #[cfg(feature = "validation")]
-        skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         match self {
             DataContractFactory::V0(v0) => {
@@ -108,7 +106,7 @@ impl DataContractFactory {
                 {
                     v0.create_from_buffer(buffer)
                 }
-            },
+            }
         }
     }
 

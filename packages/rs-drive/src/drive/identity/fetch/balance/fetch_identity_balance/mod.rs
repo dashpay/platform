@@ -1,7 +1,6 @@
 mod v0;
 
 use crate::drive::balances::balance_path;
-use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::Drive;
@@ -11,6 +10,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::Element::SumItem;
 use grovedb::TransactionArg;
 
@@ -22,7 +22,7 @@ impl Drive {
     ///
     /// * `identity_id` - The ID of the Identity whose balance is to be fetched.
     /// * `transaction` - The current transaction.
-    /// * `drive_version` - The drive version.
+    /// * `platform_version` - The platform version to use.
     ///
     /// # Returns
     ///
@@ -31,9 +31,16 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Credits>, Error> {
-        match drive_version.methods.identity.fetch.attributes.balance {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .fetch
+            .attributes
+            .balance
+        {
             0 => self.fetch_identity_balance_v0(identity_id, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance".to_string(),
@@ -52,7 +59,7 @@ impl Drive {
     /// * `block_info` - The information about the current block.
     /// * `apply` - Whether to get the estimated cost or the actual balance.
     /// * `transaction` - The current transaction.
-    /// * `drive_version` - The drive version.
+    /// * `platform_version` - The platform version to use.
     ///
     /// # Returns
     ///
@@ -63,15 +70,22 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<Credits>, FeeResult), Error> {
-        match drive_version.methods.identity.fetch.attributes.balance {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .fetch
+            .attributes
+            .balance
+        {
             0 => self.fetch_identity_balance_with_costs_v0(
                 identity_id,
                 block_info,
                 apply,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_with_costs".to_string(),
@@ -90,7 +104,7 @@ impl Drive {
     /// * `apply` - Whether to create stateful or stateless operations.
     /// * `transaction` - The current transaction.
     /// * `drive_operations` - The drive operations to be updated.
-    /// * `drive_version` - The drive version.
+    /// * `platform_version` - The platform version to use.
     ///
     /// # Returns
     ///
@@ -101,15 +115,22 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Credits>, Error> {
-        match drive_version.methods.identity.fetch.attributes.balance {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .fetch
+            .attributes
+            .balance
+        {
             0 => self.fetch_identity_balance_operations_v0(
                 identity_id,
                 apply,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_operations".to_string(),

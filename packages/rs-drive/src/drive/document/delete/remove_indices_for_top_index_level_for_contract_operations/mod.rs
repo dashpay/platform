@@ -8,7 +8,7 @@ use crate::drive::document::{
     contract_document_type_path_vec, contract_documents_primary_key_path, document_reference_size,
     unique_event_id,
 };
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,

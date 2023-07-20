@@ -1,8 +1,12 @@
+mod deserialize_enum;
+mod deserialize_struct;
 mod serialize_enum;
 mod serialize_struct;
 
 extern crate proc_macro;
 
+use crate::deserialize_enum::derive_platform_deserialize_enum;
+use crate::deserialize_struct::derive_platform_deserialize_struct;
 use crate::serialize_enum::derive_platform_serialize_enum;
 use crate::serialize_struct::derive_platform_serialize_struct;
 use proc_macro::TokenStream;
@@ -13,12 +17,42 @@ use syn::{
     Path, Type,
 };
 
+struct VersionAttributes {
+    crate_name: Ident,
+    passthrough: bool,
+    nested: bool,
+    platform_serialize_limit: Option<usize>,
+    untagged: bool,
+    platform_serialize_into: Option<Path>,
+    platform_version_path: Option<LitStr>,
+    allow_prepend_version: bool,
+    force_prepend_version: bool,
+}
+
+impl VersionAttributes {
+    fn check_for_enum(&self) {
+        if self.platform_serialize_into.is_some() {
+            panic!("'into' can not be used for platform versioning of enums")
+        }
+    }
+
+    fn check_for_struct(&self) {
+        if self.passthrough {
+            panic!("'passthrough' can not be used for platform versioning of structs")
+        }
+        if self.untagged {
+            panic!("'untagged' can not be used for platform versioning of structs")
+        }
+    }
+}
+
 /// This proc macro derives the `PlatformSerialize` trait for the input data structure.
 /// The derived trait implementation will provide methods to serialize the data into a binary format, with some customization options.
 /// The `platform_error_type` attribute specifies the error type to be used in the `Result` types of the serialization methods.
 /// The `platform_serialize` attribute specifies optional serialization behaviors, which include the following:
 ///
 /// - `passthrough`: If the attribute is an enum, it serializes the inner data directly, bypassing the enum's own serialization.
+///   This means the serialization process is handled by the inner data itself rather than the enum.
 ///   For example, consider this enum:
 ///
 ///   ```rust
@@ -33,14 +67,20 @@ use syn::{
 ///
 ///   If `MyEnum::Variant1(inner)` is serialized, it will call `inner.serialize()` directly instead of `MyEnum::Variant1(inner).serialize()`.
 ///
+/// - `untagged`: If the attribute is an enum, it makes the enum untagged. This means the enum variants are serialized directly without their variant names or prefix number.
+///   Unlike `passthrough`, `untagged` still uses the enum's serialization method, but it does not include the variant name in the serialized data.
+///   This is useful for cases where the variant names are not necessary or desired in the serialized output.
+///
+///   Note: `passthrough` and `untagged` have different use-cases and cannot be used together. If an enum is marked with `passthrough`, its inner types handle the serialization.
+///   If it's marked with `untagged`, the enum itself handles the serialization, but without including variant names.
+///
 /// - `limit`: This sets a maximum limit on the serialized size. The value of `limit` should be a number.
-/// - `untagged`: If the attribute is an enum, it makes the enum untagged. This means the enum variants are serialized directly without their variant names.
-/// - `into`: This attribute is used to specify a conversion before serialization. The value of `into` should be the path of the target type. The input data will be converted into this type before serialization.
+/// - `into`: This attribute is used to specify a conversion before serialization. The value of `into` should be the path of the target type. The input data will be converted into this type before serialization. This can only be used on structs.
 /// - `allow_nested`: If this attribute is set, we will automatically derive bincode encode. If passthrough will encode the inner variant
 /// - `allow_prepend_version`: If this attribute is set, we allow serialization with version prefix and without.
 /// - `force_prepend_version`: If this attribute is set, we allow serialization only with version prefix.
 ///
-/// Note that the `passthrough` attribute cannot be used with any other attribute.
+/// Note that the `passthrough` attribute cannot be used with any other attribute except allow_nested.
 ///
 /// The derived trait will include these methods:
 ///
@@ -174,35 +214,6 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     }
 }
 
-struct VersionAttributes {
-    crate_name: Ident,
-    passthrough: bool,
-    nested: bool,
-    platform_serialize_limit: Option<usize>,
-    untagged: bool,
-    platform_serialize_into: Option<Path>,
-    platform_version_path: Option<LitStr>,
-    allow_prepend_version: bool,
-    force_prepend_version: bool,
-}
-
-impl VersionAttributes {
-    fn check_for_enum(&self) {
-        if self.platform_serialize_into.is_some() {
-            panic!("'into' can not be used for platform versioning of enums")
-        }
-    }
-
-    fn check_for_struct(&self) {
-        if self.passthrough {
-            panic!("'passthrough' can not be used for platform versioning of structs")
-        }
-        if self.untagged {
-            panic!("'untagged' can not be used for platform versioning of structs")
-        }
-    }
-}
-
 #[proc_macro_derive(
     PlatformDeserialize,
     attributes(platform_error_type, platform_serialize)
@@ -211,22 +222,18 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
-    // Extract the generics.
-    let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    // Extract the platform_error_type attribute, if provided.
-    let platform_error_type = input
+    // Extract the error type from the attribute.
+    let error_type = input
         .attrs
         .iter()
         .find_map(|attr| {
             if attr.path().is_ident("platform_error_type") {
-                Some(attr.parse_args::<syn::Type>().unwrap())
+                Some(attr.parse_args::<syn::Path>().unwrap())
             } else {
                 None
             }
         })
-        .unwrap_or_else(|| syn::parse_str("Error").unwrap());
+        .expect("Missing platform_error_type attribute");
 
     let platform_serialize_attr = input
         .attrs
@@ -236,10 +243,10 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
 
     let mut passthrough = false;
     let mut nested = false;
-    let mut platform_deserialize_limit = None;
+    let mut platform_serialize_limit = None;
     let mut untagged = false;
-    let mut platform_deserialize_from = None;
-    //let mut platform_version_path = None;
+    let mut platform_serialize_into = None;
+    let mut platform_version_path = None;
     let mut crate_name: Ident = Ident::new("crate", Span::call_site()); // default value is "crate"
     let mut allow_prepend_version = false;
     let mut force_prepend_version = false;
@@ -261,24 +268,24 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
             } else if meta.path.is_ident("limit") {
                 let value = meta.value()?;
                 let parsed_limit: LitInt = value.parse()?;
-                platform_deserialize_limit = Some(
+                platform_serialize_limit = Some(
                     parsed_limit
                         .base10_parse::<usize>()
                         .expect("Expected a number for 'limit'"),
                 );
             } else if meta.path.is_ident("untagged") {
                 untagged = true;
-            } else if meta.path.is_ident("from") {
+            } else if meta.path.is_ident("into") {
                 let value = meta.value()?;
                 let parsed_into: LitStr = value.parse()?;
-                platform_deserialize_from = Some(
+                platform_serialize_into = Some(
                     parsed_into
                         .parse::<syn::Path>()
-                        .expect("Expected a valid path for 'from'"),
+                        .expect("Expected a valid path for 'into'"),
                 );
             } else if meta.path.is_ident("platform_version_path") {
-                // let value = meta.value()?;
-                // platform_version_path = Some(value.parse()?);
+                let value = meta.value()?;
+                platform_version_path = Some(value.parse()?);
             } else {
                 return Err(meta
                     .error(format!("unsupported parameter {:?}", meta.path.get_ident()).as_str()));
@@ -287,41 +294,53 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
         })
         .expect("expected to parse nested meta");
 
-    let deserialize_from_inner = match platform_deserialize_from {
-        Some(inner) => quote! {
-            let inner: #inner = bincode::decode_from_slice(data, config).map_err(|e| {
-                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-            }).map(|(a, _)| a)?;
-            inner.try_into().map_err(|e: #platform_error_type| {
-                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-            })
-        },
-        None => quote! {
-            bincode::decode_from_slice(data, config).map(|(a, _)| a).map_err(|e| {
-                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-            })
-        },
+    if passthrough
+        && (platform_serialize_limit.is_some() || untagged || platform_serialize_into.is_some())
+    {
+        panic!("The 'passthrough' attribute cannot be used with untagged, limit or into");
+    }
+
+    if force_prepend_version && allow_prepend_version {
+        panic!("The 'allow_prepend_version' attribute cannot be used with 'force_prepend_version', only one should be chosen");
+    }
+
+    let version_attributes = VersionAttributes {
+        crate_name,
+        passthrough,
+        nested,
+        platform_serialize_limit,
+        untagged,
+        platform_serialize_into,
+        platform_version_path,
+        allow_prepend_version,
+        force_prepend_version,
     };
 
-    let config = match platform_deserialize_limit {
-        Some(limit) => {
-            quote! { bincode::config::standard().with_big_endian().with_limit::<{ #limit }>() }
+    match &input.data {
+        Data::Struct(data_struct) => {
+            version_attributes.check_for_struct();
+            derive_platform_deserialize_struct(
+                &input,
+                version_attributes,
+                data_struct,
+                error_type,
+                name,
+            )
         }
-        None => quote! { bincode::config::standard().with_big_endian().with_no_limit() },
-    };
-
-    let expanded = quote! {
-        impl crate::serialization_traits::PlatformDeserializable for #impl_generics #name #ty_generics #where_clause {
-            fn deserialize(data: &[u8]) -> Result<Self, #platform_error_type> {
-                let config = #config;
-                #deserialize_from_inner.map_err(|e| {
-                    #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-                })
-            }
+        Data::Enum(data_enum) => {
+            version_attributes.check_for_enum();
+            derive_platform_deserialize_enum(
+                &input,
+                version_attributes,
+                data_enum,
+                error_type,
+                name,
+            )
         }
-    };
-
-    TokenStream::from(expanded)
+        _ => {
+            panic!("can only derive serialize on a struct or an enum")
+        }
+    }
 }
 
 #[proc_macro_derive(

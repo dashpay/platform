@@ -1,5 +1,5 @@
 use crate::drive::balances::balance_path_vec;
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -47,7 +47,7 @@ impl Drive {
             drive_version,
         )?;
 
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
         Ok(fees)
     }
 

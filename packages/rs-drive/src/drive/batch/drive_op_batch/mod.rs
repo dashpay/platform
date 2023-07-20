@@ -35,7 +35,7 @@ mod system;
 mod withdrawals;
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;

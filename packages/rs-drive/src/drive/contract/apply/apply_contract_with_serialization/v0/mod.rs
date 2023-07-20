@@ -1,6 +1,6 @@
 use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{DirectQueryType, QueryType};
@@ -60,7 +60,12 @@ impl Drive {
             &platform_version.drive,
         )?;
         cost_operations.push(CalculatedCostOperation(fetch_cost));
-        let fees = calculate_fee(None, Some(cost_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(cost_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok(fees)
     }
 

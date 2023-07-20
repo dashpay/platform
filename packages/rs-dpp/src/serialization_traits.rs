@@ -23,6 +23,13 @@ pub trait PlatformSerializable {
 }
 
 pub trait PlatformSerializableWithPlatformVersion {
+    /// Version based serialization is done based on the desired structure version.
+    /// For example we have DataContractV0 and DataContractV1 for code based Contracts
+    /// This means objects that will execute code
+    /// And we would have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
+    /// which are the different ways to serialize the concept of a data contract.
+    /// The data contract would call versioned_serialize. There should be a converted for each
+    /// Data contract Version towards each DataContractSerializationFormat
     fn serialize_with_platform_version(
         &self,
         platform_version: &PlatformVersion,
@@ -61,32 +68,14 @@ pub trait PlatformSerializableWithPrefixVersion {
 pub trait PlatformDeserializable {
     fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
-}
-
-pub trait PlatformSerializableIntoStructureVersion {
-    /// Version based serialization is done based on the desired structure version.
-    /// For example we have DataContractV0 and DataContractV1 for code based Contracts
-    /// This means objects that will execute code
-    /// And we would have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
-    /// which are the different ways to serialize the concept of a data contract.
-    /// The data contract would call versioned_serialize. There should be a converted for each
-    /// Data contract Version towards each DataContractSerializationFormat
-    fn versioned_serialize(
-        &self,
-        structure_version: FeatureVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
-
-    /// If the trait is not used just do a simple serialize
-    fn versioned_serialize_consume(
-        self,
-        structure_version: FeatureVersion,
-    ) -> Result<Vec<u8>, ProtocolError>
-    where
         Self: Sized,
     {
-        self.versioned_serialize(structure_version)
+        Self::deserialize_no_limit(data)
     }
+
+    fn deserialize_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 }
 
 pub trait PlatformDeserializableFromVersionedStructure {

@@ -4,7 +4,7 @@ use crate::drive::document::{
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path, make_document_reference,
 };
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,

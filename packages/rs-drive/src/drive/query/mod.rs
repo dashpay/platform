@@ -35,7 +35,6 @@
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -48,8 +47,12 @@ use dpp::document::Document;
 
 use dpp::ProtocolError;
 
+use crate::drive::system::protocol_version;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::version::PlatformVersion;
 
 #[derive(Debug, Default)]
 /// The outcome of a query
@@ -91,7 +94,9 @@ impl Drive {
         epoch: Option<&Epoch>,
         dry_run: bool,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<QueryDocumentsOutcome, Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         if dry_run {
             return Ok(QueryDocumentsOutcome::default());
         }
@@ -100,13 +105,17 @@ impl Drive {
             self,
             transaction,
             &mut drive_operations,
+            platform_version,
         )?;
         let documents = items
             .into_iter()
-            .map(|serialized| Document::from_bytes(serialized.as_slice(), query.document_type))
+            .map(|serialized| {
+                Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
+            })
             .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            let fee_result =
+                Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
             fee_result.processing_fee
         } else {
             0
@@ -126,15 +135,19 @@ impl Drive {
         query: DriveQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<QuerySerializedDocumentsOutcome, Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = query.execute_raw_results_no_proof_internal(
             self,
             transaction,
             &mut drive_operations,
+            platform_version,
         )?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            let fee_result =
+                Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
             fee_result.processing_fee
         } else {
             0
@@ -154,16 +167,20 @@ impl Drive {
         query: DriveQuery,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<QueryDocumentIdsOutcome, Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = query.execute_no_proof_internal(
             self,
             QueryResultType::QueryKeyElementPairResultType,
             transaction,
             &mut drive_operations,
+            platform_version,
         )?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            let fee_result =
+                Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
             fee_result.processing_fee
         } else {
             0
@@ -189,7 +206,9 @@ impl Drive {
         document_type_name: &str,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<QuerySerializedDocumentsOutcome, Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let contract = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -198,6 +217,7 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
+                platform_version,
             )?
             .ok_or(Error::Query(QuerySyntaxError::ContractNotFound(
                 "contract not found",
@@ -207,9 +227,9 @@ impl Drive {
             .document_type_for_name(document_type_name)?;
 
         let query =
-            DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;
+            DriveQuery::from_cbor(query_cbor, &contract.contract, &document_type, &self.config)?;
 
-        self.query_documents_as_serialized(query, epoch, transaction)
+        self.query_documents_as_serialized(query, epoch, transaction, protocol_version)
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
@@ -220,7 +240,9 @@ impl Drive {
         document_type_name: String,
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let contract = DataContract::from_cbor(contract_cbor)?;
         //todo cbor cost
@@ -228,13 +250,19 @@ impl Drive {
 
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             &contract,
-            document_type,
+            &document_type,
             query_cbor,
             transaction,
             &mut drive_operations,
+            protocol_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -250,7 +278,9 @@ impl Drive {
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
@@ -258,9 +288,15 @@ impl Drive {
             query_cbor,
             transaction,
             &mut drive_operations,
+            protocol_version,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -276,7 +312,9 @@ impl Drive {
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
@@ -286,7 +324,12 @@ impl Drive {
             &mut drive_operations,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -302,7 +345,9 @@ impl Drive {
         query_cbor: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        protocol_version: Option<u32>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_raw_results_no_proof_internal(self, transaction, drive_operations)
@@ -318,7 +363,9 @@ impl Drive {
         block_info: Option<BlockInfo>,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<(Vec<u8>, u64), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let contract = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -336,13 +383,18 @@ impl Drive {
             .document_type_for_name(document_type_name)?;
         let items = self.query_proof_of_documents_using_cbor_encoded_query(
             &contract.contract,
-            document_type,
+            &document_type,
             query_cbor,
             transaction,
             &mut drive_operations,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -359,7 +411,9 @@ impl Drive {
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<(Vec<u8>, u64), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let items = self.query_proof_of_documents_using_cbor_encoded_query(
@@ -370,7 +424,12 @@ impl Drive {
             &mut drive_operations,
         )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -387,7 +446,9 @@ impl Drive {
         query_cbor: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        protocol_version: Option<u32>,
     ) -> Result<Vec<u8>, Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_internal(self, transaction, drive_operations)
@@ -401,7 +462,9 @@ impl Drive {
         query_cbor: &[u8],
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
+        protocol_version: Option<u32>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let (root_hash, items) = self
@@ -413,7 +476,12 @@ impl Drive {
                 &mut drive_operations,
             )?;
         let cost = if let Some(block_info) = block_info {
-            let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                &block_info.epoch,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
@@ -429,7 +497,9 @@ impl Drive {
         query_cbor: &[u8],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
+        protocol_version: Option<u32>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
+        let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_only_get_elements_internal(self, transaction, drive_operations)

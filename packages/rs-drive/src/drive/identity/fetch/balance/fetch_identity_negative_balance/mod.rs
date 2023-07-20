@@ -9,6 +9,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 
@@ -22,7 +23,7 @@ impl Drive {
     /// * `apply` - Whether to get the estimated cost or the actual balance.
     /// * `transaction` - The current transaction.
     /// * `drive_operations` - The drive operations to be updated.
-    /// * `drive_version` - The drive version.
+    /// * `platform_version` - The platform version.
     ///
     /// # Returns
     ///
@@ -33,9 +34,10 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Credits>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -47,7 +49,7 @@ impl Drive {
                 apply,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_negative_balance_operations".to_string(),

@@ -15,21 +15,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::{data_contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
+use crate::data_contract::{
+    data_contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath,
+};
 
+use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-#[cfg(feature = "cbor")]
-use crate::util::cbor_serializer;
-use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
-use crate::{identifier, Convertible};
-use platform_value::string_encoding::Encoding;
-use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::property_names::VERSION;
 use crate::data_contract::serialized_version::DataContractSerializationFormat;
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::PlatformVersion;
+use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
+use crate::{identifier, Convertible};
+use platform_value::string_encoding::Encoding;
 
 use super::super::property_names;
 
@@ -81,7 +83,6 @@ pub struct DataContractV0 {
     /// A nested mapping of document names and property paths to their binary values.
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 }
-
 
 //
 // #[cfg(feature = "json-object")]

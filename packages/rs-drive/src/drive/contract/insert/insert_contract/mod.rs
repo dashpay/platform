@@ -1,7 +1,7 @@
 mod v0;
 
 use crate::drive::contract::paths;
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::{contract_documents_path, Drive, RootTree};

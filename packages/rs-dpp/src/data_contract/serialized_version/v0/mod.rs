@@ -1,11 +1,10 @@
-
+use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName, PropertyPath};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use crate::data_contract::data_contract_config::DataContractConfig;
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]

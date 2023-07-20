@@ -1,5 +1,5 @@
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
-use crate::drive::fee::calculate_fee;
+
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -67,6 +67,12 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
-        calculate_fee(None, Some(cost_operations), &block_info.epoch).map_err(Error::Protocol)
+        Drive::calculate_fee(
+            None,
+            Some(cost_operations),
+            &block_info.epoch,
+            platform_version,
+        )
+        .map_err(Error::Protocol)
     }
 }

@@ -6,6 +6,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::get_from_transition_action;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 

@@ -8,7 +8,7 @@ use crate::version::v0::PLATFORM_V1;
 use crate::ProtocolError;
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard};
 
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
@@ -81,6 +81,16 @@ impl PlatformVersion {
             .ok_or(ProtocolError::CurrentProtocolVersionNotInitialized)
     }
 
+    pub fn get_maybe_current<'a>() -> Option<&'a Self> {
+        let lock_guard = CURRENT_PLATFORM_VERSION.read().unwrap();
+
+        if lock_guard.is_some() {
+            Some(lock_guard.unwrap())
+        } else {
+            None
+        }
+    }
+
     pub fn get<'a>(version: u32) -> Result<&'a Self, ProtocolError> {
         if version > 0 {
             PLATFORM_VERSIONS.get(version as usize - 1).ok_or(
@@ -93,6 +103,34 @@ impl PlatformVersion {
                 "no platform version {version}"
             )))
         }
+    }
+
+    pub fn get_version_or_current_or_latest<'a>(
+        version: Option<u32>,
+    ) -> Result<&'a Self, ProtocolError> {
+        if let Some(version) = version {
+            if version > 0 {
+                PLATFORM_VERSIONS.get(version as usize - 1).ok_or(
+                    ProtocolError::UnknownProtocolVersionError(format!(
+                        "no platform version {version}"
+                    )),
+                )
+            } else {
+                Err(ProtocolError::UnknownProtocolVersionError(format!(
+                    "no platform version {version}"
+                )))
+            }
+        } else if let Some(current_version) = Self::get_maybe_current() {
+            Ok(current_version)
+        } else {
+            Ok(Self::latest())
+        }
+    }
+
+    pub fn first<'a>() -> &'a Self {
+        PLATFORM_VERSIONS
+            .first()
+            .expect("expected to have a platform version")
     }
 
     pub fn latest<'a>() -> &'a Self {

@@ -27,7 +27,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
-use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
 };
@@ -44,6 +43,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -53,11 +53,10 @@ impl Drive {
         document_id: [u8; 32],
         contract_id: [u8; 32],
         document_type_name: &str,
-        owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
@@ -73,7 +72,7 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
@@ -83,14 +82,18 @@ impl Drive {
             document_id,
             contract,
             document_type_name,
-            owner_id,
             estimated_costs_only_with_layer_info,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
 
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
 
         Ok(fees)
     }

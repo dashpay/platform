@@ -16,8 +16,6 @@ use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
 
 use crate::identity::v0::IdentityV0;
-use platform_value::Value;
-use std::sync::Arc;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -29,6 +27,8 @@ use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::version::PlatformVersion;
+use platform_value::Value;
+use std::sync::Arc;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -37,14 +37,9 @@ pub struct IdentityFactory {
     protocol_version: u32,
 }
 
-impl IdentityFactory
-{
-    pub fn new(
-        protocol_version: u32,
-    ) -> Self {
-        IdentityFactory {
-            protocol_version,
-        }
+impl IdentityFactory {
+    pub fn new(protocol_version: u32) -> Self {
+        IdentityFactory { protocol_version }
     }
 
     pub fn create(
@@ -52,14 +47,17 @@ impl IdentityFactory
         asset_lock_proof: AssetLockProof,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
-        Identity::new_with_asset_lock_and_keys(asset_lock_proof, public_keys, PlatformVersion::get(self.protocol_version)?)
+        Identity::new_with_asset_lock_and_keys(
+            asset_lock_proof,
+            public_keys,
+            PlatformVersion::get(self.protocol_version)?,
+        )
     }
 
     pub fn create_from_object(
         &self,
         raw_identity: Value,
-        #[cfg(feature = "validation")]
-        skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         #[cfg(feature = "validation")]
         if !skip_validation {
@@ -72,8 +70,7 @@ impl IdentityFactory
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        #[cfg(feature = "validation")]
-        skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         let identity: Identity = Identity::deserialize(&buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(

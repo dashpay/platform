@@ -4,7 +4,7 @@ use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::drive::fee::calculate_fee;
+
 use crate::fee::op::LowLevelDriveOperation;
 use grovedb::batch::KeyInfoPath;
 

@@ -1,4 +1,3 @@
-use crate::drive::fee::calculate_fee;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::identity_path;
@@ -23,7 +22,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Revision>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_revision_operations_v0(
@@ -31,7 +30,7 @@ impl Drive {
             apply,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -43,7 +42,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Revision>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery
@@ -60,7 +59,7 @@ impl Drive {
             direct_query_type,
             transaction,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         ) {
             Ok(Some(Item(encoded_revision, _))) => {
                 let revision =
@@ -91,7 +90,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<Revision>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_revision_operations_v0(
@@ -99,9 +98,14 @@ impl Drive {
             apply,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
-        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok((value, fees))
     }
 }
