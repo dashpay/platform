@@ -28,7 +28,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
- * @param {getSystemConfig} getSystemConfig
+ * @param {SystemConfigs} systemConfigs
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -40,7 +40,7 @@ function setupRegularPresetTaskFactory(
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,
-  getSystemConfig,
+  systemConfigs,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -83,7 +83,7 @@ function setupRegularPresetTaskFactory(
             nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
 
-          ctx.config = getSystemConfig(ctx.preset);
+          ctx.config = systemConfigs.get(ctx.preset);
 
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
