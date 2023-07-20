@@ -605,8 +605,12 @@ module.exports = {
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
-      });
 
+        // eslint-disable-next-line max-len
+        config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
+        // eslint-disable-next-line max-len
+        config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+      });
     return configFile;
   },
 };
