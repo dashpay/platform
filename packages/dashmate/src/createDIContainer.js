@@ -78,7 +78,7 @@ const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
-const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
+const saveCertificateTaskFactory = require('./listr/tasks/ssl/saveCertificateTask');
 
 const createZeroSSLCertificate = require('./ssl/zerossl/createZeroSSLCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
@@ -267,7 +267,7 @@ async function createDIContainer(options = {}) {
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
-    saveCertificateTask: asValue(saveCertificateTask),
+    saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
