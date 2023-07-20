@@ -5,7 +5,7 @@ const lodashGet = require('lodash/get');
 const path = require('path');
 const systemConfigs = require('./system');
 
-const { NETWORK_TESTNET, HOME_DIR_PATH } = require('../src/constants');
+const {NETWORK_TESTNET, HOME_DIR_PATH} = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -606,10 +606,12 @@ module.exports = {
       .forEach(([, config]) => {
         config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
 
-        // eslint-disable-next-line max-len
-        config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
-        // eslint-disable-next-line max-len
-        config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+        if (config.network === 'testnet') {
+          // eslint-disable-next-line max-len
+          config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
+          // eslint-disable-next-line max-len
+          config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+        }
       });
     return configFile;
   },
@@ -629,6 +631,13 @@ module.exports = {
           .docker.build;
 
         delete config.dashmate.helper.docker.image;
+
+        if (config.network === 'testnet') {
+          // eslint-disable-next-line max-len
+          config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
+          // eslint-disable-next-line max-len
+          config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+        }
       });
 
     return configFile;
