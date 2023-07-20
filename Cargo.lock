@@ -3358,6 +3358,7 @@ dependencies = [
  "backon",
  "ciborium",
  "dapi-grpc",
+ "dpp",
  "drive",
  "futures",
  "http",

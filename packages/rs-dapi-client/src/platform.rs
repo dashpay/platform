@@ -1,11 +1,13 @@
 //! Platform DAPI requests.
 
+mod broadcast_state_transition;
 mod get_consensus_params;
 mod get_data_contract;
 mod get_data_contract_history;
 mod get_documents;
 mod get_identity;
 
+pub use broadcast_state_transition::BroadcastStateTransition;
 pub use get_consensus_params::GetConsensusParams;
 pub use get_data_contract::{GetDataContract, GetDataContractProof};
 pub use get_data_contract_history::{GetDataContractHistory, GetDataContractHistoryProof};
