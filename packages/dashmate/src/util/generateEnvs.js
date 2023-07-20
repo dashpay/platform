@@ -48,10 +48,6 @@ function generateEnvs(configFile, config, options = {}) {
     if (config.get('platform.dapi.api.docker.build.context')) {
       dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
     }
-
-    if (config.get('platform.dapi.envoy.docker.build.enabled')) {
-      dockerComposeFiles.push('docker-compose.build.dapi_envoy.yml');
-    }
   }
 
   // we need this for compatibility with old configs
