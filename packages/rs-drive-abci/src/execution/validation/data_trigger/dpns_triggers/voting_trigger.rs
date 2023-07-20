@@ -162,7 +162,7 @@ mod test {
             config: &platform.config,
         };
 
-        let mut domain_document =
+        let (mut domain_document, preorder_salt) =
             get_dpns_preorder_document_fixture(ParentDocumentOptions::default());
         domain_document
             .set(
