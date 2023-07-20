@@ -92,17 +92,17 @@ function reindexNodeTaskFactory(
       {
         title: 'Start Core in reindex mode',
         task: async () => {
-          const templatePath = path.join(TEMPLATES_DIR, 'core/dash.conf.dot');
+          const templatePath = 'core/dash.conf.dot';
           const [configPath] = templatePath.split('.dot');
 
-          const serviceConfig = renderTemplate(templatePath, { ...config.options, reindex: true });
+          const serviceConfig = renderTemplate(path.join(TEMPLATES_DIR, templatePath),
+            { ...config.options, reindex: true });
           writeServiceConfigs(config.getName(), { [configPath]: serviceConfig });
 
           const coreContainer = await getCoreContainer(config);
           if (coreContainer) {
             const info = await coreContainer.inspect();
 
-            // If core is running, we need to stop it first
             if (info.State.Status === 'exited') {
               await coreContainer.start();
               return Promise.resolve();
