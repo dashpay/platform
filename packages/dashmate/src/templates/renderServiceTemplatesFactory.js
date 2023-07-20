@@ -1,9 +1,6 @@
-const fs = require('fs');
-const path = require('path');
 const dots = require('dot');
 const glob = require('glob');
-const _ = require('lodash');
-const {TEMPLATES_DIR} = require("../constants");
+const { TEMPLATES_DIR } = require('../constants');
 
 /**
  * @return {renderServiceTemplates}

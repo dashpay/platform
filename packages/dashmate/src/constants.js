@@ -35,7 +35,7 @@ const HOME_DIR_PATH = process.env.DASHMATE_HOME_DIR
   : path.resolve(os.homedir(), '.dashmate');
 const CONFIG_FILE_PATH = path.join(HOME_DIR_PATH, 'config.json');
 const PACKAGE_ROOT_DIR = path.join(__dirname, '..');
-const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates')
+const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
 const OUTPUT_FORMATS = {
   JSON: 'json',

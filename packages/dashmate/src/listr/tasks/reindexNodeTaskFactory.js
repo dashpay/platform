@@ -3,7 +3,7 @@ const { Observable } = require('rxjs');
 const path = require('path');
 const generateEnvs = require('../../util/generateEnvs');
 const CoreService = require('../../core/CoreService');
-const {TEMPLATES_DIR} = require("../../constants");
+const { TEMPLATES_DIR } = require('../../constants');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -92,11 +92,11 @@ function reindexNodeTaskFactory(
       {
         title: 'Start Core in reindex mode',
         task: async () => {
-          const templatePath = path.join(TEMPLATES_DIR, 'core/dash.conf.dot')
-          const [configPath] = templatePath.split('.dot')
+          const templatePath = path.join(TEMPLATES_DIR, 'core/dash.conf.dot');
+          const [configPath] = templatePath.split('.dot');
 
-          const serviceConfig = renderTemplate(templatePath, {...config.options, reindex: true});
-          writeServiceConfigs(config.getName(), {[configPath]: serviceConfig});
+          const serviceConfig = renderTemplate(templatePath, { ...config.options, reindex: true });
+          writeServiceConfigs(config.getName(), { [configPath]: serviceConfig });
 
           const coreContainer = await getCoreContainer(config);
           if (coreContainer) {
@@ -106,10 +106,9 @@ function reindexNodeTaskFactory(
             if (info.State.Status === 'exited') {
               await coreContainer.start();
               return Promise.resolve();
-            } else {
-              await coreContainer.restart();
-              return Promise.resolve()
             }
+            await coreContainer.restart();
+            return Promise.resolve();
           }
 
           return startNodeTask(config);
