@@ -21,7 +21,7 @@ function writeServiceConfigsFactory() {
     const configDir = path.join(HOME_DIR_PATH, configName);
 
     if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configFiles, { recursive: true });
+      fs.mkdirSync(configDir, { recursive: true });
     }
 
     for (const filePath of Object.keys(configFiles)) {
