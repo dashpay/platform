@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
+use dpp::fee::fee_result::{BalanceChangeForIdentity, FeeResult};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

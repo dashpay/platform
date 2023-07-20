@@ -33,7 +33,7 @@ impl Drive {
             added_balance,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            &platform_version.drive,
+            platform_version,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -65,15 +65,20 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
+        let drive_version = &platform_version.drive;
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
+            Self::add_estimation_costs_for_balances(
+                estimated_costs_only_with_layer_info,
+                drive_version,
+            )?;
             Self::add_estimation_costs_for_negative_credit(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-            );
+                drive_version,
+            )?;
         }
 
         let previous_balance = self
@@ -82,7 +87,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "there should always be a balance",

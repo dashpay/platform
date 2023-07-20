@@ -8,7 +8,7 @@ use crate::drive::identity::{
 };
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
-use crate::drive::operation::LowLevelDriveOperation;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

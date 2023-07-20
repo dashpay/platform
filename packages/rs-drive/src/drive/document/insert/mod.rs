@@ -136,6 +136,7 @@ use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Deserializes a document and a contract and adds the document to the contract.
@@ -150,6 +151,7 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let contract = DataContract::from_cbor(serialized_contract)?;
 
@@ -203,6 +205,8 @@ mod tests {
         let (drive, dashpay) = setup_dashpay("add", true);
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let platform_version = PlatformVersion::first();
 
         let document_type = dashpay
             .document_type_for_name("contactRequest")
@@ -831,6 +835,8 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
+        let platform_version = PlatformVersion::first();
+
         let document_type = dashpay
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
@@ -932,6 +938,8 @@ mod tests {
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let platform_version = PlatformVersion::first();
 
         let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",

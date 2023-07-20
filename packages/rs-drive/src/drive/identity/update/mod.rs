@@ -16,10 +16,13 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
         use dpp::fee::fee_result::FeeResult;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn should_add_one_new_key_to_identity() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -49,6 +52,7 @@ mod tests {
                     &block,
                     true,
                     Some(&db_transaction),
+                    platform_version,
                 )
                 .expect("expected to update identity with new keys");
 
@@ -68,7 +72,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let identity_keys = drive
-                .fetch_all_identity_keys(identity.id.to_buffer(), None)
+                .fetch_all_identity_keys(identity.id.to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 1
@@ -77,6 +81,8 @@ mod tests {
         #[test]
         fn should_add_two_dozen_new_keys_to_identity() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -106,6 +112,7 @@ mod tests {
                     &block,
                     true,
                     Some(&db_transaction),
+                    platform_version,
                 )
                 .expect("expected to update identity with new keys");
 
@@ -125,7 +132,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let identity_keys = drive
-                .fetch_all_identity_keys(identity.id.to_buffer(), None)
+                .fetch_all_identity_keys(identity.id.to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             assert_eq!(identity_keys.len(), 29); // we had 5 keys and we added 24
@@ -134,6 +141,8 @@ mod tests {
         #[test]
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -163,6 +172,7 @@ mod tests {
                     &block,
                     false,
                     None,
+                    platform_version,
                 )
                 .expect("expected to update identity with new keys");
 
@@ -188,11 +198,16 @@ mod tests {
     mod disable_identity_keys {
         use super::*;
         use chrono::Utc;
+        use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn should_disable_a_few_keys() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -220,6 +235,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
+                    platform_version,
                 )
                 .expect("expected to update identity with new keys");
 
@@ -237,6 +253,7 @@ mod tests {
                     &block_info,
                     true,
                     Some(&db_transaction),
+                    platform_version,
                 )
                 .expect("should disable a few keys");
 
@@ -256,7 +273,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let identity_keys = drive
-                .fetch_all_identity_keys(identity.id.to_buffer(), None)
+                .fetch_all_identity_keys(identity.id.to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             assert_eq!(identity_keys.len(), 7); // we had 5 keys and we added 2
@@ -269,6 +286,8 @@ mod tests {
         #[test]
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -299,6 +318,7 @@ mod tests {
                     &block_info,
                     false,
                     None,
+                    platform_version,
                 )
                 .expect("should estimate the disabling of a few keys");
 
@@ -323,6 +343,8 @@ mod tests {
         #[test]
         fn estimated_costs_should_have_same_storage_cost() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -351,6 +373,7 @@ mod tests {
                     &block_info,
                     false,
                     None,
+                    platform_version,
                 )
                 .expect("should estimate the disabling of a few keys");
 
@@ -362,6 +385,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
+                    platform_version,
                 )
                 .expect("should get the cost of the disabling a few keys");
 
@@ -371,11 +395,16 @@ mod tests {
 
     mod update_identity_revision {
         use super::*;
+        use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn should_update_revision() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -405,6 +434,7 @@ mod tests {
                     &block_info,
                     true,
                     Some(&db_transaction),
+                    &platform_version.drive,
                 )
                 .expect("should update revision");
 
@@ -425,7 +455,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let updated_revision = drive
-                .fetch_identity_revision(identity.id.to_buffer(), true, None)
+                .fetch_identity_revision(identity.id.to_buffer(), true, None, platform_version)
                 .expect("expected to get revision");
 
             assert_eq!(updated_revision, Some(revision));
@@ -434,6 +464,8 @@ mod tests {
         #[test]
         fn should_estimated_costs_without_state() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
 
             let identity = Identity::random_identity(
                 Some(
@@ -463,6 +495,7 @@ mod tests {
                     &block_info,
                     false,
                     None,
+                    &platform_version.drive,
                 )
                 .expect("should estimate the revision update");
 

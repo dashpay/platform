@@ -3,8 +3,10 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::balances::credits::MAX_CREDITS;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -16,7 +18,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<AddToPreviousBalanceOutcome, Error> {
         if previous_balance == 0 {
             // Deduct debt from added amount if exists
@@ -26,7 +28,7 @@ impl Drive {
                     apply,
                     transaction,
                     drive_operations,
-                    drive_version,
+                    platform_version,
                 )?
                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                     "there should always be a balance if apply is set to true",

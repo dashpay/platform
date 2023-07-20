@@ -1,9 +1,9 @@
 mod v0;
 
-use crate::drive::balances::TotalCreditsBalance;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::balances::total_credits_balance::TotalCreditsBalance;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 

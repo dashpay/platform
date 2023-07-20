@@ -152,7 +152,7 @@ impl Drive {
             public_keys.into_values().collect(),
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         // We insert the key tree and keys
         batch_operations.append(&mut create_tree_keys_operations);
@@ -206,7 +206,11 @@ mod tests {
             .expect("expected to insert identity");
 
         let fetched_identity = drive
-            .fetch_full_identity(identity.id.to_buffer(), Some(&transaction), drive_version)
+            .fetch_full_identity(
+                identity.id.to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should fetch an identity")
             .expect("should have an identity");
 
@@ -217,7 +221,7 @@ mod tests {
     fn test_insert_identity_v0() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let drive_version = &PlatformVersion::get(0).unwrap().drive;
+        let platform_version = &PlatformVersion::first();
 
         let identity = Identity::random_identity(
             Some(

@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -52,9 +53,10 @@ impl Drive {
         start_at_date: u64,
         limit: Option<u16>,
         offset: Option<u16>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<u64, DataContract>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .get
@@ -66,7 +68,7 @@ impl Drive {
                 start_at_date,
                 limit,
                 offset,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_contract_with_history".to_string(),
@@ -86,6 +88,8 @@ mod tests {
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -97,9 +101,16 @@ mod tests {
     }
 
     fn apply_contract(drive: &Drive, data_contract: &DataContract, block_info: BlockInfo) {
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         drive
-            .apply_contract(data_contract, block_info, true, None, None, &drive_version)
+            .apply_contract(
+                data_contract,
+                block_info,
+                true,
+                None,
+                None,
+                platform_version,
+            )
             .expect("to apply contract");
     }
 
@@ -601,7 +612,7 @@ mod tests {
             test_case.start_at_date,
             test_case.limit,
             test_case.offset,
-            &platform_version.drive,
+            platform_version,
         );
 
         match &test_case.expected_error {

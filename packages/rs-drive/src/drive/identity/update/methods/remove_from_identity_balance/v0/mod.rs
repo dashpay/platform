@@ -5,10 +5,12 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::balances::credits::MAX_CREDITS;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -22,7 +24,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -35,7 +37,7 @@ impl Drive {
             balance_to_remove,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            platform_version,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -44,10 +46,15 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
-        let fees = Drive::calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
         Ok(fees)
     }
 
@@ -64,15 +71,19 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(estimated_costs_only_with_layer_info);
+            Self::add_estimation_costs_for_balances(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
             Self::add_estimation_costs_for_negative_credit(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-            );
+                &platform_version.drive,
+            )?;
         }
 
         let previous_balance = if estimated_costs_only_with_layer_info.is_none() {
@@ -81,7 +92,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "there should always be a balance if apply is set to true",
@@ -104,7 +115,7 @@ impl Drive {
         drive_operations.push(self.update_identity_balance_operation(
             identity_id,
             previous_balance - balance_to_remove,
-            drive_version,
+            &platform_version.drive,
         )?);
 
         Ok(drive_operations)

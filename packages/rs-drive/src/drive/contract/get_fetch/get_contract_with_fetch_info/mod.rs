@@ -155,7 +155,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .get

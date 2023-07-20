@@ -76,7 +76,7 @@ pub fn setup_drive_with_initial_state_structure() -> Drive {
         ..Default::default()
     }));
 
-    let drive_version = DriveVersion::latest();
+    let platform_version = PlatformVersion::latest();
     drive
         .create_initial_state_structure(None, &platform_version)
         .expect("should create root tree successfully");

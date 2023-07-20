@@ -1,4 +1,5 @@
 use self::drive::DriveError;
+use crate::error::contract::DataContractError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
 use contract::ContractError;

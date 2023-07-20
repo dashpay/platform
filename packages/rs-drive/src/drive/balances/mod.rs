@@ -88,6 +88,7 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 mod tests {
     use crate::drive::Drive;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use tempfile::TempDir;
 
     #[test]
@@ -96,13 +97,13 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let db_transaction = drive.grove.start_transaction();
 
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::first();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let credits_match_expected = drive
-            .calculate_total_credits_balance(None)
+            .calculate_total_credits_balance(None, &platform_version.drive)
             .expect("expected to get the result of the verification");
         assert!(credits_match_expected.ok().expect("no overflow"));
     }

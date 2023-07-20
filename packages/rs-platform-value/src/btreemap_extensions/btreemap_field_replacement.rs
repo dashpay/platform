@@ -109,7 +109,7 @@ pub trait BTreeValueMapReplacementPathHelper {
         path: &str,
         replacement_type: ReplacementType,
     ) -> Result<(), Error>;
-    fn replace_at_paths<I: IntoIterator<Item = String>>(
+    fn replace_at_paths<'a, I: IntoIterator<Item = &'a String>>(
         &mut self,
         paths: I,
         replacement_type: ReplacementType,
@@ -226,7 +226,7 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
         }
     }
 
-    fn replace_at_paths<I: IntoIterator<Item = String>>(
+    fn replace_at_paths<'a, I: IntoIterator<Item = &'a String>>(
         &mut self,
         paths: I,
         replacement_type: ReplacementType,

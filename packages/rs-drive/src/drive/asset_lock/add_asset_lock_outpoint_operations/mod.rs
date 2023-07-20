@@ -35,7 +35,12 @@ impl Drive {
         >,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.asset_lock.add_asset_lock_outpoint {
+        match platform_version
+            .drive
+            .methods
+            .asset_lock
+            .add_asset_lock_outpoint
+        {
             0 => self.add_asset_lock_outpoint_operations_v0(
                 outpoint,
                 estimated_costs_only_with_layer_info,

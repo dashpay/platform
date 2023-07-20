@@ -158,6 +158,7 @@ mod tests {
     use dpp::document::Document;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -167,7 +168,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -793,6 +794,8 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get profile document type");
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let platform_version = PlatformVersion::first();
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
@@ -927,7 +930,7 @@ mod tests {
 
         let removed_credits = fee_result
             .fee_refunds
-            .get(&random_owner_id)
+            .get(&random_owner_id.into())
             .unwrap()
             .get(&0)
             .unwrap();
@@ -1021,6 +1024,7 @@ mod tests {
                 BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
                 false,
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -1086,6 +1090,7 @@ mod tests {
                         BlockInfo::default(),
                         true,
                         Some(&db_transaction),
+                        platform_version,
                     )
                     .expect("expected to insert a document successfully");
 
@@ -1117,6 +1122,7 @@ mod tests {
                 query_cbor.as_slice(),
                 None,
                 None,
+                Some(platform_version.protocol_version),
             )
             .expect("expected to execute query");
 
@@ -1152,6 +1158,7 @@ mod tests {
                 query_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to execute query");
 

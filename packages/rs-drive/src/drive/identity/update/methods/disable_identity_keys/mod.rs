@@ -45,7 +45,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.identity.update.disable_identity_keys {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .update
+            .disable_identity_keys
+        {
             0 => self.disable_identity_keys_v0(
                 identity_id,
                 keys_ids,

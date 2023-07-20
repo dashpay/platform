@@ -15,6 +15,7 @@ use crate::fee_pools::epochs::epoch_key_constants::{
 };
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Returns the core block height of the Epoch's start block
@@ -32,9 +33,10 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<u32, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .credit_pools
             .epochs

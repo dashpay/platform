@@ -17,6 +17,24 @@ mod property_names {
     pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 }
 
+
+pub fn get_data_trigger_error_from_execution_result(
+    result: &DataTriggerExecutionResult,
+    error_number: usize,
+) -> &DataTriggerError {
+    match result
+        .errors
+        .get(error_number)
+        .expect("basic error should be found")
+    {
+        StateError::DataTriggerError(error) => error,
+        _ => panic!(
+            "error '{:?}' isn't a Data Trigger error",
+            result.errors[error_number]
+        ),
+    }
+}
+
 pub async fn create_contact_request_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a, SR>,

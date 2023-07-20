@@ -6,14 +6,8 @@ use platform_value::Value;
 
 use crate::document::ExtendedDocument;
 use crate::{
-    document::{
-        document_factory::DocumentFactory,
-        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    },
-    prelude::Identifier,
-    state_repository::MockStateRepositoryLike,
-    tests::utils::generate_random_identifier_struct,
-    version::LATEST_VERSION,
+    prelude::Identifier, state_repository::MockStateRepositoryLike,
+    tests::utils::generate_random_identifier_struct, version::LATEST_VERSION,
 };
 
 use super::{get_document_validator_fixture, get_dpns_data_contract_fixture};

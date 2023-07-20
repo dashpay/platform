@@ -11,7 +11,3 @@ pub mod prove;
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Queries module
 pub mod queries;
-
-#[cfg(feature = "full")]
-/// Apply info for a contract
-pub use insert::ContractApplyInfo;

@@ -52,7 +52,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.contract.apply.apply_contract {
+        match platform_version.drive.methods.contract.apply.apply_contract {
             0 => self.apply_contract_v0(
                 contract,
                 block_info,
@@ -106,7 +106,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version.methods.contract.apply.apply_contract {
+        match platform_version.drive.methods.contract.apply.apply_contract {
             0 => self.apply_contract_operations_v0(
                 contract,
                 block_info,

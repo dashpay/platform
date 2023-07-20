@@ -37,7 +37,6 @@ use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT
 use crate::data_contract::document_type::random_document::CreateRandomDocument;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::generate_document_id::generate_document_id_v0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::{Document, DocumentV0};
 use crate::identity::accessors::IdentityGettersV0;
@@ -152,7 +151,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-        let id = generate_document_id_v0(
+        let id = Document::generate_document_id_v0(
             &self.data_contract_id,
             &owner_id,
             self.name.as_str(),

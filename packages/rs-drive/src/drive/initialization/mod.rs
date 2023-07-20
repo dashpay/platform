@@ -55,7 +55,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .initialization
             .create_initial_state_structure

@@ -36,12 +36,18 @@ mod tests {
     use super::*;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
+    use std::hash::Hash;
 
     #[test]
     fn should_prove_a_single_identity() {
         let drive = setup_drive_with_initial_state_structure();
+
+        let platform_version = PlatformVersion::first();
+
         let identity = Identity::random_identity(
             Some(
                 platform_version

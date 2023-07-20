@@ -7,7 +7,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use dpp::identity::Identity;
+use dpp::identity::{Identity, IdentityV0};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -136,7 +136,7 @@ impl Drive {
             true,
             transaction,
             drive_operations,
-            drive_version,
+            platform_version,
         )?;
         if balance.is_none() {
             return Ok(None);
@@ -148,7 +148,7 @@ impl Drive {
                 true,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedDriveState(
                 "revision not found on identity".to_string(),
@@ -160,15 +160,27 @@ impl Drive {
             drive_operations,
             platform_version,
         )?;
-        Ok(Some(Identity {
-            feature_version: PROTOCOL_VERSION,
-            id: Identifier::new(identity_id),
-            public_keys,
-            balance,
-            revision,
-            asset_lock_proof: None,
-            metadata: None,
-        }))
+
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(Some(
+                IdentityV0 {
+                    id: Identifier::new(identity_id),
+                    public_keys,
+                    balance,
+                    revision,
+                }
+                .into(),
+            )),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_full_identity_operations (for identity structure)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }
 
@@ -237,6 +249,7 @@ mod tests {
         #[test]
         fn should_get_a_full_identity() {
             let drive = setup_drive_with_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
 
             let identity = Identity::random_identity(
                 Some(

@@ -9,6 +9,7 @@ use crate::error::Error;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Returns a list of the Epoch's block proposers
@@ -18,7 +19,7 @@ impl Drive {
     /// * `epoch_tree` - An Epoch instance.
     /// * `limit` - An Option containing the limit of proposers to be fetched.
     /// * `transaction` - A TransactionArg instance.
-    /// * `drive_version` - A DriveVersion instance representing the version of the drive.
+    /// * `platform_version` - A PlatformVersion instance representing the version of the drive.
     ///
     /// # Returns
     ///
@@ -28,9 +29,10 @@ impl Drive {
         epoch_tree: &Epoch,
         limit: Option<u16>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<(Vec<u8>, u64)>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .credit_pools
             .epochs

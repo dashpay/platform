@@ -3,8 +3,10 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -15,13 +17,13 @@ impl Drive {
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<ApplyBalanceChangeOutcome, Error> {
         let (batch_operations, actual_fee_paid) = self
             .apply_balance_change_from_fee_to_identity_operations_v0(
                 balance_change,
                 transaction,
-                drive_version,
+                platform_version,
             )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -31,7 +33,7 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         Ok(ApplyBalanceChangeOutcome { actual_fee_paid })
@@ -45,9 +47,11 @@ impl Drive {
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
+
+        let drive_version = &platform_version.drive;
 
         if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
             return Ok((drive_operations, balance_change.into_fee_result()));
@@ -60,7 +64,7 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "there should always be a balance if apply is set to true",

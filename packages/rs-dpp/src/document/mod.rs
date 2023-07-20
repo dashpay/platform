@@ -3,6 +3,10 @@ pub use fields::{property_names, IDENTIFIER_FIELDS};
 mod accessors;
 pub mod action_type;
 mod document_class_methods;
+#[cfg(feature = "client")]
+mod document_facade;
+#[cfg(feature = "factories")]
+pub mod document_factory;
 pub mod document_methods;
 mod document_patch;
 pub mod errors;

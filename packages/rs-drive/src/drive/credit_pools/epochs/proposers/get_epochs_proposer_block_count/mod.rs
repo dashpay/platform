@@ -9,6 +9,7 @@ use crate::error::Error;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Returns the given proposer's block count
@@ -28,9 +29,10 @@ impl Drive {
         epoch: &Epoch,
         proposer_tx_hash: &[u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .credit_pools
             .epochs

@@ -5,17 +5,11 @@ use platform_value::{platform_value, BinaryData, Value};
 
 use crate::document::ExtendedDocument;
 use crate::{
-    document::{
-        document_factory::DocumentFactory,
-        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    },
-    prelude::Identifier,
-    state_repository::MockStateRepositoryLike,
-    tests::utils::generate_random_identifier_struct,
-    version::LATEST_VERSION,
+    prelude::Identifier, state_repository::MockStateRepositoryLike,
+    tests::utils::generate_random_identifier_struct, version::LATEST_VERSION,
 };
 
-use super::{get_dashpay_contract_fixture, get_document_validator_fixture};
+use super::get_dashpay_contract_fixture;
 
 pub fn get_contact_request_document_fixture(
     owner_id: Option<Identifier>,

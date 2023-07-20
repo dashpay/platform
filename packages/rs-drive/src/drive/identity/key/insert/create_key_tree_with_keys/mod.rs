@@ -2,7 +2,6 @@ mod v0;
 
 use crate::drive::identity::identity_path;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
-use crate::drive::operation::LowLevelDriveOperation;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -42,7 +41,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys

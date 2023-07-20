@@ -367,6 +367,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     },
     platform_architecture: PlatformArchitectureVersion {
         data_contract_factory_structure_version: 0,
+        document_factory_structure_version: 0,
     },
     drive_abci: DriveAbciVersion {
         methods: DriveAbciMethodVersions {
@@ -599,6 +600,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 unique_id_for_document_field: 0,
                 serialize_value_for_key: 0,
                 convert_value_to_document: 0,
+                create_document_from_data: 0,
                 max_size: 0,
                 estimated_size: 0,
                 top_level_indices: 0,

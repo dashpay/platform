@@ -19,7 +19,7 @@ impl Drive {
             .protocol_upgrade
             .clear_version_information
         {
-            0 => self.clear_version_information_v0(transaction, platform_version),
+            0 => self.clear_version_information_v0(transaction, drive_version),
             version => Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "clear_version_information".to_string(),
                 known_versions: vec![0],

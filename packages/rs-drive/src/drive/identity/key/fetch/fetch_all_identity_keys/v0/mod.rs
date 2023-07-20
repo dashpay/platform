@@ -14,14 +14,14 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_all_identity_keys_operations(
             identity_id,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 

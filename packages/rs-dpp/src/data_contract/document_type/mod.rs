@@ -19,7 +19,7 @@ use crate::prelude::Revision;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(self) mod property_names {
@@ -146,6 +146,20 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.convert_value_to_document(data, platform_version),
+        }
+    }
+
+    fn create_document_from_data(
+        &self,
+        data: Value,
+        owner_id: Identifier,
+        document_entropy: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
+            }
         }
     }
 

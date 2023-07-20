@@ -67,6 +67,7 @@ pub struct DocumentTypeVersions {
     pub unique_id_for_document_field: FeatureVersion,
     pub serialize_value_for_key: FeatureVersion,
     pub convert_value_to_document: FeatureVersion,
+    pub create_document_from_data: FeatureVersion,
     pub max_size: FeatureVersion,
     pub estimated_size: FeatureVersion,
     pub top_level_indices: FeatureVersion,

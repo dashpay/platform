@@ -40,7 +40,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.document.insert.add_document {
+        match platform_version.drive.methods.document.insert.add_document {
             0 => self.add_document_v0(
                 owned_document_info,
                 data_contract_id,

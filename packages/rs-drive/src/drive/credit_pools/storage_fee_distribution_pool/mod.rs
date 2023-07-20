@@ -72,6 +72,7 @@ mod tests {
         use super::*;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::drive::credit_pools::paths::pools_vec_path;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_error_if_epoch_is_not_initiated() {
@@ -90,6 +91,8 @@ mod tests {
         fn test_error_if_wrong_value_encoded() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::first();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -115,6 +118,8 @@ mod tests {
         fn test_error_if_storage_pool_is_not_initiated() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::first();
 
             // Remove storage pool key such as we would init the epoch
             // with `add_init_empty_without_storage_operations` method

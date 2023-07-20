@@ -35,10 +35,11 @@
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
-use dpp::block::epoch::Epoch;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -128,6 +129,7 @@ pub fn increment_in_epoch_each_proposers_block_count(
     epoch_tree: &Epoch,
     proposers: &Vec<[u8; 32]>,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) {
     let mut batch = GroveDbOpBatch::new();
 
@@ -138,6 +140,7 @@ pub fn increment_in_epoch_each_proposers_block_count(
                 proposer_pro_tx_hash,
                 None,
                 transaction,
+                platform_version,
             )
             .expect("should increment proposer block count");
         batch.push(op);

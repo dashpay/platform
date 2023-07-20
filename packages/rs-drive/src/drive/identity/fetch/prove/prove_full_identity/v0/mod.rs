@@ -32,6 +32,7 @@ mod tests {
     use crate::drive::Drive;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType;
     use grovedb::GroveDb;
     use grovedb::QueryItem;
@@ -42,7 +43,7 @@ mod tests {
     #[test]
     fn should_prove_full_identity_query_no_tx() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let identity = Identity::random_identity(
             Some(
@@ -155,7 +156,7 @@ mod tests {
         assert_eq!(elements.len(), 7);
 
         let fetched_identity = drive
-            .prove_full_identity_v0(identity.id.to_buffer(), None, &drive_version)
+            .prove_full_identity_v0(identity.id.to_buffer(), None, &platform_version.drive)
             .expect("should fetch an identity");
 
         let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &path_query)

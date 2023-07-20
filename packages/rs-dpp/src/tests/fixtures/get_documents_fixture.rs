@@ -7,6 +7,7 @@ use platform_value::{platform_value, Value};
 
 use crate::contracts::withdrawals_contract::document_types;
 
+use crate::document::document_factory::DocumentFactory;
 use crate::document::Document;
 use crate::{
     document::fetch_and_validate_data_contract::DataContractFetcherAndValidator,
@@ -53,8 +54,8 @@ pub fn get_extended_documents_fixture(
     get_extended_documents(factory, data_contract, owner_id)
 }
 
-fn get_extended_documents<ST: StateRepositoryLike>(
-    factory: DocumentFactory<ST>,
+fn get_extended_documents(
+    factory: DocumentFactory,
     data_contract: DataContract,
     owner_id: Identifier,
 ) -> Result<Vec<ExtendedDocument>, ProtocolError> {

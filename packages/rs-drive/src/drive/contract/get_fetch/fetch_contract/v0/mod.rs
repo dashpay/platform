@@ -1,5 +1,6 @@
-use crate::drive::contract::{paths, ContractFetchInfo, DataContractFetchInfo};
+use crate::drive::contract::{paths, DataContractFetchInfo};
 
+use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

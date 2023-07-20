@@ -43,12 +43,15 @@ mod tests {
     use dpp::identity::Identity;
 
     mod prove_identity_balance {
-
         use super::*;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn should_prove_a_single_identity_balance() {
             let drive = setup_drive_with_initial_state_structure();
+
+            let platform_version = PlatformVersion::first();
+
             let identity = Identity::random_identity(
                 Some(
                     platform_version

@@ -53,7 +53,7 @@ mod tests {
                     &block_info,
                     true,
                     Some(&db_transaction),
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to add to identity balance");
 
@@ -78,7 +78,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance");
 
@@ -99,7 +99,7 @@ mod tests {
                 &block_info,
                 true,
                 None,
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(
@@ -143,7 +143,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to add to identity balance");
 
@@ -163,7 +163,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance");
 
@@ -178,7 +178,7 @@ mod tests {
                     true,
                     None,
                     &mut drive_operations,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance")
                 .expect("balance should present");
@@ -222,7 +222,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to add to identity balance");
 
@@ -242,7 +242,7 @@ mod tests {
                     &block_info,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance");
 
@@ -254,7 +254,7 @@ mod tests {
                     true,
                     None,
                     &mut drive_operations,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance")
                 .expect("balance should present");
@@ -294,7 +294,7 @@ mod tests {
                     &block,
                     false,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get estimated costs to update an identity balance");
 
@@ -320,7 +320,7 @@ mod tests {
                     &block,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance");
 
@@ -395,7 +395,7 @@ mod tests {
                     &block,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance");
 
@@ -462,7 +462,7 @@ mod tests {
                     &block,
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to get balance");
 
@@ -472,7 +472,7 @@ mod tests {
 
     mod apply_balance_change_from_fee_to_identity_operations {
         use super::*;
-        use crate::drive::object_size_info::ElementInfo::Element;
+        use crate::error::identity::IdentityError;
         use crate::fee::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
@@ -481,6 +481,7 @@ mod tests {
         use dpp::fee::{Credits, SignedCredits};
         use dpp::version::PlatformVersion;
         use grovedb::batch::Op;
+        use grovedb::Element;
         use nohash_hasher::IntMap;
         use std::collections::BTreeMap;
 
@@ -750,7 +751,7 @@ mod tests {
                     &BlockInfo::default(),
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should set initial balance");
 
@@ -805,7 +806,7 @@ mod tests {
                     &BlockInfo::default(),
                     true,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should set initial balance");
 

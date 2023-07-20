@@ -59,7 +59,9 @@ impl Drive {
             .update
             .update_contract
         {
-            0 => self.update_contract_v0(contract, block_info, apply, transaction, drive_version),
+            0 => {
+                self.update_contract_v0(contract, block_info, apply, transaction, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract".to_string(),
                 known_versions: vec![0],
@@ -171,7 +173,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.contract.update.update_contract {
+        match platform_version
+            .drive
+            .methods
+            .contract
+            .update
+            .update_contract
+        {
             0 => self.update_contract_add_operations_v0(
                 contract_element,
                 contract,

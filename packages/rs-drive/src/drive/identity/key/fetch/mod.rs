@@ -893,7 +893,11 @@ mod tests {
             .expect("expected to insert identity");
 
         let public_keys = drive
-            .fetch_all_identity_keys(identity.id.to_buffer(), Some(&transaction), &drive_version)
+            .fetch_all_identity_keys(
+                identity.id.to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 5);
@@ -905,6 +909,8 @@ mod tests {
         let drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::first();
 
         drive
             .create_initial_state_structure(Some(&transaction), platform_version)
@@ -952,8 +958,10 @@ mod tests {
 
         let transaction = drive.grove.start_transaction();
 
+        let platform_version = PlatformVersion::first();
+
         drive
-            .create_initial_state_structure_0(Some(&transaction))
+            .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(
@@ -998,8 +1006,10 @@ mod tests {
 
         let transaction = drive.grove.start_transaction();
 
+        let platform_version = PlatformVersion::first();
+
         drive
-            .create_initial_state_structure_0(Some(&transaction))
+            .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let identity = Identity::random_identity(

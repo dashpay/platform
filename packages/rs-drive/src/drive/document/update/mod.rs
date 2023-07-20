@@ -42,14 +42,10 @@ pub use add_update_multiple_documents_operations::*;
 mod update_document_for_contract;
 pub use update_document_for_contract::*;
 
-pub use update_document_for_contract_apply_and_add_to_operations::*;
-
 // Module: update_document_for_contract_id
 // This module contains functionality for updating a document associated with a given contract id
 mod update_document_for_contract_id;
 pub use update_document_for_contract_id::*;
-
-pub use update_document_for_contract_operations::*;
 
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
@@ -146,7 +142,6 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::state_repository::MockStateRepositoryLike;
     use grovedb::TransactionArg;
     use std::default::Default;
     use std::option::Option::None;
@@ -154,14 +149,12 @@ mod tests {
 
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
-    use dpp::document::document_validator::DocumentValidator;
 
     use dpp::platform_value::{platform_value, Identifier, Value};
 
     use dpp::block::block_info::BlockInfo;
 
     use dpp::balances::credits::Creditable;
-    use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
@@ -1887,13 +1880,13 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         // Create a contract
 
         let block_info = BlockInfo::default();
-        let owner_id = dpp::identifier::Identifier::new([2u8; 32]);
+        let owner_id = Identifier::new([2u8; 32]);
 
         let documents = platform_value!({
             "niceDocument": {
@@ -1910,25 +1903,13 @@ mod tests {
             }
         });
 
-        let protocol_version_validator = ProtocolVersionValidator::new(
-            LATEST_VERSION,
-            LATEST_VERSION,
-            COMPATIBILITY_MAP.clone(),
-        );
-
-        let data_contract_validator =
-            DataContractValidator::new(Arc::new(protocol_version_validator));
-
-        let factory = DataContractFactory::new_with_entropy_generator(
-            1,
-            Arc::new(data_contract_validator),
-            Box::new(TestEntropyGenerator::new()),
-        );
+        let factory = DataContractFactory::new(1, Some(Box::new(TestEntropyGenerator::new())))
+            .expect("expected to create factory");
 
         let contract = factory
             .create(owner_id, documents, None, None)
             .expect("data in fixture should be correct")
-            .data_contract;
+            .data_contract_owned();
 
         drive
             .apply_contract(
@@ -1943,19 +1924,8 @@ mod tests {
 
         // Create a document factory
 
-        let protocol_version_validator = Arc::new(ProtocolVersionValidator::new(
-            LATEST_VERSION,
-            LATEST_VERSION,
-            COMPATIBILITY_MAP.clone(),
-        ));
-
-        let document_validator = DocumentValidator::new(protocol_version_validator);
-
-        let document_factory = DocumentFactory::new(
-            1,
-            document_validator,
-            DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-        );
+        let document_factory =
+            DocumentFactory::new(1, contract).expect("expected to create document factory");
 
         // Create a document
 

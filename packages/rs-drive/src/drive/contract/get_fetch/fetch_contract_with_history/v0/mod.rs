@@ -1,5 +1,5 @@
 use crate::common::decode::decode_u64;
-use crate::drive::contract::{paths, ContractFetchInfo};
+use crate::drive::contract::paths;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -8,8 +8,11 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization_traits::{
+    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
+};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use std::collections::BTreeMap;
@@ -57,7 +60,7 @@ impl Drive {
         start_at_date: u64,
         limit: Option<u16>,
         offset: Option<u16>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<u64, DataContract>, Error> {
         let mut ops = Vec::new();
 
@@ -69,7 +72,7 @@ impl Drive {
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
             &mut ops,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         let contracts = results
@@ -83,8 +86,10 @@ impl Drive {
                         ))
                     })?;
                     match value {
-                        Element::Item(a, _flags) => {
-                            let contract = DataContract::deserialize(a).map_err(Error::Protocol)?;
+                        Element::Item(item, _flags) => {
+                            let contract =
+                                DataContract::versioned_deserialize(item, platform_version)
+                                    .map_err(Error::Protocol)?;
                             Ok((contract_time, contract))
                         }
                         _ => Err(Error::Drive(DriveError::CorruptedContractPath(

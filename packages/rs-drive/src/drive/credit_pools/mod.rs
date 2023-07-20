@@ -33,6 +33,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
+use crate::fee_pools::epochs::paths::encode_epoch_index_key;
 use crate::fee_pools::epochs::paths::EpochProposers;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 use dpp::block::epoch::{Epoch, EpochIndex};
@@ -68,14 +69,12 @@ impl Drive {
         let min_epoch_index = credits_per_epochs.keys().min().ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("can't find min epoch index"),
         ))?;
-        let min_encoded_epoch_index =
-            paths::encode_epoch_index_key(min_epoch_index.to_owned())?.to_vec();
+        let min_encoded_epoch_index = encode_epoch_index_key(min_epoch_index.to_owned())?.to_vec();
 
         let max_epoch_index = credits_per_epochs.keys().max().ok_or(Error::Drive(
             DriveError::CorruptedCodeExecution("can't find max epoch index"),
         ))?;
-        let max_encoded_epoch_index =
-            paths::encode_epoch_index_key(max_epoch_index.to_owned())?.to_vec();
+        let max_encoded_epoch_index = encode_epoch_index_key(max_epoch_index.to_owned())?.to_vec();
 
         let credits_per_epochs_length = credits_per_epochs.len();
 
@@ -203,6 +202,8 @@ mod tests {
             let transaction = drive.grove.start_transaction();
 
             const TO_EPOCH_INDEX: EpochIndex = 10;
+
+            let platform_version = PlatformVersion::first();
 
             // Store initial epoch storage pool values
             let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)

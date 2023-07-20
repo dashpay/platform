@@ -41,7 +41,7 @@ impl Drive {
             .attributes
             .balance
         {
-            0 => self.fetch_identity_balance_v0(identity_id, transaction, drive_version),
+            0 => self.fetch_identity_balance_v0(identity_id, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance".to_string(),
                 known_versions: vec![0],

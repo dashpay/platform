@@ -47,6 +47,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::batch::GroveDbOpBatch;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::fee_pools::epochs::epoch_key_constants;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::fee_pools::epochs::paths::EpochProposers;

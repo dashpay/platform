@@ -9,10 +9,7 @@ use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
-use KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
 use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
-use PathKeyElementInfo::{PathFixedSizeKeyRefElement, PathKeyElementSize, PathKeyRefElement};
-use PathKeyInfo::{PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize};
 
 use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
 use crate::drive::flags::StorageFlags;
