@@ -1,5 +1,6 @@
 const broadcastStateTransitionFactory = require('./broadcastStateTransition/broadcastStateTransitionFactory');
 const getDataContractFactory = require('./getDataContract/getDataContractFactory');
+const getDataContractHistoryFactory = require('./getDataContractHistory/getDataContractHistoryFactory');
 const getDocumentsFactory = require('./getDocuments/getDocumentsFactory');
 const getIdentityFactory = require('./getIdentity/getIdentityFactory');
 const getIdentitiesByPublicKeyHashesFactory = require('./getIdentitiesByPublicKeyHashes/getIdentitiesByPublicKeyHashesFactory');
@@ -13,6 +14,7 @@ class PlatformMethodsFacade {
   constructor(grpcTransport) {
     this.broadcastStateTransition = broadcastStateTransitionFactory(grpcTransport);
     this.getDataContract = getDataContractFactory(grpcTransport);
+    this.getDataContractHistory = getDataContractHistoryFactory(grpcTransport);
     this.getDocuments = getDocumentsFactory(grpcTransport);
     this.getIdentity = getIdentityFactory(grpcTransport);
     this.getIdentitiesByPublicKeyHashes = getIdentitiesByPublicKeyHashesFactory(grpcTransport);

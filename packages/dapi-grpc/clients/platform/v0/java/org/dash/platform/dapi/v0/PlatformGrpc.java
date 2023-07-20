@@ -263,6 +263,37 @@ public final class PlatformGrpc {
     return getGetDataContractMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse> getGetDataContractHistoryMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getDataContractHistory",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse> getGetDataContractHistoryMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse> getGetDataContractHistoryMethod;
+    if ((getGetDataContractHistoryMethod = PlatformGrpc.getGetDataContractHistoryMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetDataContractHistoryMethod = PlatformGrpc.getGetDataContractHistoryMethod) == null) {
+          PlatformGrpc.getGetDataContractHistoryMethod = getGetDataContractHistoryMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDataContractHistory"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDataContractHistory"))
+              .build();
+        }
+      }
+    }
+    return getGetDataContractHistoryMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getGetDataContractsMethod;
 
@@ -558,6 +589,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getDataContractHistory(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractHistoryMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractsMethod(), responseObserver);
@@ -656,6 +694,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse>(
                   this, METHODID_GET_DATA_CONTRACT)))
+          .addMethod(
+            getGetDataContractHistoryMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse>(
+                  this, METHODID_GET_DATA_CONTRACT_HISTORY)))
           .addMethod(
             getGetDataContractsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -785,6 +830,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getDataContractHistory(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetDataContractHistoryMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getDataContracts(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -903,6 +956,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetDataContractMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse getDataContractHistory(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetDataContractHistoryMethod(), getCallOptions(), request);
     }
 
     /**
@@ -1031,6 +1091,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse> getDataContractHistory(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetDataContractHistoryMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsResponse> getDataContracts(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -1086,12 +1154,13 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 5;
   private static final int METHODID_GET_PROOFS = 6;
   private static final int METHODID_GET_DATA_CONTRACT = 7;
-  private static final int METHODID_GET_DATA_CONTRACTS = 8;
-  private static final int METHODID_GET_DOCUMENTS = 9;
-  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 10;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASHES = 11;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 12;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 13;
+  private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 8;
+  private static final int METHODID_GET_DATA_CONTRACTS = 9;
+  private static final int METHODID_GET_DOCUMENTS = 10;
+  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 11;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASHES = 12;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 13;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 14;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1141,6 +1210,10 @@ public final class PlatformGrpc {
         case METHODID_GET_DATA_CONTRACT:
           serviceImpl.getDataContract((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse>) responseObserver);
+          break;
+        case METHODID_GET_DATA_CONTRACT_HISTORY:
+          serviceImpl.getDataContractHistory((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractHistoryResponse>) responseObserver);
           break;
         case METHODID_GET_DATA_CONTRACTS:
           serviceImpl.getDataContracts((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractsRequest) request,
@@ -1235,6 +1308,7 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityBalanceAndRevisionMethod())
               .addMethod(getGetProofsMethod())
               .addMethod(getGetDataContractMethod())
+              .addMethod(getGetDataContractHistoryMethod())
               .addMethod(getGetDataContractsMethod())
               .addMethod(getGetDocumentsMethod())
               .addMethod(getGetIdentitiesByPublicKeyHashesMethod())
