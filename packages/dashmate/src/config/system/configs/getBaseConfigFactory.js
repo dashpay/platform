@@ -116,13 +116,7 @@ function getBaseConfigFactory(homeDir) {
         dapi: {
           envoy: {
             docker: {
-              image: `dashpay/envoy:${dockerImageVersion}`,
-              build: {
-                enabled: false,
-                context: path.join(PACKAGE_ROOT_DIR, 'docker', 'envoy'),
-                dockerFile: path.join(PACKAGE_ROOT_DIR, 'docker', 'envoy', 'Dockerfile'),
-                target: '',
-              },
+              image: 'dashpay/envoy:1.22.11',
             },
             http: {
               port: 443,

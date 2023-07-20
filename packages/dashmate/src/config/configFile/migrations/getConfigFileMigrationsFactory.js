@@ -81,7 +81,7 @@ function getConfigFileMigrationsFactory(homeDir, systemConfigs) {
       '0.24.16': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.dapi.envoy.docker.build = base.get('platform.dapi.envoy.docker.build');
+            options.platform.dapi.envoy.docker = base.get('platform.dapi.envoy.docker');
 
             options.platform.dapi.api.docker.build = base.get('platform.dapi.api.docker.build');
 
