@@ -9,12 +9,12 @@ use drive::drive::Drive;
 
 use super::verify::verify_tenderdash_proof;
 
-type Identities = Vec<Option<Identity>>;
-type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
-type DataContracts = Vec<Option<DataContract>>;
-type IdentityBalance = u64;
-type IdentityBalanceAndRevision = (u64, Revision);
-type Documents = Vec<Document>;
+pub type Identities = Vec<Option<Identity>>;
+pub type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
+pub type DataContracts = Vec<Option<DataContract>>;
+pub type IdentityBalance = u64;
+pub type IdentityBalanceAndRevision = (u64, Revision);
+pub type Documents = Vec<Document>;
 
 // #[cfg(feature = "mockall")]
 
@@ -131,7 +131,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
         Ok(maybe_identity)
     }
@@ -179,7 +179,7 @@ impl
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
         Ok(maybe_identity)
     }
@@ -228,7 +228,7 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
                     error: e.to_string(),
                 })?;
 
-                verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+                verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
                 Ok(maybe_identity)
             })
@@ -282,7 +282,7 @@ impl
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
         Ok(Some(maybe_identities_with_public_key_hashes))
     }
@@ -325,7 +325,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
         Ok(maybe_identity.map(|i| i.balance))
     }
@@ -368,7 +368,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
         Ok(maybe_identity.map(|i| (i.balance, i.revision)))
     }
@@ -409,7 +409,7 @@ impl FromProof<platform::GetDataContractRequest, platform::GetDataContractRespon
                 },
             )?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
         Ok(maybe_contract)
     }
@@ -457,7 +457,7 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
                             error: e.to_string(),
                         })?;
 
-                verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+                verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
                 Ok(maybe_contract)
             })
@@ -467,113 +467,35 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
     }
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Documents {
-    fn maybe_from_proof(
-        request: &platform::GetDocumentsRequest,
-        response: &platform::GetDocumentsResponse,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
-        // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
-            platform::get_documents_response::Result::Proof(p) => p,
-            platform::get_documents_response::Result::Documents(_) => {
-                return Err(Error::EmptyResponseProof)
-            }
-        };
+// #[cfg_attr(feature = "mock", mockall::automock)]
+// impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Documents {
+//     fn maybe_from_proof(
+//         request: &platform::GetDocumentsRequest,
+//         response: &platform::GetDocumentsResponse,
+//         provider: Box<dyn QuorumInfoProvider>,
+//     ) -> Result<Option<Self>, Error> {
+//         // Parse response to read proof and metadata
+//         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+//             platform::get_documents_response::Result::Proof(p) => p,
+//             platform::get_documents_response::Result::Documents(_) => {
+//                 return Err(Error::EmptyResponseProof)
+//             }
+//         };
 
-        let mtd = response
-            .metadata
-            .as_ref()
-            .ok_or(Error::EmptyResponseMetadata)?;
+//         let mtd = response
+//             .metadata
+//             .as_ref()
+//             .ok_or(Error::EmptyResponseMetadata)?;
 
-        // Extract content from proof and verify Drive/GroveDB proofs
-        // TODO: figure out how to verify proof statically
-        let (root_hash, maybe_documents) =
-            Drive::verify_proof(&proof.grovedb_proof).map_err(|e| Error::DriveError {
-                error: e.to_string(),
-            })?;
+//         // Extract content from proof and verify Drive/GroveDB proofs
+//         // TODO: figure out how to verify proof statically
+//         let (root_hash, maybe_documents) =
+//             Drive::verify_proof(&proof.grovedb_proof).map_err(|e| Error::DriveError {
+//                 error: e.to_string(),
+//             })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+//         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok(maybe_documents)
-    }
-}
-
-/// Tests
-///
-/// TODO: This needs some refactoring / moving around, as functions like [test_vector_identity_not_found] are
-/// reused in uniffi_bindings/proof.rs tests
-#[cfg(all(test, feature = "mock"))]
-pub(crate) mod test {
-    use base64::Engine;
-    use dapi_grpc::platform::v0::{
-        self as platform, GetIdentityRequest, GetIdentityResponse, Proof, ResponseMetadata,
-    };
-    use dpp::prelude::Identity;
-    use tracing::Level;
-
-    use super::{FromProof, MockQuorumInfoProvider};
-
-    /// Test vectors for proof of non-existence of some identity
-    pub fn test_vector_identity_not_found() -> (
-        GetIdentityRequest,
-        GetIdentityResponse,
-        MockQuorumInfoProvider,
-    ) {
-        let b64 = base64::engine::general_purpose::STANDARD;
-
-        let request = GetIdentityRequest {
-            id: b64
-                .decode("lCJoCnN5TKJdBflau+DETzZZBo/gjyYs9FI7BwIb9pY=")
-                .unwrap(),
-            prove: true,
-        };
-
-        let response =  GetIdentityResponse{
-        metadata: Some(
-            ResponseMetadata { height:189,
-                    core_chain_locked_height:1617,
-                    time_ms:1688035046883, // TODO: should be 2023-06-27T13:14:34.372422898Z but this requires nanos
-                    protocol_version: 1,
-                    chain_id:"dashmate_local_5".to_string() // TODO: chain id must be read from tenderdash genesis.json
-            }
-        ),
-        result: Some(platform::get_identity_response::Result::Proof(
-            Proof{
-                grovedb_proof: b64.decode("Ab4CAexDylk+WuD86iRYb6bx230lXLoFtSqLCeSw/nOfXJbzBAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmABZxibcZD2C32GaVZgNvQPxYBU/KRFKrLVkOU8XFjqhyRAB4mgui2Q7VyjYiyGOhQEHJkboQALRbgk27TBWwAEwq1MRAq2LjwtLqRl3c1vXyNdJbjkiqqNzSo7D6lGlVpFqDdXnEAHDNjUTblAumsUkSxWiCnV+B1nOCpCCPNN/iT9qSVVtJgQBYAAlBAEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgAAL+cHKphVe39PALl2CUHnzcEgIHnmPGQ365s/gLamwDhEAHNvOJim418TBEmZxdVX05Gz061JolAhxPmeH9hMx4KjRERAY0CASXW3HRMrb0+AAqVCkdJD+RsZae6sGW1r/vCDyFsv+5KAmi22C3rnUSnLDn+c9CSt04QOkpxKL1/YZ5GUiy6PzzsEAGdUhPjzqZgpGOWjAJP/znIzTn7qKPgk1a6LyqBq1MKtgUgbrmteWWfYvdMrBlDy3wFecWT6loLtbebBT32T7twCL8z4hMW3QlC0VXIs32IH74GchFZrO/qfURj+X+VvzGh9BARBSCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmPpy14uS/Mz7XiFgFNWyiV1sK/ax7OyTRyP6Za2XPVYQEAEPxjC56LCfmjtCqSmPNZCiSrA5tHTV314El3etV8ASwBECjQIBMEug99o1aL1r1fTvjQWXnN5x05C0e5L6l7qn+ahazyECiTcgqXvEL2837Y7t1JcjkYGVIFZ7NkS80ZLVeDUZzS0QAUPVbm2zx+3HgQdPsmd+RaQ771V7S+7SeKoYqjyqLSb7BSBuua15ZZ9i90ysGUPLfAV5xZPqWgu1t5sFPfZPu3AIvyjYM5CSy5YOhZT1K8NRLwoOm9DWwQFT++RVRxeGkXrZEBEFIJ9lpQpnWWt2hiM+zQ71gqhWvin3i3GqyltFh/Ly22GYKNgzkJLLlg6FlPUrw1EvCg6b0NbBAVP75FVHF4aRetkQASjSJd0LlYIYG6WOaQQ7lr9v8gvVTprLZhKFGxh5uMwiEQ==").unwrap(),
-                quorum_hash: b64.decode("Wpwae/E+1U3EEcalbAVFohB//qOaDd+xw8ptDamXoi0=").unwrap(),
-                signature: b64.decode("gdgljA8wRS/BQn1IzI2fz4rBgAErLxsLdN3/0kBuYcf4wk9FpCSqS+3TBXriSs1cFChyFgChivdEhWbHUM0liwV6kktGGTWLvySDwdwxDrei4xwEzoxuvOA2tuikUoHj").unwrap(),
-                round:0,
-                quorum_type: 106,
-                block_id_hash:  b64.decode("iI1GM0cAhHtJBu+uv1EkhCCqLd9ZIiQWiLa8dUHhuxg=").unwrap(),
-            }
-        ))
-    };
-
-        let mut provider = MockQuorumInfoProvider::new();
-        provider
-        .expect_get_quorum_public_key()
-        .returning(|_quorum_type,_quorum_hash| {
-            Ok(hex::decode("b69aaf2a341960b0c6f0f94ce24170be898f0a64cf51dfdca51464bac1af66fa69df2f533294e3fb1bcb9b72edd97ef9").unwrap())
-        })
-        .once();
-
-        (request, response, provider)
-    }
-    /// Given some test vectors dumped from a devnet, prove non-existence of identity with some hardcoded identifier
-    #[test]
-    fn identity_not_found() {
-        tracing_subscriber::fmt::fmt()
-            .pretty()
-            .with_ansi(true)
-            .with_max_level(Level::TRACE)
-            .try_init()
-            .ok();
-
-        let (request, response, provider) = test_vector_identity_not_found();
-
-        let identity = Identity::maybe_from_proof(&request, &response, Box::new(provider)).unwrap();
-        assert!(identity.is_none())
-    }
-}
+//         Ok(maybe_documents)
+//     }
+// }

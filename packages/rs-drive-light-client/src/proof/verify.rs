@@ -14,7 +14,7 @@ pub(crate) fn verify_tenderdash_proof(
     proof: &Proof,
     mtd: &ResponseMetadata,
     root_hash: &[u8],
-    provider: Box<dyn QuorumInfoProvider>,
+    provider: &Box<dyn QuorumInfoProvider>,
 ) -> Result<(), Error> {
     let block_id_hash = proof.block_id_hash.to_vec();
 

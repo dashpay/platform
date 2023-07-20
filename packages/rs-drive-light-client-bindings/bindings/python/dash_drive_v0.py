@@ -522,11 +522,11 @@ def uniffi_check_contract_api_version(lib):
         raise InternalError("UniFFI contract version mismatch: try cleaning and rebuilding your project")
 
 def uniffi_check_api_checksums(lib):
-    if lib.uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor() != 50752:
+    if lib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor() != 61901:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_rs_drive_light_client_checksum_func_version() != 31055:
+    if lib.uniffi_drive_light_client_checksum_func_version() != 33802:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 62936:
+    if lib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 49931:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
 
 # A ctypes library to expose the extern-C FFI definitions.
@@ -538,17 +538,17 @@ _UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.argtypes = (
     ctypes.POINTER(RustCallStatus),
 )
 _UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.restype = None
-_UniFFILib.uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor.argtypes = (
+_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_to_cbor.argtypes = (
     RustBuffer,
     RustBuffer,
     ctypes.c_uint64,
     ctypes.POINTER(RustCallStatus),
 )
-_UniFFILib.uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor.restype = RustBuffer
-_UniFFILib.uniffi_rs_drive_light_client_fn_func_version.argtypes = (
+_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_to_cbor.restype = RustBuffer
+_UniFFILib.uniffi_drive_light_client_fn_func_version.argtypes = (
     ctypes.POINTER(RustCallStatus),
 )
-_UniFFILib.uniffi_rs_drive_light_client_fn_func_version.restype = RustBuffer
+_UniFFILib.uniffi_drive_light_client_fn_func_version.restype = RustBuffer
 _UniFFILib.ffi_dash_drive_v0_rustbuffer_alloc.argtypes = (
     ctypes.c_int32,
     ctypes.POINTER(RustCallStatus),
@@ -570,15 +570,15 @@ _UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve.argtypes = (
     ctypes.POINTER(RustCallStatus),
 )
 _UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve.restype = RustBuffer
-_UniFFILib.uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor.argtypes = (
+_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor.argtypes = (
 )
-_UniFFILib.uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor.restype = ctypes.c_uint16
-_UniFFILib.uniffi_rs_drive_light_client_checksum_func_version.argtypes = (
+_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor.restype = ctypes.c_uint16
+_UniFFILib.uniffi_drive_light_client_checksum_func_version.argtypes = (
 )
-_UniFFILib.uniffi_rs_drive_light_client_checksum_func_version.restype = ctypes.c_uint16
-_UniFFILib.uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.argtypes = (
+_UniFFILib.uniffi_drive_light_client_checksum_func_version.restype = ctypes.c_uint16
+_UniFFILib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.argtypes = (
 )
-_UniFFILib.uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.restype = ctypes.c_uint16
+_UniFFILib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.restype = ctypes.c_uint16
 _UniFFILib.ffi_dash_drive_v0_uniffi_contract_version.argtypes = (
 )
 _UniFFILib.ffi_dash_drive_v0_uniffi_contract_version.restype = ctypes.c_uint32
@@ -1105,14 +1105,14 @@ def identity_proof_to_cbor(req_proto: "typing.List[int]",resp_proto: "typing.Lis
     
     
     
-    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor,
+    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_to_cbor,
         FfiConverterSequenceUInt8.lower(req_proto),
         FfiConverterSequenceUInt8.lower(resp_proto),
         FfiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
 
 
 def version():
-    return FfiConverterString.lift(rust_call(_UniFFILib.uniffi_rs_drive_light_client_fn_func_version,))
+    return FfiConverterString.lift(rust_call(_UniFFILib.uniffi_drive_light_client_fn_func_version,))
 
 
 __all__ = [

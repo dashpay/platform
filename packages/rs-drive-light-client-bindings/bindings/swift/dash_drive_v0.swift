@@ -735,7 +735,7 @@ fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
 public func `identityProofToCbor`(`reqProto`: [UInt8], `respProto`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
     return try  FfiConverterSequenceUInt8.lift(
         try rustCallWithError(FfiConverterTypeError.lift) {
-    uniffi_rs_drive_light_client_fn_func_identity_proof_to_cbor(
+    uniffi_drive_light_client_fn_func_identity_proof_to_cbor(
         FfiConverterSequenceUInt8.lower(`reqProto`),
         FfiConverterSequenceUInt8.lower(`respProto`),
         FfiConverterCallbackInterfaceQuorumInfoProvider.lower(`callback`),$0)
@@ -746,7 +746,7 @@ public func `identityProofToCbor`(`reqProto`: [UInt8], `respProto`: [UInt8], `ca
 public func `version`()  -> String {
     return try!  FfiConverterString.lift(
         try! rustCall() {
-    uniffi_rs_drive_light_client_fn_func_version($0)
+    uniffi_drive_light_client_fn_func_version($0)
 }
     )
 }
@@ -766,13 +766,13 @@ private var initializationResult: InitializationResult {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_rs_drive_light_client_checksum_func_identity_proof_to_cbor() != 50752) {
+    if (uniffi_drive_light_client_checksum_func_identity_proof_to_cbor() != 61901) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rs_drive_light_client_checksum_func_version() != 31055) {
+    if (uniffi_drive_light_client_checksum_func_version() != 33802) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_rs_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 62936) {
+    if (uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 49931) {
         return InitializationResult.apiChecksumMismatch
     }
 
