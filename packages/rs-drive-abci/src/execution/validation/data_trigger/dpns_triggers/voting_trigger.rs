@@ -2,11 +2,15 @@ use crate::error::Error;
 use crate::execution::validation::data_trigger::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
+use crate::platform_types::platform::PlatformStateRef;
+use dpp::block::epoch::Epoch;
+use dpp::consensus::state::data_trigger::data_trigger_error::{DataTriggerActionError, DataTriggerError};
+use dpp::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
-use dpp::block::epoch::Epoch;
-use crate::platform_types::platform::PlatformStateRef;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -29,7 +33,7 @@ pub fn run_name_register_trigger(
     _: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut data_trigger_execution_result = DataTriggerExecutionResult::default();
-    
+
     let current_epoch = context.current_epoch();
 
     if current_epoch.index != 0 {
@@ -42,15 +46,33 @@ pub fn run_name_register_trigger(
         return Ok(data_trigger_execution_result);
     };
 
-    // TODO: I guess preorders can be cretaed, it's the actual domain document that needs to be
+    // TODO: I guess preorders can be created, it's the actual domain document that needs to be
     //  voted on
     if document_create_action.base.document_type_name != "domain" {
         // Not a name registration document.
         return Ok(data_trigger_execution_result);
     };
 
-    // Execute the trigger only if the document is being created.j
-    
+    // ConsensusError::StateError(
+    //     StateError::DataTriggerError(DataTriggerError::DataTriggerExecutionError(
+    //         DataTriggerExecutionError::new(
+    //             context.data_contract.id.clone(),
+    //             document_create_action.base.id.clone(),
+    //             "Vote didn't happen".to_string(),
+    //         ),
+    //     )),
+    // )
+
+    // Check votes here
+    data_trigger_execution_result.add_error(DataTriggerActionError::DataTriggerExecutionError {
+        data_contract_id: context.data_contract.id.clone(),
+        document_transition_id: document_create_action.base.id.clone(),
+        message: "Vote didn't happen".to_string(),
+        execution_error: "Vote didn't happen".to_string(),
+        document_transition: Some(document_transition.clone()),
+        owner_id: None,
+    });
+
     Ok(data_trigger_execution_result)
 }
 
@@ -166,6 +188,7 @@ pub fn run_name_register_trigger(
 #[cfg(test)]
 mod test {
     use crate::execution::validation::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
+    use crate::execution::validation::data_trigger::dpns_triggers::run_name_register_trigger;
     use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -176,12 +199,7 @@ mod test {
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{
-        get_dpns_data_contract_fixture, get_dpns_parent_document_fixture,
-        get_contact_request_document_fixture, get_dashpay_contract_fixture,
-        get_document_transitions_fixture, identity_fixture,
-    };
-    use crate::execution::validation::data_trigger::dpns_triggers::run_name_register_trigger;
+    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, identity_fixture, ParentDocumentOptions};
 
     #[test]
     fn should_return_error_if_can_not_get_epoch_info() {
@@ -208,7 +226,7 @@ mod test {
             config: &platform.config,
         };
 
-        let mut contact_request_document = get_dpns_parent_document_fixture(None, None);
+        let mut contact_request_document = get_dpns_parent_document_fixture(ParentDocumentOptions::default());
         contact_request_document
             .set(
                 super::property_names::CORE_HEIGHT_CREATED_AT,
@@ -246,7 +264,7 @@ mod test {
             &data_trigger_context,
             None,
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
 
         assert!(!result.is_valid());
     }
@@ -301,7 +319,7 @@ mod test {
             &data_trigger_context,
             None,
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }
@@ -372,7 +390,7 @@ mod test {
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
-            .expect("data trigger result should be returned");
+        .expect("data trigger result should be returned");
 
         assert!(!result.is_valid());
 
@@ -448,7 +466,7 @@ mod test {
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
-            .expect("data trigger result should be returned");
+        .expect("data trigger result should be returned");
 
         assert!(!result.is_valid());
         let data_trigger_error = &result.errors[0];
