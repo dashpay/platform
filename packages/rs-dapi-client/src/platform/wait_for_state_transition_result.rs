@@ -8,28 +8,28 @@ use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 use super::IncompleteMessage;
 
-/// TODO
+/// Request for a state transition broadcast errors if any.
 #[derive(Debug)]
 pub struct WaitForStateTransitionResult {
     /// State transition hash
     pub state_transition_hash: Vec<u8>,
 }
 
-/// TODO
+/// Response for [WaitForStateTransitionResult].
 #[derive(Debug)]
 pub struct WaitForStateTransitionResultResponse {
-    /// TODO
+    /// Broadcast error will present if the state transition was rejected.
     pub broadcast_error: Option<StateTransitionBroadcastError>,
     /// Response metadata
     pub metadata: ResponseMetadata,
 }
 
-/// TODO
+/// Failed status of previosly performed state transition broadcast.
 #[derive(Debug)]
 pub struct StateTransitionBroadcastError {
-    /// TODO
+    /// Error code.
     pub code: u32,
-    /// TODO
+    /// Error message.
     pub message: String,
     /// TODO
     pub data: Vec<u8>,
@@ -89,14 +89,14 @@ impl DapiRequest for WaitForStateTransitionResult {
     }
 }
 
-/// TODO
+/// Request for a provable state transition broadcast status.
 #[derive(Debug)]
 pub struct WaitForStateTransitionResultProof {
     /// State transition hash
     pub state_transition_hash: Vec<u8>,
 }
 
-/// TODO
+/// Response for [WaitForStateTransitionResultProof].
 #[derive(Debug)]
 pub struct WaitForStateTransitionResultProofResponse {
     /// Proof data that wraps broadcast errors if any

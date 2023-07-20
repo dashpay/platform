@@ -1,6 +1,7 @@
 //! Transport options that DAPI requests use under the hood.
 
 pub(crate) mod grpc;
+pub(crate) mod json_rpc;
 
 use futures::future::BoxFuture;
 use http::Uri;
@@ -29,7 +30,7 @@ pub trait TransportRequest: Clone {
     ) -> BoxFuture<'c, Result<Self::Response, Self::Error>>;
 }
 
-/// Generic way to create a transport client from provided [Url].
+/// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient {
     /// Build client using peer's url.
     fn with_uri(uri: Uri) -> Self;

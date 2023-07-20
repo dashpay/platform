@@ -1,9 +1,21 @@
 //! This crate provides [DapiClient] --- client for a decentralized API for Dash.
+//!
+//! # Examples
+//! ```no_run
+//! # use rs_dapi_client::{Settings, platform::GetIdentity, AddressList, DapiClient, DapiError};
+//! # let _ = async {
+//! let mut client = DapiClient::new(AddressList::new(), Settings::default());
+//! let request = GetIdentity { id: b"0".to_vec() };
+//! let response = client.execute(request, Settings::default()).await?;
+//!
+//! # Ok::<(), DapiError<_, _>>(())
+//! # };
+//! ```
 
 #![deny(missing_docs)]
 
 mod address_list;
-mod core;
+pub mod core;
 pub mod platform;
 mod settings;
 mod transport;
@@ -11,13 +23,15 @@ mod transport;
 use std::fmt;
 
 use backon::{ExponentialBuilder, Retryable};
-
-use address_list::AddressList;
-pub use settings::Settings;
 use tracing::Instrument;
+
+pub use address_list::AddressList;
+pub use settings::Settings;
 use transport::{TransportClient, TransportRequest};
 
 /// DAPI request.
+/// Since each of DAPI requests goes through the same execution process is was generalized
+/// with this trait to run requests the same way.
 pub trait DapiRequest: fmt::Debug {
     /// Response type for the request.
     type DapiResponse;
@@ -66,7 +80,7 @@ pub enum DapiError<TE, PE> {
     #[error("transport error: {0}")]
     Transport(TE),
     /// Successful transport execution, but was unable to make a conversion from
-    /// transport request to DAPI request.
+    /// transport response to DAPI response.
     #[error("response parse error: {0}")]
     ParseResponse(PE),
     /// There are no valid peer addresses to use.
@@ -75,7 +89,7 @@ pub enum DapiError<TE, PE> {
 }
 
 impl DapiClient {
-    /// Execute the [DapiRequest] handling.
+    /// Execute the [DapiRequest].
     #[tracing::instrument]
     pub async fn execute<'c, R>(
         &'c mut self,

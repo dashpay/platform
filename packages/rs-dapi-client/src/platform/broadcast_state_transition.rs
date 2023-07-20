@@ -6,14 +6,17 @@ use drive::dpp::state_transition::StateTransition;
 use super::IncompleteMessage;
 use crate::{transport::TransportRequest, DapiRequest, Settings};
 
-/// TODO
+/// DAPI request to suggest a [StateTransition] to the network.
 #[derive(Debug)]
 pub struct BroadcastStateTransition {
     /// State transition to broadcast
     pub state_transition: StateTransition,
 }
 
-/// TODO
+/// Response for [BroadcastStateTransition].
+/// Cannot carry any info as this process is not synchronous to see any
+/// results immediately except [StateTransition] was successfully broadcasted.
+/// For actual results [WaitForStateTransitionResult](crate::platform::WaitForStateTransitionResult) is used.
 #[derive(Debug)]
 pub struct BroadcastStateTransitionResponse {}
 

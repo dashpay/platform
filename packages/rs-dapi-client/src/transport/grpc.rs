@@ -1,4 +1,4 @@
-//! gRPC transport declarations.
+//! gRPC transport definitions.
 
 use dapi_grpc::core::v0::{self as core_proto, core_client::CoreClient};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
@@ -6,12 +6,11 @@ use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
 use tonic::{transport::Channel, IntoRequest};
 
+use super::{TransportClient, TransportRequest};
 use crate::settings::AppliedSettings;
 
-use super::{TransportClient, TransportRequest};
-
-pub type PlatformGrpcClient = PlatformClient<Channel>;
-pub type CoreGrpcClient = CoreClient<Channel>;
+type PlatformGrpcClient = PlatformClient<Channel>;
+type CoreGrpcClient = CoreClient<Channel>;
 
 /// Shared transport implementation for all gRPC platform requests.
 impl<Req> TransportRequest for Req
@@ -43,7 +42,7 @@ pub trait GrpcTransportRequest: Sized + Clone {
     /// Transport layer response specific for the gRPC request.
     type GrpcTransportResponse;
 
-    /// gRPC client to use.
+    /// gRPC client to use. May vary because core and platform gRPC clients are still different types.
     type GrpcClient: TransportClient;
 
     /// Get a handle for a gRPC client method according to the gRPC request.

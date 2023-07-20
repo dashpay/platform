@@ -103,7 +103,7 @@ impl DapiRequest for GetDocuments {
     }
 }
 
-/// DAPI response for [GetDocumentsRequest].
+/// DAPI response for [GetDocuments].
 #[derive(Debug)]
 pub struct GetDocumentsResponse {
     /// Serialized Documents
@@ -176,7 +176,7 @@ impl DapiRequest for GetDocumentsProof {
     }
 }
 
-/// DAPI response for [GetDocumentsProofRequest].
+/// DAPI response for [GetDocumentsProof].
 #[derive(Debug)]
 pub struct GetDocumentsProofResponse {
     /// Proof data that wraps Documents

@@ -7,7 +7,7 @@ use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 
 const DEFAULT_BASE_BAN_TIME: time::Duration = time::Duration::from_secs(60);
 
-/// TODO
+/// Peer's address.
 #[derive(Debug)]
 pub struct Address {
     base_ban_time: time::Duration,
@@ -17,6 +17,7 @@ pub struct Address {
 }
 
 impl Address {
+    /// Ban the [Address] so it won't be available through [AddressList::get_live_address] for some time.
     pub fn ban(&mut self) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period =
@@ -26,17 +27,20 @@ impl Address {
         self.ban_count += 1;
     }
 
+    /// Clears ban record.
     pub fn clear_ban(&mut self) {
         self.ban_count = 0;
         self.banned_until = None;
     }
 
+    /// Get [Uri] of a peer.
     pub fn uri(&self) -> &Uri {
         &self.uri
     }
 }
 
-/// TODO
+/// A structure to manage peer's addresses to select from
+/// for [DapiRequest](crate::DapiRequest) execution.
 #[derive(Debug)]
 pub struct AddressList {
     addresses: Vec<Address>,
@@ -44,10 +48,12 @@ pub struct AddressList {
 }
 
 impl AddressList {
+    /// Creates an empty [AddressList] with default base ban time.
     pub fn new() -> Self {
         AddressList::with_settings(DEFAULT_BASE_BAN_TIME)
     }
 
+    /// Creates an empty [AddressList] with adjustable base ban time.
     pub fn with_settings(base_ban_time: time::Duration) -> Self {
         AddressList {
             addresses: Vec::new(),
@@ -58,6 +64,7 @@ impl AddressList {
     // TODO: this is the most simple way to add an address
     // however we need to support bulk loading (e.g. providing a network name)
     // and also fetch updated from SML.
+    /// Manually add a peer to [AddressList].
     pub fn add_uri(&mut self, uri: Uri) {
         self.addresses.push(Address {
             ban_count: 0,
@@ -67,6 +74,7 @@ impl AddressList {
         });
     }
 
+    /// Randomly select a not banned address.
     pub fn get_live_address(&mut self) -> Option<&mut Address> {
         let now = time::Instant::now();
         let mut rng = SmallRng::from_entropy();

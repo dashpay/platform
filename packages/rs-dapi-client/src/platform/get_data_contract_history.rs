@@ -5,17 +5,17 @@ use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use super::IncompleteMessage;
 use crate::{transport::TransportRequest, DapiRequest, Settings};
 
-/// Request DataContractHistory bytes.
+/// TODO
 #[derive(Debug)]
 pub struct GetDataContractHistory {
     /// Data contract id
-    id: Vec<u8>,
+    pub id: Vec<u8>,
     /// TODO
-    limit: u32,
+    pub limit: u32,
     /// TODO
-    offset: u32,
+    pub offset: u32,
     /// TODO
-    start_at_seconds: u64,
+    pub start_at_seconds: u64,
 }
 
 /// DAPI response for [GetDataContractHistory].
@@ -98,17 +98,17 @@ impl DapiRequest for GetDataContractHistory {
     }
 }
 
-/// Request DataContractHistory bytes wrapped into proof.
+/// TODO
 #[derive(Debug)]
 pub struct GetDataContractHistoryProof {
     /// Data contract id
-    id: Vec<u8>,
+    pub id: Vec<u8>,
     /// TODO
-    limit: u32,
+    pub limit: u32,
     /// TODO
-    offset: u32,
+    pub offset: u32,
     /// TODO
-    start_at_seconds: u64,
+    pub start_at_seconds: u64,
 }
 
 /// DAPI response for [GetDataContractHistory].
