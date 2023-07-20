@@ -15,7 +15,7 @@ function assertServiceRunningFactory(configFile, dockerCompose) {
    * @param {string} serviceName
    * @param {boolean} [expected=true]
    */
-  async function assertServiceRunning(config, serviceName, expected = true){
+  async function assertServiceRunning(config, serviceName, expected = true) {
     const isRunning = await dockerCompose.isServiceRunning(
       generateEnvs(configFile, config),
       serviceName,

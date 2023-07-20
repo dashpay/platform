@@ -6,7 +6,6 @@ const { SERVICES } = require('../constants/services');
  * @returns {assertLocalServicesRunning}
  */
 function assertLocalServicesRunningFactory(assertServiceRunning) {
-
   /**
    * Check all node services are up and running
    *

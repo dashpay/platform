@@ -1,10 +1,4 @@
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-
 const { asValue } = require('awilix');
-
-const constants = require('../../src/constants');
 
 const createDIContainer = require('../../src/createDIContainer');
 const { NODE_TYPE_NAMES, getNodeTypeByName } = require('../../src/listr/tasks/setup/nodeTypes');
@@ -13,11 +7,13 @@ const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderda
 const createSelfSignedCertificate = require('../../src/test/createSelfSignedCertificate');
 const createRpcClient = require('../../src/core/createRpcClient');
 const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
+const HomeDir = require('../../src/config/HomeDir');
 
 describe('Testnet Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
+  let homeDir;
   let container;
   let config;
   let configFile;
@@ -28,10 +24,10 @@ describe('Testnet Fullnode', function main() {
   const preset = 'testnet';
 
   before(async () => {
-    constants.HOME_DIR_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-'));
-    constants.CONFIG_FILE_PATH = path.join(constants.HOME_DIR_PATH, 'config.json');
-
     container = await createDIContainer();
+
+    homeDir = container.resolve('homeDir');
+    homeDir.change(HomeDir.createTemp());
 
     const createSystemConfigs = container.resolve('createSystemConfigs');
 
@@ -45,10 +41,6 @@ describe('Testnet Fullnode', function main() {
   });
 
   after(async () => {
-    if (!fs.existsSync(constants.HOME_DIR_PATH)) {
-      return;
-    }
-
     if (config) {
       const resetNodeTask = container.resolve('resetNodeTask');
       const resetTask = resetNodeTask(config);
@@ -60,7 +52,7 @@ describe('Testnet Fullnode', function main() {
       });
     }
 
-    fs.rmSync(constants.HOME_DIR_PATH, { recursive: true, force: true });
+    homeDir.remove();
   });
 
   describe('setup', () => {

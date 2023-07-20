@@ -13,11 +13,13 @@ const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderda
 const createSelfSignedCertificate = require('../../src/test/createSelfSignedCertificate');
 const createRpcClient = require('../../src/core/createRpcClient');
 const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
+const HomeDir = require('../../src/config/HomeDir');
 
 describe('Testnet HP Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
+  let homeDir;
   let container;
   let config;
   let configFile;
@@ -28,10 +30,10 @@ describe('Testnet HP Fullnode', function main() {
   const preset = 'testnet';
 
   before(async () => {
-    constants.HOME_DIR_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-'));
-    constants.CONFIG_FILE_PATH = path.join(constants.HOME_DIR_PATH, 'config.json');
-
     container = await createDIContainer();
+
+    homeDir = container.resolve('homeDir');
+    homeDir.change(HomeDir.createTemp());
 
     const createSystemConfigs = container.resolve('createSystemConfigs');
 
@@ -45,10 +47,6 @@ describe('Testnet HP Fullnode', function main() {
   });
 
   after(async () => {
-    if (!fs.existsSync(constants.HOME_DIR_PATH)) {
-      return;
-    }
-
     if (config) {
       const resetNodeTask = container.resolve('resetNodeTask');
       const resetTask = resetNodeTask(config);
@@ -60,7 +58,7 @@ describe('Testnet HP Fullnode', function main() {
       });
     }
 
-    fs.rmSync(constants.HOME_DIR_PATH, { recursive: true, force: true });
+    homeDir.remove();
   });
 
   describe('setup', () => {

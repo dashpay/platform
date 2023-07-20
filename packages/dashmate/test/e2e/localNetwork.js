@@ -1,17 +1,13 @@
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-
 const { asValue } = require('awilix');
 
-const constants = require('../../src/constants');
-
 const createDIContainer = require('../../src/createDIContainer');
+const HomeDir = require('../../src/config/HomeDir');
 
 describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
+  let homeDir;
   let container;
   let configGroup;
   let configFile;
@@ -20,10 +16,10 @@ describe('Local Network', function main() {
   const groupName = 'local';
 
   before(async () => {
-    constants.HOME_DIR_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-'));
-    constants.CONFIG_FILE_PATH = path.join(constants.HOME_DIR_PATH, 'config.json');
-
     container = await createDIContainer();
+
+    homeDir = container.resolve('homeDir');
+    homeDir.change(HomeDir.createTemp());
 
     // Create config file
     const createSystemConfigs = container.resolve('createSystemConfigs');
@@ -42,10 +38,6 @@ describe('Local Network', function main() {
   });
 
   after(async () => {
-    if (!fs.existsSync(constants.HOME_DIR_PATH)) {
-      return;
-    }
-
     const resetNodeTask = await container.resolve('resetNodeTask');
 
     for (const config of configFile.getGroupConfigs(groupName)) {
@@ -58,7 +50,7 @@ describe('Local Network', function main() {
       });
     }
 
-    fs.rmSync(constants.HOME_DIR_PATH, { recursive: true, force: true });
+    homeDir.remove();
   });
 
   describe('setup', () => {
