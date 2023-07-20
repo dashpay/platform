@@ -5,7 +5,7 @@ const lodashGet = require('lodash/get');
 const path = require('path');
 const systemConfigs = require('./system');
 
-const {NETWORK_TESTNET, HOME_DIR_PATH} = require('../src/constants');
+const { NETWORK_TESTNET, HOME_DIR_PATH } = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
