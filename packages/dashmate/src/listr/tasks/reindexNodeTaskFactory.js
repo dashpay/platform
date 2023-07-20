@@ -92,8 +92,8 @@ function reindexNodeTaskFactory(
       {
         title: 'Start Core in reindex mode',
         task: async () => {
-          const templatePath = 'core/dash.conf.dot';
-          const [configPath] = templatePath.split('.dot');
+          const configPath = 'core/dash.conf';
+          const templatePath = `${configPath}.dot`;
 
           const serviceConfig = renderTemplate(path.join(TEMPLATES_DIR, templatePath),
             { ...config.options, reindex: true });

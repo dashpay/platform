@@ -17,12 +17,7 @@ function renderServiceTemplatesFactory(renderTemplate) {
   function renderServiceTemplates(config) {
     dots.templateSettings.strip = false;
 
-    const templatePaths = glob
-      .sync(`${TEMPLATES_DIR}/**/*.dot`)
-      // Do not render platform templates if it's not configured
-      .filter((templatePath) => (
-        !templatePath.includes('templates/platform') || config.get('platform.enable')
-      ));
+    const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`);
 
     const configFiles = {};
     for (const templatePath of templatePaths) {
