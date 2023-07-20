@@ -35,6 +35,7 @@ class VerificationServer {
 
     dots.templateSettings.strip = false;
 
+    // TODO: Put together with other templates and use common templating functions
     // Set up template
     const templatePath = path.join(__dirname, '..', '..', '..', 'ssl', 'templates', 'sslValidation.yaml.dot');
     const templateString = fs.readFileSync(templatePath, 'utf-8');
