@@ -1,7 +1,9 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
+const path = require('path');
 const generateEnvs = require('../../util/generateEnvs');
 const CoreService = require('../../core/CoreService');
+const {TEMPLATES_DIR} = require("../../constants");
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -10,6 +12,7 @@ const CoreService = require('../../core/CoreService');
  * @param {waitForCoreStart} waitForCoreStart
  * @param {waitForCoreSync} waitForCoreSync
  * @param {createRpcClient} createRpcClient
+ * @param {renderTemplate} renderTemplate
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {configFileRepository} configFileRepository
@@ -24,6 +27,7 @@ function reindexNodeTaskFactory(
   waitForCoreStart,
   waitForCoreSync,
   createRpcClient,
+  renderTemplate,
   renderServiceTemplates,
   writeServiceConfigs,
   configFileRepository,
@@ -88,18 +92,23 @@ function reindexNodeTaskFactory(
       {
         title: 'Start Core in reindex mode',
         task: async () => {
-          const configFiles = renderServiceTemplates(config, { reindex: true });
-          writeServiceConfigs(config.getName(), configFiles);
+          const templatePath = path.join(TEMPLATES_DIR, 'core/dash.conf.dot')
+          const [configPath] = templatePath.split('.dot')
+
+          const serviceConfig = renderTemplate(templatePath, {...config.options, reindex: true});
+          writeServiceConfigs(config.getName(), {[configPath]: serviceConfig});
 
           const coreContainer = await getCoreContainer(config);
           if (coreContainer) {
             const info = await coreContainer.inspect();
 
             // If core is running, we need to stop it first
-            if (info.State.Status !== 'exited') {
-              await coreContainer.restart();
-
+            if (info.State.Status === 'exited') {
+              await coreContainer.start();
               return Promise.resolve();
+            } else {
+              await coreContainer.restart();
+              return Promise.resolve()
             }
           }
 
