@@ -20,7 +20,7 @@ class SystemConfigs {
    * @returns {Config}
    */
   get(name) {
-    if (!this.#configGetters[name]) {
+    if (!this.has(name)) {
       throw new Error(`System config "${name}" does not exist`);
     }
 
