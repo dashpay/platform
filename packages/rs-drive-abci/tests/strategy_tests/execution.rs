@@ -30,6 +30,8 @@ use rand::SeedableRng;
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::FromMilis;
 use tenderdash_abci::Application;
 
 pub(crate) fn run_chain_for_strategy(
@@ -743,7 +745,7 @@ pub(crate) fn continue_chain_for_strategy(
                     height: state_id.height as i64,
                     block_hash: &block_hash,
                     app_hash: &root_app_hash,
-                    time: state_id.time.expect("time is required in StateId"),
+                    time: Timestamp::from_milis(state_id.time),
                     signature: &signature,
                     public_key: &current_quorum_with_test_info.public_key,
                 },
