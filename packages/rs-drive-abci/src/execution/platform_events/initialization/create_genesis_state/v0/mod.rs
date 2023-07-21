@@ -178,7 +178,7 @@ impl<C> Platform<C> {
         operations: &mut Vec<DriveOperation>,
     ) {
         let serialization = data_contract.serialize().unwrap();
-        operations.push(DriveOperation::ContractOperation(
+        operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             ContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Owned(data_contract),

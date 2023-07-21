@@ -9,7 +9,7 @@ pub use identity_public_key::*;
 pub mod core_script;
 mod get_biggest_possible_identity;
 mod identity;
-pub(crate) mod identity_public_key;
+pub mod identity_public_key;
 
 pub mod state_transition;
 

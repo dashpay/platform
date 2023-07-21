@@ -67,6 +67,7 @@ impl Drive {
             previous_batch_operations,
             &mut estimated_costs_only_with_layer_info,
             transaction,
+            platform_version,
         )?;
 
         self.apply_batch_low_level_drive_operations(
@@ -184,16 +185,8 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
 
         drive
             .add_new_identity_v0(
@@ -223,16 +216,8 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let platform_version = &PlatformVersion::first();
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
         let db_transaction = drive.grove.start_transaction();
 
         drive

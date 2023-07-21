@@ -28,7 +28,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
+        let storage_flags = if contract.config.can_be_deleted || !contract.config().readonly() {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
                 Some(contract.owner_id.to_buffer()),
@@ -137,7 +137,7 @@ impl Drive {
         let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
         self.batch_insert_empty_tree(
-            [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
+            [Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).as_slice()],
             KeyRef(contract.id().as_bytes()),
             storage_flags.as_ref(),
             &mut batch_operations,

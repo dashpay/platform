@@ -48,16 +48,7 @@ mod tests {
 
         let platform_version = PlatformVersion::first();
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            3,
-            Some(14),
-        );
+        let identity = Identity::random_identity(3, Some(14));
 
         drive
             .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)

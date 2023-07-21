@@ -24,16 +24,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                5,
-                Some(12345),
-            );
+            let identity = Identity::random_identity(5, Some(12345), platform_version)
+                .expect("expected a random identity");
 
             let old_balance = identity.balance;
 
@@ -268,16 +260,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                5,
-                Some(12345),
-            );
+            let identity = Identity::random_identity(5, Some(12345), platform_version)
+                .expect("expected a random identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
@@ -340,16 +324,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                5,
-                Some(12345),
-            );
+            let identity = Identity::random_identity(5, Some(12345), platform_version)
+                .expect("expected a random identity");
 
             let old_balance = identity.balance;
 
@@ -408,16 +384,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                5,
-                Some(12345),
-            );
+            let identity = Identity::random_identity(5, Some(12345), platform_version)
+                .expect("expected a random identity");
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 

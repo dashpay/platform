@@ -8,6 +8,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
 use crate::error::Error;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::drive_versions::DriveVersion;
@@ -33,7 +34,7 @@ impl Drive {
         )?;
 
         // we only store the owner_id storage
-        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
+        let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None

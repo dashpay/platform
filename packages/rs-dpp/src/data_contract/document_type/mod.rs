@@ -40,10 +40,12 @@ pub(self) mod property_names {
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 }
 
+#[derive(Clone, Debug)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }
 
+#[derive(Debug)]
 pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
 }

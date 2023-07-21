@@ -112,14 +112,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
-            DriveOperation::ContractOperation(contract_operation_type) => contract_operation_type
-                .into_low_level_drive_operations(
+            DriveOperation::DataContractOperation(contract_operation_type) => {
+                contract_operation_type.into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
                     platform_version,
-                ),
+                )
+            }
             DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
                 .into_low_level_drive_operations(
                     drive,
@@ -306,6 +307,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);
@@ -421,6 +423,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -561,6 +564,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -681,6 +685,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -859,6 +864,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -882,6 +888,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 0);
@@ -905,6 +912,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -1080,6 +1088,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -1103,6 +1112,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);
@@ -1126,6 +1136,7 @@ mod tests {
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);

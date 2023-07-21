@@ -33,7 +33,7 @@ mod factory;
 pub use factory::*;
 mod data_contract_class_methods;
 pub use data_contract_class_methods::*;
-mod conversion;
+pub mod conversion;
 #[cfg(feature = "client")]
 mod data_contract_facade;
 mod data_contract_methods;

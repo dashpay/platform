@@ -251,16 +251,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let platform_version = PlatformVersion::latest();
 
-            let identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                3,
-                Some(14),
-            );
+            let identity = Identity::random_identity(3, Some(14), platform_version)
+                .expect("expected a random identity");
 
             let identity_id = identity.id.to_buffer();
             drive

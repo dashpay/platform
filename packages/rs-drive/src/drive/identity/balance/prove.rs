@@ -1,6 +1,8 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -9,9 +11,16 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balance_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(&balance_query, false, transaction, &mut vec![])
+        self.grove_get_proved_path_query(
+            &balance_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 
     /// Proves an Identity's balance and revision from the backing store
@@ -19,9 +28,16 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balance_and_revision_for_identity_id_query(identity_id);
-        self.grove_get_proved_path_query(&balance_query, false, transaction, &mut vec![])
+        self.grove_get_proved_path_query(
+            &balance_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 
     /// Proves multiple Identity balances from the backing store
@@ -29,9 +45,16 @@ impl Drive {
         &self,
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
+        drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
         let balance_query = Self::balances_for_identity_ids_query(identity_ids)?;
-        self.grove_get_proved_path_query(&balance_query, false, transaction, &mut vec![])
+        self.grove_get_proved_path_query(
+            &balance_query,
+            false,
+            transaction,
+            &mut vec![],
+            drive_version,
+        )
     }
 }
 
@@ -52,20 +75,18 @@ mod tests {
 
             let platform_version = PlatformVersion::first();
 
-            let identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                3,
-                Some(14),
-            );
+            let identity = Identity::random_identity(3, Some(14), platform_version)
+                .expect("expected a platform identity");
 
             let identity_id = identity.id.to_buffer();
             drive
-                .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+                .add_new_identity(
+                    identity.clone(),
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to add an identity");
             let proof = drive
                 .prove_identity_balance(identity.id.to_buffer(), None)

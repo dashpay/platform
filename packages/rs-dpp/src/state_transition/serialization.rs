@@ -44,7 +44,7 @@ mod tests {
         get_extended_documents_fixture_with_owner_id_from_contract,
         raw_instant_asset_lock_proof_fixture,
     };
-    use crate::version::LATEST_VERSION;
+    use crate::version::{PlatformVersion, LATEST_VERSION};
     use crate::{NativeBlsModule, ProtocolError};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -53,16 +53,9 @@ mod tests {
 
     #[test]
     fn identity_create_transition_ser_de() {
-        let mut identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(5),
-        );
+        let platform_version = PlatformVersion::latest();
+        let mut identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
         identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
@@ -78,16 +71,9 @@ mod tests {
 
     #[test]
     fn identity_topup_transition_ser_de() {
-        let mut identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(5),
-        );
+        let platform_version = PlatformVersion::latest();
+        let mut identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
         identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
@@ -229,16 +215,9 @@ mod tests {
 
     #[test]
     fn identity_credit_withdrawal_transition_ser_de() {
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(5),
-        );
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
         let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransition {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityCreditWithdrawal,
@@ -260,16 +239,9 @@ mod tests {
 
     #[test]
     fn data_contract_create_ser_de() {
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(5),
-        );
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
         let data_contract = get_data_contract_fixture(Some(identity.id));
         let data_contract_create_transition =
             DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
@@ -287,16 +259,9 @@ mod tests {
 
     #[test]
     fn data_contract_update_ser_de() {
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(5),
-        );
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
         let mut data_contract = get_data_contract_fixture(Some(identity.id));
         data_contract.entropy = Default::default();
         let data_contract_update_transition =

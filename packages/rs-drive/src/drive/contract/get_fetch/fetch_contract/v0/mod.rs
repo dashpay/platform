@@ -123,8 +123,11 @@ impl Drive {
                     Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                         let contract = cost_return_on_error_no_add!(
                             &cost,
-                            DataContract::deserialize_no_limit(&stored_contract_bytes)
-                                .map_err(Error::Protocol)
+                            DataContract::versioned_deserialize(
+                                &stored_contract_bytes,
+                                platform_version
+                            )
+                            .map_err(Error::Protocol)
                         );
                         let drive_operation = CalculatedCostOperation(cost.clone());
                         let fee = if let Some(epoch) = epoch {

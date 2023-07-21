@@ -46,6 +46,10 @@ impl DataContractV0Getters for DataContractV0 {
         &self.config
     }
 
+    fn config_mut(&mut self) -> &mut DataContractConfig {
+        &mut self.config
+    }
+
     fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError> {
         Ok(&self.documents)
     }

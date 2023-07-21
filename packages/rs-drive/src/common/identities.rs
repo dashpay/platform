@@ -32,6 +32,7 @@
 //! This module defines helper functions pertinent to identities in Drive.
 //!
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -39,6 +40,7 @@ use crate::fee_pools::epochs::operations_factory::EpochOperations;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -108,13 +110,13 @@ pub fn create_test_identity_with_rng(
         1,
         rng,
         platform_version,
-    );
+    )?;
 
     let mut public_keys = BTreeMap::new();
 
-    public_keys.insert(identity_key.id, identity_key);
+    public_keys.insert(identity_key.id(), identity_key);
 
-    let identity = IdentityV0 {
+    let identity: Identity = IdentityV0 {
         id: Identifier::new(id),
         revision: 1,
         balance: 0,
@@ -132,7 +134,7 @@ pub fn create_test_identity_with_rng(
         )
         .expect("should insert identity");
 
-    identity
+    Ok(identity)
 }
 
 /// Increments each proposer in the list given's block count by 1.

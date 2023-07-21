@@ -89,8 +89,12 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::data_contract::data_contract_config::v0::{
+        DataContractConfigGettersV0, DataContractConfigSettersV0,
+    };
     use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
     use dpp::data_contract::DataContract;
+    use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
     use serde_json::json;
@@ -114,7 +118,12 @@ mod tests {
             .expect("to apply contract");
     }
 
-    fn insert_n_contract_updates(data_contract: &DataContract, drive: &Drive, n: u64) {
+    fn insert_n_contract_updates(
+        data_contract: &DataContract,
+        drive: &Drive,
+        n: u64,
+        platform_version: &PlatformVersion,
+    ) {
         let updated_document_template = json!({
             "type": "object",
             "properties": {
@@ -148,7 +157,7 @@ mod tests {
                 );
 
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_schema("niceDocument".into(), updated_document, platform_version)
                 .expect("to be able to set document schema");
             data_contract.increment_version();
 
@@ -169,9 +178,10 @@ mod tests {
         mut data_contract: DataContract,
         drive: &Drive,
         n: u64,
+        platform_version: &PlatformVersion,
     ) -> DataContract {
-        data_contract.config.keeps_history = true;
-        data_contract.config.readonly = false;
+        data_contract.config_mut().set_keeps_history(true);
+        data_contract.config_mut().set_readonly(false);
 
         let original_data_contract = data_contract.clone();
 
@@ -186,7 +196,7 @@ mod tests {
             },
         );
 
-        insert_n_contract_updates(&data_contract, drive, n);
+        insert_n_contract_updates(&data_contract, drive, n, platform_version);
 
         original_data_contract
     }

@@ -47,15 +47,22 @@ impl Drive {
         epoch: Option<&Epoch>,
         known_keeps_history: Option<bool>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> CostResult<Option<Arc<DataContractFetchInfo>>, Error> {
-        match drive_version.methods.contract.get.fetch_contract {
-            0 => self.fetch_contract_v0(contract_id, epoch, known_keeps_history, transaction),
+        match platform_version.drive.methods.contract.get.fetch_contract {
+            0 => self.fetch_contract_v0(
+                contract_id,
+                epoch,
+                known_keeps_history,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_contract".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })),
+            }))
+            .wrap_with_cost(OperationCost::default()),
         }
     }
 

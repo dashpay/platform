@@ -35,6 +35,9 @@ pub trait DataContractV0Getters {
     /// Returns the internal configuration for the contract.
     fn config(&self) -> &DataContractConfig;
 
+    /// Returns the internal configuration for the contract as mutable.
+    fn config_mut(&mut self) -> &mut DataContractConfig;
+
     /// Returns a mapping of document names to their corresponding JSON schemas.
     fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError>;
 

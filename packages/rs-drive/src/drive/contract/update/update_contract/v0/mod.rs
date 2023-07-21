@@ -7,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -81,13 +82,13 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "contract should exist",
             )))?;
 
-        if original_contract_fetch_info.contract.config.readonly {
+        if original_contract_fetch_info.contract.config().readonly() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "original contract is readonly",
             )));
@@ -110,7 +111,7 @@ impl Drive {
                 Some(&block_info.epoch),
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "contract should exist",
@@ -206,28 +207,28 @@ impl Drive {
 
         let drive_version = &platform_version.drive;
 
-        if original_contract.config.readonly {
+        if original_contract.config().readonly() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.config.readonly {
+        if contract.config().readonly() {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));
         }
 
-        if contract.config.keeps_history ^ original_contract.config.keeps_history {
+        if contract.config().keeps_history() ^ original_contract.config().keeps_history() {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
             )));
         }
 
-        if contract.config.documents_keep_history_contract_default
+        if contract.config().documents_keep_history_contract_default()
             ^ original_contract
-                .config
-                .documents_keep_history_contract_default
+                .config()
+                .documents_keep_history_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(

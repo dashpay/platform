@@ -28,7 +28,7 @@ use crate::version::drive_versions::{
     DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
     DriveGroveMethodVersions, DriveIdentityCostEstimationMethodVersions,
     DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchMethodVersions,
-    DriveIdentityFetchPublicKeyHashesMethodVersions,
+    DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
     DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
     DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
@@ -278,6 +278,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     add_to_previous_balance: 0,
                     apply_balance_change_from_fee_to_identity: 0,
                     remove_from_identity_balance: 0,
+                },
+                insert: DriveIdentityInsertMethodVersions {
+                    add_new_identity: 0,
                 },
                 cost_estimation: DriveIdentityCostEstimationMethodVersions {
                     for_authentication_keys_security_level_in_key_reference_tree: 0,

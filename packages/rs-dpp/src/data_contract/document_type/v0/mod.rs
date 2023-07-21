@@ -24,7 +24,7 @@ pub mod document_factory;
 pub mod random_document;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
-pub(crate) mod v0_methods;
+pub mod v0_methods;
 
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32

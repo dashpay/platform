@@ -339,16 +339,7 @@ mod test {
                     platform_version,
                 )
                 .expect("expected to apply contract");
-            let mut identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                2,
-                Some(i as u64),
-            );
+            let mut identity = Identity::random_identity(2, Some(i as u64), platform_version);
             identity.id = document.owner_id();
 
             platform_ref
@@ -356,16 +347,8 @@ mod test {
                 .add_new_identity(identity, &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");
 
-            let mut identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                2,
-                Some(100 - i as u64),
-            );
+            let mut identity = Identity::random_identity(2, Some(100 - i as u64), platform_version)
+                .expect("expected a platform identity");
             identity.id = document
                 .properties()
                 .get_identifier("payToId")
@@ -535,16 +518,8 @@ mod test {
             config: &platform.config,
         };
 
-        let mut identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            2,
-            Some(9),
-        );
+        let mut identity = Identity::random_identity(2, Some(9), platform_version)
+            .expect("expected a platform identity");
         identity.id = document_create_transition
             .data
             .get_identifier("payToId")
@@ -600,16 +575,8 @@ mod test {
             .document_type_for_name(&document_create_transition.base.document_type_name)
             .expect("expected to get document type");
 
-        let mut main_identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            2,
-            Some(1000_u64),
-        );
+        let mut main_identity = Identity::random_identity(2, Some(1000_u64), platform_version)
+            .expect("expected a platform identity");
         main_identity.id = document_create_transition
             .data
             .get_identifier("payToId")
@@ -625,16 +592,8 @@ mod test {
 
             document.owner_id = top_level_identifier;
 
-            let mut identity = Identity::random_identity(
-                Some(
-                    platform_version
-                        .dpp
-                        .identity_versions
-                        .identity_structure_version,
-                ),
-                2,
-                Some(100 - i),
-            );
+            let mut identity = Identity::random_identity(2, Some(100 - i), platform_version)
+                .expect("expected a platform identity");
             identity.id = document
                 .properties
                 .get_identifier("payToId")

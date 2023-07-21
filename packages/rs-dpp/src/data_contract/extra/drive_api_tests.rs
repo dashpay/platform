@@ -158,7 +158,7 @@ mod test {
 
         assert!(contract.config.documents_mutable_contract_default);
         assert!(!contract.config.keeps_history);
-        assert!(!contract.config.readonly); // the contract shouldn't be readonly
+        assert!(!contract.config().readonly()); // the contract shouldn't be readonly
         assert!(!contract.config.documents_keep_history_contract_default);
         assert_eq!(contract.document_types.len(), 3);
         assert!(contract.document_types.get("profile").is_some());
@@ -214,7 +214,7 @@ mod test {
                 .into_v0()
                 .unwrap();
 
-        assert!(!contract.config.readonly);
+        assert!(!contract.config().readonly());
         assert!(!contract.config.keeps_history);
         assert!(contract.config.documents_mutable_contract_default);
         assert!(!contract.config.documents_keep_history_contract_default);
@@ -248,7 +248,7 @@ mod test {
 
         let contract_v0 = contract.as_v0_mut().unwrap();
 
-        assert!(!contract_v0.config.readonly);
+        assert!(!contract_v0.config().readonly());
         assert!(!contract_v0.config.keeps_history);
         assert!(contract_v0.config.documents_mutable_contract_default);
         assert!(!contract_v0.config.documents_keep_history_contract_default);

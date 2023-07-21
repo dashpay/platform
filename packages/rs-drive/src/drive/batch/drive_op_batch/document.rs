@@ -10,8 +10,10 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
+use dpp::serialization_traits::PlatformDeserializableFromVersionedStructure;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -191,14 +193,16 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let contract = DataContract::from_cbor(serialized_contract)?;
+                let contract =
+                    DataContract::versioned_deserialize(serialized_contract, platform_version)?;
 
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document_type = contract.document_type_for_name(document_type_name)?;
+
+                let document =
+                    Document::from_bytes(serialized_document, &document_type, platform_version)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
-
-                let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
@@ -373,12 +377,13 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let document = Document::from_cbor(serialized_document, None, owner_id)?;
+                let document_type = contract.document_type_for_name(document_type_name)?;
+
+                let document =
+                    Document::from_bytes(serialized_document, &document_type, platform_version)?;
 
                 let document_info =
                     DocumentRefAndSerialization((&document, serialized_document, storage_flags));
-
-                let document_type = contract.document_type_for_name(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {

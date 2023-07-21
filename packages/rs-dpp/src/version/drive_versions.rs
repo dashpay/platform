@@ -313,6 +313,7 @@ pub struct DriveIdentityMethodVersions {
     pub prove: DriveIdentityProveMethodVersions,
     pub keys: DriveIdentityKeysMethodVersions,
     pub update: DriveIdentityUpdateMethodVersions,
+    pub insert: DriveIdentityInsertMethodVersions,
     pub cost_estimation: DriveIdentityCostEstimationMethodVersions,
 }
 
@@ -406,6 +407,11 @@ pub struct DriveIdentityKeyHashesToIdentityInsertMethodVersions {
     pub insert_reference_to_non_unique_key: FeatureVersion,
     pub insert_reference_to_unique_key: FeatureVersion,
     pub insert_unique_public_key_hash_reference_to_identity: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityInsertMethodVersions {
+    pub add_new_identity: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

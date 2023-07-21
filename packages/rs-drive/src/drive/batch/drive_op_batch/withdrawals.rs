@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
@@ -55,6 +56,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
         >,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             WithdrawalOperationType::InsertExpiredIndex { index } => {
@@ -71,6 +73,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                         Element::Item(vec![], None),
                     )),
                     &mut drive_operations,
+                    &platform_version.drive,
                 )?;
 
                 Ok(drive_operations)
@@ -88,6 +91,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                     },
                     transaction,
                     &mut drive_operations,
+                    &platform_version.drive,
                 )?;
 
                 Ok(drive_operations)
@@ -104,6 +108,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                         Element::Item(index.to_be_bytes().to_vec(), None),
                     )),
                     &mut drive_operations,
+                    &platform_version.drive,
                 )?;
 
                 Ok(drive_operations)
@@ -123,6 +128,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                             Element::Item(bytes.clone(), None),
                         )),
                         &mut drive_operations,
+                        &platform_version.drive,
                     )?;
                 }
 
@@ -142,6 +148,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {
                     },
                     transaction,
                     &mut drive_operations,
+                    &platform_version.drive,
                 )?;
 
                 Ok(drive_operations)
