@@ -18,6 +18,7 @@ const { TEMPLATES_DIR } = require('../../constants');
  * @param {configFileRepository} configFileRepository
  * @param {ConfigFile} configFile
  * @param {getConnectionHost} getConnectionHost
+ * @param {Docker} docker
  * @return {reindexNodeTask}
  */
 function reindexNodeTaskFactory(
@@ -33,6 +34,7 @@ function reindexNodeTaskFactory(
   configFileRepository,
   configFile,
   getConnectionHost,
+  docker,
 ) {
   /**
    * Gets dashcore docker container from the node
@@ -40,8 +42,6 @@ function reindexNodeTaskFactory(
    * @return {Promise<null|Container>}
    */
   async function getCoreContainer(config) {
-    const { docker } = dockerCompose;
-
     const [containerId] = await dockerCompose
       .getContainersList(generateEnvs(configFile, config), {
         quiet: true,
@@ -92,32 +92,25 @@ function reindexNodeTaskFactory(
       {
         title: 'Start Core in reindex mode',
         task: async () => {
+          // Temporary (for the first run) set reindex=1 to dashd.conf
           const configPath = 'core/dash.conf';
           const templatePath = `${configPath}.dot`;
 
-          const serviceConfig = renderTemplate(path.join(TEMPLATES_DIR, templatePath),
-            { ...config.options, reindex: true });
+          const serviceConfig = renderTemplate(
+            path.join(TEMPLATES_DIR, templatePath),
+            { ...config.options, reindex: true },
+          );
+
           writeServiceConfigs(config.getName(), { [configPath]: serviceConfig });
 
-          const coreContainer = await getCoreContainer(config);
-
-          // if core container found
-          if (coreContainer) {
-            const info = await coreContainer.inspect();
-
-            if (info.State.Status !== 'exited') {
-              await coreContainer.restart();
-              return Promise.resolve();
-            }
-            await coreContainer.start();
-            return Promise.resolve();
-          }
+          // Restart or start node (including Core container) to apply
+          // reindex=1 from dashd.conf
           const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
-          // if container not found, but node is running (core container was removed manually by user)
           if (isNodeRunning) {
             return restartNodeTask(config);
           }
+
           // start node in case nothing is running
           return startNodeTask(config);
         },
@@ -125,6 +118,7 @@ function reindexNodeTaskFactory(
       {
         title: 'Wait for Core start',
         task: async (ctx) => {
+          // Wait until Core is started
           const rpcClient = createRpcClient({
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
@@ -134,19 +128,25 @@ function reindexNodeTaskFactory(
 
           const container = await getCoreContainer(config);
 
+          if (!container) {
+            throw new Error('Core container not found');
+          }
+
           ctx.coreService = new CoreService(config, rpcClient, container);
 
           await waitForCoreStart(ctx.coreService);
 
-          // Write configs
+          // When Core is started remove reindex=1 from dashd.conf
+          // rendering service templates without additional variables
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
         },
       },
       {
-        title: 'Wait for Core reindex finished',
+        title: 'Reindex Core',
         enabled: (ctx) => !ctx.isDetached,
         task: async (ctx) => new Observable(async (observer) => {
+          // Show reindex progeress if not detached
           observer.next('Starting reindex...');
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {

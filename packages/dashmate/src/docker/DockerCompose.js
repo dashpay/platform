@@ -203,7 +203,7 @@ class DockerCompose {
 
     const containerIds = await this.getContainersList(envs, {
       filterServiceNames:
-      serviceName,
+        serviceName,
       quiet: true,
     });
 
