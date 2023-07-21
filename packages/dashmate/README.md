@@ -281,11 +281,11 @@ rm -rf ~/.dashmate/
 ```
 
 
-### Reindex dashcore chain data
+### Reindex core chain data
 
 The `core reindex` command helps you to reindex your Core instance in the node.
 
-The process displays interactive progress and may be interrupted at any time. After reindex is finished dashcore and other services will become online without any interactions from the user.
+The process displays interactive progress and may be interrupted at any time. After reindex is finished core and other services will become online without any interactions from the user.
 
 The `core reindex` command works for regular and local configurations.
 
