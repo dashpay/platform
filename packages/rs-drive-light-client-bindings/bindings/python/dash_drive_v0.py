@@ -522,7 +522,9 @@ def uniffi_check_contract_api_version(lib):
         raise InternalError("UniFFI contract version mismatch: try cleaning and rebuilding your project")
 
 def uniffi_check_api_checksums(lib):
-    if lib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor() != 61901:
+    if lib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 24692:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_drive_light_client_checksum_func_identity_proof_json() != 10710:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_drive_light_client_checksum_func_version() != 33802:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
@@ -538,13 +540,20 @@ _UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.argtypes = (
     ctypes.POINTER(RustCallStatus),
 )
 _UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.restype = None
-_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_to_cbor.argtypes = (
+_UniFFILib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json.argtypes = (
     RustBuffer,
     RustBuffer,
     ctypes.c_uint64,
     ctypes.POINTER(RustCallStatus),
 )
-_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_to_cbor.restype = RustBuffer
+_UniFFILib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json.restype = RustBuffer
+_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_json.argtypes = (
+    RustBuffer,
+    RustBuffer,
+    ctypes.c_uint64,
+    ctypes.POINTER(RustCallStatus),
+)
+_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_json.restype = RustBuffer
 _UniFFILib.uniffi_drive_light_client_fn_func_version.argtypes = (
     ctypes.POINTER(RustCallStatus),
 )
@@ -570,9 +579,12 @@ _UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve.argtypes = (
     ctypes.POINTER(RustCallStatus),
 )
 _UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve.restype = RustBuffer
-_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor.argtypes = (
+_UniFFILib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json.argtypes = (
 )
-_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor.restype = ctypes.c_uint16
+_UniFFILib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json.restype = ctypes.c_uint16
+_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_json.argtypes = (
+)
+_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_json.restype = ctypes.c_uint16
 _UniFFILib.uniffi_drive_light_client_checksum_func_version.argtypes = (
 )
 _UniFFILib.uniffi_drive_light_client_checksum_func_version.restype = ctypes.c_uint16
@@ -702,33 +714,33 @@ class Error:  # type: ignore
         def __repr__(self):
             return "Error.DocumentMissingInProof({})".format(str(self))
     UniFFITempError.DocumentMissingInProof = DocumentMissingInProof  # type: ignore
-    class ProtoRequestDecodeError(UniFFITempError):
+    class RequestDecodeError(UniFFITempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
             ]))
             self.error = error
         def __repr__(self):
-            return "Error.ProtoRequestDecodeError({})".format(str(self))
-    UniFFITempError.ProtoRequestDecodeError = ProtoRequestDecodeError  # type: ignore
-    class ProtoResponseDecodeError(UniFFITempError):
+            return "Error.RequestDecodeError({})".format(str(self))
+    UniFFITempError.RequestDecodeError = RequestDecodeError  # type: ignore
+    class ResponseDecodeError(UniFFITempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
             ]))
             self.error = error
         def __repr__(self):
-            return "Error.ProtoResponseDecodeError({})".format(str(self))
-    UniFFITempError.ProtoResponseDecodeError = ProtoResponseDecodeError  # type: ignore
-    class ProtoEncodeError(UniFFITempError):
+            return "Error.ResponseDecodeError({})".format(str(self))
+    UniFFITempError.ResponseDecodeError = ResponseDecodeError  # type: ignore
+    class DataEncodingError(UniFFITempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
             ]))
             self.error = error
         def __repr__(self):
-            return "Error.ProtoEncodeError({})".format(str(self))
-    UniFFITempError.ProtoEncodeError = ProtoEncodeError  # type: ignore
+            return "Error.DataEncodingError({})".format(str(self))
+    UniFFITempError.DataEncodingError = DataEncodingError  # type: ignore
     class SignDigestFailed(UniFFITempError):
         def __init__(self, error):
             super().__init__(", ".join([
@@ -830,15 +842,15 @@ class FfiConverterTypeError(FfiConverterRustBuffer):
             return Error.DocumentMissingInProof(
             )
         if variant == 9:
-            return Error.ProtoRequestDecodeError(
+            return Error.RequestDecodeError(
                 error=FfiConverterString.read(buf),
             )
         if variant == 10:
-            return Error.ProtoResponseDecodeError(
+            return Error.ResponseDecodeError(
                 error=FfiConverterString.read(buf),
             )
         if variant == 11:
-            return Error.ProtoEncodeError(
+            return Error.DataEncodingError(
                 error=FfiConverterString.read(buf),
             )
         if variant == 12:
@@ -892,13 +904,13 @@ class FfiConverterTypeError(FfiConverterRustBuffer):
             buf.writeI32(7)
         if isinstance(value, Error.DocumentMissingInProof):
             buf.writeI32(8)
-        if isinstance(value, Error.ProtoRequestDecodeError):
+        if isinstance(value, Error.RequestDecodeError):
             buf.writeI32(9)
             FfiConverterString.write(value.error, buf)
-        if isinstance(value, Error.ProtoResponseDecodeError):
+        if isinstance(value, Error.ResponseDecodeError):
             buf.writeI32(10)
             FfiConverterString.write(value.error, buf)
-        if isinstance(value, Error.ProtoEncodeError):
+        if isinstance(value, Error.DataEncodingError):
             buf.writeI32(11)
             FfiConverterString.write(value.error, buf)
         if isinstance(value, Error.SignDigestFailed):
@@ -1101,13 +1113,23 @@ class FfiConverterSequenceUInt8(FfiConverterRustBuffer):
             FfiConverterUInt8.read(buf) for i in range(count)
         ]
 
-def identity_proof_to_cbor(req_proto: "typing.List[int]",resp_proto: "typing.List[int]",callback: "QuorumInfoProvider"):
+def identity_by_pubkeys_proof_json(request: "typing.List[int]",response: "typing.List[int]",callback: "QuorumInfoProvider"):
     
     
     
-    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_to_cbor,
-        FfiConverterSequenceUInt8.lower(req_proto),
-        FfiConverterSequenceUInt8.lower(resp_proto),
+    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json,
+        FfiConverterSequenceUInt8.lower(request),
+        FfiConverterSequenceUInt8.lower(response),
+        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
+
+
+def identity_proof_json(request: "typing.List[int]",response: "typing.List[int]",callback: "QuorumInfoProvider"):
+    
+    
+    
+    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_json,
+        FfiConverterSequenceUInt8.lower(request),
+        FfiConverterSequenceUInt8.lower(response),
         FfiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
 
 
@@ -1118,7 +1140,8 @@ def version():
 __all__ = [
     "InternalError",
     "Error",
-    "identity_proof_to_cbor",
+    "identity_by_pubkeys_proof_json",
+    "identity_proof_json",
     "version",
     "QuorumInfoProvider",
 ]

@@ -370,7 +370,9 @@ internal interface _UniFFILib : Library {
 
     fun uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider(`callbackStub`: ForeignCallback,_uniffi_out_err: RustCallStatus, 
     ): Unit
-    fun uniffi_drive_light_client_fn_func_identity_proof_to_cbor(`reqProto`: RustBuffer.ByValue,`respProto`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
+    fun uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json(`request`: RustBuffer.ByValue,`response`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_drive_light_client_fn_func_identity_proof_json(`request`: RustBuffer.ByValue,`response`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_drive_light_client_fn_func_version(_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
@@ -382,7 +384,9 @@ internal interface _UniFFILib : Library {
     ): Unit
     fun ffi_dash_drive_v0_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
-    fun uniffi_drive_light_client_checksum_func_identity_proof_to_cbor(
+    fun uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json(
+    ): Short
+    fun uniffi_drive_light_client_checksum_func_identity_proof_json(
     ): Short
     fun uniffi_drive_light_client_checksum_func_version(
     ): Short
@@ -405,7 +409,10 @@ private fun uniffiCheckContractApiVersion(lib: _UniFFILib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
-    if (lib.uniffi_drive_light_client_checksum_func_identity_proof_to_cbor() != 61901.toShort()) {
+    if (lib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 24692.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_drive_light_client_checksum_func_identity_proof_json() != 10710.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_drive_light_client_checksum_func_version() != 33802.toShort()) {
@@ -542,21 +549,21 @@ sealed class Exception: Exception() {
             get() = ""
     }
     
-    class ProtoRequestDecodeException(
+    class RequestDecodeException(
         val `error`: String
         ) : Exception() {
         override val message
             get() = "error=${ `error` }"
     }
     
-    class ProtoResponseDecodeException(
+    class ResponseDecodeException(
         val `error`: String
         ) : Exception() {
         override val message
             get() = "error=${ `error` }"
     }
     
-    class ProtoEncodeException(
+    class DataEncodingException(
         val `error`: String
         ) : Exception() {
         override val message
@@ -638,13 +645,13 @@ public object FfiConverterTypeError : FfiConverterRustBuffer<Exception> {
             6 -> Exception.EmptyResponseMetadata()
             7 -> Exception.EmptyResponseProof()
             8 -> Exception.DocumentMissingInProof()
-            9 -> Exception.ProtoRequestDecodeException(
+            9 -> Exception.RequestDecodeException(
                 FfiConverterString.read(buf),
                 )
-            10 -> Exception.ProtoResponseDecodeException(
+            10 -> Exception.ResponseDecodeException(
                 FfiConverterString.read(buf),
                 )
-            11 -> Exception.ProtoEncodeException(
+            11 -> Exception.DataEncodingException(
                 FfiConverterString.read(buf),
                 )
             12 -> Exception.SignDigestFailed(
@@ -709,17 +716,17 @@ public object FfiConverterTypeError : FfiConverterRustBuffer<Exception> {
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4
             )
-            is Exception.ProtoRequestDecodeException -> (
+            is Exception.RequestDecodeException -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4
                 + FfiConverterString.allocationSize(value.`error`)
             )
-            is Exception.ProtoResponseDecodeException -> (
+            is Exception.ResponseDecodeException -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4
                 + FfiConverterString.allocationSize(value.`error`)
             )
-            is Exception.ProtoEncodeException -> (
+            is Exception.DataEncodingException -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4
                 + FfiConverterString.allocationSize(value.`error`)
@@ -799,17 +806,17 @@ public object FfiConverterTypeError : FfiConverterRustBuffer<Exception> {
                 buf.putInt(8)
                 Unit
             }
-            is Exception.ProtoRequestDecodeException -> {
+            is Exception.RequestDecodeException -> {
                 buf.putInt(9)
                 FfiConverterString.write(value.`error`, buf)
                 Unit
             }
-            is Exception.ProtoResponseDecodeException -> {
+            is Exception.ResponseDecodeException -> {
                 buf.putInt(10)
                 FfiConverterString.write(value.`error`, buf)
                 Unit
             }
-            is Exception.ProtoEncodeException -> {
+            is Exception.DataEncodingException -> {
                 buf.putInt(11)
                 FfiConverterString.write(value.`error`, buf)
                 Unit
@@ -1053,10 +1060,19 @@ public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
 }
 @Throws(Exception::class)
 
-fun `identityProofToCbor`(`reqProto`: List<UByte>, `respProto`: List<UByte>, `callback`: QuorumInfoProvider): List<UByte> {
+fun `identityByPubkeysProofJson`(`request`: List<UByte>, `response`: List<UByte>, `callback`: QuorumInfoProvider): List<UByte> {
     return FfiConverterSequenceUByte.lift(
     rustCallWithError(Exception) { _status ->
-    _UniFFILib.INSTANCE.uniffi_drive_light_client_fn_func_identity_proof_to_cbor(FfiConverterSequenceUByte.lower(`reqProto`),FfiConverterSequenceUByte.lower(`respProto`),FfiConverterTypeQuorumInfoProvider.lower(`callback`),_status)
+    _UniFFILib.INSTANCE.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json(FfiConverterSequenceUByte.lower(`request`),FfiConverterSequenceUByte.lower(`response`),FfiConverterTypeQuorumInfoProvider.lower(`callback`),_status)
+})
+}
+
+@Throws(Exception::class)
+
+fun `identityProofJson`(`request`: List<UByte>, `response`: List<UByte>, `callback`: QuorumInfoProvider): List<UByte> {
+    return FfiConverterSequenceUByte.lift(
+    rustCallWithError(Exception) { _status ->
+    _UniFFILib.INSTANCE.uniffi_drive_light_client_fn_func_identity_proof_json(FfiConverterSequenceUByte.lower(`request`),FfiConverterSequenceUByte.lower(`response`),FfiConverterTypeQuorumInfoProvider.lower(`callback`),_status)
 })
 }
 

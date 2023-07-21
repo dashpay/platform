@@ -356,9 +356,9 @@ public enum Error {
     case EmptyResponseMetadata
     case EmptyResponseProof
     case DocumentMissingInProof
-    case ProtoRequestDecodeError(`error`: String)
-    case ProtoResponseDecodeError(`error`: String)
-    case ProtoEncodeError(`error`: String)
+    case RequestDecodeError(`error`: String)
+    case ResponseDecodeError(`error`: String)
+    case DataEncodingError(`error`: String)
     case SignDigestFailed(`error`: String)
     case SignatureVerificationError(`error`: String)
     case InvalidQuorum(`error`: String)
@@ -395,13 +395,13 @@ public struct FfiConverterTypeError: FfiConverterRustBuffer {
         case 6: return .EmptyResponseMetadata
         case 7: return .EmptyResponseProof
         case 8: return .DocumentMissingInProof
-        case 9: return .ProtoRequestDecodeError(
+        case 9: return .RequestDecodeError(
             `error`: try FfiConverterString.read(from: &buf)
             )
-        case 10: return .ProtoResponseDecodeError(
+        case 10: return .ResponseDecodeError(
             `error`: try FfiConverterString.read(from: &buf)
             )
-        case 11: return .ProtoEncodeError(
+        case 11: return .DataEncodingError(
             `error`: try FfiConverterString.read(from: &buf)
             )
         case 12: return .SignDigestFailed(
@@ -472,17 +472,17 @@ public struct FfiConverterTypeError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(8))
         
         
-        case let .ProtoRequestDecodeError(`error`):
+        case let .RequestDecodeError(`error`):
             writeInt(&buf, Int32(9))
             FfiConverterString.write(`error`, into: &buf)
             
         
-        case let .ProtoResponseDecodeError(`error`):
+        case let .ResponseDecodeError(`error`):
             writeInt(&buf, Int32(10))
             FfiConverterString.write(`error`, into: &buf)
             
         
-        case let .ProtoEncodeError(`error`):
+        case let .DataEncodingError(`error`):
             writeInt(&buf, Int32(11))
             FfiConverterString.write(`error`, into: &buf)
             
@@ -732,12 +732,23 @@ fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
     }
 }
 
-public func `identityProofToCbor`(`reqProto`: [UInt8], `respProto`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
+public func `identityByPubkeysProofJson`(`request`: [UInt8], `response`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
     return try  FfiConverterSequenceUInt8.lift(
         try rustCallWithError(FfiConverterTypeError.lift) {
-    uniffi_drive_light_client_fn_func_identity_proof_to_cbor(
-        FfiConverterSequenceUInt8.lower(`reqProto`),
-        FfiConverterSequenceUInt8.lower(`respProto`),
+    uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json(
+        FfiConverterSequenceUInt8.lower(`request`),
+        FfiConverterSequenceUInt8.lower(`response`),
+        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(`callback`),$0)
+}
+    )
+}
+
+public func `identityProofJson`(`request`: [UInt8], `response`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
+    return try  FfiConverterSequenceUInt8.lift(
+        try rustCallWithError(FfiConverterTypeError.lift) {
+    uniffi_drive_light_client_fn_func_identity_proof_json(
+        FfiConverterSequenceUInt8.lower(`request`),
+        FfiConverterSequenceUInt8.lower(`response`),
         FfiConverterCallbackInterfaceQuorumInfoProvider.lower(`callback`),$0)
 }
     )
@@ -766,7 +777,10 @@ private var initializationResult: InitializationResult {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_drive_light_client_checksum_func_identity_proof_to_cbor() != 61901) {
+    if (uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 24692) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_drive_light_client_checksum_func_identity_proof_json() != 10710) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_drive_light_client_checksum_func_version() != 33802) {
