@@ -8,12 +8,12 @@ use drive_light_client::proof::from_proof::{FromProof, MockQuorumInfoProvider};
 include!("utils.rs");
 
 #[test]
-fn get_identities_by_hashes_notfound() {
+fn get_identities_by_hashes_not_found() {
     let (req, resp, provider): (
         GetIdentitiesByPublicKeyHashesRequest,
         GetIdentitiesByPublicKeyHashesResponse,
         MockQuorumInfoProvider,
-    ) = load("vectors/get_identities_by_hashes_notfound.json");
+    ) = load("vectors/get_identities_by_hashes_not_found.json");
 
     let ids = drive_light_client::proof::from_proof::IdentitiesByPublicKeyHashes::maybe_from_proof(
         &req,
