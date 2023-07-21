@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
+use std::cell::RefCell;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
@@ -29,8 +30,6 @@ use serde_json::json;
 pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
-    /// Snapshot manager
-    pub snapshot_manager: Option<Manager>,
     /// State
     pub state: RwLock<PlatformState>,
     /// Configuration
@@ -105,7 +104,7 @@ impl Platform<DefaultCoreRPC> {
                 "Could not setup Dash Core RPC client",
             ))
         })?;
-        Self::open_with_client(path, Some(config), core_rpc, None)
+        Self::open_with_client(path, Some(config), core_rpc)
     }
 }
 
@@ -129,7 +128,7 @@ impl Platform<MockCoreRPCLike> {
                 "tx": [],
             }))
         });
-        Self::open_with_client(path, config, core_rpc_mock, None)
+        Self::open_with_client(path, config, core_rpc_mock)
     }
 
     /// Recreate the state from the backing store
@@ -156,7 +155,6 @@ impl<C> Platform<C> {
         path: P,
         config: Option<PlatformConfig>,
         core_rpc: C,
-        snapshot_manager: Option<Manager>,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
@@ -175,7 +173,6 @@ impl<C> Platform<C> {
             Platform::open_with_client_saved_state::<P>(
                 drive,
                 core_rpc,
-                snapshot_manager,
                 config,
                 serialized_platform_state,
             )
@@ -183,7 +180,6 @@ impl<C> Platform<C> {
             Platform::open_with_client_no_saved_state::<P>(
                 drive,
                 core_rpc,
-                snapshot_manager,
                 config,
                 PROTOCOL_VERSION,
                 PROTOCOL_VERSION,
@@ -195,7 +191,6 @@ impl<C> Platform<C> {
     pub fn open_with_client_saved_state<P: AsRef<Path>>(
         drive: Drive,
         core_rpc: C,
-        snapshot_manager: Option<Manager>,
         config: PlatformConfig,
         serialized_platform_state: Vec<u8>,
     ) -> Result<Platform<C>, Error>
@@ -207,7 +202,6 @@ impl<C> Platform<C> {
         let platform: Platform<C> = Platform {
             drive,
             state: RwLock::new(platform_state),
-            snapshot_manager,
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,
@@ -220,7 +214,6 @@ impl<C> Platform<C> {
     pub fn open_with_client_no_saved_state<P: AsRef<Path>>(
         drive: Drive,
         core_rpc: C,
-        snapshot_manager: Option<Manager>,
         config: PlatformConfig,
         current_protocol_version_in_consensus: u32,
         next_epoch_protocol_version: u32,
@@ -236,21 +229,10 @@ impl<C> Platform<C> {
         Ok(Platform {
             drive,
             state: RwLock::new(state),
-            snapshot_manager,
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,
         })
-    }
-
-    /// Create a snapshot of the current state for the height
-    pub fn create_snapshot(&self, height: i64) -> Result<(), Error> {
-        match self.snapshot_manager {
-            Some(ref snapshot_manager) => {
-                snapshot_manager.create_snapshot(&self.drive.grove, height)
-            }
-            None => Ok(()),
-        }
     }
 }
 

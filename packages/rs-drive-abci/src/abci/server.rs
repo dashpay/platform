@@ -7,6 +7,7 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 use drive::grovedb::Transaction;
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -18,6 +19,8 @@ use tokio_util::sync::CancellationToken;
 pub struct AbciApplication<'a, C> {
     /// Platform
     pub platform: &'a Platform<C>,
+    /// Snapshot manager
+    pub snapshot_manager: RefCell<Option<Manager>>,
     /// The current transaction
     pub transaction: RwLock<Option<Transaction<'a>>>,
 }
@@ -32,16 +35,16 @@ pub fn start<C: CoreRPCLike>(
 ) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
-    let snapshot_manager = Manager::new(config.db_path.to_str().unwrap().to_string(), None, None);
+    let snapshot_manager = Manager::new(
+        config.checkpoints_path.to_str().unwrap().to_string(),
+        None,
+        None,
+    );
 
-    let platform: Platform<C> = Platform::open_with_client(
-        &config.db_path,
-        Some(config.clone()),
-        core_rpc,
-        Some(snapshot_manager),
-    )?;
+    let platform: Platform<C> =
+        Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc)?;
 
-    let abci = AbciApplication::new(&platform)?;
+    let abci = AbciApplication::new(&platform, Some(snapshot_manager))?;
 
     let server = tenderdash_abci::ServerBuilder::new(abci, &bind_address)
         .with_cancel_token(cancel.clone())
@@ -61,9 +64,13 @@ pub fn start<C: CoreRPCLike>(
 
 impl<'a, C> AbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Result<AbciApplication<'a, C>, Error> {
+    pub fn new(
+        platform: &'a Platform<C>,
+        snapshot_manager: Option<Manager>,
+    ) -> Result<AbciApplication<'a, C>, Error> {
         let app = AbciApplication {
             platform,
+            snapshot_manager: RefCell::new(snapshot_manager),
             transaction: RwLock::new(None),
         };
 

@@ -37,6 +37,7 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use std::ops::Deref;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
@@ -401,7 +402,7 @@ where
                 height, round, block_hash.to_hex(),
                 block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
-            .into())
+                .into())
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
@@ -450,10 +451,10 @@ where
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round,block_hash.to_hex(),
+                height, round, block_hash.to_hex(),
                 block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
-            .into());
+                .into());
         }
 
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
@@ -550,7 +551,24 @@ where
 
         self.commit_transaction()?;
 
-        self.platform.create_snapshot(height)?;
+        /// Create a snapshot of the current state for the height
+        match self.snapshot_manager.borrow().deref() {
+            Some(snapshot_manager) => {
+                match snapshot_manager.create_snapshot(&self.platform.drive.grove, height) {
+                    Ok(_) => {
+                        tracing::info!("snapshot created for height: {}", height);
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "failed to create snapshot for height: {}, error: {}",
+                            height,
+                            e
+                        );
+                    }
+                }
+            }
+            _ => {}
+        };
 
         Ok(ResponseFinalizeBlock {
             events: vec![],
