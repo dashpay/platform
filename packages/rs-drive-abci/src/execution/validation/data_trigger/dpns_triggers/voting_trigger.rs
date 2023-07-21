@@ -148,6 +148,72 @@ mod test {
         .expect("the execution result should be returned");
 
         assert!(!result.is_valid());
+
+        let data_trigger_error = &result.errors[0];
+        match data_trigger_error {
+            DataTriggerActionError::DataTriggerExecutionError { message, .. } => {
+                assert_eq!(message, "Vote didn't happen");
+            },
+            _ => {
+                panic!("Expected DataTriggerExecutionError");
+            }
+        }
+    }
+
+    #[test]
+    fn should_allow_registering_names_after_epoch_0() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let state_read_guard = platform.state.read().unwrap();
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
+        let mut domain_document =
+            get_dpns_parent_document_fixture(ParentDocumentOptions::default());
+        domain_document
+            .set(
+                super::property_names::CORE_HEIGHT_CREATED_AT,
+                platform_value!(10u32),
+            )
+            .expect("expected to set core height created at");
+        let owner_id = &domain_document.owner_id();
+
+        let document_transitions =
+            get_document_transitions_fixture([(Action::Create, vec![domain_document])]);
+        let document_transition = document_transitions
+            .get(0)
+            .expect("document transition should be present");
+
+        let document_create_transition = document_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
+        let data_contract = get_dpns_data_contract_fixture(None);
+
+        let transition_execution_context = StateTransitionExecutionContext::default();
+
+        let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
+            data_contract: &data_contract.data_contract,
+            owner_id,
+            state_transition_execution_context: &transition_execution_context,
+            transaction: None,
+        };
+
+        transition_execution_context.enable_dry_run();
+
+        let result = run_name_register_trigger(
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &data_trigger_context,
+            None,
+        )
+            .expect("the execution result should be returned");
+
+        assert!(result.is_valid());
     }
 
     #[test]
@@ -340,83 +406,5 @@ mod test {
             }
         ));
     }
-
-    #[test]
-    fn should_fail_if_id_not_exists() {
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
-        let mut state_write_guard = platform.state.write().unwrap();
-
-        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
-            basic_info: BlockInfo {
-                time_ms: 500000,
-                height: 100,
-                core_height: 42,
-                epoch: Default::default(),
-            },
-            app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
-            quorum_hash: [0u8; 32],
-            signature: [0u8; 96],
-            round: 0,
-        });
-
-        let platform_ref = PlatformStateRef {
-            drive: &platform.drive,
-            state: &state_write_guard,
-            config: &platform.config,
-        };
-
-        let contact_request_document = get_contact_request_document_fixture(None, None);
-        let data_contract = get_dashpay_contract_fixture(None);
-        let owner_id = contact_request_document.owner_id();
-        let contract_request_to_user_id = contact_request_document
-            .document
-            .properties
-            .get_identifier("toUserId")
-            .expect("expected to get toUserId");
-
-        let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
-        let document_transition = document_transitions
-            .get(0)
-            .expect("document transition should be present");
-
-        let document_create_transition = document_transition
-            .as_transition_create()
-            .expect("expected a document create transition");
-
-        let transition_execution_context = StateTransitionExecutionContext::default();
-
-        let data_trigger_context = DataTriggerExecutionContext {
-            platform: &platform_ref,
-            data_contract: &data_contract.data_contract,
-            owner_id: &owner_id,
-            state_transition_execution_context: &transition_execution_context,
-            transaction: None,
-        };
-
-        let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
-
-        let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from(document_create_transition).into(),
-            &data_trigger_context,
-            Some(&dashpay_identity_id),
-        )
-        .expect("data trigger result should be returned");
-
-        assert!(!result.is_valid());
-        let data_trigger_error = &result.errors[0];
-
-        assert!(matches!(
-            data_trigger_error,
-            DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
-                message == &format!("Identity {contract_request_to_user_id} doesn't exist")
-
-
-            }
-        ));
-    }
-
     // TODO! implement remaining tests
 }
