@@ -10,6 +10,8 @@ use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
+use crate::version::{FeatureVersion, PlatformVersion};
+use crate::ProtocolError;
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -75,9 +77,9 @@ impl KeyType {
         }
     }
 
-    //todo: put this in a specific feature
+    #[cfg(feature = "random-public-keys")]
     /// Gets the default size of the public key
-    pub fn random_public_key_data(&self, rng: &mut StdRng) -> Vec<u8> {
+    fn random_public_key_data_v0(&self, rng: &mut StdRng) -> Vec<u8> {
         match self {
             KeyType::ECDSA_SECP256K1 => {
                 let secp = Secp256k1::new();
@@ -101,9 +103,31 @@ impl KeyType {
         }
     }
 
-    //todo: put this in a specific feature
+    #[cfg(feature = "random-public-keys")]
     /// Gets the default size of the public key
-    pub fn random_public_and_private_key_data(&self, rng: &mut StdRng) -> (Vec<u8>, Vec<u8>) {
+    pub fn random_public_key_data(
+        &self,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_type_method_versions
+            .random_public_key_data
+        {
+            0 => Ok(self.random_public_key_data_v0(rng)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "KeyType::random_public_key_data".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "random-public-keys")]
+    /// Gets the default size of the public key
+    pub fn random_public_and_private_key_data_v0(&self, rng: &mut StdRng) -> (Vec<u8>, Vec<u8>) {
         match self {
             KeyType::ECDSA_SECP256K1 => {
                 let secp = Secp256k1::new();
@@ -155,6 +179,28 @@ impl KeyType {
             }
         }
     }
+
+    #[cfg(feature = "random-public-keys")]
+    /// Gets the default size of the public key
+    pub fn random_public_and_private_key_data(
+        &self,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<u8>, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_type_method_versions
+            .random_public_and_private_key_data
+        {
+            0 => Ok(self.random_public_and_private_key_data_v0(rng)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "KeyType::random_public_and_private_key_data".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl std::fmt::Display for KeyType {
@@ -171,6 +217,7 @@ impl TryFrom<u8> for KeyType {
             1 => Ok(Self::BLS12_381),
             2 => Ok(Self::ECDSA_HASH160),
             3 => Ok(Self::BIP13_SCRIPT_HASH),
+            4 => Ok(Self::EDDSA_25519_HASH160),
             value => bail!("unrecognized key type: {}", value),
         }
     }

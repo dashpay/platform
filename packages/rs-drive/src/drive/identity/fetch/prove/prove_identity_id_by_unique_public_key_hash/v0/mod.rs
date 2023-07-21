@@ -31,12 +31,13 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     #[test]
     fn should_prove_a_single_identity_id() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(
             Some(
                 platform_version
@@ -64,7 +65,11 @@ mod tests {
             .expect("expected to be 20 bytes");
 
         let proof = drive
-            .prove_identity_id_by_unique_public_key_hash_v0(first_key_hash, None, &drive_version)
+            .prove_identity_id_by_unique_public_key_hash_v0(
+                first_key_hash,
+                None,
+                &platform_version.drive,
+            )
             .expect("should not error when proving an identity");
 
         let (_, proved_identity_id) =

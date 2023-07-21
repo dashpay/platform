@@ -1,9 +1,8 @@
-use crate::drive::identity::update::structs::add_to_previous_balance_outcome::v0::{
-    AddToPreviousBalanceOutcomeV0, AddToPreviousBalanceOutcomeV0Methods,
-};
 use dpp::fee::Credits;
 
 mod v0;
+
+pub use v0::*;
 
 /// The outcome of paying for a fee
 pub(in crate::drive::identity::update) enum AddToPreviousBalanceOutcome {

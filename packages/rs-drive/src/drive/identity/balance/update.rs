@@ -3,6 +3,7 @@ mod tests {
     use super::*;
     use dpp::prelude::*;
 
+    use crate::common::identities::create_test_identity;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -112,7 +113,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(1), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version);
 
             let added_balance = 300;
             let negative_amount = 100;
@@ -189,9 +190,8 @@ mod tests {
         #[test]
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
             let drive = setup_drive_with_initial_state_structure();
-            let identity = create_test_identity(&drive, [0; 32], Some(1), None);
-
             let platform_version = PlatformVersion::latest();
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version);
 
             let added_balance = 50;
             let negative_amount = 100;
@@ -370,7 +370,7 @@ mod tests {
                     &block,
                     true,
                     Some(&db_transaction),
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to add to identity balance");
 
@@ -436,7 +436,7 @@ mod tests {
                     &block,
                     false,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("expected to add to identity balance");
 
@@ -491,7 +491,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
 
             let fee_result = FeeResult::default_with_fees(0, 0);
             let fee_change = fee_result
@@ -502,7 +503,7 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(
                     fee_change,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should apply fee change");
 
@@ -516,8 +517,10 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
-            let other_identity = create_test_identity(&drive, [1; 32], Some(16), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
+            let other_identity =
+                create_test_identity(&drive, [1; 32], Some(16), None, platform_version);
 
             let removed_credits = 100000;
             let other_removed_credits = 200000;
@@ -546,7 +549,7 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(
                     fee_change,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should apply fee change");
 
@@ -586,7 +589,7 @@ mod tests {
             let result = drive.apply_balance_change_from_fee_to_identity_operations(
                 fee_change,
                 None,
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(
@@ -603,7 +606,8 @@ mod tests {
             let removed_credits = 10000;
             let negative_amount = 1000;
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
 
             // Persist negative balance
             let batch = vec![drive.update_identity_negative_credit_operation(
@@ -640,7 +644,7 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(
                     fee_change,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should apply fee change");
 
@@ -676,7 +680,8 @@ mod tests {
             let removed_credits = 1000;
             let negative_amount = 3000;
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
 
             // Persist negative balance
             let batch = vec![drive.update_identity_negative_credit_operation(
@@ -713,7 +718,7 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(
                     fee_change,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should apply fee change");
 
@@ -740,7 +745,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
 
             let initial_balance = 100;
 
@@ -772,7 +778,7 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(
                     fee_change,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should apply fee change");
 
@@ -795,7 +801,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
 
             let initial_balance = 100;
 
@@ -825,7 +832,7 @@ mod tests {
                 .apply_balance_change_from_fee_to_identity_operations(
                     fee_change,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should apply fee change");
 
@@ -867,7 +874,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(15), None);
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
 
             let processing_fee = 110;
             let storage_fee = 80;
@@ -883,7 +891,7 @@ mod tests {
             let result = drive.apply_balance_change_from_fee_to_identity_operations(
                 fee_change,
                 None,
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(matches!(

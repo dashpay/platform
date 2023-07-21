@@ -2,7 +2,6 @@ use self::drive::DriveError;
 use crate::error::contract::DataContractError;
 use crate::error::proof::ProofError;
 use crate::error::storage_flags::StorageFlagsError;
-use contract::ContractError;
 use document::DocumentError;
 use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;

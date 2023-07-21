@@ -32,7 +32,7 @@ impl Drive {
                 None,
                 true,
                 transaction,
-                &platform_version.drive,
+                platform_version,
             )?
             .1
             .ok_or_else(|| {
@@ -89,7 +89,12 @@ impl Drive {
             items,
             skipped: _,
             cost: _,
-        } = self.query_documents_as_serialized(drive_query, None, transaction)?;
+        } = self.query_documents_as_serialized(
+            drive_query,
+            None,
+            transaction,
+            Some(platform_version.protocol_version),
+        )?;
 
         let documents = items
             .iter()
@@ -122,7 +127,7 @@ impl Drive {
                 None,
                 true,
                 transaction,
-                &platform_version.drive,
+                platform_version,
             )?
             .1
             .ok_or_else(|| {
@@ -177,7 +182,12 @@ impl Drive {
             items,
             skipped: _,
             cost: _,
-        } = self.query_documents_as_serialized(drive_query, None, transaction)?;
+        } = self.query_documents_as_serialized(
+            drive_query,
+            None,
+            transaction,
+            Some(platform_version.protocol_version),
+        )?;
 
         let documents = items
             .iter()
@@ -219,6 +229,7 @@ mod tests {
         use dpp::platform_value::platform_value;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
+        use dpp::withdrawal::Pooling;
 
         #[test]
         fn test_return_list_of_documents() {
@@ -228,8 +239,11 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                platform_version.protocol_version,
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
@@ -323,6 +337,7 @@ mod tests {
         use dpp::platform_value::{platform_value, Bytes32};
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
+        use dpp::withdrawal::Pooling;
 
         use super::*;
 
@@ -334,8 +349,11 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                platform_version.protocol_version,
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 

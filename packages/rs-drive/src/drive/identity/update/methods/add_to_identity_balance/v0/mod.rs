@@ -93,20 +93,17 @@ impl Drive {
                 "there should always be a balance",
             )))?;
 
-        let AddToPreviousBalanceOutcome {
-            balance_modified,
-            negative_credit_balance_modified,
-        } = self.add_to_previous_balance(
+        let add_to_previous_balance = self.add_to_previous_balance(
             identity_id,
             previous_balance,
             added_balance,
             estimated_costs_only_with_layer_info.is_none(),
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )?;
 
-        if let Some(new_balance) = balance_modified {
+        if let Some(new_balance) = add_to_previous_balance.balance_modified() {
             drive_operations.push(self.update_identity_balance_operation(
                 identity_id,
                 new_balance,
@@ -114,7 +111,9 @@ impl Drive {
             )?);
         }
 
-        if let Some(new_negative_balance) = negative_credit_balance_modified {
+        if let Some(new_negative_balance) =
+            add_to_previous_balance.negative_credit_balance_modified()
+        {
             drive_operations.push(self.update_identity_negative_credit_operation(
                 identity_id,
                 new_negative_balance,

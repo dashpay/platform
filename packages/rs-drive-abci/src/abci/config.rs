@@ -4,6 +4,8 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 
 use dpp::identity::KeyType::ECDSA_SECP256K1;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -132,21 +134,32 @@ pub struct Keys {
 
 impl Keys {
     /// Create new random keys for a given seed
-    pub fn new_random_keys_with_seed(seed: u64) -> Self {
+    pub fn new_random_keys_with_seed(
+        seed: u64,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let mut rng = StdRng::seed_from_u64(seed);
-        Keys {
-            dpns_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            dpns_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            dashpay_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            dashpay_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            feature_flags_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            feature_flags_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+        Ok(Keys {
+            dpns_master_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+            dpns_second_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+            dashpay_master_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+            dashpay_second_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+            feature_flags_master_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+            feature_flags_second_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
             masternode_reward_shares_master_public_key: ECDSA_SECP256K1
-                .random_public_key_data(&mut rng),
+                .random_public_key_data(&mut rng, platform_version)?,
             masternode_reward_shares_second_public_key: ECDSA_SECP256K1
-                .random_public_key_data(&mut rng),
-            withdrawals_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            withdrawals_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-        }
+                .random_public_key_data(&mut rng, platform_version)?,
+            withdrawals_master_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+            withdrawals_second_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng, platform_version)?,
+        })
     }
 }

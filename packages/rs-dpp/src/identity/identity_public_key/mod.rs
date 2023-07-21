@@ -21,6 +21,8 @@ pub use fields::*;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 pub mod methods;
+#[cfg(feature = "random-public-keys")]
+mod random;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -54,6 +56,7 @@ mod tests {
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::IdentityPublicKey;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use serde::Deserialize;
 
     #[test]
     fn test_identity_key_serialization_deserialization() {

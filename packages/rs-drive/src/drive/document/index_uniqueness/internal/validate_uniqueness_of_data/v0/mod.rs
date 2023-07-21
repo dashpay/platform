@@ -2,7 +2,7 @@ use dpp::data_contract::DataContract;
 
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
@@ -21,11 +21,11 @@ impl Drive {
     /// Internal method validating uniqueness
     pub(super) fn validate_uniqueness_of_data_v0(
         &self,
-        request: UniquenessOfDataRequestV0,
+        request: UniquenessOfDataRequest,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let UniquenessOfDataRequestV0 {
+        let UniquenessOfDataRequest {
             contract,
             document_type,
             owner_id,

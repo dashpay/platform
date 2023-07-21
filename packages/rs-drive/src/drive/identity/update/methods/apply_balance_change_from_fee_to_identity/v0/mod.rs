@@ -1,10 +1,13 @@
+use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcome;
+use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0;
+use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcome;
+use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
-use dpp::state_transition::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -36,7 +39,7 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        Ok(ApplyBalanceChangeOutcome { actual_fee_paid })
+        Ok(ApplyBalanceChangeOutcomeV0 { actual_fee_paid }.into())
     }
 
     /// Applies a balance change based on Fee Result
@@ -81,7 +84,7 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?,
             BalanceChange::RemoveFromBalance {
                 required_removed_balance,
@@ -98,7 +101,7 @@ impl Drive {
                             ),
                         )));
                     }
-                    AddToPreviousBalanceOutcome {
+                    AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(0),
                         negative_credit_balance_modified: Some(
                             *desired_removed_balance - previous_balance,
@@ -106,7 +109,7 @@ impl Drive {
                     }
                 } else {
                     // we have enough balance
-                    AddToPreviousBalanceOutcome {
+                    AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(previous_balance - desired_removed_balance),
                         negative_credit_balance_modified: None,
                     }

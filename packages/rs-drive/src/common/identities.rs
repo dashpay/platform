@@ -34,11 +34,12 @@
 
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
+use crate::error::Error;
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use rand::rngs::StdRng;
@@ -51,13 +52,14 @@ pub fn create_test_identity(
     id: [u8; 32],
     seed: Option<u64>,
     transaction: TransactionArg,
-) -> Identity {
+    platform_version: &PlatformVersion,
+) -> Result<Identity, Error> {
     let mut rng = match seed {
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
 
-    create_test_identity_with_rng(drive, id, &mut rng, transaction)
+    create_test_identity_with_rng(drive, id, &mut rng, transaction, platform_version)
 }
 
 /// Creates multiple test identities with random generator and inserts them into Drive.
@@ -77,7 +79,8 @@ pub fn create_test_identities_with_rng<I>(
     ids: I,
     rng: &mut StdRng,
     transaction: TransactionArg,
-) -> Vec<Identity>
+    platform_version: &PlatformVersion,
+) -> Result<Vec<Identity>, Error>
 where
     I: IntoIterator<Item = [u8; 32]>,
 {
@@ -85,11 +88,12 @@ where
     let mut identities = Vec::with_capacity(ids_iter.size_hint().0);
 
     for id in ids_iter {
-        let identity = create_test_identity_with_rng(drive, id, rng, transaction);
+        let identity =
+            create_test_identity_with_rng(drive, id, rng, transaction, platform_version)?;
         identities.push(identity);
     }
 
-    identities
+    Ok(identities)
 }
 
 /// Creates a test identity from an id with random generator and inserts it into Drive.
@@ -98,26 +102,34 @@ pub fn create_test_identity_with_rng(
     id: [u8; 32],
     rng: &mut StdRng,
     transaction: TransactionArg,
-) -> Identity {
-    let (identity_key, _) =
-        IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(1, rng);
+    platform_version: &PlatformVersion,
+) -> Result<Identity, Error> {
+    let (identity_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+        1,
+        rng,
+        platform_version,
+    );
 
     let mut public_keys = BTreeMap::new();
 
     public_keys.insert(identity_key.id, identity_key);
 
-    let identity = Identity {
+    let identity = IdentityV0 {
         id: Identifier::new(id),
         revision: 1,
         balance: 0,
-        feature_version: 0,
         public_keys,
-        asset_lock_proof: None,
-        metadata: None,
-    };
+    }
+    .into();
 
     drive
-        .add_new_identity(identity.clone(), &BlockInfo::default(), true, transaction)
+        .add_new_identity(
+            identity.clone(),
+            &BlockInfo::default(),
+            true,
+            transaction,
+            platform_version,
+        )
         .expect("should insert identity");
 
     identity
@@ -147,7 +159,7 @@ pub fn increment_in_epoch_each_proposers_block_count(
     }
 
     drive
-        .grove_apply_batch(batch, true, transaction)
+        .grove_apply_batch(batch, true, transaction, &platform_version.drive)
         .expect("should apply batch");
 }
 
@@ -158,10 +170,18 @@ pub fn create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
     count: u16,
     seed: Option<u64>,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Vec<[u8; 32]> {
-    let proposers = create_test_masternode_identities(drive, count, seed, transaction);
+    let proposers =
+        create_test_masternode_identities(drive, count, seed, transaction, platform_version);
 
-    increment_in_epoch_each_proposers_block_count(drive, epoch, &proposers, transaction);
+    increment_in_epoch_each_proposers_block_count(
+        drive,
+        epoch,
+        &proposers,
+        transaction,
+        platform_version,
+    );
 
     proposers
 }
@@ -172,12 +192,19 @@ pub fn create_test_masternode_identities(
     count: u16,
     seed: Option<u64>,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Vec<[u8; 32]> {
     let mut rng = match seed {
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
-    create_test_masternode_identities_with_rng(drive, count, &mut rng, transaction)
+    create_test_masternode_identities_with_rng(
+        drive,
+        count,
+        &mut rng,
+        transaction,
+        platform_version,
+    )
 }
 
 /// Creates a list of test Masternode identities of size `count` with random data
@@ -186,12 +213,19 @@ pub fn create_test_masternode_identities_with_rng(
     count: u16,
     rng: &mut StdRng,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Vec<[u8; 32]> {
     let mut identity_ids: Vec<[u8; 32]> = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
         let proposer_pro_tx_hash = rng.gen::<[u8; 32]>();
-        create_test_identity_with_rng(drive, proposer_pro_tx_hash, rng, transaction);
+        create_test_identity_with_rng(
+            drive,
+            proposer_pro_tx_hash,
+            rng,
+            transaction,
+            platform_version,
+        );
 
         identity_ids.push(proposer_pro_tx_hash);
     }

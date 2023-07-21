@@ -1,3 +1,6 @@
+use crate::drive::identity::update::add_to_previous_balance_outcome::{
+    AddToPreviousBalanceOutcome, AddToPreviousBalanceOutcomeV0,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -36,25 +39,28 @@ impl Drive {
 
             if apply {
                 if negative_balance > added_balance {
-                    Ok(AddToPreviousBalanceOutcome {
+                    Ok(AddToPreviousBalanceOutcomeV0 {
                         balance_modified: None,
                         negative_credit_balance_modified: Some(negative_balance - added_balance),
-                    })
+                    }
+                    .into())
                 } else {
                     let negative_credit_balance_modified =
                         if negative_balance > 0 { Some(0) } else { None };
 
-                    Ok(AddToPreviousBalanceOutcome {
+                    Ok(AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(added_balance - negative_balance),
                         negative_credit_balance_modified,
-                    })
+                    }
+                    .into())
                 }
             } else {
                 // For dry run we want worst possible case + some room for tests (1000)
-                Ok(AddToPreviousBalanceOutcome {
+                Ok(AddToPreviousBalanceOutcomeV0 {
                     balance_modified: Some(MAX_CREDITS - 1000),
                     negative_credit_balance_modified: Some(0),
-                })
+                }
+                .into())
             }
         } else {
             // Deduct added balance from existing one
@@ -65,10 +71,11 @@ impl Drive {
                         "identity balance add overflow error",
                     )))?;
 
-            Ok(AddToPreviousBalanceOutcome {
+            Ok(AddToPreviousBalanceOutcomeV0 {
                 balance_modified: Some(new_balance),
                 negative_credit_balance_modified: None,
-            })
+            }
+            .into())
         }
     }
 }

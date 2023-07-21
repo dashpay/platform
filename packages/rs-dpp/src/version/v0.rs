@@ -1,7 +1,7 @@
 use crate::version::dpp_versions::{
     ContractClassMethodVersions, ContractVersions, DPPVersion, DocumentClassMethodVersions,
     DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions,
-    IdentityVersions, StateTransitionSerializationVersions,
+    IdentityKeyTypeMethodVersions, IdentityVersions, StateTransitionSerializationVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -643,6 +643,10 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         identity_versions: IdentityVersions {
             identity_structure_version: 0,
             identity_key_structure_version: 0,
+            identity_key_type_method_versions: IdentityKeyTypeMethodVersions {
+                random_public_key_data: 0,
+                random_public_and_private_key_data: 0,
+            },
         },
     },
 };

@@ -19,7 +19,7 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
-    pub(super) fn drop_cache(&self, drive_version: &DriveVersion) -> Result<(), Error> {
+    pub(crate) fn drop_cache(&self, drive_version: &DriveVersion) -> Result<(), Error> {
         match drive_version.methods.operations.drop_cache {
             0 => {
                 self.drop_cache_v0();

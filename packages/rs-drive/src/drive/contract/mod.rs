@@ -139,7 +139,7 @@ mod tests {
         (drive, contract)
     }
 
-    fn setup_reference_contract() -> (Drive, DataContract) {
+    pub(in crate::drive::contract) fn setup_reference_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let platform_version = PlatformVersion::latest();

@@ -11,7 +11,7 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::data_contract::DataContract;
 
-    fn construct_indexed_document_type() -> DocumentTypeRef {
+    fn construct_indexed_document_type<'a>() -> DocumentTypeRef<'a> {
         DocumentTypeRef::new(
             Identifier::default(),
             "a".to_string(),

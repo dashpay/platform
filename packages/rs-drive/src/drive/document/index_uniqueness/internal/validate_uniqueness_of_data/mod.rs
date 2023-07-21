@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 // We don't create an enum version of this
 // If this would ever need to be changed all index uniqueness methods would need to be changed
 // Which is an okay trade off as this should seldom ever be changed
-pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequestV0<'a> {
+pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<'a> {
     pub contract: &'a DataContract,
     pub document_type: &'a DocumentTypeRef<'a>,
     pub owner_id: &'a Identifier,

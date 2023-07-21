@@ -52,6 +52,7 @@ pub mod signing;
 pub mod state_transition_action;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
+pub mod withdrawal;
 
 pub use async_trait;
 pub use bls::*;

@@ -40,7 +40,7 @@ impl Drive {
             .attributes
             .revision
         {
-            0 => self.fetch_identity_revision_v0(identity_id, apply, transaction, drive_version),
+            0 => self.fetch_identity_revision_v0(identity_id, apply, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_revision".to_string(),
                 known_versions: vec![0],

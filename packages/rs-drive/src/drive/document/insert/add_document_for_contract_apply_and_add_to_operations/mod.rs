@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::drive::document::insert::add_document_for_contract_apply_and_add_to_operations::params::AddDocumentForContractApplyAndAddToOperationsParams;
 use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
