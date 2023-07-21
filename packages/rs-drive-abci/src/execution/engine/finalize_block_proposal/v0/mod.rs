@@ -91,7 +91,7 @@ where
 
         let block_id_hash = Into::<ProtoBlockId>::into(block_id.clone())
             .sha256(&self.config.abci.chain_id, height as i64, round as i32)
-            .map_err(|e| AbciError::from(e))?
+            .map_err(AbciError::from)?
             .try_into()
             .expect("invalid sha256 length");
 
