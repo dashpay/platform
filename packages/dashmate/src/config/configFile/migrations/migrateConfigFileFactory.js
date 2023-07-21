@@ -1,6 +1,6 @@
 const semver = require('semver');
 
-function migrateRawConfigFileFactory(getConfigFileMigrations) {
+function migrateConfigFileFactory(getConfigFileMigrations) {
   /**
    * @typedef {function} migrateConfigFile
    * @param {Object} rawConfigFile
@@ -27,4 +27,4 @@ function migrateRawConfigFileFactory(getConfigFileMigrations) {
   return migrateConfigFile;
 }
 
-module.exports = migrateRawConfigFileFactory;
+module.exports = migrateConfigFileFactory;
