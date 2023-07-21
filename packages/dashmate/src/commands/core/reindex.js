@@ -20,6 +20,7 @@ class ReindexCommand extends ConfigBaseCommand {
     args,
     {
       verbose: isVerbose,
+      force: isForce,
       detach: isDetached,
     },
     isSystemConfig,
@@ -45,6 +46,7 @@ class ReindexCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         isDetached,
+        isForce,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -60,6 +62,11 @@ ReindexCommand.flags = {
   detach: Flags.boolean({
     char: 'd',
     description: 'run the reindex process in the background',
+    default: false,
+  }),
+  force: Flags.boolean({
+    char: 'f',
+    description: 'do not ask for confirmation',
     default: false,
   }),
 };

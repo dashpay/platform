@@ -64,22 +64,13 @@ class GroupReindexCommand extends GroupBaseCommand {
         },
       },
       {
-        title: `Reindex ${groupName} nodes`,
-        task: async () => (
-          new Listr([
-            {
-              title: 'Reindex core nodes',
-              concurrent: true,
-              task: () => (
-                new Listr(configGroup.map((config) => ({
-                  task: () => reindexNodeTask(config),
-                })))
-              ),
-            },
-          ])
+        title: 'Reindex core nodes',
+        task: () => (
+          new Listr(configGroup.map((config) => ({
+            task: () => reindexNodeTask(config),
+          })))
         ),
       },
-
     ],
     {
       renderer: isVerbose ? 'verbose' : 'default',
@@ -93,7 +84,8 @@ class GroupReindexCommand extends GroupBaseCommand {
 
     try {
       await tasks.run({
-        isDetached: true,
+        isForce: true,
+        isVerbose,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

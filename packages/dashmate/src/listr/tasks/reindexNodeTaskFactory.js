@@ -64,7 +64,7 @@ function reindexNodeTaskFactory(
     return new Listr([
       {
         title: 'Check services are not running',
-        enabled: (ctx) => !ctx.isDetached,
+        enabled: (ctx) => !ctx.isForce,
         task: async (ctx, task) => {
           const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
@@ -100,6 +100,8 @@ function reindexNodeTaskFactory(
           writeServiceConfigs(config.getName(), { [configPath]: serviceConfig });
 
           const coreContainer = await getCoreContainer(config);
+
+          // if core container found
           if (coreContainer) {
             const info = await coreContainer.inspect();
 
@@ -112,10 +114,11 @@ function reindexNodeTaskFactory(
           }
           const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
+          // if container not found, but node is running (core container was removed manually by user)
           if (isNodeRunning) {
             return restartNodeTask(config);
           }
-
+          // start node in case nothing is running
           return startNodeTask(config);
         },
       },
