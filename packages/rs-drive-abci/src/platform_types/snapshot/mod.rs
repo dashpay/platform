@@ -42,11 +42,13 @@ impl Manager {
             number_stored_snapshots: DEFAULT_NUMBER_OF_SNAPSHOTS,
             checkpoints_path: db_path,
         };
-        if freq.is_some() {
-            manager.freq = freq.unwrap()
+        match freq {
+            Some(freq) => manager.freq = freq,
+            _ => {}
         }
-        if number_stored_snapshots.is_some() {
-            manager.number_stored_snapshots = number_stored_snapshots.unwrap()
+        match number_stored_snapshots {
+            Some(number) => manager.number_stored_snapshots = number,
+            _ => {}
         }
         manager
     }
@@ -78,10 +80,10 @@ impl Manager {
             return Ok(());
         }
         let mut checkpoint_path = self.checkpoints_path.to_owned();
-        checkpoint_path.push_str("/");
+        checkpoint_path.push('/');
         checkpoint_path.push_str(height.to_string().as_str());
         grove
-            .create_checkpoint(checkpoint_path.to_string())
+            .create_checkpoint(&checkpoint_path)
             .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         let root_hash = grove
@@ -99,11 +101,11 @@ impl Manager {
 
         let mut snapshots = self.get_snapshots(grove)?;
         snapshots.push(snapshot);
-        snapshots = self.prune_snapshots(snapshots)?;
+        snapshots = self.prune_excess_snapshots(snapshots)?;
         self.save_snapshots(grove, snapshots)
     }
 
-    fn prune_snapshots(&self, snapshots: Vec<Snapshot>) -> Result<Vec<Snapshot>, Error> {
+    fn prune_excess_snapshots(&self, snapshots: Vec<Snapshot>) -> Result<Vec<Snapshot>, Error> {
         if snapshots.len() <= self.number_stored_snapshots {
             return Ok(snapshots);
         }

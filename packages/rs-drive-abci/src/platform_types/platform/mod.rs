@@ -17,10 +17,8 @@ use dpp::serialization_traits::PlatformDeserializable;
 
 use crate::execution::types::block_execution_context;
 use crate::platform_types::platform_state::v0::PlatformState;
-use crate::platform_types::snapshot::{Manager, Snapshot};
+use crate::platform_types::snapshot::Manager;
 use drive::error::Error::GroveDB;
-use drive::grovedb::batch::Op;
-use drive::query::GroveDb;
 use serde_json::json;
 
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure
