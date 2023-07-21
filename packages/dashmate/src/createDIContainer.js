@@ -18,6 +18,7 @@ const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFact
 const migrateConfigFile = require('./config/configFile/migrateConfigFile');
 const systemConfigs = require('../configs/system');
 
+const renderTemplateFactory = require('./templates/renderTemplateFactory');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
 const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
 
@@ -138,6 +139,7 @@ async function createDIContainer() {
    * Templates
    */
   container.register({
+    renderTemplate: asFunction(renderTemplateFactory).singleton(),
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
   });
