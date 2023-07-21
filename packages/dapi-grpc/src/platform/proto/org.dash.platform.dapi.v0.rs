@@ -9,6 +9,10 @@ pub struct Proof {
     pub signature: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "4")]
     pub round: u32,
+    #[prost(bytes = "vec", tag = "5")]
+    pub block_id_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "6")]
+    pub quorum_type: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -21,6 +25,8 @@ pub struct ResponseMetadata {
     pub time_ms: u64,
     #[prost(uint32, tag = "4")]
     pub protocol_version: u32,
+    #[prost(string, tag = "5")]
+    pub chain_id: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
