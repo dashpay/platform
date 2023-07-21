@@ -29,7 +29,7 @@ const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_feature_flag_data_trigger(
+pub fn create_feature_flag_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     _platform_version: &PlatformVersion,
@@ -90,7 +90,7 @@ pub fn create_feature_flag_data_trigger(
 
 #[cfg(test)]
 mod test {
-    use super::create_feature_flag_data_trigger;
+    use super::create_feature_flag_data_trigger_v0;
     use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -128,12 +128,12 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
-        let result = create_feature_flag_data_trigger(
+        let result = create_feature_flag_data_trigger_v0(
             &document_transition,
             &data_trigger_context,
             PlatformVersion::first(),
         )
-        .expect("the execution result should be returned");
+            .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }

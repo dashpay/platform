@@ -2,8 +2,10 @@ use crate::error::Error;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 
 use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::validation::SimpleValidationResult;
+use dpp::version::PlatformVersion;
 use dpp::{get_from_transition_action, prelude::Identifier};
 
 use super::DataTriggerExecutionContext;
@@ -24,9 +26,10 @@ use super::DataTriggerExecutionContext;
 ///
 /// A `SimpleValidationResult` containing either a `DataTriggerActionError` indicating the failure of the trigger
 /// or an empty result indicating the success of the trigger.
-pub fn reject_data_trigger(
+pub fn reject_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleValidationResult<DataTriggerActionError>, Error> {
     let mut result = SimpleValidationResult::<DataTriggerActionError>::default();
 

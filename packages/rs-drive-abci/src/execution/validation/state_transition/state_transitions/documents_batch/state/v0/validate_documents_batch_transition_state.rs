@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use crate::execution::validation::state_transition::state_transitions::documents_batch::state::v0::execute_data_triggers::execute_data_triggers;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -39,12 +38,19 @@ use dpp::{
     validation::ConsensusValidationResult,
     ProtocolError,
 };
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionExt};
+use dpp::state_transition::StateTransitionLike;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext};
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
@@ -186,7 +192,7 @@ fn validate_document_transitions_within_document_type(
         fetch_documents_for_transitions_knowing_contract_and_document_type(
             platform.drive,
             data_contract,
-            document_type,
+            &document_type,
             document_transitions,
             transaction,
         )?;
@@ -208,7 +214,7 @@ fn validate_document_transitions_within_document_type(
                     bypass_validation,
                     platform,
                     data_contract,
-                    document_type,
+                    &document_type,
                     transition,
                     &fetched_documents,
                     &owner_id,
@@ -234,30 +240,6 @@ fn validate_document_transitions_within_document_type(
 
     let document_transition_actions = document_transition_actions_result.into_data()?;
 
-    let data_trigger_execution_context = DataTriggerExecutionContext {
-        platform,
-        transaction,
-        owner_id: &owner_id,
-        data_contract,
-        state_transition_execution_context: execution_context,
-    };
-
-    let data_trigger_execution_results = execute_data_triggers(
-        document_transition_actions.as_slice(),
-        &data_trigger_execution_context,
-    )?;
-
-    for execution_result in data_trigger_execution_results.into_iter() {
-        if !execution_result.is_valid() {
-            return Ok(ConsensusValidationResult::new_with_errors(
-                execution_result
-                    .errors
-                    .into_iter()
-                    .map(|e| ConsensusError::StateError(e.into()))
-                    .collect(),
-            ));
-        }
-    }
     Ok(ConsensusValidationResult::new_with_data(
         document_transition_actions,
     ))

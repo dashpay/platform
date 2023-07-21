@@ -1,9 +1,11 @@
+mod data_triggers;
 mod identity_and_signatures;
 mod state;
 mod structure;
 
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
     document::{
@@ -109,6 +111,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
             PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+
         match platform_version
             .drive_abci
             .validation_and_processing

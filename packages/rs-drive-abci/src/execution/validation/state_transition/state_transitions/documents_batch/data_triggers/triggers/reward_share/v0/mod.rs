@@ -35,7 +35,7 @@ const MAX_DOCUMENTS: usize = 16;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_masternode_reward_shares_data_trigger(
+pub fn create_masternode_reward_shares_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -414,7 +414,7 @@ mod test {
             transaction: None,
         };
 
-        let result = create_masternode_reward_shares_data_trigger(
+        let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
             platform_version,
@@ -458,7 +458,7 @@ mod test {
             .data
             .get_hash256_bytes(PROPERTY_PAY_TO_ID)
             .expect("expected to be able to get a hash");
-        let result = create_masternode_reward_shares_data_trigger(
+        let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
             PlatformVersion::first(),
@@ -501,7 +501,7 @@ mod test {
             state_transition_execution_context: &execution_context,
             transaction: None,
         };
-        let result = create_masternode_reward_shares_data_trigger(
+        let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
             PlatformVersion::first(),
@@ -561,12 +561,12 @@ mod test {
             state_transition_execution_context: &execution_context,
             transaction: None,
         };
-        let result = create_masternode_reward_shares_data_trigger(
+        let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
             PlatformVersion::first(),
         )
-        .expect("the execution result should be returned");
+            .expect("the execution result should be returned");
         assert!(result.is_valid(), "{}", result.errors.first().unwrap())
     }
 
@@ -679,7 +679,7 @@ mod test {
             transaction: None,
         };
 
-        let result = create_masternode_reward_shares_data_trigger(
+        let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
             PlatformVersion::first(),
@@ -721,12 +721,12 @@ mod test {
             state_transition_execution_context: &execution_context,
             transaction: None,
         };
-        let result = create_masternode_reward_shares_data_trigger(
+        let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
             PlatformVersion::first(),
         )
-        .expect("the execution result should be returned");
+            .expect("the execution result should be returned");
         assert!(result.is_valid());
     }
 }

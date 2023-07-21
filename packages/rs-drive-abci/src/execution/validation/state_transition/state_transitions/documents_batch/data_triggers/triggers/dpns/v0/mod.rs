@@ -15,9 +15,11 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::version::PlatformVersion;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
+// TODO: Move to DPNS contract
 const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 const PROPERTY_LABEL: &str = "label";
 const PROPERTY_NORMALIZED_LABEL: &str = "normalizedLabel";
@@ -43,7 +45,7 @@ const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_domain_data_trigger(
+pub fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -339,7 +341,7 @@ mod test {
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::PlatformVersion;
 
-    use super::create_domain_data_trigger;
+    use super::create_domain_data_trigger_v0;
 
     #[test]
     fn should_return_execution_result_on_dry_run() {
@@ -378,7 +380,7 @@ mod test {
             transaction: None,
         };
 
-        let result = create_domain_data_trigger(
+        let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
             PlatformVersion::first(),

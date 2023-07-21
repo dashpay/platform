@@ -9,18 +9,31 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::validation::SimpleValidationResult;
 
-pub use context::DataTriggerExecutionContext;
-use dpp::ProtocolError;
+use crate::error::Error;
+use dpp::version::PlatformVersion;
+
+pub(super) use bindings::list::data_trigger_bindings_list;
+pub(super) use context::DataTriggerExecutionContext;
+pub(super) use executor::DataTriggerExecutor;
 
 mod bindings;
 mod context;
+mod executor;
 mod triggers;
+
+type DataTrigger = Box<
+    dyn Fn(
+        &DocumentTransitionAction,
+        &DataTriggerExecutionContext<'_>,
+        &PlatformVersion,
+    ) -> Result<DataTriggerExecutionResult, Error>,
+>;
 
 /// A type alias for a `SimpleValidationResult` with a `DataTriggerActionError` as the error type.
 ///
 /// This type is used to represent the result of executing a data trigger on the blockchain. It contains either a
 /// successful result or a `DataTriggerActionError`, indicating the failure of the trigger.
-pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionError>;
+type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionError>;
 
 /// An enumeration representing the different kinds of data triggers that can be executed on the blockchain.
 ///
@@ -67,75 +80,4 @@ fn create_error(
         owner_id: Some(*context.owner_id),
         document_transition: Some(DocumentTransitionAction::CreateAction(dt_create.clone())),
     }
-}
-
-pub(crate) fn execute_data_triggers<'a>(
-    document_transitions: &'a [DocumentTransitionAction],
-    context: &DataTriggerExecutionContext<'a>,
-) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
-    let data_triggers_list = data_triggers()?;
-    execute_data_triggers_with_custom_list(document_transitions, context, data_triggers_list)
-}
-
-pub(crate) fn execute_data_triggers_with_custom_list<'a>(
-    document_transitions: &'a [DocumentTransitionAction],
-    context: &DataTriggerExecutionContext<'a>,
-    data_triggers_list: impl IntoIterator<Item = DataTriggerBinding>,
-) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
-    let data_contract_id = &context.data_contract.id;
-    let mut execution_results: Vec<DataTriggerExecutionResult> = vec![];
-    let data_triggers: Vec<DataTriggerBinding> = data_triggers_list.into_iter().collect();
-
-    for document_transition in document_transitions {
-        let document_type_name = &document_transition.base().document_type_name;
-        let transition_action = document_transition.action();
-
-        let data_triggers_for_transition = get_data_triggers(
-            data_contract_id,
-            document_type_name,
-            transition_action,
-            data_triggers.iter(),
-        )?;
-
-        if data_triggers_for_transition.is_empty() {
-            continue;
-        }
-
-        execute_data_triggers_sequentially(
-            document_transition,
-            &data_triggers_for_transition,
-            context,
-            &mut execution_results,
-        );
-    }
-
-    Ok(execution_results)
-}
-
-fn execute_data_triggers_sequentially<'a>(
-    document_transition: &'a DocumentTransitionAction,
-    data_triggers: &[&DataTriggerBinding],
-    context: &DataTriggerExecutionContext<'a>,
-    results: &mut Vec<DataTriggerExecutionResult>,
-) {
-    results.extend(
-        data_triggers
-            .iter()
-            .map(|data_trigger| data_trigger.execute(document_transition, context)),
-    );
-}
-
-/// returns Date Triggers filtered out by dataContractId, documentType, transactionAction
-pub fn get_data_triggers<'a>(
-    data_contract_id: &'a Identifier,
-    document_type_name: &'a str,
-    transition_action: Action,
-    data_triggers_list: impl IntoIterator<Item = &'a DataTriggerBinding>,
-) -> Result<Vec<&'a DataTriggerBinding>, ProtocolError> {
-    Ok(data_triggers_list
-        .into_iter()
-        .filter(|dt| {
-            dt.is_matching_trigger_for_data(data_contract_id, document_type_name, transition_action)
-        })
-        .collect())
 }

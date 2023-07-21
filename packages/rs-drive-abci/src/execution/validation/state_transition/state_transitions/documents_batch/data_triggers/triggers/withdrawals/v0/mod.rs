@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn delete_withdrawal_data_trigger(
+pub fn delete_withdrawal_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -167,7 +167,7 @@ mod tests {
             transaction: None,
         };
 
-        let result = delete_withdrawal_data_trigger(
+        let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
             &data_trigger_context,
             PlatformVersion::first(),
@@ -298,7 +298,7 @@ mod tests {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-        let result = delete_withdrawal_data_trigger(
+        let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
             &data_trigger_context,
             PlatformVersion::first(),

@@ -14,8 +14,12 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::{get_from_transition_action, ProtocolError};
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::v0::property_names::CORE_HEIGHT_CREATED_AT;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
+
+// TODO: Move to Dashpay contract
 mod property_names {
     pub const TO_USER_ID: &str = "toUserId";
     pub const CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
@@ -37,7 +41,7 @@ mod property_names {
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_contact_request_data_trigger(
+pub fn create_contact_request_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -134,26 +138,16 @@ pub fn create_contact_request_data_trigger(
 
 #[cfg(test)]
 mod test {
-    use crate::execution::validation::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
-    use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
-    use crate::platform_types::platform::PlatformStateRef;
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
-    use dpp::block::extended_block_info::{BlockInfo, ExtendedBlockInfo};
-    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
-    use dpp::errors::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use dpp::platform_value;
-    use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
-    use dpp::state_transition::documents_batch_transition::document_transition::DocumentCreateTransitionAction;
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use dpp::tests::fixtures::{
-        get_contact_request_document_fixture, get_dashpay_contract_fixture,
-        get_document_transitions_fixture, identity_fixture,
-    };
-    use dpp::version::PlatformVersion;
+    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, identity_fixture};
+    use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
+    use crate::platform_types::platform::PlatformStateRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use super::*;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
