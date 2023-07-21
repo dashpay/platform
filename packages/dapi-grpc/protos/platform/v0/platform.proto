@@ -31,6 +31,8 @@ message Proof {
   bytes quorum_hash = 2;
   bytes signature = 3;
   uint32 round = 4;
+  bytes block_id_hash = 5;
+  uint32 quorum_type = 6;    
 }
 
 message ResponseMetadata {
@@ -38,6 +40,7 @@ message ResponseMetadata {
   uint32 core_chain_locked_height = 2;
   uint64 time_ms = 3;
   uint32 protocol_version = 4;
+  string chain_id = 5;
 }
 
 message StateTransitionBroadcastError {
