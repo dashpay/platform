@@ -607,8 +607,9 @@ module.exports = {
         config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
 
         if (config.network === 'testnet') {
-          config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet
-            .platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+          config.platform.drive.tenderdash
+            .genesis.initial_core_chain_locked_height = systemConfigs.testnet
+              .platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
         }
       });
     return configFile;
