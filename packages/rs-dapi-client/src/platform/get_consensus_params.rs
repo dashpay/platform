@@ -8,7 +8,7 @@ use super::IncompleteMessage;
 
 /// Request consensus params.
 #[derive(Debug)]
-pub struct GetConsensusParams {
+pub struct GetConsensusParamsRequest {
     /// Block height
     pub height: u32,
 }
@@ -64,7 +64,7 @@ impl From<platform_proto::ConsensusParamsEvidence> for ConsensusParamsEvidence {
     }
 }
 
-impl DapiRequest for GetConsensusParams {
+impl DapiRequest for GetConsensusParamsRequest {
     type DapiResponse = GetConsensusParamsResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();

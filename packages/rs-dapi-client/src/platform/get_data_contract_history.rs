@@ -7,7 +7,7 @@ use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// TODO
 #[derive(Debug)]
-pub struct GetDataContractHistory {
+pub struct GetDataContractHistoryRequest {
     /// Data contract id
     pub id: Vec<u8>,
     /// TODO
@@ -49,7 +49,7 @@ impl From<platform_proto::get_data_contract_history_response::DataContractHistor
     }
 }
 
-impl DapiRequest for GetDataContractHistory {
+impl DapiRequest for GetDataContractHistoryRequest {
     type DapiResponse = GetDataContractHistoryResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
@@ -100,7 +100,7 @@ impl DapiRequest for GetDataContractHistory {
 
 /// TODO
 #[derive(Debug)]
-pub struct GetDataContractHistoryProof {
+pub struct GetDataContractHistoryProofRequest {
     /// Data contract id
     pub id: Vec<u8>,
     /// TODO
@@ -120,7 +120,7 @@ pub struct GetDataContractHistoryProofResponse {
     pub metadata: ResponseMetadata,
 }
 
-impl DapiRequest for GetDataContractHistoryProof {
+impl DapiRequest for GetDataContractHistoryProofRequest {
     type DapiResponse = GetDataContractHistoryProofResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();

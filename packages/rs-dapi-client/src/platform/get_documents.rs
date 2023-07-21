@@ -38,7 +38,7 @@ fn to_proto_start(start_clause: StartClause) -> platform_proto::get_documents_re
 
 /// Request documents bytes.
 #[derive(Debug)]
-pub struct GetDocuments {
+pub struct GetDocumentsRequest {
     /// Data contract ID
     pub data_contract_id: Vec<u8>,
     /// Document type for the data contract
@@ -53,7 +53,7 @@ pub struct GetDocuments {
     pub start: Option<StartClause>,
 }
 
-impl DapiRequest for GetDocuments {
+impl DapiRequest for GetDocumentsRequest {
     type DapiResponse = GetDocumentsResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
@@ -114,7 +114,7 @@ pub struct GetDocumentsResponse {
 
 /// Request documents with proof.
 #[derive(Debug)]
-pub struct GetDocumentsProof {
+pub struct GetDocumentsProofRequest {
     /// Data contract ID
     pub data_contract_id: Vec<u8>,
     /// Document type for the data contract
@@ -129,7 +129,7 @@ pub struct GetDocumentsProof {
     pub start: Option<StartClause>,
 }
 
-impl DapiRequest for GetDocumentsProof {
+impl DapiRequest for GetDocumentsProofRequest {
     type DapiResponse = GetDocumentsProofResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();

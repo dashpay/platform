@@ -7,7 +7,7 @@ use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// Request Identity bytes.
 #[derive(Debug)]
-pub struct GetIdentity {
+pub struct GetIdentityRequest {
     /// Identity ID to search.
     pub id: Vec<u8>,
 }
@@ -21,7 +21,7 @@ pub struct GetIdentityResponse {
     pub metadata: ResponseMetadata,
 }
 
-impl DapiRequest for GetIdentity {
+impl DapiRequest for GetIdentityRequest {
     type DapiResponse = GetIdentityResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
@@ -65,7 +65,7 @@ impl DapiRequest for GetIdentity {
 
 /// Request Identity bytes wrapped into proof.
 #[derive(Debug)]
-pub struct GetIdentityProof {
+pub struct GetIdentityProofRequest {
     /// Identity ID to search.
     pub id: Vec<u8>,
 }
@@ -79,7 +79,7 @@ pub struct GetIdentityProofResponse {
     pub metadata: ResponseMetadata,
 }
 
-impl DapiRequest for GetIdentityProof {
+impl DapiRequest for GetIdentityProofRequest {
     type DapiResponse = GetIdentityProofResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();

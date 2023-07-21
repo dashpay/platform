@@ -8,7 +8,7 @@ use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// DAPI request to suggest a [StateTransition] to the network.
 #[derive(Debug)]
-pub struct BroadcastStateTransition {
+pub struct BroadcastStateTransitionRequest {
     /// State transition to broadcast
     pub state_transition: StateTransition,
 }
@@ -20,7 +20,7 @@ pub struct BroadcastStateTransition {
 #[derive(Debug)]
 pub struct BroadcastStateTransitionResponse {}
 
-impl DapiRequest for BroadcastStateTransition {
+impl DapiRequest for BroadcastStateTransitionRequest {
     type DapiResponse = BroadcastStateTransitionResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();

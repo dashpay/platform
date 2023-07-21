@@ -5,12 +5,11 @@ use std::time::Duration;
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 
 use crate::{transport::TransportRequest, DapiRequest, Settings};
-
 use super::IncompleteMessage;
 
 /// Request for a state transition broadcast errors if any.
 #[derive(Debug)]
-pub struct WaitForStateTransitionResult {
+pub struct WaitForStateTransitionResultRequest {
     /// State transition hash
     pub state_transition_hash: Vec<u8>,
 }
@@ -35,7 +34,7 @@ pub struct StateTransitionBroadcastError {
     pub data: Vec<u8>,
 }
 
-impl DapiRequest for WaitForStateTransitionResult {
+impl DapiRequest for WaitForStateTransitionResultRequest {
     type DapiResponse = WaitForStateTransitionResultResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings {
@@ -91,7 +90,7 @@ impl DapiRequest for WaitForStateTransitionResult {
 
 /// Request for a provable state transition broadcast status.
 #[derive(Debug)]
-pub struct WaitForStateTransitionResultProof {
+pub struct WaitForStateTransitionResultProofRequest {
     /// State transition hash
     pub state_transition_hash: Vec<u8>,
 }
@@ -105,7 +104,7 @@ pub struct WaitForStateTransitionResultProofResponse {
     pub metadata: ResponseMetadata,
 }
 
-impl DapiRequest for WaitForStateTransitionResultProof {
+impl DapiRequest for WaitForStateTransitionResultProofRequest {
     type DapiResponse = WaitForStateTransitionResultProofResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings {

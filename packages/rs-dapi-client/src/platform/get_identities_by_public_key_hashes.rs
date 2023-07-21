@@ -7,7 +7,7 @@ use crate::{transport::TransportRequest, DapiRequest, Settings};
 
 /// Request Identities' bytes by public key hashes.
 #[derive(Debug)]
-pub struct GetIdentitiesByPublicKeyHashes {
+pub struct GetIdentitiesByPublicKeyHashesRequest {
     /// Public key hashes
     pub public_key_hashes: Vec<Vec<u8>>,
 }
@@ -21,7 +21,7 @@ pub struct GetIdentitiesByPublicKeyHashesResponse {
     pub metadata: ResponseMetadata,
 }
 
-impl DapiRequest for GetIdentitiesByPublicKeyHashes {
+impl DapiRequest for GetIdentitiesByPublicKeyHashesRequest {
     type DapiResponse = GetIdentitiesByPublicKeyHashesResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
@@ -60,7 +60,7 @@ impl DapiRequest for GetIdentitiesByPublicKeyHashes {
 
 /// Request Identities' bytes by public key hashes wrapped into proof.
 #[derive(Debug)]
-pub struct GetIdentitiesByPublicKeyHashesProof {
+pub struct GetIdentitiesByPublicKeyHashesProofRequest {
     /// Public key hashes
     pub public_key_hashes: Vec<Vec<u8>>,
 }
@@ -74,7 +74,7 @@ pub struct GetIdentitiesByPublicKeyHashesProofResponse {
     pub metadata: ResponseMetadata,
 }
 
-impl DapiRequest for GetIdentitiesByPublicKeyHashesProof {
+impl DapiRequest for GetIdentitiesByPublicKeyHashesProofRequest {
     type DapiResponse = GetIdentitiesByPublicKeyHashesProofResponse;
 
     const SETTINGS_OVERRIDES: Settings = Settings::default();
