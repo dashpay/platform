@@ -4,8 +4,8 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::prelude::Identity;
 use drive_light_client::proof::from_proof::{FromProof, MockQuorumInfoProvider};
-use std::{fs::File, path::PathBuf};
-use tracing::Level;
+
+include!("utils.rs");
 
 #[test]
 fn get_identities_by_hashes_notfound() {
@@ -35,41 +35,4 @@ fn identity_not_found() {
 
     let identity = Identity::maybe_from_proof(&request, &response, Box::new(provider)).unwrap();
     assert!(identity.is_none())
-}
-
-#[derive(serde::Deserialize, Debug)]
-struct QuorumInfo {
-    #[serde(deserialize_with = "dapi_grpc::deserialization::from_hex")]
-    quorum_public_key: Vec<u8>,
-}
-
-fn load<Req, Resp>(file: &str) -> (Req, Resp, MockQuorumInfoProvider)
-where
-    Req: dapi_grpc::Message + serde::de::DeserializeOwned,
-    Resp: dapi_grpc::Message + serde::de::DeserializeOwned,
-{
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join(file);
-
-    let f = File::open(path).unwrap();
-    let (req, resp, quorum): (Req, Resp, QuorumInfo) = serde_json::from_reader(f).unwrap();
-
-    println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
-
-    let pubkey = quorum.quorum_public_key;
-    let mut provider = MockQuorumInfoProvider::new();
-    provider
-        .expect_get_quorum_public_key()
-        .return_once(|_, _| Ok(pubkey));
-    (req, resp, provider)
-}
-
-fn enable_logs() {
-    tracing_subscriber::fmt::fmt()
-        .pretty()
-        .with_ansi(true)
-        .with_max_level(Level::TRACE)
-        .try_init()
-        .ok();
 }

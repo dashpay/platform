@@ -6,6 +6,8 @@ use dpp::document::Document;
 use dpp::prelude::{DataContract, Identifier, Identity, Revision};
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
+use drive::query::DriveQuery;
+use mockall::mock;
 
 use super::verify::verify_tenderdash_proof;
 
@@ -468,34 +470,38 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
 }
 
 // #[cfg_attr(feature = "mock", mockall::automock)]
-// impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Documents {
-//     fn maybe_from_proof(
-//         request: &platform::GetDocumentsRequest,
-//         response: &platform::GetDocumentsResponse,
-//         provider: Box<dyn QuorumInfoProvider>,
-//     ) -> Result<Option<Self>, Error> {
-//         // Parse response to read proof and metadata
-//         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
-//             platform::get_documents_response::Result::Proof(p) => p,
-//             platform::get_documents_response::Result::Documents(_) => {
-//                 return Err(Error::EmptyResponseProof)
-//             }
-//         };
+impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documents {
+    fn maybe_from_proof(
+        request: &DriveQuery<'dq>,
+        response: &platform::GetDocumentsResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_documents_response::Result::Proof(p) => p,
+            platform::get_documents_response::Result::Documents(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
 
-//         let mtd = response
-//             .metadata
-//             .as_ref()
-//             .ok_or(Error::EmptyResponseMetadata)?;
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
 
-//         // Extract content from proof and verify Drive/GroveDB proofs
-//         // TODO: figure out how to verify proof statically
-//         let (root_hash, maybe_documents) =
-//             Drive::verify_proof(&proof.grovedb_proof).map_err(|e| Error::DriveError {
-//                 error: e.to_string(),
-//             })?;
+        let (root_hash, documents) =
+            request
+                .verify_proof(&proof.grovedb_proof)
+                .map_err(|e| Error::DriveError {
+                    error: e.to_string(),
+                })?;
 
-//         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-//         Ok(maybe_documents)
-//     }
-// }
+        if documents.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(documents))
+        }
+    }
+}

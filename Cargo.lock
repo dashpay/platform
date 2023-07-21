@@ -2670,13 +2670,13 @@ dependencies = [
 
 [[package]]
 name = "num-derive"
-version = "0.3.3"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "876a53fff98e03a936a674b29568b0e605f06b29372c2489ff4de23f1949743d"
+checksum = "9e6a0fd4f737c707bd9086cc16c925f294943eb62eb71499e9fd4cf71f8b9f4e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.26",
 ]
 
 [[package]]
@@ -4064,8 +4064,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.13.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/timestamp-from-milis#566c427dd7433d6f6c239f2069d199a50ba36c1a"
+version = "0.13.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce#aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce"
 dependencies = [
  "bytes",
  "futures",
@@ -4084,8 +4084,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.13.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/timestamp-from-milis#566c427dd7433d6f6c239f2069d199a50ba36c1a"
+version = "0.13.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce#aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce"
 dependencies = [
  "bytes",
  "chrono",
@@ -4103,7 +4103,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/timestamp-from-milis#566c427dd7433d6f6c239f2069d199a50ba36c1a"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce#aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce"
 dependencies = [
  "fs_extra",
  "prost-build",

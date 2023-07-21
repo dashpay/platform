@@ -80,28 +80,3 @@ uniffi_proof_binding_wrapper!(
     GetIdentityResponse,
     dpp::identity::Identity
 );
-
-// #[cfg(test)]
-// mod test {
-//     #[cfg(feature = "mock")]
-//     #[test]
-//     fn test_get_identity_proof_to_cbor() {
-//         use dapi_grpc::{
-//             platform::v0::{GetIdentityRequest, GetIdentityResponse},
-//             Message,
-//         };
-
-//         use crate::Error;
-//         let (request, response, quorum_info_callback) =
-//             crate::from_proof::load("vectors/identity_not_found.json");
-
-//         let req_proto = request.encode_to_vec();
-
-//         let resp_proto = response.encode_to_vec();
-
-//         let ret =
-//             super::identity_proof_to_cbor(req_proto, resp_proto, Box::new(quorum_info_callback));
-
-//         assert!(matches!(ret, Result::Err(Error::DocumentMissingInProof)));
-//     }
-// }
