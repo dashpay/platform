@@ -630,6 +630,7 @@ module.exports = {
           .docker.build;
 
         delete config.dashmate.helper.docker.image;
+        delete config.core.reindex;
 
         if (config.network === 'testnet') {
           config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform
