@@ -62,7 +62,7 @@ impl Drive {
                 };
             }
         };
-        if proved_key_values.len() == 0 {
+        if proved_key_values.is_empty() {
             let empty: RootHash = [0; 32];
             return Ok((empty, None));
         }
