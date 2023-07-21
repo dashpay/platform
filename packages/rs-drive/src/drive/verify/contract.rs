@@ -62,6 +62,10 @@ impl Drive {
                 };
             }
         };
+        if proved_key_values.len() == 0 {
+            let empty: RootHash = [0; 32];
+            return Ok((empty, None));
+        }
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if contract_known_keeps_history.unwrap_or_default() {
