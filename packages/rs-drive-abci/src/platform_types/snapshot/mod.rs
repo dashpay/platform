@@ -1,9 +1,12 @@
+use std::mem::{take};
 use crate::error::Error;
 use bincode::{config, Decode, Encode};
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
 use std::path::Path;
+use tenderdash_abci::proto::abci;
+use tenderdash_abci::proto::abci::response_offer_snapshot;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -26,21 +29,33 @@ pub struct Snapshot {
     pub metadata: Vec<u8>,
 }
 
+/// Offered snapshot entity
+struct OfferedSnapshot {
+    pub snapshot: abci::Snapshot,
+    pub app_hash: Vec<u8>,
+}
+
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
 /// number of snapshots and remove the old ones
 pub struct Manager {
     freq: i64,
     number_stored_snapshots: usize,
     checkpoints_path: String,
+    offered_snapshot: Option<OfferedSnapshot>,
 }
 
 impl Manager {
     /// Create a new instance of snapshot manager
-    pub fn new(db_path: String, number_stored_snapshots: Option<usize>, freq: Option<i64>) -> Self {
+    pub fn new(
+        checkpoints_path: String,
+        number_stored_snapshots: Option<usize>,
+        freq: Option<i64>,
+    ) -> Self {
         let mut manager = Self {
             freq: DEFAULT_FREQ,
             number_stored_snapshots: DEFAULT_NUMBER_OF_SNAPSHOTS,
-            checkpoints_path: db_path,
+            checkpoints_path,
+            offered_snapshot: None,
         };
         match freq {
             Some(freq) => manager.freq = freq,
@@ -51,6 +66,30 @@ impl Manager {
             _ => {}
         }
         manager
+    }
+
+    /// Offers a snapshot to the replication, if previously the snapshot was already offered
+    /// then it will be deleted and replaced with the new one
+    pub fn offer_snapshot(
+        &mut self,
+        grove: &GroveDb,
+        snapshot: abci::Snapshot,
+        app_hash: Vec<u8>,
+    ) -> Result<response_offer_snapshot::Result, Error> {
+        match take(&mut self.offered_snapshot) {
+            Some(mut offered_snapshot) => {
+                if offered_snapshot.snapshot.height == snapshot.height {
+                    return Ok(response_offer_snapshot::Result::Reject);
+                }
+                if offered_snapshot.snapshot.version != snapshot.version {
+                    return Ok(response_offer_snapshot::Result::Reject);
+                }
+                grove.wipe().map_err(|e| GroveDB(e))?;
+            }
+            _ => {}
+        };
+        self.offered_snapshot = Some(OfferedSnapshot { snapshot, app_hash });
+        Ok(response_offer_snapshot::Result::Accept)
     }
 
     /// Return a persisted list of snapshots
@@ -167,5 +206,37 @@ mod tests {
             }
             fs::remove_dir_all(grove_dir.path()).unwrap();
         }
+    }
+
+    #[test]
+    fn test_offer_snapshot() {
+        let grove_dir = tempfile::tempdir().unwrap();
+        let replication_dir = tempfile::tempdir().unwrap();
+        let grove = GroveDb::open(grove_dir.path()).unwrap();
+        let mut manager = Manager::new(
+            "".to_string(),
+            Some(3),
+            Some(1),
+        );
+        let app_hash = vec![1, 2, 3, 4, 5];
+        let snapshot_1000 = abci::Snapshot {
+            height: 1000,
+            version: 0,
+            hash: app_hash.clone(),
+            metadata: vec![],
+        };
+        manager
+            .offer_snapshot(&grove, snapshot_1000.clone(), app_hash.clone())
+            .unwrap();
+        let snapshot_2000 = abci::Snapshot {
+            height: 2000,
+            version: 0,
+            hash: app_hash.clone(),
+            metadata: vec![],
+        };
+        manager
+            .offer_snapshot(&grove, snapshot_2000.clone(), app_hash.clone())
+            .unwrap();
+        fs::remove_dir_all(grove_dir.path()).unwrap();
     }
 }
