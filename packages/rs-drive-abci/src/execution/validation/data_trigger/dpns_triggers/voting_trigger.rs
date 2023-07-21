@@ -162,18 +162,18 @@ mod test {
             config: &platform.config,
         };
 
-        let (mut domain_document, preorder_salt) =
+        let (mut preorder_document, preorder_salt) =
             get_dpns_preorder_document_fixture(ParentDocumentOptions::default());
-        domain_document
+        preorder_document
             .set(
                 super::property_names::CORE_HEIGHT_CREATED_AT,
                 platform_value!(10u32),
             )
             .expect("expected to set core height created at");
-        let owner_id = &domain_document.owner_id();
+        let owner_id = &preorder_document.owner_id();
 
         let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![domain_document])]);
+            get_document_transitions_fixture([(Action::Create, vec![preorder_document])]);
         let document_transition = document_transitions
             .get(0)
             .expect("document transition should be present");
@@ -203,7 +203,7 @@ mod test {
         )
             .expect("the execution result should be returned");
 
-        assert!(!result.is_valid());
+        assert!(result.is_valid());
     }
 
     #[test]

@@ -30,7 +30,7 @@ pub fn get_dpns_preorder_document_fixture(
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
-    let salted_domain_hash = hash(&[&options.label, &pre_order_salt].concat());
+    let salted_domain_hash = hash(&[options.label.as_bytes(), &pre_order_salt].concat());
 
     let mut map = BTreeMap::new();
     map.insert(
