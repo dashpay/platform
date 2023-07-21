@@ -32,8 +32,6 @@ class GroupReindexCommand extends GroupBaseCommand {
     configFile,
     configGroup,
   ) {
-    const groupName = configGroup[0].get('group');
-
     const tasks = new Listr([
       {
         title: 'Check services are not running',
@@ -69,7 +67,7 @@ class GroupReindexCommand extends GroupBaseCommand {
       {
         title: 'Reindex Core services',
         task: (ctx, task) => {
-          if (this.isDetach) {
+          if (ctx.isDetach) {
             task.title = 'Start Core services in reindex mode';
           }
 
@@ -78,19 +76,19 @@ class GroupReindexCommand extends GroupBaseCommand {
 
           return new Listr(configGroup.map((config) => ({
             task: () => reindexNodeTask(config),
-          })))
+          })));
         },
       },
     ],
-      {
-        renderer: isVerbose ? 'verbose' : 'default',
-        rendererOptions: {
-          showTimer: isVerbose,
-          clearOutput: false,
-          collapse: false,
-          showSubtasks: true,
-        },
-      });
+    {
+      renderer: isVerbose ? 'verbose' : 'default',
+      rendererOptions: {
+        showTimer: isVerbose,
+        clearOutput: false,
+        collapse: false,
+        showSubtasks: true,
+      },
+    });
 
     try {
       await tasks.run({

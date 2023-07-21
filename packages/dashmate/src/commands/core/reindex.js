@@ -33,15 +33,15 @@ class ReindexCommand extends ConfigBaseCommand {
         task: () => reindexNodeTask(config),
       },
     ],
-      {
-        renderer: isVerbose ? 'verbose' : 'default',
-        rendererOptions: {
-          showTimer: isVerbose,
-          clearOutput: false,
-          collapse: false,
-          showSubtasks: true,
-        },
-      });
+    {
+      renderer: isVerbose ? 'verbose' : 'default',
+      rendererOptions: {
+        showTimer: isVerbose,
+        clearOutput: false,
+        collapse: false,
+        showSubtasks: true,
+      },
+    });
 
     try {
       await tasks.run({
