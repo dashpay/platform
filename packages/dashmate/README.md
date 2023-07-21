@@ -291,10 +291,11 @@ The `core reindex` command works for regular and local configurations.
 
 ```
 USAGE
-  $ dashmate core reindex [-v] [--config <value>] [-d]
+  $ dashmate core reindex [-v] [--config <value>] [-d] [-f]
 
 FLAGS
   -d, --detach      run the reindex process in the background
+  -f, --force       reindex already running node without confirmation
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
 
@@ -420,12 +421,12 @@ With hard reset mode enabled, the corresponding node configs will be reset as we
 The `group core reindex` reindexes all your local dash core containers
 
 ```
-Reindex group Core data
-
 USAGE
-  $ dashmate group core reindex [-v] [--group <value>]
+  $ dashmate group core reindex [-v] [--group <value>] [-d] [-f]
 
 FLAGS
+  -d, --detach     run the reindex process in the background
+  -f, --force      reindex already running node without confirmation
   -v, --verbose    use verbose mode for output
   --group=<value>  group name to use
 
