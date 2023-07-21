@@ -68,6 +68,7 @@ class GroupReindexCommand extends GroupBaseCommand {
         title: 'Reindex Core services',
         task: (ctx, task) => {
           if (ctx.isDetach) {
+            // eslint-disable-next-line no-param-reassign
             task.title = 'Start Core services in reindex mode';
           }
 
