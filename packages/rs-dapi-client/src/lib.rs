@@ -75,7 +75,7 @@ impl DapiClient {
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error)]
-pub enum DapiError<TE, PE> {
+pub enum DapiClientError<TE, PE> {
     /// The error happened on transport layer
     #[error("transport error: {0}")]
     Transport(TE),
@@ -97,7 +97,7 @@ impl DapiClient {
         settings: Settings,
     ) -> Result<
         R::DapiResponse,
-        DapiError<<R::TransportRequest as TransportRequest>::Error, R::Error>,
+        DapiClientError<<R::TransportRequest as TransportRequest>::Error, R::Error>,
     >
     where
         R: DapiRequest,
@@ -119,7 +119,7 @@ impl DapiClient {
             let address = self
                 .address_list
                 .get_live_address()
-                .ok_or(DapiError::NoAvailableAddresses);
+                .ok_or(DapiClientError::NoAvailableAddresses);
 
             // Get a transport client requried by the DAPI request from this DAPI client.
             // It stays wrapped in [Result] since wa want to return future of [Result], not a
@@ -135,18 +135,18 @@ impl DapiClient {
                 let transport_response = transport_request
                     .execute(&mut transport_client?, &applied_settings)
                     .await
-                    .map_err(|e| DapiError::<_, <R as DapiRequest>::Error>::Transport(e))?;
+                    .map_err(|e| DapiClientError::<_, <R as DapiRequest>::Error>::Transport(e))?;
 
                 // Next try to build a proper DAPI response if possible:
                 let dapi_response =
                     R::try_from_transport_response(transport_response).map_err(|e| {
-                        DapiError::<
+                        DapiClientError::<
                             <<R as DapiRequest>::TransportRequest as TransportRequest>::Error,
                             _,
                         >::ParseResponse(e)
                     })?;
 
-                Ok::<_, DapiError<_, _>>(dapi_response)
+                Ok::<_, DapiClientError<_, _>>(dapi_response)
             }
         };
 
@@ -154,7 +154,7 @@ impl DapiClient {
         // TODO: define what is retryable and what's not
         routine
             .retry(&retry_settings)
-            .when(|e| !matches!(e, DapiError::NoAvailableAddresses))
+            .when(|e| !matches!(e, DapiClientError::NoAvailableAddresses))
             .instrument(tracing::info_span!("request routine"))
             .await
     }

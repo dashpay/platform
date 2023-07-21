@@ -15,7 +15,7 @@ pub struct GetDataContractHistory {
     /// TODO
     pub offset: u32,
     /// TODO
-    pub start_at_seconds: u64,
+    pub start_at_ms: u64,
 }
 
 /// DAPI response for [GetDataContractHistory].
@@ -63,7 +63,7 @@ impl DapiRequest for GetDataContractHistory {
             id: self.id.clone(),
             limit: self.limit,
             offset: self.offset,
-            start_at_ms: self.start_at_seconds,
+            start_at_ms: self.start_at_ms,
             prove: false,
         }
     }
@@ -108,7 +108,7 @@ pub struct GetDataContractHistoryProof {
     /// TODO
     pub offset: u32,
     /// TODO
-    pub start_at_seconds: u64,
+    pub start_at_ms: u64,
 }
 
 /// DAPI response for [GetDataContractHistory].
@@ -134,7 +134,7 @@ impl DapiRequest for GetDataContractHistoryProof {
             id: self.id.clone(),
             limit: self.limit,
             offset: self.offset,
-            start_at_ms: self.start_at_seconds,
+            start_at_ms: self.start_at_ms,
             prove: true,
         }
     }

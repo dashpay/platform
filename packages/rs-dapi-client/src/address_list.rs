@@ -5,12 +5,12 @@ use std::time;
 use http::Uri;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
 
-const DEFAULT_BASE_BAN_TIME: time::Duration = time::Duration::from_secs(60);
+const DEFAULT_BASE_BAN_PERIOD: time::Duration = time::Duration::from_secs(60);
 
 /// Peer's address.
 #[derive(Debug)]
 pub struct Address {
-    base_ban_time: time::Duration,
+    base_ban_period: time::Duration,
     ban_count: usize,
     banned_until: Option<time::Instant>,
     uri: Uri,
@@ -21,7 +21,7 @@ impl Address {
     pub fn ban(&mut self) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period =
-            time::Duration::from_secs_f64(self.base_ban_time.as_secs_f64() * coefficient);
+            time::Duration::from_secs_f64(self.base_ban_period.as_secs_f64() * coefficient);
 
         self.banned_until = Some(time::Instant::now() + ban_period);
         self.ban_count += 1;
@@ -44,20 +44,20 @@ impl Address {
 #[derive(Debug)]
 pub struct AddressList {
     addresses: Vec<Address>,
-    base_ban_time: time::Duration,
+    base_ban_period: time::Duration,
 }
 
 impl AddressList {
     /// Creates an empty [AddressList] with default base ban time.
     pub fn new() -> Self {
-        AddressList::with_settings(DEFAULT_BASE_BAN_TIME)
+        AddressList::with_settings(DEFAULT_BASE_BAN_PERIOD)
     }
 
     /// Creates an empty [AddressList] with adjustable base ban time.
-    pub fn with_settings(base_ban_time: time::Duration) -> Self {
+    pub fn with_settings(base_ban_period: time::Duration) -> Self {
         AddressList {
             addresses: Vec::new(),
-            base_ban_time,
+            base_ban_period,
         }
     }
 
@@ -69,7 +69,7 @@ impl AddressList {
         self.addresses.push(Address {
             ban_count: 0,
             banned_until: None,
-            base_ban_time: self.base_ban_time,
+            base_ban_period: self.base_ban_period,
             uri,
         });
     }
