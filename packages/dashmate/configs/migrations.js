@@ -606,10 +606,11 @@ module.exports = {
       .forEach(([, config]) => {
         config.docker.network.bindIp = systemConfigs.base.docker.network.bindIp;
 
-        // eslint-disable-next-line max-len
-        config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform.drive.tenderdash.genesis.chain_id;
-        // eslint-disable-next-line max-len
-        config.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = systemConfigs.testnet.platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+        if (config.network === 'testnet') {
+          config.platform.drive.tenderdash
+            .genesis.initial_core_chain_locked_height = systemConfigs.testnet
+              .platform.drive.tenderdash.genesis.initial_core_chain_locked_height;
+        }
       });
     return configFile;
   },
@@ -629,8 +630,12 @@ module.exports = {
           .docker.build;
 
         delete config.dashmate.helper.docker.image;
-
         delete config.core.reindex;
+
+        if (config.network === 'testnet') {
+          config.platform.drive.tenderdash.genesis.chain_id = systemConfigs.testnet.platform
+            .drive.tenderdash.genesis.chain_id;
+        }
       });
 
     return configFile;
