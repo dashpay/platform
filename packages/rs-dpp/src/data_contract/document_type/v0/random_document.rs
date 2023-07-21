@@ -112,7 +112,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
         bytes: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-        Document::from_bytes(bytes, &DocumentTypeRef::V0(self), PlatformVersion::latest())
+        Document::from_bytes(bytes, DocumentTypeRef::V0(self), PlatformVersion::latest())
     }
 
     /// Creates a random Document using a seed if given, otherwise entropy.

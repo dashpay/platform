@@ -24,10 +24,50 @@ pub struct DriveMethodVersions {
     pub fees: DriveFeesMethodVersions,
     pub estimated_costs: DriveEstimatedCostsMethodVersions,
     pub asset_lock: DriveAssetLockMethodVersions,
+    pub verify: DriveVerifyMethodVersions,
     pub identity: DriveIdentityMethodVersions,
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyMethodVersions {
+    pub contract: DriveVerifyContractMethodVersions,
+    pub document: DriveVerifyDocumentMethodVersions,
+    pub identity: DriveVerifyIdentityMethodVersions,
+    pub single_document: DriveVerifySingleDocumentMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyContractMethodVersions {
+    pub verify_contract: FeatureVersion,
+    pub verify_contract_history: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentMethodVersions {
+    pub verify_proof: FeatureVersion,
+    pub verify_proof_keep_serialized: FeatureVersion,
+    pub verify_start_at_document_in_proof: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyIdentityMethodVersions {
+    pub verify_full_identities_by_public_key_hashes: FeatureVersion,
+    pub verify_full_identity_by_identity_id: FeatureVersion,
+    pub verify_full_identity_by_public_key_hash: FeatureVersion,
+    pub verify_identity_balance_for_identity_id: FeatureVersion,
+    pub verify_identity_balances_for_identity_ids: FeatureVersion,
+    pub verify_identity_id_by_public_key_hash: FeatureVersion,
+    pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
+    pub verify_identity_keys_by_identity_id: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifySingleDocumentMethodVersions {
+    pub verify_proof: FeatureVersion,
+    pub verify_proof_keep_serialized: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -156,7 +196,14 @@ pub struct DriveDocumentMethodVersions {
     pub delete: DriveDocumentDeleteMethodVersions,
     pub insert: DriveDocumentInsertMethodVersions,
     pub update: DriveDocumentUpdateMethodVersions,
+    pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentEstimationCostsMethodVersions {
+    pub add_estimation_costs_for_add_document_to_primary_storage: FeatureVersion,
+    pub stateless_delete_of_non_tree_for_costs: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -280,6 +327,7 @@ pub struct DriveCreditPoolEpochsMethodVersions {
     pub get_first_epoch_start_block_info_between_epochs: FeatureVersion,
     pub get_epoch_proposers: FeatureVersion,
     pub get_epochs_proposer_block_count: FeatureVersion,
+    pub add_update_pending_epoch_refunds_operations: FeatureVersion,
     pub is_epochs_proposers_tree_empty: FeatureVersion,
 }
 

@@ -51,6 +51,7 @@ impl Drive {
                 query_type,
                 transaction,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_sum_tree_total_value".to_string(),

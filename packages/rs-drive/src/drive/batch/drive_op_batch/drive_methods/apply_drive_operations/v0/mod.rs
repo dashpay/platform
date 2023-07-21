@@ -73,6 +73,5 @@ impl Drive {
             &block_info.epoch,
             platform_version,
         )
-        .map_err(Error::Protocol)
     }
 }

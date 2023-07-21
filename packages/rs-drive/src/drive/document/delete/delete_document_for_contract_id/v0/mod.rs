@@ -74,7 +74,7 @@ impl Drive {
                 &mut drive_operations,
                 platform_version,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+            .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 

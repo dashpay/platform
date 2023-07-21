@@ -33,6 +33,7 @@
 use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use dpp::balances::credits::Creditable;
 use dpp::fee::Credits;
 use grovedb::{Element, TransactionArg};
 
@@ -70,6 +71,7 @@ mod tests {
 
     mod get_storage_fees_from_distribution_pool {
         use super::*;
+        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::drive::credit_pools::paths::pools_vec_path;
         use dpp::version::PlatformVersion;

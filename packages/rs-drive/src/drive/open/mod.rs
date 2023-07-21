@@ -34,8 +34,8 @@ impl Drive {
                 Ok(Drive {
                     grove,
                     config,
-                    //todo: move this outside of open
-                    system_contracts: SystemContracts::load_genesis_system_contracts()?,
+                    //todo: BEFORE MAINNET move this outside of open
+                    system_contracts: SystemContracts::load_genesis_system_contracts(1)?,
                     cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,

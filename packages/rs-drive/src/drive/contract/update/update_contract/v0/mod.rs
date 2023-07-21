@@ -7,6 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
@@ -237,8 +238,10 @@ impl Drive {
             ));
         }
 
-        if contract.config.documents_mutable_contract_default
-            ^ original_contract.config.documents_mutable_contract_default
+        if contract.config().documents_mutable_contract_default()
+            ^ original_contract
+                .config()
+                .documents_mutable_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(
@@ -264,16 +267,16 @@ impl Drive {
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id().as_bytes());
-        for (type_key, document_type) in contract.document_types.iter() {
-            let original_document_type = &original_contract.document_types.get(type_key);
+        for (type_key, document_type) in contract.document_types().iter() {
+            let original_document_type = &original_contract.document_types().get(type_key);
             if let Some(original_document_type) = original_document_type {
-                if original_document_type.documents_mutable ^ document_type.documents_mutable {
+                if original_document_type.documents_mutable() ^ document_type.documents_mutable() {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
                         "contract can not change whether a specific document type is mutable",
                     )));
                 }
-                if original_document_type.documents_keep_history
-                    ^ document_type.documents_keep_history
+                if original_document_type.documents_keep_history()
+                    ^ document_type.documents_keep_history()
                 {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
                         "contract can not change whether a specific document type keeps history",

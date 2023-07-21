@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -31,10 +32,10 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version.methods.contract.prove.prove_contract {
-            0 => self.prove_contract_v0(contract_id, transaction),
+        match platform_version.drive.methods.contract.prove.prove_contract {
+            0 => self.prove_contract_v0(contract_id, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_contract".to_string(),
                 known_versions: vec![0],

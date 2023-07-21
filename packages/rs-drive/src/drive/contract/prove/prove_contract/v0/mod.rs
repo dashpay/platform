@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -28,12 +29,23 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let contract_query = Self::fetch_contract_query(contract_id);
-        let contract_proof =
-            self.grove_get_proved_path_query(&contract_query, false, transaction, &mut vec![])?;
-        let result =
-            Drive::verify_contract(contract_proof.as_slice(), Some(false), false, contract_id);
+        let contract_proof = self.grove_get_proved_path_query(
+            &contract_query,
+            false,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )?;
+        let result = Drive::verify_contract(
+            contract_proof.as_slice(),
+            Some(false),
+            false,
+            contract_id,
+            platform_version,
+        );
         match result {
             Ok(_) => Ok(contract_proof),
             Err(Error::GroveDB(grovedb::Error::WrongElementType(s))) if s == "expected an item" => {
@@ -44,6 +56,7 @@ impl Drive {
                     false,
                     transaction,
                     &mut vec![],
+                    &platform_version.drive,
                 )?;
                 let (_, proof_returned_historical_contract) = Drive::verify_contract(
                     historical_contract_proof.as_slice(),

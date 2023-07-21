@@ -37,11 +37,11 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         match platform_version.drive.methods.fees.calculate_fee {
             0 => Self::calculate_fee_v0(base_operations, drive_operations, epoch),
-            version => Error::Drive(DriveError::UnknownVersionMismatch {
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::calculate_fee".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

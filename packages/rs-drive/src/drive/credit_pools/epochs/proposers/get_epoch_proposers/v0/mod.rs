@@ -62,6 +62,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

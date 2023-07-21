@@ -190,6 +190,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::fee::fee_result::FeeResult;
@@ -229,7 +230,7 @@ mod tests {
             .1
             .expect("should be present");
 
-        assert_eq!(fetch_info_from_database.contract.version, 1);
+        assert_eq!(fetch_info_from_database.contract.version(), 1);
 
         let fetch_info_from_cache = drive
             .get_contract_with_fetch_info_and_fee(
@@ -243,7 +244,7 @@ mod tests {
             .1
             .expect("should be present");
 
-        assert_eq!(fetch_info_from_cache.contract.version, 2);
+        assert_eq!(fetch_info_from_cache.contract.version(), 2);
     }
 
     #[test]
@@ -303,7 +304,7 @@ mod tests {
 
         // Create more contracts to trigger re-balancing
         for i in 0..150u8 {
-            ref_contract.id() = Identifier::from([i; 32]);
+            ref_contract.set_id(Identifier::from([i; 32]));
 
             drive
                 .apply_contract(
@@ -479,7 +480,7 @@ mod tests {
 
         // Create more contracts to trigger re-balancing
         for i in 150..200u8 {
-            ref_contract.id() = Identifier::from([i; 32]);
+            ref_contract.set_id(Identifier::from([i; 32]));
 
             drive
                 .apply_contract(

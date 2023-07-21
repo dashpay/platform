@@ -201,7 +201,7 @@ mod tests {
             let identities: BTreeMap<[u8; 32], Option<Identity>> =
                 Identity::random_identities(None, 10, 3, Some(14))
                     .into_iter()
-                    .map(|identity| (identity.id.to_buffer(), Some(identity)))
+                    .map(|identity| (identity.id().to_buffer(), Some(identity)))
                     .collect();
 
             for identity in identities.values() {
@@ -254,7 +254,7 @@ mod tests {
             let identity = Identity::random_identity(3, Some(14), platform_version)
                 .expect("expected a random identity");
 
-            let identity_id = identity.id.to_buffer();
+            let identity_id = identity.id().to_buffer();
             drive
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");

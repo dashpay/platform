@@ -4,6 +4,7 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::IdentityPublicKey;
 
 use dpp::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;

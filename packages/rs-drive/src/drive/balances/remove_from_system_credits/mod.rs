@@ -5,6 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -29,10 +30,15 @@ impl Drive {
         &self,
         amount: u64,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version.methods.balances.remove_from_system_credits {
-            0 => self.remove_from_system_credits_v0(amount, transaction, drive_version),
+        match platform_version
+            .drive
+            .methods
+            .balances
+            .remove_from_system_credits
+        {
+            0 => self.remove_from_system_credits_v0(amount, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_from_system_credits".to_string(),
                 known_versions: vec![0],

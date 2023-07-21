@@ -79,7 +79,7 @@ impl ExtendedDocumentV0 {
         self.document.owner_id()
     }
 
-    pub fn document_type(&self) -> Result<&DocumentTypeRef, ProtocolError> {
+    pub fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError> {
         // We can unwrap because the Document can not be created without a valid Document Type
         self.data_contract
             .document_type_for_name(self.document_type_name.as_str())

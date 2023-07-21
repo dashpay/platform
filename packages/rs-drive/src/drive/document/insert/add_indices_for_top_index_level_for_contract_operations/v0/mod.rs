@@ -190,7 +190,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(())

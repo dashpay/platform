@@ -117,7 +117,7 @@ pub fn json_document_to_contract_with_ids(
 pub fn json_document_to_document(
     path: impl AsRef<Path>,
     owner_id: Option<Identifier>,
-    document_type: &DocumentTypeRef,
+    document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
 ) -> Result<Document, ProtocolError> {
     let mut value = json_document_to_platform_value(path)?;

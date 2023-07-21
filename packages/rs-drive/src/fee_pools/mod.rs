@@ -31,6 +31,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::error::Error;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
@@ -128,7 +129,7 @@ mod tests {
                     .get_epoch_storage_credits_for_distribution(
                         &epoch,
                         Some(&transaction),
-                        &platform_version.drive,
+                        platform_version,
                     )
                     .expect("should get storage fee");
 
@@ -140,7 +141,7 @@ mod tests {
             let result = drive.get_epoch_storage_credits_for_distribution(
                 &epoch,
                 Some(&transaction),
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(matches!(result, Err(Error::GroveDB(_))));

@@ -856,6 +856,7 @@ impl IdentityKeysRequest {
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
 
@@ -886,7 +887,7 @@ mod tests {
 
         let public_keys = drive
             .fetch_all_identity_keys(
-                identity.id.to_buffer(),
+                identity.id().to_buffer(),
                 Some(&transaction),
                 platform_version,
             )
@@ -922,14 +923,14 @@ mod tests {
             .expect("expected to insert identity");
 
         let key_request = IdentityKeysRequest {
-            identity_id: identity.id.to_buffer(),
+            identity_id: identity.id().to_buffer(),
             request_type: SpecificKeys(vec![0]),
             limit: Some(1),
             offset: None,
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 1);
@@ -957,19 +958,19 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 
         let key_request = IdentityKeysRequest {
-            identity_id: identity.id.to_buffer(),
+            identity_id: identity.id().to_buffer(),
             request_type: SpecificKeys(vec![0, 4]),
             limit: Some(2),
             offset: None,
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 2);
@@ -997,25 +998,25 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 
         let key_request = IdentityKeysRequest {
-            identity_id: identity.id.to_buffer(),
+            identity_id: identity.id().to_buffer(),
             request_type: SpecificKeys(vec![0, 6]),
             limit: Some(2),
             offset: None,
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request.clone(), Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request.clone(), Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 1); //because we are not requesting with options
 
         let public_keys: KeyIDOptionalIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 2);

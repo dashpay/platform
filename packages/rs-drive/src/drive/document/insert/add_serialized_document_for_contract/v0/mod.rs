@@ -4,10 +4,13 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -25,14 +28,14 @@ impl Drive {
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let document = Document::deserialize(serialized_document)?;
+        let document_type = contract.document_type_for_name(document_type_name)?;
+
+        let document = Document::from_bytes(serialized_document, document_type, platform_version)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
-
-        let document_type = contract.document_type_for_name(document_type_name)?;
 
         self.add_document_for_contract(
             DocumentAndContractInfo {
@@ -47,7 +50,7 @@ impl Drive {
             block_info,
             apply,
             transaction,
-            drive_version,
+            platform_version,
         )
     }
 }

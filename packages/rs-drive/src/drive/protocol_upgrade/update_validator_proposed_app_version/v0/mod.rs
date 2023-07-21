@@ -4,6 +4,7 @@ use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use std::collections::BTreeMap;
 
+use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -11,16 +12,14 @@ use crate::error::Error::GroveDB;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
-use dpp::version::drive_versions::DriveVersion;
-use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 
 impl Drive {
-
     /// Update the validator proposed app version
     /// returns true if the value was changed, or is new
     /// returns false if it was not changed
@@ -68,7 +67,8 @@ impl Drive {
         let version_counter = if let Some(version_counter) = maybe_version_counter {
             version_counter
         } else {
-            *maybe_version_counter = Some(self.fetch_versions_with_counter(transaction, drive_version)?);
+            *maybe_version_counter =
+                Some(self.fetch_versions_with_counter(transaction, drive_version)?);
             maybe_version_counter.as_mut().unwrap()
         };
 

@@ -39,7 +39,7 @@ mod data_contract_facade;
 mod data_contract_methods;
 mod serialized_version;
 pub use data_contract_methods::*;
-pub(crate) mod accessors;
+pub mod accessors;
 pub mod data_contract_config;
 
 pub use v0::*;

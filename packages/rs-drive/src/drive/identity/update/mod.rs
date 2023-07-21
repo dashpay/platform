@@ -10,6 +10,7 @@ mod tests {
     use dpp::prelude::*;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identity::accessors::IdentityGettersV0;
 
     mod add_new_keys_to_identity {
         use super::*;
@@ -30,16 +31,17 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None)
+                .add_new_identity(identity.clone(), &block, true, None, platform_version)
                 .expect("expected to insert identity");
 
-            let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 1, Some(15));
+            let new_keys_to_add =
+                IdentityPublicKey::random_authentication_keys(5, 1, Some(15), platform_version);
 
             let db_transaction = drive.grove.start_transaction();
 
             let fee_result = drive
                 .add_new_unique_keys_to_identity(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     new_keys_to_add,
                     &block,
                     true,
@@ -64,7 +66,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let identity_keys = drive
-                .fetch_all_identity_keys(identity.id.to_buffer(), None, platform_version)
+                .fetch_all_identity_keys(identity.id().to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             assert_eq!(identity_keys.len(), 6); // we had 5 keys and we added 1
@@ -82,16 +84,17 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None)
+                .add_new_identity(identity.clone(), &block, true, None, platform_version)
                 .expect("expected to insert identity");
 
-            let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 24, Some(15));
+            let new_keys_to_add =
+                IdentityPublicKey::random_authentication_keys(5, 24, Some(15), platform_version);
 
             let db_transaction = drive.grove.start_transaction();
 
             let fee_result = drive
                 .add_new_unique_keys_to_identity(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     new_keys_to_add,
                     &block,
                     true,
@@ -116,7 +119,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let identity_keys = drive
-                .fetch_all_identity_keys(identity.id.to_buffer(), None, platform_version)
+                .fetch_all_identity_keys(identity.id().to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             assert_eq!(identity_keys.len(), 29); // we had 5 keys and we added 24
@@ -133,7 +136,8 @@ mod tests {
 
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
-            let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 1, Some(15));
+            let new_keys_to_add =
+                IdentityPublicKey::random_authentication_keys(5, 1, Some(15), platform_version);
 
             let app_hash_before = drive
                 .grove
@@ -143,7 +147,7 @@ mod tests {
 
             let fee_result = drive
                 .add_new_unique_keys_to_identity(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     new_keys_to_add,
                     &block,
                     false,
@@ -177,6 +181,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
         use dpp::fee::fee_result::FeeResult;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::version::PlatformVersion;
 
         #[test]
@@ -191,14 +196,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None)
+                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
                 .expect("expected to insert identity");
 
-            let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15));
+            let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15), platform_version);
 
             drive
                 .add_new_unique_keys_to_identity(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     new_keys_to_add.clone(),
                     &block_info,
                     true,
@@ -209,13 +214,13 @@ mod tests {
 
             let db_transaction = drive.grove.start_transaction();
 
-            let key_ids = new_keys_to_add.into_iter().map(|key| key.id).collect();
+            let key_ids = new_keys_to_add.into_iter().map(|key| key.id()).collect();
 
             let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
             let fee_result = drive
                 .disable_identity_keys(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     key_ids,
                     disable_at,
                     &block_info,
@@ -241,13 +246,13 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let identity_keys = drive
-                .fetch_all_identity_keys(identity.id.to_buffer(), None, platform_version)
+                .fetch_all_identity_keys(identity.id().to_buffer(), None, platform_version)
                 .expect("expected to get balance");
 
             assert_eq!(identity_keys.len(), 7); // we had 5 keys and we added 2
 
             for (_, key) in identity_keys.into_iter().skip(5) {
-                assert_eq!(key.disabled_at, Some(disable_at));
+                assert_eq!(key.disabled_at(), Some(disable_at));
             }
         }
 
@@ -272,7 +277,7 @@ mod tests {
 
             let fee_result = drive
                 .disable_identity_keys(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     vec![0, 1],
                     disable_at,
                     &block_info,
@@ -310,7 +315,13 @@ mod tests {
                 .expect("expected a random identity");
 
             drive
-                .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+                .add_new_identity(
+                    identity.clone(),
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to add an identity");
 
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
@@ -319,7 +330,7 @@ mod tests {
 
             let expected_fee_result = drive
                 .disable_identity_keys(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     vec![0, 1],
                     disable_at,
                     &block_info,
@@ -331,7 +342,7 @@ mod tests {
 
             let fee_result = drive
                 .disable_identity_keys(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     vec![0, 1],
                     disable_at,
                     &block_info,
@@ -363,7 +374,7 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None)
+                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
                 .expect("expected to insert identity");
 
             let revision = 2;
@@ -372,7 +383,7 @@ mod tests {
 
             let fee_result = drive
                 .update_identity_revision(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     revision,
                     &block_info,
                     true,
@@ -398,7 +409,7 @@ mod tests {
                 .expect("expected to be able to commit a transaction");
 
             let updated_revision = drive
-                .fetch_identity_revision(identity.id.to_buffer(), true, None, platform_version)
+                .fetch_identity_revision(identity.id().to_buffer(), true, None, platform_version)
                 .expect("expected to get revision");
 
             assert_eq!(updated_revision, Some(revision));
@@ -425,7 +436,7 @@ mod tests {
 
             let fee_result = drive
                 .update_identity_revision(
-                    identity.id.to_buffer(),
+                    identity.id().to_buffer(),
                     revision,
                     &block_info,
                     false,

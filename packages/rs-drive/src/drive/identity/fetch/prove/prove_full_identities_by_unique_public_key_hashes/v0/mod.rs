@@ -51,7 +51,7 @@ mod tests {
         let identities: BTreeMap<[u8; 32], Identity> =
             Identity::random_identities(None, 10, 3, Some(14))
                 .into_iter()
-                .map(|identity| (identity.id.to_buffer(), identity))
+                .map(|identity| (identity.id().to_buffer(), identity))
                 .collect();
 
         for identity in identities.values() {
@@ -94,7 +94,7 @@ mod tests {
                                 .expect("expected to hash data")
                                 .try_into()
                                 .expect("expected to be 20 bytes"),
-                            Some(identity.id.to_buffer()),
+                            Some(identity.id().to_buffer()),
                         )
                     })
             })

@@ -8,7 +8,9 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::IndexLevel;
+use dpp::platform_value::platform_value;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
@@ -32,7 +34,7 @@ impl Drive {
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if let Some(unique) = index_level.has_index_with_uniqueness {
             self.add_reference_for_index_level_for_contract_operations(
@@ -45,7 +47,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
 
@@ -94,6 +96,7 @@ impl Drive {
                     document_type,
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
+                    platform_version,
                 )?
                 .unwrap_or_default();
 
@@ -109,7 +112,7 @@ impl Drive {
                 transaction,
                 previous_batch_operations,
                 batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
 
             sub_level_index_path_info.push(index_property_key)?;
@@ -156,7 +159,7 @@ impl Drive {
                 transaction,
                 previous_batch_operations,
                 batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
 
             any_fields_null |= document_index_field.is_empty();
@@ -176,7 +179,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(())

@@ -46,7 +46,7 @@ use dpp::fee::fee_result::FeeResult;
 impl Drive {
     pub(super) fn add_estimation_costs_for_remove_document_to_primary_storage_v0(
         primary_key_path: [&[u8]; 5],
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
         // we just have the elements

@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 
 use crate::common::decode;
 use crate::error::drive::DriveError;
+use dpp::serialization_traits::PlatformDeserializableFromVersionedStructure;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
 impl Drive {
@@ -42,6 +44,7 @@ impl Drive {
         start_at_date: u64,
         limit: Option<u16>,
         offset: Option<u16>,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<BTreeMap<u64, DataContract>>), Error> {
         let path_query =
             Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
@@ -68,7 +71,8 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::GroveDB)
                         .and_then(|bytes| {
-                            DataContract::deserialize_no_limit(&bytes).map_err(Error::Protocol)
+                            DataContract::versioned_deserialize(&bytes, platform_version)
+                                .map_err(Error::Protocol)
                         })
                 })
                 .transpose()?;

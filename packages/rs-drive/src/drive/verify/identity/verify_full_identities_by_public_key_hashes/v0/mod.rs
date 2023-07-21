@@ -14,6 +14,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
@@ -53,21 +54,27 @@ impl Drive {
     >(
         proof: &[u8],
         public_key_hashes: &[[u8; 20]],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
         let (root_hash, identity_ids_by_key_hashes) =
             Self::verify_identity_ids_by_public_key_hashes::<Vec<(_, _)>>(
                 proof,
                 true,
                 public_key_hashes,
+                platform_version,
             )?;
         let maybe_identity = identity_ids_by_key_hashes
             .into_iter()
             .map(|(key_hash, identity_id)| match identity_id {
                 None => Ok((key_hash, None)),
                 Some(identity_id) => {
-                    let identity =
-                        Self::verify_full_identity_by_identity_id(proof, true, identity_id)
-                            .map(|(_, maybe_identity)| maybe_identity)?;
+                    let identity = Self::verify_full_identity_by_identity_id(
+                        proof,
+                        true,
+                        identity_id,
+                        platform_version,
+                    )
+                    .map(|(_, maybe_identity)| maybe_identity)?;
                     let identity = identity.ok_or(Error::Proof(ProofError::IncompleteProof(
                         "proof returned an identity id without identity information",
                     )))?;

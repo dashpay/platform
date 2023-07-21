@@ -10,6 +10,8 @@ use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
 use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
@@ -23,12 +25,12 @@ impl Drive {
         Self::add_estimation_costs_for_levels_up_to_contract(
             estimated_costs_only_with_layer_info,
             drive_version,
-        );
+        )?;
 
-        let document_type_count = contract.documents.len() as u32;
+        let document_type_count = contract.documents().len() as u32;
 
         // we only store the owner_id storage
-        let storage_flags = if contract.config.can_be_deleted {
+        let storage_flags = if contract.config().can_be_deleted() {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None

@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -11,14 +12,14 @@ impl Drive {
         &self,
         amount: u64,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut drive_operations = vec![];
         let batch_operations = self.remove_from_system_credits_operations(
             amount,
             &mut None,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         let grove_db_operations =
             LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
@@ -27,7 +28,7 @@ impl Drive {
             false,
             transaction,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )
     }
 }

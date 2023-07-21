@@ -47,16 +47,18 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use grovedb::Element;
 
+    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::fee_pools::epochs::paths::EpochProposers;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_error_if_value_has_invalid_length_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         let pro_tx_hash: [u8; 32] = rand::random();
@@ -74,14 +76,14 @@ mod tests {
         );
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let result = drive.get_epochs_proposer_block_count(
             &epoch,
             &pro_tx_hash,
             Some(&transaction),
-            &drive_version,
+            platform_version,
         );
 
         assert!(matches!(
@@ -93,7 +95,7 @@ mod tests {
     #[test]
     fn test_error_if_epoch_tree_is_not_initiated_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         let pro_tx_hash: [u8; 32] = rand::random();
@@ -104,7 +106,7 @@ mod tests {
             &epoch,
             &pro_tx_hash,
             Some(&transaction),
-            &drive_version,
+            platform_version,
         );
 
         assert!(matches!(

@@ -10,6 +10,7 @@ use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::IndexLevel;
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -47,9 +48,10 @@ impl Drive {
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .delete
@@ -66,7 +68,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_indices_for_index_level_for_contract_operations".to_string(),

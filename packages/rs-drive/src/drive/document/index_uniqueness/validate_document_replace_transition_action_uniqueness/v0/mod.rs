@@ -23,7 +23,7 @@ impl Drive {
     pub(super) fn validate_document_replace_transition_action_uniqueness_v0(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         document_replace_transition: &DocumentReplaceTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,

@@ -5,7 +5,7 @@ use dpp::fee::fee_result::FeeResult;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 ///DataContract and fetch information
-#[derive(Default, PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct DataContractFetchInfo {
     /// The contract
     pub contract: DataContract,

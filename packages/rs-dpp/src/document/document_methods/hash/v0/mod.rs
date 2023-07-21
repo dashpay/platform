@@ -14,7 +14,7 @@ pub trait DocumentHashV0Method: DocumentPlatformConversionMethodsV0 {
     fn hash_v0(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = contract.id().to_vec();

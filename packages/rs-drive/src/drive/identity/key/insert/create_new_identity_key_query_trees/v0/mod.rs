@@ -30,7 +30,7 @@ impl Drive {
                 identity_id,
                 estimated_costs_only_with_layer_info,
                 drive_version,
-            )
+            )?;
         }
 
         // There are 4 Purposes: Authentication, Encryption, Decryption, Withdrawal
@@ -77,7 +77,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     security_level,
                     drive_version,
-                )
+                )?;
             }
         }
         Ok(())

@@ -88,6 +88,7 @@ mod tests {
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::data_contract_config::v0::{
         DataContractConfigGettersV0, DataContractConfigSettersV0,
@@ -226,7 +227,9 @@ mod tests {
     }
 
     fn setup_test() -> TestData {
-        let data_contract = get_data_contract_fixture(None).data_contract;
+        let data_contract =
+            get_data_contract_fixture(None, PlatformVersion::latest().protocol_version)
+                .data_contract_owned();
 
         TestData {
             data_contract,
@@ -614,6 +617,7 @@ mod tests {
             data_contract,
             &drive,
             test_case.total_updates_to_apply as u64,
+            platform_version,
         );
 
         let contract_history_result = drive.fetch_contract_with_history(

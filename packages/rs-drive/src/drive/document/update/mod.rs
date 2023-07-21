@@ -94,6 +94,7 @@ use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
@@ -289,7 +290,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -383,7 +384,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -497,7 +498,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -674,6 +675,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should add document");
 
@@ -762,7 +764,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -778,7 +780,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -792,7 +794,7 @@ mod tests {
             .update_document_for_contract(
                 &dashpay_cr_document,
                 &contract,
-                &document_type,
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -813,7 +815,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -852,7 +854,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -860,7 +862,7 @@ mod tests {
         let dashpay_profile_updated_public_message_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -876,7 +878,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -890,7 +892,7 @@ mod tests {
             .update_document_for_contract(
                 &dashpay_profile_updated_public_message_document,
                 &contract,
-                &document_type,
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -964,7 +966,7 @@ mod tests {
         let document: Document = platform_value::from_value(value).expect("value to document");
 
         let document_serialized = document
-            .serialize_consume(&document_type, platform_version)
+            .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
         assert_eq!(document_serialized.len(), 115);
@@ -1684,7 +1686,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 block_info,
@@ -1960,7 +1962,7 @@ mod tests {
                         owner_id: Some(owner_id.to_buffer()),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 block_info,

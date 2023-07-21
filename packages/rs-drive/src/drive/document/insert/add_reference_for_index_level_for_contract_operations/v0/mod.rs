@@ -14,6 +14,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -98,7 +100,7 @@ impl Drive {
                             document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
-                        KeyElement((document.id.as_slice(), document_reference))
+                        KeyElement((document.id().as_slice(), document_reference))
                     }
                     DocumentOwnedInfo((document, storage_flags))
                     | DocumentAndSerialization((document, _, storage_flags)) => {
@@ -107,7 +109,7 @@ impl Drive {
                             document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
-                        KeyElement((document.id.as_slice(), document_reference))
+                        KeyElement((document.id().as_slice(), document_reference))
                     }
                     DocumentEstimatedAverageSize(max_size) => KeyUnknownElementSize((
                         KeyInfo::MaxKeySize {
@@ -127,7 +129,7 @@ impl Drive {
             )?;
 
             // here we should return an error if the element already exists
-            self.batch_insert(path_key_element_info, batch_operations)?;
+            self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
         } else {
             let key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
@@ -186,6 +188,7 @@ impl Drive {
                 apply_type,
                 transaction,
                 batch_operations,
+                drive_version,
             )?;
             if !inserted {
                 return Err(Error::Drive(DriveError::CorruptedContractIndexes(

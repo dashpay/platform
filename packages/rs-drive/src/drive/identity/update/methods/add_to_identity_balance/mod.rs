@@ -59,4 +59,36 @@ impl Drive {
             })),
         }
     }
+
+    pub(crate) fn add_to_identity_balance_operations(
+        &self,
+        identity_id: [u8; 32],
+        added_balance: Credits,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .update
+            .add_to_identity_balance
+        {
+            0 => self.add_to_identity_balance_operations_v0(
+                identity_id,
+                added_balance,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_to_identity_balance_operations".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
 }

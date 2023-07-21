@@ -258,7 +258,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -326,7 +326,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -395,7 +395,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -775,7 +775,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::genesis(),
@@ -824,7 +824,7 @@ fn test_query_many() {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::genesis(),
@@ -2914,7 +2914,7 @@ fn test_family_with_nulls_query() {
         .map(|result| {
             let document = Document::from_bytes(result.as_slice(), person_document_type)
                 .expect("we should be able to deserialize the document");
-            base64::encode(document.id.as_slice())
+            base64::encode(document.id().as_slice())
         })
         .collect();
 
@@ -3211,7 +3211,7 @@ fn test_dpns_query() {
         .map(|result| {
             let document = Document::from_bytes(result.as_slice(), domain_document_type)
                 .expect("we should be able to deserialize the document");
-            hex::encode(document.id.as_slice())
+            hex::encode(document.id().as_slice())
         })
         .collect();
 

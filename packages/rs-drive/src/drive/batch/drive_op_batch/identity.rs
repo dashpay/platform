@@ -101,7 +101,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 added_balance,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             IdentityOperationType::RemoveFromIdentityBalance {
                 identity_id,
@@ -111,7 +111,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 balance_to_remove,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             IdentityOperationType::AddNewKeysToIdentity {
                 identity_id,
@@ -146,7 +146,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 keys_ids,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             IdentityOperationType::UpdateIdentityRevision {
                 identity_id,

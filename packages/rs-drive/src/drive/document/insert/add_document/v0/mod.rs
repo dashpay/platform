@@ -35,7 +35,7 @@ impl Drive {
                 &mut drive_operations,
                 platform_version,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+            .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 
@@ -44,7 +44,7 @@ impl Drive {
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info,
             contract,
-            document_type: &document_type,
+            document_type,
         };
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_document_for_contract_apply_and_add_to_operations(

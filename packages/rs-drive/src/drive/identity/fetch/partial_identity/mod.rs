@@ -14,6 +14,7 @@ use grovedb::TransactionArg;
 
 use dpp::fee::default_costs::EpochCosts;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl Drive {
@@ -23,7 +24,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<PartialIdentity>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         Ok(self
@@ -32,7 +33,7 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .map(|balance| PartialIdentity {
                 id: Identifier::new(identity_id),
@@ -51,7 +52,7 @@ impl Drive {
         apply: bool,
         epoch: &Epoch,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
         let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
         if !apply {
@@ -64,7 +65,7 @@ impl Drive {
                 apply,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .map(|balance| PartialIdentity {
                 id: Identifier::new(identity_id),
@@ -85,13 +86,13 @@ impl Drive {
         &self,
         identity_key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<PartialIdentity>, Error> {
         let id = Identifier::new(identity_key_request.identity_id);
         let balance = self.fetch_identity_balance(
             identity_key_request.identity_id,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         let Some(balance) = balance else {
             return Ok(None);
@@ -101,7 +102,7 @@ impl Drive {
             .fetch_identity_keys::<KeyIDOptionalIdentityPublicKeyPairBTreeMap>(
                 identity_key_request,
                 transaction,
-                drive_version,
+                platform_version,
             )?;
 
         let mut loaded_public_keys = BTreeMap::new();
@@ -134,13 +135,13 @@ impl Drive {
         &self,
         identity_key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<PartialIdentity>, Error> {
         let id = Identifier::new(identity_key_request.identity_id);
         let balance = self.fetch_identity_balance(
             identity_key_request.identity_id,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         let Some(balance) = balance else {
             return Ok(None);
@@ -151,7 +152,7 @@ impl Drive {
             identity_key_request.identity_id,
             true,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         let Some(revision) = revision else {
             return Ok(None);
@@ -161,7 +162,7 @@ impl Drive {
             .fetch_identity_keys::<KeyIDOptionalIdentityPublicKeyPairBTreeMap>(
                 identity_key_request,
                 transaction,
-                drive_version,
+                platform_version,
             )?;
 
         let mut loaded_public_keys = BTreeMap::new();
@@ -196,7 +197,7 @@ impl Drive {
         apply: bool,
         epoch: &Epoch,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
         let balance_cost = epoch.cost_for_known_cost_item(FetchIdentityBalanceProcessingCost);
         if !apply {
@@ -211,7 +212,7 @@ impl Drive {
         let balance = self.fetch_identity_balance(
             identity_key_request.identity_id,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         let Some(balance) = balance else {
             return Ok((None, FeeResult::new_from_processing_fee(balance_cost)));
@@ -222,7 +223,7 @@ impl Drive {
         let loaded_public_keys = self.fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
             identity_key_request,
             transaction,
-            drive_version,
+            platform_version,
         )?;
         Ok((
             Some(PartialIdentity {

@@ -8,6 +8,7 @@ use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
@@ -18,18 +19,18 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
         let storage_pool_credits = self.get_epoch_storage_credits_for_distribution(
             epoch_tree,
             transaction,
-            drive_version,
+            platform_version,
         )?;
 
         let processing_pool_credits = self.get_epoch_processing_credits_for_distribution(
             epoch_tree,
             transaction,
-            drive_version,
+            platform_version,
         )?;
 
         storage_pool_credits
@@ -40,18 +41,20 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::fee::Credits;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_get_epoch_total_credits_for_distribution_v0() {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let processing_fee: Credits = 42;
         let storage_fee: Credits = 1000;
@@ -73,11 +76,11 @@ mod tests {
         );
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let retrieved_combined_fee = drive
-            .get_epoch_total_credits_for_distribution(&epoch, Some(&transaction), &drive_version)
+            .get_epoch_total_credits_for_distribution(&epoch, Some(&transaction), platform_version)
             .expect("should get combined fee");
 
         assert_eq!(retrieved_combined_fee, processing_fee + storage_fee);

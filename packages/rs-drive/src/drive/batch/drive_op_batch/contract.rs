@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Identifier;
 use dpp::version::drive_versions::DriveVersion;
@@ -70,6 +71,7 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                 let contract = DataContract::from_cbor_with_id(
                     &contract_cbor,
                     contract_id.map(Identifier::from),
+                    platform_version,
                 )?;
 
                 drive.apply_contract_with_serialization_operations(

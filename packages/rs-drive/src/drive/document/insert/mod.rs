@@ -133,6 +133,7 @@ use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
@@ -168,7 +169,7 @@ impl Drive {
                     owner_id,
                 },
                 contract: &contract,
-                document_type: &document_type,
+                document_type,
             },
             override_document,
             block_info,
@@ -215,7 +216,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -231,7 +232,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -252,7 +253,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -273,7 +274,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -312,7 +313,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -328,7 +329,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -349,7 +350,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -370,7 +371,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -409,7 +410,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -425,7 +426,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -476,7 +477,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -492,7 +493,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -543,7 +544,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -564,7 +565,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -610,7 +611,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -626,7 +627,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -647,7 +648,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -688,7 +689,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -714,7 +715,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 &BlockInfo::default(),
@@ -742,7 +743,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 &BlockInfo::default(),
@@ -785,7 +786,7 @@ mod tests {
         let dpns_domain_document = json_document_to_document(
             "tests/supporting_files/contract/dpns/domain0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -800,7 +801,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -844,7 +845,7 @@ mod tests {
         let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -852,7 +853,7 @@ mod tests {
         let dashpay_cr_document_1 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -860,7 +861,7 @@ mod tests {
         let dashpay_cr_document_2 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request2.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -876,7 +877,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -897,7 +898,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -918,7 +919,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -944,7 +945,7 @@ mod tests {
         let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -952,7 +953,7 @@ mod tests {
         let dashpay_cr_document_0_dup = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -968,7 +969,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -989,7 +990,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),

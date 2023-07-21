@@ -44,7 +44,7 @@ impl Drive {
         self.delete_document_for_contract_operations(
             document_id,
             contract,
-            &document_type,
+            document_type,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,

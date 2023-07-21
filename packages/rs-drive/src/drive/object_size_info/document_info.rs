@@ -6,9 +6,12 @@ use crate::drive::object_size_info::{DriveKeyInfo, KeyValueInfo};
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
+use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use std::borrow::Cow;
 
@@ -40,15 +43,16 @@ pub trait DocumentInfoV0Methods {
     fn get_estimated_size_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
     ) -> Result<u16, Error>;
     /// Gets the raw path for the given document type
     fn get_raw_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<DriveKeyInfo>, Error>;
     /// Gets the borrowed document
     fn get_borrowed_document_and_storage_flags(&self)
@@ -85,10 +89,12 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn id_key_value_info(&self) -> KeyValueInfo {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefInfo((document, _)) => KeyRefRequest(document.id.as_slice()),
+            | DocumentInfo::DocumentRefInfo((document, _)) => {
+                KeyRefRequest(document.id().as_slice())
+            }
             DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
-                KeyRefRequest(document.id.as_slice())
+                KeyRefRequest(document.id().as_slice())
             }
             DocumentInfo::DocumentEstimatedAverageSize(document_max_size) => {
                 KeyValueMaxSize((32, *document_max_size))
@@ -100,14 +106,14 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn get_estimated_size_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
     ) -> Result<u16, Error> {
         match key_path {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
                 let document_field_type =
-                    document_type.flattened_properties.get(key_path).ok_or({
+                    document_type.flattened_properties().get(key_path).ok_or({
                         Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                             "incorrect key path for document type for estimated sizes",
                         ))
@@ -129,15 +135,20 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn get_raw_for_document_type(
         &self,
         key_path: &str,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<DriveKeyInfo>, Error> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => {
-                let raw_value =
-                    document.get_raw_for_document_type(key_path, document_type, owner_id)?;
+                let raw_value = document.get_raw_for_document_type(
+                    key_path,
+                    document_type,
+                    owner_id,
+                    platform_version,
+                )?;
                 match raw_value {
                     None => Ok(None),
                     Some(value) => Ok(Some(Key(value))),
@@ -145,8 +156,12 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
             }
             DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
-                let raw_value =
-                    document.get_raw_for_document_type(key_path, document_type, owner_id)?;
+                let raw_value = document.get_raw_for_document_type(
+                    key_path,
+                    document_type,
+                    owner_id,
+                    platform_version,
+                )?;
                 match raw_value {
                     None => Ok(None),
                     Some(value) => Ok(Some(Key(value))),
@@ -165,7 +180,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                     }))),
                     _ => {
                         let document_field_type =
-                            document_type.flattened_properties.get(key_path).ok_or({
+                            document_type.flattened_properties().get(key_path).ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     "incorrect key path for document type",
                                 ))
@@ -233,10 +248,10 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn get_document_id_as_slice(&self) -> Option<&[u8]> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id.as_slice()),
+            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id().as_slice()),
             DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
-                Some(document.id.as_slice())
+                Some(document.id().as_slice())
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => None,
         }

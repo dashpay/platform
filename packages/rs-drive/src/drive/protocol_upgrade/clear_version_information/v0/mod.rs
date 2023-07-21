@@ -4,6 +4,7 @@ use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use std::collections::BTreeMap;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::protocol_upgrade::{
     desired_version_for_validators_path, desired_version_for_validators_path_vec,
     versions_counter_path, versions_counter_path_vec,
@@ -44,6 +45,7 @@ impl Drive {
                 transaction,
                 grove_db_operations,
                 &mut vec![],
+                drive_version,
             )?;
         }
         Ok(())
@@ -66,6 +68,7 @@ impl Drive {
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
             &mut vec![],
+            drive_version,
         )?;
         for (key, _) in results.to_key_elements() {
             self.batch_delete(
@@ -76,6 +79,7 @@ impl Drive {
                 },
                 transaction,
                 drive_operations,
+                drive_version,
             )?;
         }
 
@@ -88,6 +92,7 @@ impl Drive {
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
             &mut vec![],
+            drive_version,
         )?;
         for (key, _) in results.to_key_elements() {
             self.batch_delete(
@@ -98,6 +103,7 @@ impl Drive {
                 },
                 transaction,
                 drive_operations,
+                drive_version,
             )?;
         }
         Ok(())

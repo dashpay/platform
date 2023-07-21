@@ -21,6 +21,6 @@ pub trait DocumentGetRawForContractV0: DocumentV0Getters + DocumentGetRawForDocu
                 "document type should exist for name",
             ))
         })?;
-        self.get_raw_for_document_type_v0(key, &document_type.as_ref(), owner_id, platform_version)
+        self.get_raw_for_document_type_v0(key, document_type.as_ref(), owner_id, platform_version)
     }
 }

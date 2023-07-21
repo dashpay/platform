@@ -29,6 +29,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
 
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use grovedb::query_result_type::QueryResultType;
     use grovedb::GroveDb;
@@ -39,16 +40,18 @@ mod tests {
 
     use crate::drive::Drive;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn should_prove_two_full_identities_query_no_tx() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let identities: BTreeMap<[u8; 32], Option<Identity>> =
-            Identity::random_identities(None, 2, 5, Some(14))
+            Identity::random_identities(2, 5, Some(14), platform_version)
+                .expect("expect to get random identities")
                 .into_iter()
-                .map(|identity| (identity.id.to_buffer(), Some(identity)))
+                .map(|identity| (identity.id().to_buffer(), Some(identity)))
                 .collect();
 
         for identity in identities.values() {
@@ -58,6 +61,7 @@ mod tests {
                     &BlockInfo::default(),
                     true,
                     None,
+                    platform_version,
                 )
                 .expect("expected to add an identity");
         }
@@ -91,7 +95,7 @@ mod tests {
                     .collect::<Vec<[u8; 32]>>()
                     .borrow(),
                 None,
-                &drive_version,
+                &platform_version.drive,
             )
             .expect("should fetch an identity");
 
@@ -105,12 +109,13 @@ mod tests {
     #[test]
     fn should_prove_ten_full_identities_query_no_tx() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let identities: BTreeMap<[u8; 32], Option<Identity>> =
-            Identity::random_identities(None, 10, 5, Some(14))
+            Identity::random_identities(10, 5, Some(14), platform_version)
+                .expect("expect to get random identities")
                 .into_iter()
-                .map(|identity| (identity.id.to_buffer(), Some(identity)))
+                .map(|identity| (identity.id().to_buffer(), Some(identity)))
                 .collect();
 
         for identity in identities.values() {
@@ -120,6 +125,7 @@ mod tests {
                     &BlockInfo::default(),
                     true,
                     None,
+                    platform_version,
                 )
                 .expect("expected to add an identity");
         }
@@ -255,7 +261,7 @@ mod tests {
                     .collect::<Vec<[u8; 32]>>()
                     .borrow(),
                 None,
-                &drive_version,
+                &platform_version.drive,
             )
             .expect("should fetch an identity");
 

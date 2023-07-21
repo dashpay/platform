@@ -200,7 +200,7 @@ mod tests {
 
         let fetched_identity = drive
             .fetch_full_identity(
-                identity.id.to_buffer(),
+                identity.id().to_buffer(),
                 Some(&transaction),
                 platform_version,
             )

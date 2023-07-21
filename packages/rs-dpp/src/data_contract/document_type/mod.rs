@@ -1,4 +1,4 @@
-pub(crate) mod accessors;
+pub mod accessors;
 pub mod array_field;
 mod document_field;
 pub use document_field::*;
@@ -40,7 +40,7 @@ pub(self) mod property_names {
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }

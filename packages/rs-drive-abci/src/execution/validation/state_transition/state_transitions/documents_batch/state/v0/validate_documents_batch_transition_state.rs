@@ -268,7 +268,7 @@ fn validate_transition(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     contract: &DataContract,
-    document_type: &DocumentTypeRef,
+    document_type: DocumentTypeRef,
     transition: &DocumentTransition,
     fetched_documents: &[Document],
     owner_id: &Identifier,

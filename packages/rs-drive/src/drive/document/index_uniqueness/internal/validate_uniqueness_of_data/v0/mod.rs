@@ -14,6 +14,7 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -23,7 +24,7 @@ impl Drive {
         &self,
         request: UniquenessOfDataRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let UniquenessOfDataRequest {
             contract,
@@ -37,7 +38,7 @@ impl Drive {
         } = request;
 
         let validation_results = document_type
-            .indices
+            .indices()
             .iter()
             .filter_map(|index| {
                 if !index.unique {
@@ -108,7 +109,13 @@ impl Drive {
                             block_time_ms: None,
                         };
 
-                        let query_result = self.query_documents(query, None, false, transaction);
+                        let query_result = self.query_documents(
+                            query,
+                            None,
+                            false,
+                            transaction,
+                            Some(platform_version.protocol_version),
+                        );
                         match query_result {
                             Ok(query_outcome) => {
                                 let documents = query_outcome.documents;

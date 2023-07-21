@@ -32,7 +32,7 @@ impl Drive {
         &self,
         document_id: [u8; 32],
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,

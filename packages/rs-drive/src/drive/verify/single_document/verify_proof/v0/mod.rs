@@ -6,6 +6,8 @@ use crate::query::SingleDocumentDriveQuery;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
 impl SingleDocumentDriveQuery {
@@ -35,13 +37,14 @@ impl SingleDocumentDriveQuery {
         &self,
         is_subset: bool,
         proof: &[u8],
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Document>), Error> {
-        self.verify_proof_keep_serialized(is_subset, proof)
+        self.verify_proof_keep_serialized(is_subset, proof, platform_version)
             .map(|(root_hash, serialized)| {
                 let document = serialized
                     .map(|serialized| {
-                        Document::from_bytes(serialized.as_slice(), document_type)
+                        Document::from_bytes(serialized.as_slice(), document_type, platform_version)
                             .map_err(Error::Protocol)
                     })
                     .transpose()?;

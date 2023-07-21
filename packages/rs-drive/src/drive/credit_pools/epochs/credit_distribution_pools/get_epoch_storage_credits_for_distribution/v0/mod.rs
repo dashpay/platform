@@ -48,6 +48,7 @@ mod tests {
     use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
     use grovedb::Element;
 
     #[test]
@@ -55,9 +56,15 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
+        let platform_version = PlatformVersion::latest();
+
         let epoch = Epoch::new(7000).unwrap();
 
-        let result = drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+        let result = drive.get_epoch_storage_credits_for_distribution(
+            &epoch,
+            Some(&transaction),
+            platform_version,
+        );
 
         assert!(matches!(
             result,

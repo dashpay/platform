@@ -12,7 +12,7 @@ impl Drive {
     pub(super) fn add_update_multiple_documents_operations_v0<'a>(
         documents: &'a [Document],
         data_contract: &'a DataContract,
-        document_type: &'a DocumentTypeRef<'a>,
+        document_type: DocumentTypeRef<'a>,
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
     ) {
         let operations: Vec<DocumentOperation> = documents

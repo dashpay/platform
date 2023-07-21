@@ -41,7 +41,7 @@ impl Drive {
     pub fn validate_document_uniqueness(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         document: &Document,
         owner_id: &Identifier,
         allow_original: bool,

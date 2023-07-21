@@ -47,6 +47,7 @@ impl Drive {
                 direct_query_type,
                 transaction,
                 drive_operations,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_raw_value_u64_from_encoded_var_vec".to_string(),

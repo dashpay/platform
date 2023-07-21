@@ -14,6 +14,7 @@ mod has_unique_public_key_hash;
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
@@ -41,12 +42,13 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("expected to insert identity");
 
         let public_keys = drive
             .fetch_all_identity_keys(
-                identity.id.to_buffer(),
+                identity.id().to_buffer(),
                 Some(&transaction),
                 platform_version,
             )
@@ -69,7 +71,7 @@ mod tests {
                     )
                     .expect("expected to fetch identity_id")
                     .expect("expected to get an identity id");
-                assert_eq!(identity_id, identity.id.to_buffer());
+                assert_eq!(identity_id, identity.id().to_buffer());
             } else {
                 let identity_ids = drive
                     .fetch_identity_ids_by_non_unique_public_key_hash(
@@ -78,7 +80,7 @@ mod tests {
                         &drive_version,
                     )
                     .expect("expected to get identity ids");
-                assert!(identity_ids.contains(&identity.id.to_buffer()));
+                assert!(identity_ids.contains(&identity.id().to_buffer()));
             }
         }
     }

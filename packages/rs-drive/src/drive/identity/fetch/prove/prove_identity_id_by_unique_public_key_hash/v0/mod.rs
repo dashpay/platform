@@ -40,7 +40,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(3, Some(14));
 
-        let identity_id = identity.id.to_buffer();
+        let identity_id = identity.id().to_buffer();
         drive
             .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
             .expect("expected to add an identity");

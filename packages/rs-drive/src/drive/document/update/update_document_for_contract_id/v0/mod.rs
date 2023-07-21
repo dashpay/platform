@@ -47,7 +47,7 @@ impl Drive {
                 &mut drive_operations,
                 platform_version,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+            .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 
@@ -65,7 +65,7 @@ impl Drive {
                     owner_id,
                 },
                 contract,
-                document_type: &document_type,
+                document_type,
             },
             &block_info,
             estimated_costs_only_with_layer_info,

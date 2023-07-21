@@ -50,6 +50,7 @@ pub mod pending_epoch_refunds;
 pub mod storage_fee_distribution_pool;
 pub mod unpaid_epoch;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::fee::get_overflow_error;
 pub use paths::*;
 
@@ -169,6 +170,7 @@ mod tests {
 
     mod add_update_epoch_storage_fee_pools_operations {
         use super::*;
+        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use dpp::block::epoch::EpochIndex;
         use dpp::fee::epoch::GENESIS_EPOCH_INDEX;

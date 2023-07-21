@@ -338,7 +338,7 @@ impl<C> Platform<C> {
                 } else {
                     let keys: SerializedKeyVec = check_validation_result_with_data!(self
                         .drive
-                        .fetch_identity_keys(key_request, None));
+                        .fetch_identity_keys(key_request, None, platform_version));
                     GetIdentityKeysResponse {
                         result: Some(get_identity_keys_response::Result::Keys(
                             get_identity_keys_response::Keys { keys_bytes: keys },
@@ -557,7 +557,7 @@ impl<C> Platform<C> {
                         None
                     ));
                 let contract = check_validation_result_with_data!(contract.ok_or(
-                    QueryError::Query(QuerySyntaxError::ContractNotFound(
+                    QueryError::Query(QuerySyntaxError::DataContractNotFound(
                         "contract not found when querying from value with contract info",
                     ))
                 ));

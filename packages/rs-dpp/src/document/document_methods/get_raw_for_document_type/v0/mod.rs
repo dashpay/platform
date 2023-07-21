@@ -11,7 +11,7 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
     fn get_raw_for_document_type_v0<'a>(
         &'a self,
         key_path: &str,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {

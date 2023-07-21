@@ -41,7 +41,7 @@ impl Drive {
     pub fn validate_document_create_transition_action_uniqueness(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         document_create_transition: &DocumentCreateTransitionAction,
         owner_id: &Identifier,
         transaction: TransactionArg,

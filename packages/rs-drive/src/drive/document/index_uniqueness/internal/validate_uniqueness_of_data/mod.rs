@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 // Which is an okay trade off as this should seldom ever be changed
 pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<'a> {
     pub contract: &'a DataContract,
-    pub document_type: &'a DocumentTypeRef<'a>,
+    pub document_type: DocumentTypeRef<'a>,
     pub owner_id: &'a Identifier,
     pub document_id: &'a Identifier,
     pub allow_original: bool,

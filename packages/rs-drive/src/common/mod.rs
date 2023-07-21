@@ -107,8 +107,8 @@ pub fn setup_contract_from_cbor_hex(
 ) -> DataContract {
     let platform_version = PlatformVersion::latest();
     let contract_cbor = cbor_from_hex(hex_string);
-    let contract =
-        DataContract::from_cbor(&contract_cbor).expect("contract should be deserialized");
+    let contract = DataContract::from_cbor(&contract_cbor, platform_version)
+        .expect("contract should be deserialized");
     drive
         .apply_contract_cbor(
             contract_cbor,

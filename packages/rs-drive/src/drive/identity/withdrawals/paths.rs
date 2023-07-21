@@ -1,5 +1,6 @@
 use grovedb::Element;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::{batch::GroveDbOpBatch, RootTree};
 
 /// constant id for transaction counter

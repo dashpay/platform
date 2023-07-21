@@ -106,7 +106,7 @@ impl Drive {
                 contract_documents_keeping_history_primary_key_path_for_document_id(
                     contract.id().as_bytes(),
                     document_type.name.as_str(),
-                    document.id.as_slice(),
+                    document.id().as_slice(),
                 );
             // When keeping document history the 0 is a reference that points to the current value
             // O is just on one byte, so we have at most one hop of size 1 (1 byte)
@@ -121,7 +121,7 @@ impl Drive {
         } else {
             self.grove_get_raw(
                 (&contract_documents_primary_key_path).into(),
-                document.id.as_slice(),
+                document.id().as_slice(),
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
                 &mut batch_operations,
@@ -366,7 +366,7 @@ impl Drive {
                     // here we should return an error if the element already exists
                     self.batch_delete_up_tree_while_empty(
                         key_info_path,
-                        document.id.as_slice(),
+                        document.id().as_slice(),
                         Some(CONTRACT_DOCUMENTS_PATH_HEIGHT),
                         BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                             is_known_to_be_subtree_with_sum: Some((false, false)),
@@ -411,7 +411,7 @@ impl Drive {
                     self.batch_insert(
                         PathKeyRefElement::<0>((
                             index_path,
-                            document.id.as_slice(),
+                            document.id().as_slice(),
                             document_reference.clone(),
                         )),
                         &mut batch_operations,

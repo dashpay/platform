@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use dpp::contracts::withdrawals_contract;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -69,7 +70,7 @@ impl Drive {
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
-            document_type: &document_type,
+            document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
@@ -100,7 +101,7 @@ impl Drive {
             .iter()
             .map(|document_cbor| {
                 document_type
-                    .document_from_bytes(document_cbor)
+                    .document_from_bytes(document_cbor, platform_version)
                     .map_err(|e| {
                         Error::Drive(DriveError::CorruptedDriveState(format!(
                             "can't create document from bytes : {e}"
@@ -162,7 +163,7 @@ impl Drive {
 
         let drive_query = DriveQuery {
             contract: &contract_fetch_info.contract,
-            document_type: &document_type,
+            document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
@@ -192,13 +193,11 @@ impl Drive {
         let documents = items
             .iter()
             .map(|document_cbor| {
-                Document::from_bytes(document_cbor, &document_type, platform_version).map_err(
-                    |_| {
-                        Error::Drive(DriveError::CorruptedDriveState(
-                            "can't create document from bytes".to_string(),
-                        ))
-                    },
-                )
+                Document::from_bytes(document_cbor, document_type, platform_version).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedDriveState(
+                        "can't create document from bytes".to_string(),
+                    ))
+                })
             })
             .collect::<Result<Vec<Document>, Error>>()?;
 
@@ -271,6 +270,7 @@ mod tests {
                     "transactionIndex": 1u64,
                 }),
                 None,
+                platform_version.protocol_version,
             )
             .expect("expected withdrawal document");
 
@@ -282,7 +282,7 @@ mod tests {
                 &drive,
                 &document,
                 &data_contract,
-                &document_type,
+                document_type,
                 Some(&transaction),
             );
 
@@ -298,6 +298,7 @@ mod tests {
                     "transactionIndex": 2u64,
                 }),
                 None,
+                platform_version.protocol_version,
             )
             .expect("expected withdrawal document");
 
@@ -305,7 +306,7 @@ mod tests {
                 &drive,
                 &document,
                 &data_contract,
-                &document_type,
+                document_type,
                 Some(&transaction),
             );
 
@@ -333,6 +334,7 @@ mod tests {
 
     mod find_document_by_transaction_id {
         use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -372,6 +374,7 @@ mod tests {
                     "transactionId": Bytes32::default(),
                 }),
                 None,
+                platform_version.protocol_version,
             )
             .expect("expected to get withdrawal document");
 
@@ -383,7 +386,7 @@ mod tests {
                 &drive,
                 &document,
                 &data_contract,
-                &document_type,
+                document_type,
                 Some(&transaction),
             );
 
@@ -395,7 +398,7 @@ mod tests {
                 )
                 .expect("to find document by it's transaction id");
 
-            assert_eq!(found_document.id.to_vec(), document.id.to_vec());
+            assert_eq!(found_document.id().to_vec(), document.id().to_vec());
         }
     }
 }

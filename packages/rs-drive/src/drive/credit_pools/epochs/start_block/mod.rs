@@ -85,7 +85,7 @@ mod tests {
             let result = drive.get_epoch_start_block_height(
                 &non_initiated_epoch,
                 Some(&transaction),
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(matches!(
@@ -103,11 +103,8 @@ mod tests {
 
             let epoch = Epoch::new(0).unwrap();
 
-            let result = drive.get_epoch_start_block_height(
-                &epoch,
-                Some(&transaction),
-                &platform_version.drive,
-            );
+            let result =
+                drive.get_epoch_start_block_height(&epoch, Some(&transaction), platform_version);
 
             assert!(matches!(result, Err(Error::GroveDB(_))));
         }
@@ -133,11 +130,8 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_block_height(
-                &epoch,
-                Some(&transaction),
-                &platform_version.drive,
-            );
+            let result =
+                drive.get_epoch_start_block_height(&epoch, Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,
@@ -169,7 +163,7 @@ mod tests {
             let result = drive.get_epoch_start_block_core_height(
                 &epoch,
                 Some(&transaction),
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(matches!(
@@ -199,11 +193,8 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_block_height(
-                &epoch,
-                Some(&transaction),
-                &platform_version.drive,
-            );
+            let result =
+                drive.get_epoch_start_block_height(&epoch, Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,
@@ -235,7 +226,7 @@ mod tests {
             let result = drive.get_epoch_start_block_core_height(
                 &epoch,
                 Some(&transaction),
-                &platform_version.drive,
+                platform_version,
             );
 
             assert!(matches!(
@@ -247,6 +238,7 @@ mod tests {
 
     mod get_first_epoch_start_block_height_between_epochs {
         use super::*;
+        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use dpp::version::PlatformVersion;

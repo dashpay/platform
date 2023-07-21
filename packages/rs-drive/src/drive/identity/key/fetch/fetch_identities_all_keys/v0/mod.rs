@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -32,14 +33,19 @@ impl Drive {
         &self,
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
         identity_ids
             .iter()
             .map(|identity_id| {
                 Ok((
                     *identity_id,
-                    Self::fetch_all_identity_keys(self, *identity_id, transaction, drive_version)?,
+                    Self::fetch_all_identity_keys(
+                        self,
+                        *identity_id,
+                        transaction,
+                        platform_version,
+                    )?,
                 ))
             })
             .collect()

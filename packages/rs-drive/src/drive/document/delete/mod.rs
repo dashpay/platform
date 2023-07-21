@@ -187,7 +187,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -202,7 +202,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -282,7 +282,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -297,7 +297,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -383,13 +383,13 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
 
         let serialized = person_document0
-            .serialize(&document_type, platform_version)
+            .serialize(document_type, platform_version)
             .expect("expected to serialize");
         let _deserialized =
             Document::from_bytes(&serialized, &document_type).expect("expected to deserialize");
@@ -423,7 +423,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -438,7 +438,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -457,7 +457,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person1.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -472,7 +472,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -604,7 +604,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -619,7 +619,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -634,7 +634,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person2-no-middle-name.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -649,7 +649,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -717,7 +717,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -799,7 +799,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -815,7 +815,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -873,7 +873,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -891,7 +891,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -973,7 +973,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -991,7 +991,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -1084,7 +1084,7 @@ mod tests {
                                 owner_id: None,
                             },
                             contract: &contract,
-                            document_type: &document_type,
+                            document_type,
                         },
                         false,
                         BlockInfo::default(),
@@ -1118,7 +1118,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types.get("niceDocument").unwrap(),
+                contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 None,
@@ -1154,7 +1154,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types.get("niceDocument").unwrap(),
+                contract.document_types().get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 Some(&db_transaction),

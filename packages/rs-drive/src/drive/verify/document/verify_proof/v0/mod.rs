@@ -3,8 +3,10 @@ use crate::drive::verify::RootHash;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
 impl<'a> DriveQuery<'a> {
@@ -32,15 +34,19 @@ impl<'a> DriveQuery<'a> {
     pub(super) fn verify_proof_v0(
         &self,
         proof: &[u8],
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Document>), Error> {
-        self.verify_proof_keep_serialized(proof, drive_version)
+        self.verify_proof_keep_serialized(proof, platform_version)
             .map(|(root_hash, documents)| {
                 let documents = documents
                     .into_iter()
                     .map(|serialized| {
-                        Document::from_bytes(serialized.as_slice(), self.document_type)
-                            .map_err(Error::Protocol)
+                        Document::from_bytes(
+                            serialized.as_slice(),
+                            self.document_type,
+                            platform_version,
+                        )
+                        .map_err(Error::Protocol)
                     })
                     .collect::<Result<Vec<Document>, Error>>()?;
                 Ok((root_hash, documents))

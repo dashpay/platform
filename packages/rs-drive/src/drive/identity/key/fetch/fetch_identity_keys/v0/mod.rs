@@ -14,14 +14,14 @@ impl Drive {
         &self,
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_keys_operations(
             key_request,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
