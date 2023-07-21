@@ -1,6 +1,10 @@
 #[cfg(feature = "bindgen")]
 /// Generation of bindings
 pub mod bindgen;
+
+/// Data formats used for uniffi bindings
+pub mod codec;
+
 /// Proof bindings
 pub mod proof;
 

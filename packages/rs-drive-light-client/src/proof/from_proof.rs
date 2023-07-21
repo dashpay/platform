@@ -7,7 +7,6 @@ use dpp::prelude::{DataContract, Identifier, Identity, Revision};
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive::query::DriveQuery;
-use mockall::mock;
 
 use super::verify::verify_tenderdash_proof;
 

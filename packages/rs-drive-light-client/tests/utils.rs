@@ -2,7 +2,7 @@ use std::{fs::File, path::PathBuf};
 
 #[derive(serde::Deserialize, Debug)]
 struct QuorumInfo {
-    #[serde(deserialize_with = "dapi_grpc::deserialization::from_hex")]
+    #[serde(with = "dapi_grpc::deserialization::hexstring")]
     quorum_public_key: Vec<u8>,
 }
 

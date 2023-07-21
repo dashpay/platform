@@ -32,16 +32,16 @@ pub enum Error {
     DocumentMissingInProof,
 
     /// Decode protobuf error
-    #[error("decode request protobuf: {error}")]
-    ProtoRequestDecodeError { error: String },
+    #[error("decode request: {error}")]
+    RequestDecodeError { error: String },
 
     /// Decode protobuf response error
-    #[error("decode response protobuf: {error}")]
-    ProtoResponseDecodeError { error: String },
+    #[error("decode response: {error}")]
+    ResponseDecodeError { error: String },
 
-    /// Encode protobuf error
-    #[error("encode protobuf: {error}")]
-    ProtoEncodeError { error: String },
+    /// Error when encoding data
+    #[error("data encoding: {error}")]
+    DataEncodingError { error: String },
 
     /// Cannot generate signature digest for data
     #[error("cannot generate signature digest for data: {error}")]
