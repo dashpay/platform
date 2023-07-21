@@ -4,16 +4,17 @@ use crate::{
     data_contract::{DataContract, DataContractFactory},
     prelude::Identifier,
     tests::utils::generate_random_identifier_struct,
-    version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use data_contracts::SystemDataContract;
 
-pub fn get_dashpay_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
-    let protocol_version_validator =
-        ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
-    let factory = DataContractFactory::new(1, 0, None);
+pub fn get_dashpay_contract_fixture(
+    owner_id: Option<Identifier>,
+    protocol_version: u32,
+) -> CreatedDataContract {
+    let factory =
+        DataContractFactory::new(protocol_version, None).expect("expected to create factory");
     let dpns_schema = SystemDataContract::Dashpay
         .source()
         .expect("DPNS contract must be defined")

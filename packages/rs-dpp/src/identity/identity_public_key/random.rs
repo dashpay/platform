@@ -3,7 +3,7 @@ use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::{HIGH, MASTER};
-use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_value::BinaryData;
@@ -11,8 +11,6 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::convert::TryFrom;
 use std::ops::{Div, Rem};
-
-pub type KeyCount = KeyID;
 
 pub type UsedKeyMatrix = Vec<bool>;
 
@@ -335,7 +333,7 @@ impl IdentityPublicKey {
         key_count: KeyCount,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Vec<Self> {
+    ) -> Result<Vec<Self>, ProtocolError> {
         let mut used_key_matrix = [false; 16].to_vec();
         (0..key_count)
             .map(|i| {
@@ -345,7 +343,6 @@ impl IdentityPublicKey {
                     Some((i, &mut used_key_matrix)),
                     platform_version,
                 )
-                .unwrap()
             })
             .collect()
     }
@@ -355,7 +352,7 @@ impl IdentityPublicKey {
         key_count: KeyCount,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
-    ) -> Vec<(Self, Vec<u8>)> {
+    ) -> Result<Vec<(Self, Vec<u8>)>, ProtocolError> {
         (start_id..(start_id + key_count))
             .map(|i| {
                 Self::random_authentication_key_with_private_key_with_rng(
@@ -364,7 +361,6 @@ impl IdentityPublicKey {
                     None,
                     platform_version,
                 )
-                .unwrap()
             })
             .collect()
     }

@@ -41,7 +41,8 @@ mod tests {
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
-        get_documents_fixture_with_owner_id_from_contract, raw_instant_asset_lock_proof_fixture,
+        get_extended_documents_fixture_with_owner_id_from_contract,
+        raw_instant_asset_lock_proof_fixture,
     };
     use crate::version::LATEST_VERSION;
     use crate::{NativeBlsModule, ProtocolError};
@@ -315,7 +316,8 @@ mod tests {
     fn document_batch_transition_10_created_documents_ser_de() {
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
-            get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+            get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
+                .unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id: data_contract.owner_id,

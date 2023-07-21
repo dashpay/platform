@@ -603,6 +603,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 create_document_from_data: 0,
                 max_size: 0,
                 estimated_size: 0,
+                create_document_with_prevalidated_properties: 0,
                 top_level_indices: 0,
                 document_field_for_property: 0,
                 document_field_type_for_property: 0,

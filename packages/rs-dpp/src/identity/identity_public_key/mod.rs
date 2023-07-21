@@ -25,6 +25,7 @@ pub mod methods;
 mod random;
 
 pub type KeyID = u32;
+pub type KeyCount = KeyID;
 pub type TimestampMillis = u64;
 
 #[derive(

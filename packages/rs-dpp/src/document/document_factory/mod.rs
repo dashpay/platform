@@ -7,6 +7,9 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
+use crate::document::Document;
+#[cfg(feature = "extended-document")]
+use crate::document::ExtendedDocument;
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::DocumentFactoryV0;
 
@@ -66,6 +69,31 @@ impl DocumentFactory {
                 known_versions: vec![0],
                 received: version,
             }),
+        }
+    }
+
+    pub fn create_document(
+        &self,
+        owner_id: Identifier,
+        document_type_name: String,
+        data: Value,
+    ) -> Result<Document, ProtocolError> {
+        match self {
+            DocumentFactory::V0(v0) => v0.create_document(owner_id, document_type_name, data),
+        }
+    }
+
+    #[cfg(feature = "extended-document")]
+    pub fn create_extended_document(
+        &self,
+        owner_id: Identifier,
+        document_type_name: String,
+        data: Value,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        match self {
+            DocumentFactory::V0(v0) => {
+                v0.create_extended_document(owner_id, document_type_name, data)
+            }
         }
     }
 }

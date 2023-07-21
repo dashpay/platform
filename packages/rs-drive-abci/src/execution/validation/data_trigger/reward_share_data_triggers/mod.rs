@@ -197,7 +197,7 @@ mod test {
     use dpp::platform_value::Value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
-        get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
+        get_document_transitions_fixture, get_masternode_reward_shares_extended_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
@@ -277,7 +277,7 @@ mod test {
             },
         });
 
-        let (documents, data_contract) = get_masternode_reward_shares_documents_fixture();
+        let (documents, data_contract) = get_masternode_reward_shares_extended_documents_fixture(1);
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 

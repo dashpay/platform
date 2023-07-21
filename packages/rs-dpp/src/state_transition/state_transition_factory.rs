@@ -233,7 +233,7 @@ mod test {
         },
         state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionFieldTypes},
-        tests::fixtures::get_documents_fixture_with_owner_id_from_contract,
+        tests::fixtures::get_extended_documents_fixture_with_owner_id_from_contract,
         tests::fixtures::{get_data_contract_fixture, get_document_transitions_fixture},
         ProtocolError,
     };
@@ -278,7 +278,8 @@ mod test {
     async fn should_return_document_batch_transition_if_type_is_documents() {
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
-            get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+            get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
+                .unwrap();
         let document_transitions =
             get_document_transitions_fixture(vec![(Action::Create, documents)]);
 
