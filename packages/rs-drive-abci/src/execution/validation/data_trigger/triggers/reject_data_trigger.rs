@@ -1,6 +1,8 @@
 use crate::error::Error;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 
+use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::validation::SimpleValidationResult;
 use dpp::{get_from_transition_action, prelude::Identifier};
 
@@ -25,7 +27,6 @@ use super::DataTriggerExecutionContext;
 pub fn reject_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    _top_level_identity: Option<&Identifier>,
 ) -> Result<SimpleValidationResult<DataTriggerActionError>, Error> {
     let mut result = SimpleValidationResult::<DataTriggerActionError>::default();
 

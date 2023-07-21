@@ -1,12 +1,18 @@
+///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use dpp::contracts::dpns_contract;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::version::PlatformVersion;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
@@ -40,9 +46,10 @@ const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 pub fn create_domain_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    top_level_identity: Option<&Identifier>,
+    platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
+
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
         _ => {
@@ -57,9 +64,9 @@ pub fn create_domain_data_trigger(
 
     let data = &document_create_transition.data;
 
-    let top_level_identity = top_level_identity.ok_or(Error::Execution(
-        ExecutionError::DataTriggerExecutionError("top level identity isn't provided".to_string()),
-    ))?;
+    let top_level_identity =
+        Identifier::from_string(&dpns_contract::system_ids().owner_id, Encoding::Base58)?;
+
     let owner_id = context.owner_id;
     let label = data
         .get_string(PROPERTY_LABEL)
@@ -170,9 +177,10 @@ pub fn create_domain_data_trigger(
         let document_type = context
             .data_contract
             .document_type_for_name(document_create_transition.base.document_type_name.as_str())?;
+
         let drive_query = DriveQuery {
             contract: context.data_contract,
-            document_type,
+            document_type: &document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
@@ -208,7 +216,13 @@ pub fn create_domain_data_trigger(
         let documents = context
             .platform
             .drive
-            .query_documents(drive_query, None, is_dry_run, context.transaction)?
+            .query_documents(
+                drive_query,
+                None,
+                is_dry_run,
+                context.transaction,
+                Some(platform_version.protocol_version),
+            )?
             .documents;
 
         if !is_dry_run {
@@ -259,7 +273,7 @@ pub fn create_domain_data_trigger(
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
-        document_type,
+        document_type: &document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: None,
@@ -285,7 +299,13 @@ pub fn create_domain_data_trigger(
     let preorder_documents = context
         .platform
         .drive
-        .query_documents(drive_query, None, is_dry_run, context.transaction)?
+        .query_documents(
+            drive_query,
+            None,
+            is_dry_run,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?
         .documents;
 
     if is_dry_run {
@@ -311,11 +331,13 @@ mod test {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_dpns_data_contract_fixture,
         get_dpns_parent_document_fixture, ParentDocumentOptions,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
+    use dpp::version::PlatformVersion;
 
     use super::create_domain_data_trigger;
 
@@ -359,7 +381,7 @@ mod test {
         let result = create_domain_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            Some(&owner_id),
+            PlatformVersion::first(),
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid());

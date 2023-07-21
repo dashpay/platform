@@ -1,3 +1,4 @@
+///! The `feature_flags_data_triggers` module contains data triggers related to feature flags.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::data_trigger::create_error;
@@ -5,8 +6,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 use dpp::get_from_transition_action;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::Identifier;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::version::PlatformVersion;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -31,7 +32,7 @@ const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 pub fn create_feature_flag_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    top_level_identity: Option<&Identifier>,
+    _platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     if context.state_transition_execution_context.is_dry_run() {
@@ -95,7 +96,9 @@ mod test {
     use crate::test::helpers::setup::TestPlatformBuilder;
 
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -125,9 +128,12 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
-        let result =
-            create_feature_flag_data_trigger(&document_transition, &data_trigger_context, None)
-                .expect("the execution result should be returned");
+        let result = create_feature_flag_data_trigger(
+            &document_transition,
+            &data_trigger_context,
+            PlatformVersion::first(),
+        )
+        .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }

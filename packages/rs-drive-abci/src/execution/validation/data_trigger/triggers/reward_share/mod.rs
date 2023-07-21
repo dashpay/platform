@@ -1,3 +1,4 @@
+///! The `reward_share_data_triggers` module contains data triggers related to reward sharing.
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 
@@ -29,8 +30,7 @@ const MAX_DOCUMENTS: usize = 16;
 ///
 /// * `document_transition` - A reference to the document transition that triggered the data trigger.
 /// * `context` - A reference to the data trigger execution context.
-/// * `_top_level_identifier` - An unused parameter for the top-level identifier associated with the masternode
-///   reward share document (which is not needed for this trigger).
+/// * `platform_version` - A reference to the platform version.
 ///
 /// # Returns
 ///
@@ -38,7 +38,6 @@ const MAX_DOCUMENTS: usize = 16;
 pub fn create_masternode_reward_shares_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    _top_level_identifier: Option<&Identifier>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
@@ -418,7 +417,6 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
-            None,
             platform_version,
         );
 
@@ -463,7 +461,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
-            None,
+            PlatformVersion::first(),
         );
 
         let error = get_data_trigger_error(&result, 0);
@@ -506,7 +504,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
-            None,
+            PlatformVersion::first(),
         );
         let error = get_data_trigger_error(&result, 0);
 
@@ -566,7 +564,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
-            None,
+            PlatformVersion::first(),
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid(), "{}", result.errors.first().unwrap())
@@ -593,7 +591,14 @@ mod test {
 
         platform_ref
             .drive
-            .apply_contract(&data_contract, BlockInfo::default(), true, None, None)
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                PlatformVersion::first(),
+            )
             .expect("expected to apply contract");
 
         let document_type = data_contract
@@ -654,12 +659,13 @@ mod test {
                             owner_id: Some(top_level_identifier.to_buffer()),
                         },
                         contract: &data_contract,
-                        document_type,
+                        document_type: &document_type,
                     },
                     false,
                     BlockInfo::genesis(),
                     true,
                     None,
+                    PlatformVersion::first(),
                 )
                 .expect("expected to insert a document successfully");
         }
@@ -676,7 +682,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
-            None,
+            PlatformVersion::first(),
         );
         let error = get_data_trigger_error(&result, 0);
 
@@ -718,7 +724,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
-            None,
+            PlatformVersion::first(),
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid());

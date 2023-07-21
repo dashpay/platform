@@ -1,3 +1,4 @@
+///! The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
@@ -8,11 +9,11 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::Identifier;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::{get_from_transition_action, ProtocolError};
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use dpp::version::PlatformVersion;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -39,7 +40,7 @@ mod property_names {
 pub fn create_contact_request_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    _: Option<&Identifier>,
+    platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
@@ -108,10 +109,11 @@ pub fn create_contact_request_data_trigger(
     }
 
     //  toUserId identity exits
-    let identity = context
-        .platform
-        .drive
-        .fetch_identity_balance(to_user_id.to_buffer(), context.transaction)?;
+    let identity = context.platform.drive.fetch_identity_balance(
+        to_user_id.to_buffer(),
+        context.transaction,
+        platform_version,
+    )?;
 
     if !is_dry_run && identity.is_none() {
         let err = DataTriggerActionError::DataTriggerConditionError {
@@ -151,6 +153,7 @@ mod test {
         get_contact_request_document_fixture, get_dashpay_contract_fixture,
         get_document_transitions_fixture, identity_fixture,
     };
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -200,7 +203,7 @@ mod test {
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            None,
+            PlatformVersion::first(),
         )
         .expect("the execution result should be returned");
 
@@ -273,7 +276,7 @@ mod test {
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            Some(&dashpay_identity_id),
+            PlatformVersion::first(),
         )
         .expect("data trigger result should be returned");
 
@@ -283,8 +286,6 @@ mod test {
             &result.errors.first().unwrap(),
             &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {owner_id} must not be equal to owner id")
-
-
             }
         ));
     }
@@ -352,7 +353,7 @@ mod test {
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            Some(&dashpay_identity_id),
+            PlatformVersion::first(),
         )
         .expect("data trigger result should be returned");
 

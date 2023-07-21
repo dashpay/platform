@@ -26,7 +26,26 @@ pub struct DriveAbciMethodVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
+    pub data_triggers: DriveAbciDataTriggerAndBindingVersions,
     pub process_state_transition: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciDataTriggerAndBindingVersions {
+    pub bindings: FeatureVersion,
+    pub context: FeatureVersion,
+    pub triggers: DriveAbciDataTriggerVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciDataTriggerVersions {
+    pub create_contact_request_data_trigger: FeatureVersion,
+    pub create_domain_data_trigger: FeatureVersion,
+    pub create_identity_data_trigger: FeatureVersion,
+    pub create_feature_flag_data_trigger: FeatureVersion,
+    pub create_masternode_reward_shares_data_trigger: FeatureVersion,
+    pub delete_withdrawal_data_trigger: FeatureVersion,
+    pub reject_data_trigger: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
