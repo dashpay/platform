@@ -25,6 +25,7 @@ use tenderdash_abci::proto::types::{
 };
 use tenderdash_abci::signatures::SignBytes;
 use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use crate::mimic::test_quorum::TestQuorumInfo;
 
 /// Test quorum for mimic block execution
@@ -155,7 +156,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             app_version: APP_VERSION,
             core_chain_locked_height: core_height,
             height,
-            time: Some(time.clone()),
+            time: time.to_milis(),
         };
         let state_id_hash = state_id
             .sha256(CHAIN_ID, height as i64, ROUND)
