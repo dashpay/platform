@@ -16,7 +16,7 @@ mockall = { version = "0.11", optional = true }
 
 drive = { path = "../rs-drive" }
 dpp = { path = "../rs-dpp" }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "aadc1a67232d0d97d5c5b0b3609def9ef4ed93ce" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 tracing = { version = "0.1.37" }
 serde = { version = "1.0.171", default-features = false }

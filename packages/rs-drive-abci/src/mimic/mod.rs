@@ -26,7 +26,6 @@ use tenderdash_abci::proto::types::{
 };
 use tenderdash_abci::signatures::SignBytes;
 use tenderdash_abci::{signatures::SignDigest, proto::version::Consensus, Application};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use crate::mimic::test_quorum::TestQuorumInfo;
 
 /// Test quorum for mimic block execution
