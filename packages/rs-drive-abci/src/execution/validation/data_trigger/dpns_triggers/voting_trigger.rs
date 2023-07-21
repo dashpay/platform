@@ -73,13 +73,19 @@ mod test {
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
+    use dpp::block::epoch::Epoch;
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::errors::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use dpp::platform_value;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, get_dpns_preorder_document_fixture, identity_fixture, ParentDocumentOptions};
+    use dpp::tests::fixtures::{
+        get_contact_request_document_fixture, get_dashpay_contract_fixture,
+        get_document_transitions_fixture, get_dpns_data_contract_fixture,
+        get_dpns_parent_document_fixture, get_dpns_preorder_document_fixture, identity_fixture,
+        ParentDocumentOptions,
+    };
 
     #[test]
     fn should_return_error_if_can_not_get_epoch_info() {
@@ -153,7 +159,7 @@ mod test {
         match data_trigger_error {
             DataTriggerActionError::DataTriggerExecutionError { message, .. } => {
                 assert_eq!(message, "Vote didn't happen");
-            },
+            }
             _ => {
                 panic!("Expected DataTriggerExecutionError");
             }
@@ -165,10 +171,24 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-        let state_read_guard = platform.state.read().unwrap();
+        let mut state_guard = platform.state.write().unwrap();
+
+        state_guard.last_committed_block_info = Some(ExtendedBlockInfo {
+            basic_info: BlockInfo {
+                time_ms: 500000,
+                height: 100,
+                core_height: 42,
+                epoch: Epoch::new(1).expect("expected to create epoch"),
+            },
+            app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+            quorum_hash: [0u8; 32],
+            signature: [0u8; 96],
+            round: 0,
+        });
+
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state_guard,
             config: &platform.config,
         };
 
@@ -211,7 +231,7 @@ mod test {
             &data_trigger_context,
             None,
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }
@@ -267,7 +287,7 @@ mod test {
             &data_trigger_context,
             None,
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }
