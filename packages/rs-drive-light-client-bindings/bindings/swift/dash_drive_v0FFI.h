@@ -65,6 +65,8 @@ typedef void (*UniFfiFutureCallbackRustBuffer)(const void * _Nonnull, RustBuffer
 // Scaffolding functions
 void uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider(ForeignCallback _Nonnull callback_stub, RustCallStatus *_Nonnull out_status
 );
+RustBuffer uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json(RustBuffer request, RustBuffer response, uint64_t callback, RustCallStatus *_Nonnull out_status
+);
 RustBuffer uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json(RustBuffer request, RustBuffer response, uint64_t callback, RustCallStatus *_Nonnull out_status
 );
 RustBuffer uniffi_drive_light_client_fn_func_identity_proof_json(RustBuffer request, RustBuffer response, uint64_t callback, RustCallStatus *_Nonnull out_status
@@ -79,6 +81,9 @@ RustBuffer ffi_dash_drive_v0_rustbuffer_from_bytes(ForeignBytes bytes, RustCallS
 void ffi_dash_drive_v0_rustbuffer_free(RustBuffer buf, RustCallStatus *_Nonnull out_status
 );
 RustBuffer ffi_dash_drive_v0_rustbuffer_reserve(RustBuffer buf, int32_t additional, RustCallStatus *_Nonnull out_status
+);
+uint16_t uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json(void
+    
 );
 uint16_t uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json(void
     

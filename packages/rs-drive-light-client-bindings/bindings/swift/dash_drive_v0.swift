@@ -306,6 +306,19 @@ fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
     }
 }
 
+fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+    typealias FfiType = UInt32
+    typealias SwiftType = UInt32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -732,6 +745,17 @@ fileprivate struct FfiConverterSequenceUInt8: FfiConverterRustBuffer {
     }
 }
 
+public func `identitiesByPubkeyHashesJson`(`request`: [UInt8], `response`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
+    return try  FfiConverterSequenceUInt8.lift(
+        try rustCallWithError(FfiConverterTypeError.lift) {
+    uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json(
+        FfiConverterSequenceUInt8.lower(`request`),
+        FfiConverterSequenceUInt8.lower(`response`),
+        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(`callback`),$0)
+}
+    )
+}
+
 public func `identityByPubkeysProofJson`(`request`: [UInt8], `response`: [UInt8], `callback`: QuorumInfoProvider) throws -> [UInt8] {
     return try  FfiConverterSequenceUInt8.lift(
         try rustCallWithError(FfiConverterTypeError.lift) {
@@ -777,16 +801,19 @@ private var initializationResult: InitializationResult {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 24692) {
+    if (uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json() != 7640) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_drive_light_client_checksum_func_identity_proof_json() != 10710) {
+    if (uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 45852) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_drive_light_client_checksum_func_identity_proof_json() != 16376) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_drive_light_client_checksum_func_version() != 33802) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 49931) {
+    if (uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 44554) {
         return InitializationResult.apiChecksumMismatch
     }
 

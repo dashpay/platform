@@ -24,10 +24,10 @@ import typing
 import platform
 
 # Used for default argument values
-DEFAULT = object()
+_DEFAULT = object()
 
 
-class RustBuffer(ctypes.Structure):
+class _UniffiRustBuffer(ctypes.Structure):
     _fields_ = [
         ("capacity", ctypes.c_int32),
         ("len", ctypes.c_int32),
@@ -36,30 +36,30 @@ class RustBuffer(ctypes.Structure):
 
     @staticmethod
     def alloc(size):
-        return rust_call(_UniFFILib.ffi_dash_drive_v0_rustbuffer_alloc, size)
+        return _rust_call(_UniffiLib.ffi_dash_drive_v0_rustbuffer_alloc, size)
 
     @staticmethod
     def reserve(rbuf, additional):
-        return rust_call(_UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve, rbuf, additional)
+        return _rust_call(_UniffiLib.ffi_dash_drive_v0_rustbuffer_reserve, rbuf, additional)
 
     def free(self):
-        return rust_call(_UniFFILib.ffi_dash_drive_v0_rustbuffer_free, self)
+        return _rust_call(_UniffiLib.ffi_dash_drive_v0_rustbuffer_free, self)
 
     def __str__(self):
-        return "RustBuffer(capacity={}, len={}, data={})".format(
+        return "_UniffiRustBuffer(capacity={}, len={}, data={})".format(
             self.capacity,
             self.len,
             self.data[0:self.len]
         )
 
     @contextlib.contextmanager
-    def allocWithBuilder(*args):
-        """Context-manger to allocate a buffer using a RustBufferBuilder.
+    def alloc_with_builder(*args):
+        """Context-manger to allocate a buffer using a _UniffiRustBufferBuilder.
 
         The allocated buffer will be automatically freed if an error occurs, ensuring that
         we don't accidentally leak it.
         """
-        builder = RustBufferBuilder()
+        builder = _UniffiRustBufferBuilder()
         try:
             yield builder
         except:
@@ -67,45 +67,45 @@ class RustBuffer(ctypes.Structure):
             raise
 
     @contextlib.contextmanager
-    def consumeWithStream(self):
-        """Context-manager to consume a buffer using a RustBufferStream.
+    def consume_with_stream(self):
+        """Context-manager to consume a buffer using a _UniffiRustBufferStream.
 
-        The RustBuffer will be freed once the context-manager exits, ensuring that we don't
+        The _UniffiRustBuffer will be freed once the context-manager exits, ensuring that we don't
         leak it even if an error occurs.
         """
         try:
-            s = RustBufferStream.from_rust_buffer(self)
+            s = _UniffiRustBufferStream.from_rust_buffer(self)
             yield s
             if s.remaining() != 0:
-                raise RuntimeError("junk data left in buffer at end of consumeWithStream")
+                raise RuntimeError("junk data left in buffer at end of consume_with_stream")
         finally:
             self.free()
 
     @contextlib.contextmanager
-    def readWithStream(self):
-        """Context-manager to read a buffer using a RustBufferStream.
+    def read_with_stream(self):
+        """Context-manager to read a buffer using a _UniffiRustBufferStream.
 
-        This is like consumeWithStream, but doesn't free the buffer afterwards.
-        It should only be used with borrowed `RustBuffer` data.
+        This is like consume_with_stream, but doesn't free the buffer afterwards.
+        It should only be used with borrowed `_UniffiRustBuffer` data.
         """
-        s = RustBufferStream.from_rust_buffer(self)
+        s = _UniffiRustBufferStream.from_rust_buffer(self)
         yield s
         if s.remaining() != 0:
-            raise RuntimeError("junk data left in buffer at end of readWithStream")
+            raise RuntimeError("junk data left in buffer at end of read_with_stream")
 
-class ForeignBytes(ctypes.Structure):
+class _UniffiForeignBytes(ctypes.Structure):
     _fields_ = [
         ("len", ctypes.c_int32),
         ("data", ctypes.POINTER(ctypes.c_char)),
     ]
 
     def __str__(self):
-        return "ForeignBytes(len={}, data={})".format(self.len, self.data[0:self.len])
+        return "_UniffiForeignBytes(len={}, data={})".format(self.len, self.data[0:self.len])
 
 
-class RustBufferStream:
+class _UniffiRustBufferStream:
     """
-    Helper for structured reading of bytes from a RustBuffer
+    Helper for structured reading of bytes from a _UniffiRustBuffer
     """
 
     def __init__(self, data, len):
@@ -134,47 +134,47 @@ class RustBufferStream:
         self.offset += size
         return data
 
-    def readI8(self):
+    def read_i8(self):
         return self._unpack_from(1, ">b")
 
-    def readU8(self):
+    def read_u8(self):
         return self._unpack_from(1, ">B")
 
-    def readI16(self):
+    def read_i16(self):
         return self._unpack_from(2, ">h")
 
-    def readU16(self):
+    def read_u16(self):
         return self._unpack_from(2, ">H")
 
-    def readI32(self):
+    def read_i32(self):
         return self._unpack_from(4, ">i")
 
-    def readU32(self):
+    def read_u32(self):
         return self._unpack_from(4, ">I")
 
-    def readI64(self):
+    def read_i64(self):
         return self._unpack_from(8, ">q")
 
-    def readU64(self):
+    def read_u64(self):
         return self._unpack_from(8, ">Q")
 
-    def readFloat(self):
+    def read_float(self):
         v = self._unpack_from(4, ">f")
         return v
 
-    def readDouble(self):
+    def read_double(self):
         return self._unpack_from(8, ">d")
 
-    def readCSizeT(self):
+    def read_c_size_t(self):
         return self._unpack_from(ctypes.sizeof(ctypes.c_size_t) , "@N")
 
-class RustBufferBuilder:
+class _UniffiRustBufferBuilder:
     """
-    Helper for structured writing of bytes into a RustBuffer.
+    Helper for structured writing of bytes into a _UniffiRustBuffer.
     """
 
     def __init__(self):
-        self.rbuf = RustBuffer.alloc(16)
+        self.rbuf = _UniffiRustBuffer.alloc(16)
         self.rbuf.len = 0
 
     def finalize(self):
@@ -188,11 +188,11 @@ class RustBufferBuilder:
             rbuf.free()
 
     @contextlib.contextmanager
-    def _reserve(self, numBytes):
-        if self.rbuf.len + numBytes > self.rbuf.capacity:
-            self.rbuf = RustBuffer.reserve(self.rbuf, numBytes)
+    def _reserve(self, num_bytes):
+        if self.rbuf.len + num_bytes > self.rbuf.capacity:
+            self.rbuf = _UniffiRustBuffer.reserve(self.rbuf, num_bytes)
         yield None
-        self.rbuf.len += numBytes
+        self.rbuf.len += num_bytes
 
     def _pack_into(self, size, format, value):
         with self._reserve(size):
@@ -205,37 +205,37 @@ class RustBufferBuilder:
             for i, byte in enumerate(value):
                 self.rbuf.data[self.rbuf.len + i] = byte
 
-    def writeI8(self, v):
+    def write_i8(self, v):
         self._pack_into(1, ">b", v)
 
-    def writeU8(self, v):
+    def write_u8(self, v):
         self._pack_into(1, ">B", v)
 
-    def writeI16(self, v):
+    def write_i16(self, v):
         self._pack_into(2, ">h", v)
 
-    def writeU16(self, v):
+    def write_u16(self, v):
         self._pack_into(2, ">H", v)
 
-    def writeI32(self, v):
+    def write_i32(self, v):
         self._pack_into(4, ">i", v)
 
-    def writeU32(self, v):
+    def write_u32(self, v):
         self._pack_into(4, ">I", v)
 
-    def writeI64(self, v):
+    def write_i64(self, v):
         self._pack_into(8, ">q", v)
 
-    def writeU64(self, v):
+    def write_u64(self, v):
         self._pack_into(8, ">Q", v)
 
-    def writeFloat(self, v):
+    def write_float(self, v):
         self._pack_into(4, ">f", v)
 
-    def writeDouble(self, v):
+    def write_double(self, v):
         self._pack_into(8, ">d", v)
 
-    def writeCSizeT(self, v):
+    def write_c_size_t(self, v):
         self._pack_into(ctypes.sizeof(ctypes.c_size_t) , "@N", v)
 # A handful of classes and functions to support the generated data structures.
 # This would be a good candidate for isolating in its own ffi-support lib.
@@ -243,13 +243,13 @@ class RustBufferBuilder:
 class InternalError(Exception):
     pass
 
-class RustCallStatus(ctypes.Structure):
+class _UniffiRustCallStatus(ctypes.Structure):
     """
     Error runtime.
     """
     _fields_ = [
         ("code", ctypes.c_int8),
-        ("error_buf", RustBuffer),
+        ("error_buf", _UniffiRustBuffer),
     ]
 
     # These match the values from the uniffi::rustcalls module
@@ -258,81 +258,81 @@ class RustCallStatus(ctypes.Structure):
     CALL_PANIC = 2
 
     def __str__(self):
-        if self.code == RustCallStatus.CALL_SUCCESS:
-            return "RustCallStatus(CALL_SUCCESS)"
-        elif self.code == RustCallStatus.CALL_ERROR:
-            return "RustCallStatus(CALL_ERROR)"
-        elif self.code == RustCallStatus.CALL_PANIC:
-            return "RustCallStatus(CALL_PANIC)"
+        if self.code == _UniffiRustCallStatus.CALL_SUCCESS:
+            return "_UniffiRustCallStatus(CALL_SUCCESS)"
+        elif self.code == _UniffiRustCallStatus.CALL_ERROR:
+            return "_UniffiRustCallStatus(CALL_ERROR)"
+        elif self.code == _UniffiRustCallStatus.CALL_PANIC:
+            return "_UniffiRustCallStatus(CALL_PANIC)"
         else:
-            return "RustCallStatus(<invalid code>)"
+            return "_UniffiRustCallStatus(<invalid code>)"
 
-def rust_call(fn, *args):
+def _rust_call(fn, *args):
     # Call a rust function
-    return rust_call_with_error(None, fn, *args)
+    return _rust_call_with_error(None, fn, *args)
 
-def rust_call_with_error(error_ffi_converter, fn, *args):
+def _rust_call_with_error(error_ffi_converter, fn, *args):
     # Call a rust function and handle any errors
     #
     # This function is used for rust calls that return Result<> and therefore can set the CALL_ERROR status code.
-    # error_ffi_converter must be set to the FfiConverter for the error class that corresponds to the result.
-    call_status = RustCallStatus(code=RustCallStatus.CALL_SUCCESS, error_buf=RustBuffer(0, 0, None))
+    # error_ffi_converter must be set to the _UniffiConverter for the error class that corresponds to the result.
+    call_status = _UniffiRustCallStatus(code=_UniffiRustCallStatus.CALL_SUCCESS, error_buf=_UniffiRustBuffer(0, 0, None))
 
     args_with_error = args + (ctypes.byref(call_status),)
     result = fn(*args_with_error)
-    uniffi_check_call_status(error_ffi_converter, call_status)
+    _uniffi_check_call_status(error_ffi_converter, call_status)
     return result
 
-def rust_call_async(scaffolding_fn, callback_fn, *args):
+def _rust_call_async(scaffolding_fn, callback_fn, *args):
     # Call the scaffolding function, passing it a callback handler for `AsyncTypes.py` and a pointer
     # to a python Future object.  The async function then awaits the Future.
     uniffi_eventloop = asyncio.get_running_loop()
     uniffi_py_future = uniffi_eventloop.create_future()
-    uniffi_call_status = RustCallStatus(code=RustCallStatus.CALL_SUCCESS, error_buf=RustBuffer(0, 0, None))
+    uniffi_call_status = _UniffiRustCallStatus(code=_UniffiRustCallStatus.CALL_SUCCESS, error_buf=_UniffiRustBuffer(0, 0, None))
     scaffolding_fn(*args,
-       FfiConverterForeignExecutor._pointer_manager.new_pointer(uniffi_eventloop),
+       _UniffiConverterForeignExecutor._pointer_manager.new_pointer(uniffi_eventloop),
        callback_fn,
        # Note: It's tempting to skip the pointer manager and just use a `py_object` pointing to a
        # local variable like we do in Swift.  However, Python doesn't use cooperative cancellation
        # -- asyncio can cancel a task at anytime.  This means if we use a local variable, the Rust
        # callback could fire with a dangling pointer.
-       UniFfiPyFuturePointerManager.new_pointer(uniffi_py_future),
+       _UniffiPyFuturePointerManager.new_pointer(uniffi_py_future),
        ctypes.byref(uniffi_call_status),
     )
-    uniffi_check_call_status(None, uniffi_call_status)
+    _uniffi_check_call_status(None, uniffi_call_status)
     return uniffi_py_future
 
-def uniffi_check_call_status(error_ffi_converter, call_status):
-    if call_status.code == RustCallStatus.CALL_SUCCESS:
+def _uniffi_check_call_status(error_ffi_converter, call_status):
+    if call_status.code == _UniffiRustCallStatus.CALL_SUCCESS:
         pass
-    elif call_status.code == RustCallStatus.CALL_ERROR:
+    elif call_status.code == _UniffiRustCallStatus.CALL_ERROR:
         if error_ffi_converter is None:
             call_status.error_buf.free()
-            raise InternalError("rust_call_with_error: CALL_ERROR, but error_ffi_converter is None")
+            raise InternalError("_rust_call_with_error: CALL_ERROR, but error_ffi_converter is None")
         else:
             raise error_ffi_converter.lift(call_status.error_buf)
-    elif call_status.code == RustCallStatus.CALL_PANIC:
-        # When the rust code sees a panic, it tries to construct a RustBuffer
+    elif call_status.code == _UniffiRustCallStatus.CALL_PANIC:
+        # When the rust code sees a panic, it tries to construct a _UniffiRustBuffer
         # with the message.  But if that code panics, then it just sends back
         # an empty buffer.
         if call_status.error_buf.len > 0:
-            msg = FfiConverterString.lift(call_status.error_buf)
+            msg = _UniffiConverterString.lift(call_status.error_buf)
         else:
             msg = "Unknown rust panic"
         raise InternalError(msg)
     else:
-        raise InternalError("Invalid RustCallStatus code: {}".format(
+        raise InternalError("Invalid _UniffiRustCallStatus code: {}".format(
             call_status.code))
 
 # A function pointer for a callback as defined by UniFFI.
-# Rust definition `fn(handle: u64, method: u32, args: RustBuffer, buf_ptr: *mut RustBuffer) -> int`
-FOREIGN_CALLBACK_T = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_ulonglong, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char), ctypes.c_int, ctypes.POINTER(RustBuffer))
-class UniFfiPointerManagerCPython:
+# Rust definition `fn(handle: u64, method: u32, args: _UniffiRustBuffer, buf_ptr: *mut _UniffiRustBuffer) -> int`
+_UNIFFI_FOREIGN_CALLBACK_T = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_ulonglong, ctypes.c_ulong, ctypes.POINTER(ctypes.c_char), ctypes.c_int, ctypes.POINTER(_UniffiRustBuffer))
+class _UniffiPointerManagerCPython:
     """
     Manage giving out pointers to Python objects on CPython
 
     This class is used to generate opaque pointers that reference Python objects to pass to Rust.
-    It assumes a CPython platform.  See UniFfiPointerManagerGeneral for the alternative.
+    It assumes a CPython platform.  See _UniffiPointerManagerGeneral for the alternative.
     """
 
     def new_pointer(self, obj):
@@ -359,11 +359,11 @@ class UniFfiPointerManagerCPython:
     def lookup(self, address):
         return ctypes.cast(address, ctypes.py_object).value
 
-class UniFfiPointerManagerGeneral:
+class _UniffiPointerManagerGeneral:
     """
     Manage giving out pointers to Python objects on non-CPython platforms
 
-    This has the same API as UniFfiPointerManagerCPython, but doesn't assume we're running on
+    This has the same API as _UniffiPointerManagerCPython, but doesn't assume we're running on
     CPython and is slightly slower.
 
     Instead of using real pointers, it maps integer values to objects and returns the keys as
@@ -392,11 +392,11 @@ class UniFfiPointerManagerGeneral:
 
 # Pick an pointer manager implementation based on the platform
 if platform.python_implementation() == 'CPython':
-    UniFfiPointerManager = UniFfiPointerManagerCPython  # type: ignore
+    _UniffiPointerManager = _UniffiPointerManagerCPython # type: ignore
 else:
-    UniFfiPointerManager = UniFfiPointerManagerGeneral  # type: ignore
-# Types conforming to `FfiConverterPrimitive` pass themselves directly over the FFI.
-class FfiConverterPrimitive:
+    _UniffiPointerManager = _UniffiPointerManagerGeneral # type: ignore
+# Types conforming to `_UniffiConverterPrimitive` pass themselves directly over the FFI.
+class _UniffiConverterPrimitive:
     @classmethod
     def check(cls, value):
         return value
@@ -415,9 +415,9 @@ class FfiConverterPrimitive:
 
     @classmethod
     def write(cls, value, buf):
-        cls.writeUnchecked(cls.check(value), buf)
+        cls.write_unchecked(cls.check(value), buf)
 
-class FfiConverterPrimitiveInt(FfiConverterPrimitive):
+class _UniffiConverterPrimitiveInt(_UniffiConverterPrimitive):
     @classmethod
     def check(cls, value):
         try:
@@ -430,7 +430,7 @@ class FfiConverterPrimitiveInt(FfiConverterPrimitive):
             raise ValueError("{} requires {} <= value < {}".format(cls.CLASS_NAME, cls.VALUE_MIN, cls.VALUE_MAX))
         return super().check(value)
 
-class FfiConverterPrimitiveFloat(FfiConverterPrimitive):
+class _UniffiConverterPrimitiveFloat(_UniffiConverterPrimitive):
     @classmethod
     def check(cls, value):
         try:
@@ -441,17 +441,17 @@ class FfiConverterPrimitiveFloat(FfiConverterPrimitive):
             raise TypeError("__float__ returned non-float (type {})".format(type(value).__name__))
         return super().check(value)
 
-# Helper class for wrapper types that will always go through a RustBuffer.
+# Helper class for wrapper types that will always go through a _UniffiRustBuffer.
 # Classes should inherit from this and implement the `read` and `write` static methods.
-class FfiConverterRustBuffer:
+class _UniffiConverterRustBuffer:
     @classmethod
     def lift(cls, rbuf):
-        with rbuf.consumeWithStream() as stream:
+        with rbuf.consume_with_stream() as stream:
             return cls.read(stream)
 
     @classmethod
     def lower(cls, value):
-        with RustBuffer.allocWithBuilder() as builder:
+        with _UniffiRustBuffer.alloc_with_builder() as builder:
             cls.write(value, builder)
             return builder.finalize()
 
@@ -473,22 +473,20 @@ Normally we should call task(task_data) after the detail.
 However, when task is NULL this indicates that Rust has dropped the ForeignExecutor and we should
 decrease the EventLoop refcount.
 """
-UNIFFI_FOREIGN_EXECUTOR_CALLBACK_T = ctypes.CFUNCTYPE(None, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p)
+_UNIFFI_FOREIGN_EXECUTOR_CALLBACK_T = ctypes.CFUNCTYPE(None, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p)
 
 """
 Function pointer for a Rust task, which a callback function that takes a opaque pointer
 """
-UNIFFI_RUST_TASK = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+_UNIFFI_RUST_TASK = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 
-def uniffi_future_callback_t(return_type):
+def _uniffi_future_callback_t(return_type):
     """
     Factory function to create callback function types for async functions
     """
-    return ctypes.CFUNCTYPE(None, ctypes.c_size_t, return_type, RustCallStatus)
+    return ctypes.CFUNCTYPE(None, ctypes.c_size_t, return_type, _UniffiRustCallStatus)
 
-from pathlib import Path
-
-def loadIndirect():
+def _uniffi_load_indirect():
     """
     This is how we find and load the dynamic library provided by the component.
     For now we just look it up by name.
@@ -509,11 +507,11 @@ def loadIndirect():
         libname = "lib{}.so"
 
     libname = libname.format("uniffi_dash_drive_v0")
-    path = str(Path(__file__).parent / libname)
+    path = os.path.join(os.path.dirname(__file__), libname)
     lib = ctypes.cdll.LoadLibrary(path)
     return lib
 
-def uniffi_check_contract_api_version(lib):
+def _uniffi_check_contract_api_version(lib):
     # Get the bindings contract version from our ComponentInterface
     bindings_contract_version = 22
     # Get the scaffolding contract version by calling the into the dylib
@@ -521,99 +519,124 @@ def uniffi_check_contract_api_version(lib):
     if bindings_contract_version != scaffolding_contract_version:
         raise InternalError("UniFFI contract version mismatch: try cleaning and rebuilding your project")
 
-def uniffi_check_api_checksums(lib):
-    if lib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 24692:
+def _uniffi_check_api_checksums(lib):
+    if lib.uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json() != 7640:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_drive_light_client_checksum_func_identity_proof_json() != 10710:
+    if lib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 45852:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_drive_light_client_checksum_func_identity_proof_json() != 16376:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_drive_light_client_checksum_func_version() != 33802:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 49931:
+    if lib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 44554:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
 
 # A ctypes library to expose the extern-C FFI definitions.
 # This is an implementation detail which will be called internally by the public API.
 
-_UniFFILib = loadIndirect()
-_UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.argtypes = (
-    FOREIGN_CALLBACK_T,
-    ctypes.POINTER(RustCallStatus),
+_UniffiLib = _uniffi_load_indirect()
+_UniffiLib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.argtypes = (
+    _UNIFFI_FOREIGN_CALLBACK_T,
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.restype = None
-_UniFFILib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json.argtypes = (
-    RustBuffer,
-    RustBuffer,
+_UniffiLib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider.restype = None
+_UniffiLib.uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json.argtypes = (
+    _UniffiRustBuffer,
+    _UniffiRustBuffer,
     ctypes.c_uint64,
-    ctypes.POINTER(RustCallStatus),
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json.restype = RustBuffer
-_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_json.argtypes = (
-    RustBuffer,
-    RustBuffer,
+_UniffiLib.uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json.restype = _UniffiRustBuffer
+_UniffiLib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json.argtypes = (
+    _UniffiRustBuffer,
+    _UniffiRustBuffer,
     ctypes.c_uint64,
-    ctypes.POINTER(RustCallStatus),
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_json.restype = RustBuffer
-_UniFFILib.uniffi_drive_light_client_fn_func_version.argtypes = (
-    ctypes.POINTER(RustCallStatus),
+_UniffiLib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json.restype = _UniffiRustBuffer
+_UniffiLib.uniffi_drive_light_client_fn_func_identity_proof_json.argtypes = (
+    _UniffiRustBuffer,
+    _UniffiRustBuffer,
+    ctypes.c_uint64,
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.uniffi_drive_light_client_fn_func_version.restype = RustBuffer
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_alloc.argtypes = (
+_UniffiLib.uniffi_drive_light_client_fn_func_identity_proof_json.restype = _UniffiRustBuffer
+_UniffiLib.uniffi_drive_light_client_fn_func_version.argtypes = (
+    ctypes.POINTER(_UniffiRustCallStatus),
+)
+_UniffiLib.uniffi_drive_light_client_fn_func_version.restype = _UniffiRustBuffer
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_alloc.argtypes = (
     ctypes.c_int32,
-    ctypes.POINTER(RustCallStatus),
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_alloc.restype = RustBuffer
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_from_bytes.argtypes = (
-    ForeignBytes,
-    ctypes.POINTER(RustCallStatus),
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_alloc.restype = _UniffiRustBuffer
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_from_bytes.argtypes = (
+    _UniffiForeignBytes,
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_from_bytes.restype = RustBuffer
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_free.argtypes = (
-    RustBuffer,
-    ctypes.POINTER(RustCallStatus),
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_from_bytes.restype = _UniffiRustBuffer
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_free.argtypes = (
+    _UniffiRustBuffer,
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_free.restype = None
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve.argtypes = (
-    RustBuffer,
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_free.restype = None
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_reserve.argtypes = (
+    _UniffiRustBuffer,
     ctypes.c_int32,
-    ctypes.POINTER(RustCallStatus),
+    ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniFFILib.ffi_dash_drive_v0_rustbuffer_reserve.restype = RustBuffer
-_UniFFILib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json.argtypes = (
+_UniffiLib.ffi_dash_drive_v0_rustbuffer_reserve.restype = _UniffiRustBuffer
+_UniffiLib.uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json.argtypes = (
 )
-_UniFFILib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json.restype = ctypes.c_uint16
-_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_json.argtypes = (
+_UniffiLib.uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json.restype = ctypes.c_uint16
+_UniffiLib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json.argtypes = (
 )
-_UniFFILib.uniffi_drive_light_client_checksum_func_identity_proof_json.restype = ctypes.c_uint16
-_UniFFILib.uniffi_drive_light_client_checksum_func_version.argtypes = (
+_UniffiLib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json.restype = ctypes.c_uint16
+_UniffiLib.uniffi_drive_light_client_checksum_func_identity_proof_json.argtypes = (
 )
-_UniFFILib.uniffi_drive_light_client_checksum_func_version.restype = ctypes.c_uint16
-_UniFFILib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.argtypes = (
+_UniffiLib.uniffi_drive_light_client_checksum_func_identity_proof_json.restype = ctypes.c_uint16
+_UniffiLib.uniffi_drive_light_client_checksum_func_version.argtypes = (
 )
-_UniFFILib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.restype = ctypes.c_uint16
-_UniFFILib.ffi_dash_drive_v0_uniffi_contract_version.argtypes = (
+_UniffiLib.uniffi_drive_light_client_checksum_func_version.restype = ctypes.c_uint16
+_UniffiLib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.argtypes = (
 )
-_UniFFILib.ffi_dash_drive_v0_uniffi_contract_version.restype = ctypes.c_uint32
-uniffi_check_contract_api_version(_UniFFILib)
-uniffi_check_api_checksums(_UniFFILib)
+_UniffiLib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key.restype = ctypes.c_uint16
+_UniffiLib.ffi_dash_drive_v0_uniffi_contract_version.argtypes = (
+)
+_UniffiLib.ffi_dash_drive_v0_uniffi_contract_version.restype = ctypes.c_uint32
+_uniffi_check_contract_api_version(_UniffiLib)
+_uniffi_check_api_checksums(_UniffiLib)
 
 # Public interface members begin here.
 
 
-class FfiConverterUInt8(FfiConverterPrimitiveInt):
+class _UniffiConverterUInt8(_UniffiConverterPrimitiveInt):
     CLASS_NAME = "u8"
     VALUE_MIN = 0
     VALUE_MAX = 2**8
 
     @staticmethod
     def read(buf):
-        return buf.readU8()
+        return buf.read_u8()
 
     @staticmethod
-    def writeUnchecked(value, buf):
-        buf.writeU8(value)
+    def write_unchecked(value, buf):
+        buf.write_u8(value)
 
-class FfiConverterString:
+class _UniffiConverterUInt32(_UniffiConverterPrimitiveInt):
+    CLASS_NAME = "u32"
+    VALUE_MIN = 0
+    VALUE_MAX = 2**32
+
+    @staticmethod
+    def read(buf):
+        return buf.read_u32()
+
+    @staticmethod
+    def write_unchecked(value, buf):
+        buf.write_u32(value)
+
+class _UniffiConverterString:
     @staticmethod
     def check(value):
         if not isinstance(value, str):
@@ -622,28 +645,28 @@ class FfiConverterString:
 
     @staticmethod
     def read(buf):
-        size = buf.readI32()
+        size = buf.read_i32()
         if size < 0:
             raise InternalError("Unexpected negative string length")
-        utf8Bytes = buf.read(size)
-        return utf8Bytes.decode("utf-8")
+        utf8_bytes = buf.read(size)
+        return utf8_bytes.decode("utf-8")
 
     @staticmethod
     def write(value, buf):
-        value = FfiConverterString.check(value)
-        utf8Bytes = value.encode("utf-8")
-        buf.writeI32(len(utf8Bytes))
-        buf.write(utf8Bytes)
+        value = _UniffiConverterString.check(value)
+        utf8_bytes = value.encode("utf-8")
+        buf.write_i32(len(utf8_bytes))
+        buf.write(utf8_bytes)
 
     @staticmethod
     def lift(buf):
-        with buf.consumeWithStream() as stream:
+        with buf.consume_with_stream() as stream:
             return stream.read(stream.remaining()).decode("utf-8")
 
     @staticmethod
     def lower(value):
-        value = FfiConverterString.check(value)
-        with RustBuffer.allocWithBuilder() as builder:
+        value = _UniffiConverterString.check(value)
+        with _UniffiRustBuffer.alloc_with_builder() as builder:
             builder.write(value.encode("utf-8"))
             return builder.finalize()
 
@@ -657,22 +680,22 @@ class FfiConverterString:
 class Error(Exception):
     pass
 
-UniFFITempError = Error
+_UniffiTempError = Error
 
 class Error:  # type: ignore
-    class NotInitialized(UniFFITempError):
+    class NotInitialized(_UniffiTempError):
         def __init__(self):
             pass
         def __repr__(self):
             return "Error.NotInitialized({})".format(str(self))
-    UniFFITempError.NotInitialized = NotInitialized  # type: ignore
-    class AlreadyInitialized(UniFFITempError):
+    _UniffiTempError.NotInitialized = NotInitialized # type: ignore
+    class AlreadyInitialized(_UniffiTempError):
         def __init__(self):
             pass
         def __repr__(self):
             return "Error.AlreadyInitialized({})".format(str(self))
-    UniFFITempError.AlreadyInitialized = AlreadyInitialized  # type: ignore
-    class DriveError(UniFFITempError):
+    _UniffiTempError.AlreadyInitialized = AlreadyInitialized # type: ignore
+    class DriveError(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -680,8 +703,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.DriveError({})".format(str(self))
-    UniFFITempError.DriveError = DriveError  # type: ignore
-    class ProtocolError(UniFFITempError):
+    _UniffiTempError.DriveError = DriveError # type: ignore
+    class ProtocolError(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -689,32 +712,32 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.ProtocolError({})".format(str(self))
-    UniFFITempError.ProtocolError = ProtocolError  # type: ignore
-    class EmptyResponse(UniFFITempError):
+    _UniffiTempError.ProtocolError = ProtocolError # type: ignore
+    class EmptyResponse(_UniffiTempError):
         def __init__(self):
             pass
         def __repr__(self):
             return "Error.EmptyResponse({})".format(str(self))
-    UniFFITempError.EmptyResponse = EmptyResponse  # type: ignore
-    class EmptyResponseMetadata(UniFFITempError):
+    _UniffiTempError.EmptyResponse = EmptyResponse # type: ignore
+    class EmptyResponseMetadata(_UniffiTempError):
         def __init__(self):
             pass
         def __repr__(self):
             return "Error.EmptyResponseMetadata({})".format(str(self))
-    UniFFITempError.EmptyResponseMetadata = EmptyResponseMetadata  # type: ignore
-    class EmptyResponseProof(UniFFITempError):
+    _UniffiTempError.EmptyResponseMetadata = EmptyResponseMetadata # type: ignore
+    class EmptyResponseProof(_UniffiTempError):
         def __init__(self):
             pass
         def __repr__(self):
             return "Error.EmptyResponseProof({})".format(str(self))
-    UniFFITempError.EmptyResponseProof = EmptyResponseProof  # type: ignore
-    class DocumentMissingInProof(UniFFITempError):
+    _UniffiTempError.EmptyResponseProof = EmptyResponseProof # type: ignore
+    class DocumentMissingInProof(_UniffiTempError):
         def __init__(self):
             pass
         def __repr__(self):
             return "Error.DocumentMissingInProof({})".format(str(self))
-    UniFFITempError.DocumentMissingInProof = DocumentMissingInProof  # type: ignore
-    class RequestDecodeError(UniFFITempError):
+    _UniffiTempError.DocumentMissingInProof = DocumentMissingInProof # type: ignore
+    class RequestDecodeError(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -722,8 +745,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.RequestDecodeError({})".format(str(self))
-    UniFFITempError.RequestDecodeError = RequestDecodeError  # type: ignore
-    class ResponseDecodeError(UniFFITempError):
+    _UniffiTempError.RequestDecodeError = RequestDecodeError # type: ignore
+    class ResponseDecodeError(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -731,8 +754,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.ResponseDecodeError({})".format(str(self))
-    UniFFITempError.ResponseDecodeError = ResponseDecodeError  # type: ignore
-    class DataEncodingError(UniFFITempError):
+    _UniffiTempError.ResponseDecodeError = ResponseDecodeError # type: ignore
+    class DataEncodingError(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -740,8 +763,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.DataEncodingError({})".format(str(self))
-    UniFFITempError.DataEncodingError = DataEncodingError  # type: ignore
-    class SignDigestFailed(UniFFITempError):
+    _UniffiTempError.DataEncodingError = DataEncodingError # type: ignore
+    class SignDigestFailed(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -749,8 +772,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.SignDigestFailed({})".format(str(self))
-    UniFFITempError.SignDigestFailed = SignDigestFailed  # type: ignore
-    class SignatureVerificationError(UniFFITempError):
+    _UniffiTempError.SignDigestFailed = SignDigestFailed # type: ignore
+    class SignatureVerificationError(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -758,8 +781,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.SignatureVerificationError({})".format(str(self))
-    UniFFITempError.SignatureVerificationError = SignatureVerificationError  # type: ignore
-    class InvalidQuorum(UniFFITempError):
+    _UniffiTempError.SignatureVerificationError = SignatureVerificationError # type: ignore
+    class InvalidQuorum(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -767,8 +790,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.InvalidQuorum({})".format(str(self))
-    UniFFITempError.InvalidQuorum = InvalidQuorum  # type: ignore
-    class InvalidSignatureFormat(UniFFITempError):
+    _UniffiTempError.InvalidQuorum = InvalidQuorum # type: ignore
+    class InvalidSignatureFormat(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -776,8 +799,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.InvalidSignatureFormat({})".format(str(self))
-    UniFFITempError.InvalidSignatureFormat = InvalidSignatureFormat  # type: ignore
-    class InvalidPublicKey(UniFFITempError):
+    _UniffiTempError.InvalidSignatureFormat = InvalidSignatureFormat # type: ignore
+    class InvalidPublicKey(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -785,8 +808,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.InvalidPublicKey({})".format(str(self))
-    UniFFITempError.InvalidPublicKey = InvalidPublicKey  # type: ignore
-    class InvalidSignature(UniFFITempError):
+    _UniffiTempError.InvalidPublicKey = InvalidPublicKey # type: ignore
+    class InvalidSignature(_UniffiTempError):
         def __init__(self, error):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -794,8 +817,8 @@ class Error:  # type: ignore
             self.error = error
         def __repr__(self):
             return "Error.InvalidSignature({})".format(str(self))
-    UniFFITempError.InvalidSignature = InvalidSignature  # type: ignore
-    class UnexpectedCallbackError(UniFFITempError):
+    _UniffiTempError.InvalidSignature = InvalidSignature # type: ignore
+    class UnexpectedCallbackError(_UniffiTempError):
         def __init__(self, error, reason):
             super().__init__(", ".join([
                 "error={!r}".format(error),
@@ -805,16 +828,16 @@ class Error:  # type: ignore
             self.reason = reason
         def __repr__(self):
             return "Error.UnexpectedCallbackError({})".format(str(self))
-    UniFFITempError.UnexpectedCallbackError = UnexpectedCallbackError  # type: ignore
+    _UniffiTempError.UnexpectedCallbackError = UnexpectedCallbackError # type: ignore
 
-Error = UniFFITempError  # type: ignore
-del UniFFITempError
+Error = _UniffiTempError # type: ignore
+del _UniffiTempError
 
 
-class FfiConverterTypeError(FfiConverterRustBuffer):
+class _UniffiConverterTypeError(_UniffiConverterRustBuffer):
     @staticmethod
     def read(buf):
-        variant = buf.readI32()
+        variant = buf.read_i32()
         if variant == 1:
             return Error.NotInitialized(
             )
@@ -823,11 +846,11 @@ class FfiConverterTypeError(FfiConverterRustBuffer):
             )
         if variant == 3:
             return Error.DriveError(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 4:
             return Error.ProtocolError(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 5:
             return Error.EmptyResponse(
@@ -843,98 +866,98 @@ class FfiConverterTypeError(FfiConverterRustBuffer):
             )
         if variant == 9:
             return Error.RequestDecodeError(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 10:
             return Error.ResponseDecodeError(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 11:
             return Error.DataEncodingError(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 12:
             return Error.SignDigestFailed(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 13:
             return Error.SignatureVerificationError(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 14:
             return Error.InvalidQuorum(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 15:
             return Error.InvalidSignatureFormat(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 16:
             return Error.InvalidPublicKey(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 17:
             return Error.InvalidSignature(
-                error=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
             )
         if variant == 18:
             return Error.UnexpectedCallbackError(
-                error=FfiConverterString.read(buf),
-                reason=FfiConverterString.read(buf),
+                error=_UniffiConverterString.read(buf),
+                reason=_UniffiConverterString.read(buf),
             )
         raise InternalError("Raw enum value doesn't match any cases")
 
     @staticmethod
     def write(value, buf):
         if isinstance(value, Error.NotInitialized):
-            buf.writeI32(1)
+            buf.write_i32(1)
         if isinstance(value, Error.AlreadyInitialized):
-            buf.writeI32(2)
+            buf.write_i32(2)
         if isinstance(value, Error.DriveError):
-            buf.writeI32(3)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(3)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.ProtocolError):
-            buf.writeI32(4)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(4)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.EmptyResponse):
-            buf.writeI32(5)
+            buf.write_i32(5)
         if isinstance(value, Error.EmptyResponseMetadata):
-            buf.writeI32(6)
+            buf.write_i32(6)
         if isinstance(value, Error.EmptyResponseProof):
-            buf.writeI32(7)
+            buf.write_i32(7)
         if isinstance(value, Error.DocumentMissingInProof):
-            buf.writeI32(8)
+            buf.write_i32(8)
         if isinstance(value, Error.RequestDecodeError):
-            buf.writeI32(9)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(9)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.ResponseDecodeError):
-            buf.writeI32(10)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(10)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.DataEncodingError):
-            buf.writeI32(11)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(11)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.SignDigestFailed):
-            buf.writeI32(12)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(12)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.SignatureVerificationError):
-            buf.writeI32(13)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(13)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.InvalidQuorum):
-            buf.writeI32(14)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(14)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.InvalidSignatureFormat):
-            buf.writeI32(15)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(15)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.InvalidPublicKey):
-            buf.writeI32(16)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(16)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.InvalidSignature):
-            buf.writeI32(17)
-            FfiConverterString.write(value.error, buf)
+            buf.write_i32(17)
+            _UniffiConverterString.write(value.error, buf)
         if isinstance(value, Error.UnexpectedCallbackError):
-            buf.writeI32(18)
-            FfiConverterString.write(value.error, buf)
-            FfiConverterString.write(value.reason, buf)
+            buf.write_i32(18)
+            _UniffiConverterString.write(value.error, buf)
+            _UniffiConverterString.write(value.reason, buf)
 
 
 
@@ -981,11 +1004,11 @@ class ConcurrentHandleMap:
 # to free the callback once it's dropped by Rust.
 IDX_CALLBACK_FREE = 0
 # Return codes for callback calls
-UNIFFI_CALLBACK_SUCCESS = 0
-UNIFFI_CALLBACK_ERROR = 1
-UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+_UNIFFI_CALLBACK_SUCCESS = 0
+_UNIFFI_CALLBACK_ERROR = 1
+_UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
 
-class FfiConverterCallbackInterface:
+class _UniffiConverterCallbackInterface:
     _handle_map = ConcurrentHandleMap()
 
     def __init__(self, cb):
@@ -1004,7 +1027,7 @@ class FfiConverterCallbackInterface:
 
     @classmethod
     def read(cls, buf):
-        handle = buf.readU64()
+        handle = buf.read_u64()
         cls.lift(handle)
 
     @classmethod
@@ -1014,9 +1037,9 @@ class FfiConverterCallbackInterface:
 
     @classmethod
     def write(cls, cb, buf):
-        buf.writeU64(cls.lower(cb))
+        buf.write_u64(cls.lower(cb))
 
-# Declaration and FfiConverters for QuorumInfoProvider Callback Interface
+# Declaration and _UniffiConverters for QuorumInfoProvider Callback Interface
 
 class QuorumInfoProvider:
     def get_quorum_public_key(self, quorum_type: "int",quorum_hash: "typing.List[int]"):
@@ -1028,51 +1051,51 @@ def py_foreignCallbackCallbackInterfaceQuorumInfoProvider(handle, method, args_d
     
     def invoke_get_quorum_public_key(python_callback, args_stream, buf_ptr):
         def makeCall():return python_callback.get_quorum_public_key(
-                FfiConverterUInt32.read(args_stream), 
-                FfiConverterSequenceUInt8.read(args_stream)
+                _UniffiConverterUInt32.read(args_stream), 
+                _UniffiConverterSequenceUInt8.read(args_stream)
                 )
 
         def makeCallAndHandleReturn():
             rval = makeCall()
-            with RustBuffer.allocWithBuilder() as builder:
-                FfiConverterSequenceUInt8.write(rval, builder)
+            with _UniffiRustBuffer.alloc_with_builder() as builder:
+                _UniffiConverterSequenceUInt8.write(rval, builder)
                 buf_ptr[0] = builder.finalize()
-            return UNIFFI_CALLBACK_SUCCESS
+            return _UNIFFI_CALLBACK_SUCCESS
         try:
             return makeCallAndHandleReturn()
         except Error as e:
             # Catch errors declared in the UDL file
-            with RustBuffer.allocWithBuilder() as builder:
-                FfiConverterTypeError.write(e, builder)
+            with _UniffiRustBuffer.alloc_with_builder() as builder:
+                _UniffiConverterTypeError.write(e, builder)
                 buf_ptr[0] = builder.finalize()
-            return UNIFFI_CALLBACK_ERROR
+            return _UNIFFI_CALLBACK_ERROR
 
     
 
-    cb = FfiConverterCallbackInterfaceQuorumInfoProvider.lift(handle)
+    cb = _UniffiConverterCallbackInterfaceQuorumInfoProvider.lift(handle)
     if not cb:
-        raise InternalError("No callback in handlemap; this is a Uniffi bug")
+        raise InternalError("No callback in handlemap; this is a uniffi bug")
 
     if method == IDX_CALLBACK_FREE:
-        FfiConverterCallbackInterfaceQuorumInfoProvider.drop(handle)
+        _UniffiConverterCallbackInterfaceQuorumInfoProvider.drop(handle)
         # Successfull return
         # See docs of ForeignCallback in `uniffi_core/src/ffi/foreigncallbacks.rs`
-        return UNIFFI_CALLBACK_SUCCESS
+        return _UNIFFI_CALLBACK_SUCCESS
 
     if method == 1:
         # Call the method and handle any errors
         # See docs of ForeignCallback in `uniffi_core/src/ffi/foreigncallbacks.rs` for details
         try:
-            return invoke_get_quorum_public_key(cb, RustBufferStream(args_data, args_len), buf_ptr)
+            return invoke_get_quorum_public_key(cb, _UniffiRustBufferStream(args_data, args_len), buf_ptr)
         except BaseException as e:
             # Catch unexpected errors
             try:
                 # Try to serialize the exception into a String
-                buf_ptr[0] = FfiConverterString.lower(repr(e))
+                buf_ptr[0] = _UniffiConverterString.lower(repr(e))
             except:
                 # If that fails, just give up
                 pass
-            return UNIFFI_CALLBACK_UNEXPECTED_ERROR
+            return _UNIFFI_CALLBACK_UNEXPECTED_ERROR
     
 
     # This should never happen, because an out of bounds method index won't
@@ -1081,65 +1104,76 @@ def py_foreignCallbackCallbackInterfaceQuorumInfoProvider(handle, method, args_d
 
     # An unexpected error happened.
     # See docs of ForeignCallback in `uniffi_core/src/ffi/foreigncallbacks.rs`
-    return UNIFFI_CALLBACK_UNEXPECTED_ERROR
+    return _UNIFFI_CALLBACK_UNEXPECTED_ERROR
 
 # We need to keep this function reference alive:
 # if they get GC'd while in use then UniFFI internals could attempt to call a function
 # that is in freed memory.
 # That would be...uh...bad. Yeah, that's the word. Bad.
-foreignCallbackCallbackInterfaceQuorumInfoProvider = FOREIGN_CALLBACK_T(py_foreignCallbackCallbackInterfaceQuorumInfoProvider)
-rust_call(lambda err: _UniFFILib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider(foreignCallbackCallbackInterfaceQuorumInfoProvider, err))
+foreignCallbackCallbackInterfaceQuorumInfoProvider = _UNIFFI_FOREIGN_CALLBACK_T(py_foreignCallbackCallbackInterfaceQuorumInfoProvider)
+_rust_call(lambda err: _UniffiLib.uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider(foreignCallbackCallbackInterfaceQuorumInfoProvider, err))
 
-# The FfiConverter which transforms the Callbacks in to Handles to pass to Rust.
-FfiConverterCallbackInterfaceQuorumInfoProvider = FfiConverterCallbackInterface(foreignCallbackCallbackInterfaceQuorumInfoProvider)
+# The _UniffiConverter which transforms the Callbacks in to Handles to pass to Rust.
+_UniffiConverterCallbackInterfaceQuorumInfoProvider = _UniffiConverterCallbackInterface(foreignCallbackCallbackInterfaceQuorumInfoProvider)
 
 
 
-class FfiConverterSequenceUInt8(FfiConverterRustBuffer):
+class _UniffiConverterSequenceUInt8(_UniffiConverterRustBuffer):
     @classmethod
     def write(cls, value, buf):
         items = len(value)
-        buf.writeI32(items)
+        buf.write_i32(items)
         for item in value:
-            FfiConverterUInt8.write(item, buf)
+            _UniffiConverterUInt8.write(item, buf)
 
     @classmethod
     def read(cls, buf):
-        count = buf.readI32()
+        count = buf.read_i32()
         if count < 0:
             raise InternalError("Unexpected negative sequence length")
 
         return [
-            FfiConverterUInt8.read(buf) for i in range(count)
+            _UniffiConverterUInt8.read(buf) for i in range(count)
         ]
+
+def identities_by_pubkey_hashes_json(request: "typing.List[int]",response: "typing.List[int]",callback: "QuorumInfoProvider"):
+    
+    
+    
+    return _UniffiConverterSequenceUInt8.lift(_rust_call_with_error(_UniffiConverterTypeError,_UniffiLib.uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json,
+        _UniffiConverterSequenceUInt8.lower(request),
+        _UniffiConverterSequenceUInt8.lower(response),
+        _UniffiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
+
 
 def identity_by_pubkeys_proof_json(request: "typing.List[int]",response: "typing.List[int]",callback: "QuorumInfoProvider"):
     
     
     
-    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json,
-        FfiConverterSequenceUInt8.lower(request),
-        FfiConverterSequenceUInt8.lower(response),
-        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
+    return _UniffiConverterSequenceUInt8.lift(_rust_call_with_error(_UniffiConverterTypeError,_UniffiLib.uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json,
+        _UniffiConverterSequenceUInt8.lower(request),
+        _UniffiConverterSequenceUInt8.lower(response),
+        _UniffiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
 
 
 def identity_proof_json(request: "typing.List[int]",response: "typing.List[int]",callback: "QuorumInfoProvider"):
     
     
     
-    return FfiConverterSequenceUInt8.lift(rust_call_with_error(FfiConverterTypeError,_UniFFILib.uniffi_drive_light_client_fn_func_identity_proof_json,
-        FfiConverterSequenceUInt8.lower(request),
-        FfiConverterSequenceUInt8.lower(response),
-        FfiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
+    return _UniffiConverterSequenceUInt8.lift(_rust_call_with_error(_UniffiConverterTypeError,_UniffiLib.uniffi_drive_light_client_fn_func_identity_proof_json,
+        _UniffiConverterSequenceUInt8.lower(request),
+        _UniffiConverterSequenceUInt8.lower(response),
+        _UniffiConverterCallbackInterfaceQuorumInfoProvider.lower(callback)))
 
 
 def version():
-    return FfiConverterString.lift(rust_call(_UniFFILib.uniffi_drive_light_client_fn_func_version,))
+    return _UniffiConverterString.lift(_rust_call(_UniffiLib.uniffi_drive_light_client_fn_func_version,))
 
 
 __all__ = [
     "InternalError",
     "Error",
+    "identities_by_pubkey_hashes_json",
     "identity_by_pubkeys_proof_json",
     "identity_proof_json",
     "version",

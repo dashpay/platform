@@ -1,6 +1,3 @@
-use crate::uniffi_bindings::codec::DEFAULT_CODEC;
-use dapi_grpc::platform::v0::*;
-
 /// Generate a wrapper function that exports uniffi bindings for proof processing code
 ///
 /// Generate function
@@ -29,18 +26,23 @@ use dapi_grpc::platform::v0::*;
 #[macro_export]
 macro_rules! uniffi_proof_binding_wrapper {
     ($name:ident,$req:ty,$resp:ty,$result:ty,$codec:expr) => {
-        /// Given protobuf request and response, retrieve encapsulated objects from proof and encode it using CBOR
+        /// Given protobuf request and response, retrieve encapsulated objects from proof.
         ///
         /// # Arguments
         ///
-        /// * req_proto - CBOR-encoded request sent to the server
-        /// * resp_proto - CBOR-encoded response received from the server
+        /// * request - encoded request sent to the server
+        /// * response - encoded response received from the server
         /// * callback - trait that should be implemented by the caller, that will retrieve additional quorum
         /// information (eg. public key) needed to verify the proof
         ///
         /// # Returns
         ///
-        /// Returns CBOR-encoded object(s) retrieved from the server.
+        /// Returns encoded object(s) retrieved from the server.
+        ///
+        /// # Encoding
+        ///
+        /// Input arguments (`request`, `response`) and returned data is serialized.
+        /// Default serialization method is defined as [DEFAULT_CODEC](crate::uniffi_bindings::codec::DEFAULT_CODEC).
         #[no_mangle]
         #[uniffi::export]
         pub fn $name(
@@ -79,68 +81,3 @@ macro_rules! uniffi_proof_binding_wrapper {
         }
     };
 }
-
-uniffi_proof_binding_wrapper!(
-    identity_proof_json,
-    GetIdentityRequest,
-    GetIdentityResponse,
-    dpp::identity::Identity,
-    DEFAULT_CODEC
-);
-
-uniffi_proof_binding_wrapper!(
-    identity_by_pubkeys_proof_json,
-    GetIdentityByPublicKeyHashesRequest,
-    GetIdentityByPublicKeyHashesResponse,
-    dpp::identity::Identity,
-    DEFAULT_CODEC
-);
-
-// uniffi_proof_binding_wrapper!(
-//     identities_proof_to_cbor,
-//     GetIdentitiesRequest,
-//     GetIdentitiesResponse,
-//     Identities
-// );
-
-// uniffi_proof_binding_wrapper!(
-//     identities_proof_to_cbor,
-//     GetIdentitiesByPublicKeyHashesRequest,
-//     GetIdentitiesByPublicKeyHashesResponse,
-//     IdentitiesByPublicKeyHashes
-// );
-
-// uniffi_proof_binding_wrapper!(
-//     identity_balance_proof_to_cbor,
-//     GetIdentityRequest,
-//     GetIdentityBalanceResponse,
-//     IdentityBalance
-// );
-
-// uniffi_proof_binding_wrapper!(
-//     identity_balance_and_revision_proof_to_cbor,
-//     GetIdentityRequest,
-//     GetIdentityBalanceAndRevisionResponse,
-//     IdentityBalanceAndRevision
-// );
-
-// uniffi_proof_binding_wrapper!(
-//     data_contract_proof_to_cbor,
-//     GetDataContractRequest,
-//     GetDataContractResponse,
-//     DataContract
-// );
-
-// uniffi_proof_binding_wrapper!(
-//     data_contracts_proof_to_cbor,
-//     GetDataContractsRequest,
-//     GetDataContractsResponse,
-//     DataContracts
-// );
-
-// uniffi_proof_binding_wrapper!(
-//     documents_proof_to_cbor,
-//     DriveQuery,
-//     GetDocumentsResponse,
-//     Documents
-// );

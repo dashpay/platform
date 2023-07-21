@@ -370,6 +370,8 @@ internal interface _UniFFILib : Library {
 
     fun uniffi_dash_drive_v0_fn_init_callback_quoruminfoprovider(`callbackStub`: ForeignCallback,_uniffi_out_err: RustCallStatus, 
     ): Unit
+    fun uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json(`request`: RustBuffer.ByValue,`response`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_drive_light_client_fn_func_identity_by_pubkeys_proof_json(`request`: RustBuffer.ByValue,`response`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_drive_light_client_fn_func_identity_proof_json(`request`: RustBuffer.ByValue,`response`: RustBuffer.ByValue,`callback`: Long,_uniffi_out_err: RustCallStatus, 
@@ -384,6 +386,8 @@ internal interface _UniFFILib : Library {
     ): Unit
     fun ffi_dash_drive_v0_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json(
+    ): Short
     fun uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json(
     ): Short
     fun uniffi_drive_light_client_checksum_func_identity_proof_json(
@@ -409,16 +413,19 @@ private fun uniffiCheckContractApiVersion(lib: _UniFFILib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
-    if (lib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 24692.toShort()) {
+    if (lib.uniffi_drive_light_client_checksum_func_identities_by_pubkey_hashes_json() != 7640.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_drive_light_client_checksum_func_identity_proof_json() != 10710.toShort()) {
+    if (lib.uniffi_drive_light_client_checksum_func_identity_by_pubkeys_proof_json() != 45852.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_drive_light_client_checksum_func_identity_proof_json() != 16376.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_drive_light_client_checksum_func_version() != 33802.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 49931.toShort()) {
+    if (lib.uniffi_drive_light_client_checksum_method_quoruminfoprovider_get_quorum_public_key() != 44554.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -443,6 +450,26 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
+    }
+}
+
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
     }
 }
 
@@ -1058,6 +1085,15 @@ public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
         }
     }
 }
+@Throws(Exception::class)
+
+fun `identitiesByPubkeyHashesJson`(`request`: List<UByte>, `response`: List<UByte>, `callback`: QuorumInfoProvider): List<UByte> {
+    return FfiConverterSequenceUByte.lift(
+    rustCallWithError(Exception) { _status ->
+    _UniFFILib.INSTANCE.uniffi_drive_light_client_fn_func_identities_by_pubkey_hashes_json(FfiConverterSequenceUByte.lower(`request`),FfiConverterSequenceUByte.lower(`response`),FfiConverterTypeQuorumInfoProvider.lower(`callback`),_status)
+})
+}
+
 @Throws(Exception::class)
 
 fun `identityByPubkeysProofJson`(`request`: List<UByte>, `response`: List<UByte>, `callback`: QuorumInfoProvider): List<UByte> {

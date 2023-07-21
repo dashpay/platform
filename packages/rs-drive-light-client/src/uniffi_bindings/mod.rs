@@ -5,8 +5,11 @@ pub mod bindgen;
 /// Data formats used for uniffi bindings
 pub mod codec;
 
-/// Proof bindings
-pub mod proof;
+/// Macros used to generate bindings
+pub mod macros;
+
+/// Bindings using json encoding for input and output data
+pub mod json;
 
 /// Return version of rs-drive-li
 #[no_mangle]
