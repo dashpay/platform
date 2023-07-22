@@ -1,13 +1,22 @@
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
+use crate::state_transition::documents_batch_transition::{
+    DocumentsBatchTransition, DocumentsBatchTransitionV0,
+};
 use crate::state_transition::StateTransitionType::DocumentsBatch;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
+
+impl From<DocumentsBatchTransitionV0> for StateTransition {
+    fn from(value: DocumentsBatchTransitionV0) -> Self {
+        let document_batch_transition: DocumentsBatchTransition = value.into();
+        document_batch_transition.into()
+    }
+}
 
 impl StateTransitionLike for DocumentsBatchTransitionV0 {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.transitions.iter().map(|t| t.base().id).collect()]
+        vec![self.transitions.iter().map(|t| t.base().id()).collect()]
     }
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {

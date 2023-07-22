@@ -29,7 +29,9 @@ pub trait IdentityCreateTransitionV0Methods {
         signer: &S,
         bls: &impl BlsModule,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     /// Get State Transition type
     fn get_type() -> StateTransitionType;
     /// Set asset lock

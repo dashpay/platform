@@ -48,10 +48,15 @@ mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
 
+use crate::state_transition::data_contract_update_transition::{
+    SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
+};
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::documents_batch_transition::fields::{
     property_names, DEFAULT_SECURITY_LEVEL,
 };
+use crate::state_transition::signing::sign_external::StateTransitionIdentitySignExternalV0;
+use crate::state_transition::StateTransitionType::DocumentsBatch;
 pub use v0::*;
 
 #[derive(
@@ -77,10 +82,7 @@ pub enum DocumentsBatchTransition {
     V0(DocumentsBatchTransitionV0),
 }
 
-impl crate::state_transition::signing::sign_external::StateTransitionIdentitySignExternalV0
-    for DocumentsBatchTransition
-{
-}
+impl StateTransitionIdentitySignExternalV0 for DocumentsBatchTransition {}
 
 //
 // impl Default for DocumentsBatchTransition {
@@ -362,169 +364,135 @@ impl StateTransitionIdentitySignedV0 for DocumentsBatchTransition {
 //         Ok(map)
 //     }
 // }
-//
-// impl StateTransitionFieldTypes for DocumentsBatchTransition {
-//     fn binary_property_paths() -> Vec<&'static str> {
-//         vec![property_names::SIGNATURE]
-//     }
-//
-//     fn identifiers_property_paths() -> Vec<&'static str> {
-//         vec![property_names::OWNER_ID]
-//     }
-//
-//     fn signature_property_paths() -> Vec<&'static str> {
-//         vec![
-//             property_names::SIGNATURE,
-//             property_names::SIGNATURE_PUBLIC_KEY_ID,
-//         ]
-//     }
-//
-//     fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
-//         self.to_object(skip_signature)
-//             .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
-//     }
-//
-//     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-//         let mut object: Value = platform_value::to_value(self)?;
-//         if skip_signature {
-//             for path in Self::signature_property_paths() {
-//                 let _ = object.remove_values_matching_path(path);
-//             }
-//         }
-//         let mut transitions = vec![];
-//         for transition in self.transitions.iter() {
-//             transitions.push(transition.to_object()?)
-//         }
-//         object.insert(
-//             String::from(property_names::TRANSITIONS),
-//             Value::Array(transitions),
-//         )?;
-//
-//         Ok(object)
-//     }
-//
-//     #[cfg(feature = "cbor")]
-//     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-//         let mut result_buf = self.feature_version.encode_var_vec();
-//         let value: CborValue = self.to_object(skip_signature)?.try_into()?;
-//
-//         let map = CborValue::serialized(&value)
-//             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-//
-//         let mut canonical_map: CborCanonicalMap = map.try_into()?;
-//         canonical_map.remove(property_names::STATE_TRANSITION_PROTOCOL_VERSION);
-//
-//         // Replace binary fields individually for every transition using respective data contract
-//         if let Some(CborValue::Array(ref mut transitions)) =
-//             canonical_map.get_mut(&CborValue::Text(property_names::TRANSITIONS.to_string()))
-//         {
-//             for (i, cbor_transition) in transitions.iter_mut().enumerate() {
-//                 let transition = self
-//                     .transitions
-//                     .get(i)
-//                     .context(format!("transition with index {} doesn't exist", i))?;
-//
-//                 let (identifier_properties, binary_properties) = transition
-//                     .base()
-//                     .data_contract
-//                     .get_identifiers_and_binary_paths(
-//                         &self.transitions[i].base().document_type_name,
-//                     )?;
-//
-//                 if transition.get_updated_at().is_none() {
-//                     cbor_transition.remove("$updatedAt");
-//                 }
-//
-//                 cbor_transition.replace_paths(
-//                     identifier_properties
-//                         .into_iter()
-//                         .chain(binary_properties)
-//                         .chain(document_base_transition::IDENTIFIER_FIELDS)
-//                         .chain(document_create_transition::BINARY_FIELDS),
-//                     FieldType::ArrayInt,
-//                     FieldType::Bytes,
-//                 );
-//             }
-//         }
-//
-//         canonical_map.replace_paths(
-//             Self::binary_property_paths()
-//                 .into_iter()
-//                 .chain(Self::identifiers_property_paths()),
-//             FieldType::ArrayInt,
-//             FieldType::Bytes,
-//         );
-//
-//         if !skip_signature {
-//             if self.signature.is_none() {
-//                 canonical_map.insert(property_names::SIGNATURE, CborValue::Null)
-//             }
-//             if self.signature_public_key_id.is_none() {
-//                 canonical_map.insert(property_names::SIGNATURE_PUBLIC_KEY_ID, CborValue::Null)
-//             }
-//         }
-//
-//         canonical_map.sort_canonical();
-//
-//         let mut buffer = canonical_map
-//             .to_bytes()
-//             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-//         result_buf.append(&mut buffer);
-//
-//         Ok(result_buf)
-//     }
-//
-//     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-//         let mut object: Value = platform_value::to_value(self)?;
-//         if skip_signature {
-//             for path in Self::signature_property_paths() {
-//                 let _ = object.remove_values_matching_path(path);
-//             }
-//         }
-//         let mut transitions = vec![];
-//         for transition in self.transitions.iter() {
-//             transitions.push(transition.to_cleaned_object()?)
-//         }
-//         object.insert(
-//             String::from(property_names::TRANSITIONS),
-//             Value::Array(transitions),
-//         )?;
-//
-//         Ok(object)
-//     }
-// }
-//
-// impl StateTransitionLike for DocumentsBatchTransition {
-//     fn modified_data_ids(&self) -> Vec<Identifier> {
-//         self.transitions.iter().map(|t| t.base().id).collect()
-//     }
-//
-//     fn state_transition_protocol_version(&self) -> FeatureVersion {
-//         self.feature_version
-//     }
-//
-//     fn signature(&self) -> &BinaryData {
-//         if let Some(ref signature) = self.signature {
-//             signature
-//         } else {
-//             // TODO This is temporary solution to not break the `get_signature()` method
-//             // TODO for other transitions
-//             todo!()
-//         }
-//     }
-//
-//     fn state_transition_type(&self) -> StateTransitionType {
-//         self.transition_type
-//     }
-//
-//     fn set_signature(&mut self, signature: BinaryData) {
-//         self.signature = Some(signature);
-//     }
-//     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-//         self.signature = Some(BinaryData::new(signature));
-//     }
-// }
-//
+
+impl StateTransitionFieldTypes for DocumentsBatchTransition {
+    fn binary_property_paths() -> Vec<&'static str> {
+        vec![SIGNATURE]
+    }
+
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        vec![property_names::OWNER_ID]
+    }
+
+    fn signature_property_paths() -> Vec<&'static str> {
+        vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
+    }
+    //
+    // fn to_json(&self, skip_signature: bool) -> Result<JsonValue, ProtocolError> {
+    //     self.to_object(skip_signature)
+    //         .and_then(|value| value.try_into().map_err(ProtocolError::ValueError))
+    // }
+    //
+    // fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+    //     let mut object: Value = platform_value::to_value(self)?;
+    //     if skip_signature {
+    //         for path in Self::signature_property_paths() {
+    //             let _ = object.remove_values_matching_path(path);
+    //         }
+    //     }
+    //     let mut transitions = vec![];
+    //     for transition in self.transitions.iter() {
+    //         transitions.push(transition.to_object()?)
+    //     }
+    //     object.insert(
+    //         String::from(property_names::TRANSITIONS),
+    //         Value::Array(transitions),
+    //     )?;
+    //
+    //     Ok(object)
+    // }
+    //
+    // #[cfg(feature = "cbor")]
+    // fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+    //     let mut result_buf = self.feature_version.encode_var_vec();
+    //     let value: CborValue = self.to_object(skip_signature)?.try_into()?;
+    //
+    //     let map = CborValue::serialized(&value)
+    //         .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+    //
+    //     let mut canonical_map: CborCanonicalMap = map.try_into()?;
+    //     canonical_map.remove(property_names::STATE_TRANSITION_PROTOCOL_VERSION);
+    //
+    //     // Replace binary fields individually for every transition using respective data contract
+    //     if let Some(CborValue::Array(ref mut transitions)) =
+    //         canonical_map.get_mut(&CborValue::Text(property_names::TRANSITIONS.to_string()))
+    //     {
+    //         for (i, cbor_transition) in transitions.iter_mut().enumerate() {
+    //             let transition = self
+    //                 .transitions
+    //                 .get(i)
+    //                 .context(format!("transition with index {} doesn't exist", i))?;
+    //
+    //             let (identifier_properties, binary_properties) = transition
+    //                 .base()
+    //                 .data_contract
+    //                 .get_identifiers_and_binary_paths(
+    //                     &self.transitions[i].base().document_type_name,
+    //                 )?;
+    //
+    //             if transition.get_updated_at().is_none() {
+    //                 cbor_transition.remove("$updatedAt");
+    //             }
+    //
+    //             cbor_transition.replace_paths(
+    //                 identifier_properties
+    //                     .into_iter()
+    //                     .chain(binary_properties)
+    //                     .chain(document_base_transition::IDENTIFIER_FIELDS)
+    //                     .chain(document_create_transition::BINARY_FIELDS),
+    //                 FieldType::ArrayInt,
+    //                 FieldType::Bytes,
+    //             );
+    //         }
+    //     }
+    //
+    //     canonical_map.replace_paths(
+    //         Self::binary_property_paths()
+    //             .into_iter()
+    //             .chain(Self::identifiers_property_paths()),
+    //         FieldType::ArrayInt,
+    //         FieldType::Bytes,
+    //     );
+    //
+    //     if !skip_signature {
+    //         if self.signature.is_none() {
+    //             canonical_map.insert(property_names::SIGNATURE, CborValue::Null)
+    //         }
+    //         if self.signature_public_key_id.is_none() {
+    //             canonical_map.insert(property_names::SIGNATURE_PUBLIC_KEY_ID, CborValue::Null)
+    //         }
+    //     }
+    //
+    //     canonical_map.sort_canonical();
+    //
+    //     let mut buffer = canonical_map
+    //         .to_bytes()
+    //         .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+    //     result_buf.append(&mut buffer);
+    //
+    //     Ok(result_buf)
+    // }
+    //
+    // fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+    //     let mut object: Value = platform_value::to_value(self)?;
+    //     if skip_signature {
+    //         for path in Self::signature_property_paths() {
+    //             let _ = object.remove_values_matching_path(path);
+    //         }
+    //     }
+    //     let mut transitions = vec![];
+    //     for transition in self.transitions.iter() {
+    //         transitions.push(transition.to_cleaned_object()?)
+    //     }
+    //     object.insert(
+    //         String::from(property_names::TRANSITIONS),
+    //         Value::Array(transitions),
+    //     )?;
+    //
+    //     Ok(object)
+    // }
+}
+
 pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> SecurityLevel {
     let maybe_security_level = v.get_u64(property_names::SECURITY_LEVEL_REQUIREMENT);
     match maybe_security_level {

@@ -34,7 +34,9 @@ pub trait IdentityUpdateTransitionV0Methods {
         public_keys_disabled_at: Option<u64>,
         signer: &S,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityUpdate

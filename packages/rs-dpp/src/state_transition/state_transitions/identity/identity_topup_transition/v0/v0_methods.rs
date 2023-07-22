@@ -26,7 +26,9 @@ pub trait IdentityTopUpTransitionV0Methods {
         asset_lock_proof_private_key: &[u8],
         bls: &impl BlsModule,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 
     /// Get State Transition type
     fn get_type() -> StateTransitionType {
