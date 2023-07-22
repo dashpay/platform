@@ -236,7 +236,7 @@ class DockerCompose {
 
     const containerIds = await this.getContainersList(envs, {
       filterServiceNames:
-      serviceName,
+        serviceName,
       quiet: true,
     });
 
@@ -294,6 +294,7 @@ class DockerCompose {
    * @param {boolean} [options.returnServiceNames] - Return only service names
    * @param {boolean} [options.quiet=false] - Return only container ids
    * @param {boolean} [options.formatJson=false] - Return as json with details
+   * @param {boolean} [options.all=false] - Return stopped containers as well
    * @return {Promise<string[]|object[]>}
    */
   async getContainersList(
@@ -303,6 +304,7 @@ class DockerCompose {
       returnServiceNames = false,
       quiet = false,
       formatJson = false,
+      all = false,
     } = {},
   ) {
     let psOutput;
@@ -318,6 +320,10 @@ class DockerCompose {
 
     if (formatJson) {
       commandOptions.push('--format', 'json');
+    }
+
+    if (all) {
+      commandOptions.push('--all');
     }
 
     commandOptions.push(filterServiceNames);

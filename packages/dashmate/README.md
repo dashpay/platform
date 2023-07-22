@@ -281,21 +281,26 @@ rm -rf ~/.dashmate/
 ```
 
 
-### Reindex dashcore chain data
+### Reindex core chain data
 
-The `core reindex` command rebuilds the blockchain index using the downloaded block data. It modifies the configuration to start the core container in `reindex=1` mode, waits until it completes a full resync, and returns it to normal mode.
+The `core reindex` command helps you to reindex your Core instance in the node.
 
-The process displays interactive progress and can be interrupted at any time, but you cannot start your configuration until the resync is fully complete.
+The process displays interactive progress and may be interrupted at any time. After reindex is finished core and other services will become online without any interactions from the user.
 
 The `core reindex` command works for regular and local configurations.
 
 ```
 USAGE
-  $ dashmate core reindex [-v] [--config <value>]
+  $ dashmate core reindex [-v] [--config <value>] [-d] [-f]
 
 FLAGS
+  -d, --detach      run the reindex process in the background
+  -f, --force       reindex already running node without confirmation
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+
+DESCRIPTION
+  Reindex Core data
 ```
 
 ### Full node
@@ -407,6 +412,26 @@ FLAGS
   -v, --verbose        use verbose mode for output
   --group=<value>      group name to use
   --hard               reset config as well as data
+```
+
+With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.
+
+#### Reindex group nodes
+
+The `group core reindex` reindexes all your local dash core containers
+
+```
+USAGE
+  $ dashmate group core reindex [-v] [--group <value>] [-d] [-f]
+
+FLAGS
+  -d, --detach     run the reindex process in the background
+  -f, --force      reindex already running node without confirmation
+  -v, --verbose    use verbose mode for output
+  --group=<value>  group name to use
+
+DESCRIPTION
+  Reindex group Core data
 ```
 
 With hard reset mode enabled, the corresponding node configs will be reset as well. It will be necessary to run node [setup](#node-setup) again from scratch to start a new local node group.

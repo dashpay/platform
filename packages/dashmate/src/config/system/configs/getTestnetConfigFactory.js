@@ -87,7 +87,7 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
             },
             genesis: {
               genesis_time: '2023-04-26T10:43:20.921Z',
-              chain_id: 'testnet-22',
+              chain_id: 'dash-testnet-22',
               initial_core_chain_locked_height: 854281,
               consensus_params: {
                 timeout: {

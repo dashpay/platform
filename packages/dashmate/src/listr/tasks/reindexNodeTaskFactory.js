@@ -1,35 +1,61 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
-const CoreService = require('../../core/CoreService');
+const path = require('path');
 const generateEnvs = require('../../util/generateEnvs');
+const CoreService = require('../../core/CoreService');
+const { TEMPLATES_DIR } = require('../../constants');
 
 /**
  * @param {DockerCompose} dockerCompose
- * @param {startCore} startCore
- * @param {stopNodeTask} stopNodeTask
+ * @param {startNodeTask} startNodeTask
+ * @param {restartNodeTask} restartNodeTask
  * @param {waitForCoreStart} waitForCoreStart
  * @param {waitForCoreSync} waitForCoreSync
  * @param {createRpcClient} createRpcClient
+ * @param {renderTemplate} renderTemplate
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {configFileRepository} configFileRepository
  * @param {ConfigFile} configFile
  * @param {getConnectionHost} getConnectionHost
+ * @param {Docker} docker
  * @return {reindexNodeTask}
  */
 function reindexNodeTaskFactory(
   dockerCompose,
-  startCore,
-  stopNodeTask,
+  startNodeTask,
+  restartNodeTask,
   waitForCoreStart,
   waitForCoreSync,
   createRpcClient,
+  renderTemplate,
   renderServiceTemplates,
   writeServiceConfigs,
   configFileRepository,
   configFile,
   getConnectionHost,
+  docker,
 ) {
+  /**
+   * Gets dashcore docker container from the node
+   * @param config
+   * @return {Promise<null|Container>}
+   */
+  async function getCoreContainer(config) {
+    const [containerId] = await dockerCompose
+      .getContainersList(generateEnvs(configFile, config), {
+        quiet: true,
+        all: true,
+        filterServiceNames: 'core',
+      });
+
+    if (!containerId) {
+      return null;
+    }
+
+    return docker.getContainer(containerId);
+  }
+
   /**
    * @typedef {reindexNodeTask}
    * @param {Config} config
@@ -38,124 +64,101 @@ function reindexNodeTaskFactory(
     return new Listr([
       {
         title: 'Check services are not running',
-        enabled: () => config.get('core.reindex.enable'),
-        task: async () => {
-          const isRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
+        enabled: (ctx) => !ctx.isForce,
+        task: async (ctx, task) => {
+          const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
-          if (isRunning) {
-            throw new Error('Services is running, stop your nodes first');
+          let header;
+          if (isNodeRunning) {
+            header = 'Node found running. The node will be unavailable until reindex is complete.\n';
+          } else {
+            header = 'Node is not running. The node will be automatically started and available after reindex is complete.\n';
+          }
+
+          const agreement = await task.prompt({
+            type: 'toggle',
+            name: 'confirm',
+            header,
+            message: 'Start reindex?',
+            enabled: 'Yes',
+            disabled: 'No',
+          });
+
+          if (!agreement) {
+            throw new Error('Operation is cancelled');
           }
         },
       },
       {
-        title: 'Set reindex mode',
-        enabled: () => config.get('core.reindex.enable'),
+        title: 'Start Core in reindex mode',
         task: async () => {
-          config.set('core.reindex.enable', 1);
+          // Temporary (for the first run) set reindex=1 to dashd.conf
+          const configPath = 'core/dash.conf';
+          const templatePath = `${configPath}.dot`;
 
-          // Write configs
-          configFileRepository.write(configFile);
+          const serviceConfig = renderTemplate(
+            path.join(TEMPLATES_DIR, templatePath),
+            { ...config.options, reindex: true },
+          );
+
+          writeServiceConfigs(config.getName(), { [configPath]: serviceConfig });
+
+          // Restart or start node (including Core container) to apply
+          // reindex=1 from dashd.conf
+          const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
+
+          if (isNodeRunning) {
+            return restartNodeTask(config);
+          }
+
+          // start node in case nothing is running
+          return startNodeTask(config);
+        },
+      },
+      {
+        title: 'Wait for Core start',
+        task: async (ctx) => {
+          // Wait until Core is started
+          const rpcClient = createRpcClient({
+            port: config.get('core.rpc.port'),
+            user: config.get('core.rpc.user'),
+            pass: config.get('core.rpc.password'),
+            host: await getConnectionHost(config, 'core'),
+          });
+
+          const container = await getCoreContainer(config);
+
+          if (!container) {
+            throw new Error('Core container not found');
+          }
+
+          ctx.coreService = new CoreService(config, rpcClient, container);
+
+          await waitForCoreStart(ctx.coreService);
+
+          // When Core is started remove reindex=1 from dashd.conf
+          // rendering service templates without additional variables
           const configFiles = renderServiceTemplates(config);
           writeServiceConfigs(config.getName(), configFiles);
         },
       },
       {
-        title: 'Start core',
-        task: async (ctx) => {
-          const { docker } = dockerCompose;
-
-          let containerId = config.get('core.reindex.containerId', false);
-          let containerInfo;
-
-          if (containerId) {
-            try {
-              containerInfo = await docker.getContainer(containerId).inspect();
-            } catch (e) {
-              if (e.reason === 'no such container') {
-                containerId = null;
-              }
-              throw e;
-            }
-          }
-
-          if (!containerId) {
-            ctx.coreService = await startCore(config);
-            containerInfo = await ctx.coreService.dockerContainer.inspect();
-
-            ctx.reindexContainerId = containerInfo.Id;
-            config.set('core.reindex.containerId', containerInfo.Id);
-            configFileRepository.write(configFile);
-
-            return;
-          }
-
-          ctx.reindexContainerId = containerInfo.Id;
-          ctx.coreService = new CoreService(
-            config,
-            createRpcClient(
-              {
-                port: config.get('core.rpc.port'),
-                user: config.get('core.rpc.user'),
-                pass: config.get('core.rpc.password'),
-                host: await getConnectionHost(config, 'core'),
-              },
-            ),
-            docker.getContainer(containerId),
-          );
-
-          const { State } = containerInfo;
-
-          if (State.Status === 'paused' || State.Status === 'exited') {
-            switch (State.ExitCode) {
-              default:
-              // eslint-disable-next-line no-console
-                console.warn(`Reindex container exited with status ${State.ExitCode}, check docker logs of container ${containerId}`);
-              // eslint-disable-next-line no-fallthrough
-              case 0:
-                await docker.getContainer(containerId).start();
-            }
-          }
-        },
-      },
-      {
-        title: 'Wait for Core start',
-        task: async (ctx) => waitForCoreStart(ctx.coreService),
-      },
-      {
+        title: 'Reindex Core',
+        enabled: (ctx) => !ctx.isDetached,
         task: async (ctx) => new Observable(async (observer) => {
-          observer.next(`Reindexing Core for ${config.getName()}`);
+          // Show reindex progeress if not detached
+          observer.next('Starting reindex...');
 
           await waitForCoreSync(ctx.coreService, (verificationProgress) => {
             const { percent, blocks, headers } = verificationProgress;
 
-            observer.next(`Reindexing ${config.getName()}... (${(percent * 100).toFixed(4)}%, ${blocks} / ${headers})`);
+            observer.next(`${(percent * 100).toFixed(4)}%, ${blocks} / ${headers}`);
           });
 
           await new Promise((res) => setTimeout(res, 2000));
 
           observer.complete();
         }),
-      },
-      {
-        title: 'Stop services',
-        task: async () => {
-          const containerId = config.get('core.reindex.containerId', false);
-          const container = dockerCompose.docker.getContainer(containerId);
-
-          await container.stop();
-        },
-      },
-      {
-        title: 'Disable reindex mode',
-        task: async () => {
-          config.set('core.reindex.enable', 0);
-          config.set('core.reindex.containerId', null);
-
-          // Write configs
-          configFileRepository.write(configFile);
-          const configFiles = renderServiceTemplates(config);
-          writeServiceConfigs(config.getName(), configFiles);
-        },
       },
     ]);
   }

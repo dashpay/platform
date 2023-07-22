@@ -19,8 +19,6 @@ function writeServiceConfigsFactory(homeDir) {
     // Drop all files from configs directory
     const configDir = homeDir.joinPath(configName);
 
-    fs.rmSync(configDir, { recursive: true, force: true });
-
     for (const filePath of Object.keys(configFiles)) {
       const absoluteFilePath = path.join(configDir, filePath);
       const absoluteFileDir = path.dirname(absoluteFilePath);

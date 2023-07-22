@@ -69,11 +69,10 @@ function getConfigFileMigrationsFactory(homeDir, systemConfigs) {
           .forEach(([, options]) => {
             options.docker.network.bindIp = base.get('docker.network.bindIp');
 
-            // eslint-disable-next-line max-len
-            options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-
-            // eslint-disable-next-line max-len
-            options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+            if (options.network === 'testnet') {
+              options.platform.drive.tenderdash
+                .genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+            }
           });
 
         return configFile;
@@ -90,6 +89,11 @@ function getConfigFileMigrationsFactory(homeDir, systemConfigs) {
             options.dashmate.helper.docker.build = base.get('dashmate.helper.docker.build');
 
             delete options.dashmate.helper.docker.image;
+            delete options.core.reindex;
+
+            if (options.network === 'testnet') {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+            }
           });
 
         return configFile;

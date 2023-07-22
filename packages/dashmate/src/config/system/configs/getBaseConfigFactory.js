@@ -107,10 +107,6 @@ function getBaseConfigFactory(homeDir) {
         },
         logIps: 0,
         indexes: true,
-        reindex: {
-          enable: false,
-          containerId: null,
-        },
       },
       platform: {
         dapi: {
