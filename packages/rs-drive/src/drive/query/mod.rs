@@ -32,6 +32,17 @@
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
+mod query_document_ids;
+mod query_documents;
+mod query_documents_cbor_from_contract;
+mod query_documents_cbor_with_document_type_lookup;
+mod query_documents_for_cbor_query_internal;
+mod query_documents_from_contract;
+mod query_proof_of_documents_using_cbor_encoded_query;
+mod query_proof_of_documents_using_cbor_encoded_query_only_get_elements;
+mod query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost;
+mod query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost;
+
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
