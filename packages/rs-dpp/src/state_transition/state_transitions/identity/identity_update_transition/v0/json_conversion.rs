@@ -16,7 +16,7 @@ mod test {
 
     #[test]
     fn conversion_to_json_object() {
-        let public_key = identity_fixture().get_public_keys()[&0].to_owned();
+        let public_key = identity_fixture().public_keys()[&0].to_owned();
         let mut buffer = [0u8; 33];
         let _ = getrandom(&mut buffer);
         let transition = IdentityUpdateTransitionV0 {

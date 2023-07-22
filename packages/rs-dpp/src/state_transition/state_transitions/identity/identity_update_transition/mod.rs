@@ -1,11 +1,11 @@
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 pub mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use fields::*;
@@ -27,21 +27,23 @@ use serde::Serialize;
     Clone,
     PlatformDeserialize,
     PlatformSerialize,
-    Serialize,
-    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
     platform_version_path = "state_transitions.identity_update_state_transition",
     allow_nested
 )]
-#[serde(untagged)]
 pub enum IdentityUpdateTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(IdentityUpdateTransitionV0),
 }
 

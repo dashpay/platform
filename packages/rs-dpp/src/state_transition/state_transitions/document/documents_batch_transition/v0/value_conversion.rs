@@ -72,7 +72,7 @@ use bincode::{config, Decode, Encode};
 //         Ok(map)
 //     }
 //
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn from_json_object(
 //         json_value: JsonValue,
 //         data_contracts: Vec<DataContract>,

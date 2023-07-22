@@ -1,9 +1,9 @@
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use std::convert::{TryFrom, TryInto};
@@ -34,22 +34,17 @@ use crate::state_transition::{
 use crate::version::FeatureVersion;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 
-#[derive(
-    Serialize,
-    Deserialize,
-    Debug,
-    Clone,
-    PartialEq,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
+#[derive(Debug, Clone, PartialEq, PlatformDeserialize, PlatformSerialize, PlatformSignable)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase"),
+    serde(try_from = "IdentityCreateTransitionV0Inner")
 )]
-#[serde(rename_all = "camelCase")]
-#[serde(try_from = "IdentityCreateTransitionV0Inner")]
 #[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreateTransitionV0 {
-    #[serde(rename = "type")]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "type"))]
     pub transition_type: StateTransitionType,
     // The signable
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
@@ -59,7 +54,7 @@ pub struct IdentityCreateTransitionV0 {
     pub protocol_version: u32,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-    #[serde(skip)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
     #[platform_signable(exclude_from_sig_hash)]
     pub identity_id: Identifier,
 }
@@ -122,7 +117,7 @@ impl TryFrom<Identity> for IdentityCreateTransitionV0 {
         identity_create_transition.set_protocol_version(identity.feature_version as u32);
 
         let public_keys = identity
-            .get_public_keys()
+            .public_keys()
             .iter()
             .map(|(_, public_key)| public_key.into())
             .collect::<Vec<IdentityPublicKeyInCreation>>();

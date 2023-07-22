@@ -103,7 +103,7 @@ pub struct DocumentReplaceTransitionV0 {
 // }
 //
 // impl DocumentTransitionObjectLike for DocumentReplaceTransitionV0 {
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn from_json_object(
 //         json_value: JsonValue,
 //         data_contract: DataContract,

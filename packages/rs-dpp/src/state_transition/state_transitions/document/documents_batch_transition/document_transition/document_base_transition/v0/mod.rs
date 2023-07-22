@@ -90,7 +90,7 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
 }
 
 impl DocumentBaseTransitionV0 {
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -114,7 +114,7 @@ impl DocumentBaseTransitionV0 {
 }
 
 impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
@@ -126,7 +126,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         Ok(document)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -137,7 +137,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         Self::from_value_map(map, data_contract)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -155,12 +155,12 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         })
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut btree_map = BTreeMap::new();
         btree_map.insert(
@@ -182,21 +182,21 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         Ok(btree_map)
     }
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 }
 
 pub trait DocumentTransitionObjectLike {
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     /// Creates the Document Transition from JSON representation. The JSON representation contains
     /// binary data encoded in base64, Identifiers encoded in base58
     fn from_json_object(
@@ -205,7 +205,7 @@ pub trait DocumentTransitionObjectLike {
     ) -> Result<Self, ProtocolError>
     where
         Self: std::marker::Sized;
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     /// Creates the document transition from Raw Object
     fn from_object(
         raw_transition: Value,
@@ -213,7 +213,7 @@ pub trait DocumentTransitionObjectLike {
     ) -> Result<Self, ProtocolError>
     where
         Self: std::marker::Sized;
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_value_map(
         map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -221,20 +221,20 @@ pub trait DocumentTransitionObjectLike {
     where
         Self: std::marker::Sized;
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     /// Object is an [`platform::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self) -> Result<Value, ProtocolError>;
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     /// Value Map is a Map of string to [`platform::Value`] that represents the state transition
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError>;
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     /// Object is an [`serde_json::Value`] instance that replaces the binary data with
     ///  - base58 string for Identifiers
     ///  - base64 string for other binary data
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
 }

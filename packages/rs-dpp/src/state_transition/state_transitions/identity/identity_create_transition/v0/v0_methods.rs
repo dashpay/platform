@@ -66,7 +66,7 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
         identity_create_transition.set_protocol_version(identity.feature_version as u32);
 
         let public_keys = identity
-            .get_public_keys()
+            .public_keys()
             .iter()
             .map(|(_, public_key)| public_key.clone().into())
             .collect();
@@ -81,7 +81,7 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
         identity_create_transition
             .public_keys
             .iter_mut()
-            .zip(identity.get_public_keys().iter())
+            .zip(identity.public_keys().iter())
             .try_for_each(|(public_key_with_witness, (_, public_key))| {
                 if public_key.key_type.is_unique_key_type() {
                     let signature = signer.sign(public_key, &key_signable_bytes)?;

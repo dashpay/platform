@@ -2,12 +2,12 @@ use crate::state_transition::identity_credit_withdrawal_transition::v0::Identity
 
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 pub(crate) mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
@@ -27,23 +27,25 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
 #[derive(
     Debug,
     Clone,
-    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
     platform_version_path = "state_transitions.identity_credit_withdrawal_state_transition",
     allow_nested
 )]
-#[serde(untagged)]
 pub enum IdentityCreditWithdrawalTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(IdentityCreditWithdrawalTransitionV0),
 }
 

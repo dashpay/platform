@@ -88,7 +88,7 @@ pub enum DocumentTransition {
 // }
 //
 // impl DocumentTransitionObjectLike for DocumentTransition {
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn from_json_object(
 //         json_value: JsonValue,
 //         data_contract: DataContract,
@@ -112,7 +112,7 @@ pub enum DocumentTransition {
 //         })
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn from_object(
 //         raw_transition: Value,
 //         data_contract: DataContract,
@@ -126,27 +126,27 @@ pub enum DocumentTransition {
 //         Self::from_value_map(map, data_contract)
 //     }
 //
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
 //         call_method!(self, to_json)
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
 //         call_method!(self, to_value_map)
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_object(&self) -> Result<Value, ProtocolError> {
 //         call_method!(self, to_object)
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
 //         call_method!(self, to_cleaned_object)
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn from_value_map(
 //         map: BTreeMap<String, Value>,
 //         data_contract: DataContract,

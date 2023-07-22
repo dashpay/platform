@@ -133,7 +133,7 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=getPublicKeys)]
     pub fn get_public_keys(&self) -> Vec<JsValue> {
         self.0
-            .get_public_keys()
+            .public_keys()
             .iter()
             .map(IdentityPublicKeyInCreation::to_owned)
             .map(IdentityPublicKeyWithWitnessWasm::from)
@@ -143,7 +143,7 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(getter, js_name=publicKeys)]
     pub fn public_keys(&self) -> Vec<JsValue> {
-        self.get_public_keys()
+        self.public_keys()
     }
 
     #[wasm_bindgen(js_name=getType)]

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
-#[cfg(feature = "cbor")]
+#[cfg(feature = "state-transition-cbor-conversion")]
 use ciborium::value::Value as CborValue;
 use derive_more::From;
 use integer_encoding::VarInt;
@@ -17,7 +17,7 @@ use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
 
-#[cfg(feature = "cbor")]
+#[cfg(feature = "state-transition-cbor-conversion")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::{
@@ -40,12 +40,12 @@ use crate::state_transition::signing::abstract_state_transition_identity_signed:
 pub mod document_transition;
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use crate::state_transition::data_contract_update_transition::{
@@ -63,22 +63,24 @@ pub use v0::*;
     Debug,
     Clone,
     PartialEq,
-    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
-    PlatformSerdeVersionedDeserialize,
     PlatformVersioned,
     From,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
     platform_version_path = "state_transitions.documents_batch_state_transition",
     allow_nested
 )]
-#[serde(untagged)]
 pub enum DocumentsBatchTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DocumentsBatchTransitionV0),
 }
 
@@ -99,7 +101,7 @@ impl StateTransitionIdentitySignExternalV0 for DocumentsBatchTransition {}
 // }
 //
 // impl DocumentsBatchTransition {
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     pub fn from_json_object(
 //         json_value: JsonValue,
 //         data_contracts: Vec<DataContract>,
@@ -402,7 +404,7 @@ impl StateTransitionFieldTypes for DocumentsBatchTransition {
     //     Ok(object)
     // }
     //
-    // #[cfg(feature = "cbor")]
+    // #[cfg(feature = "state-transition-cbor-conversion")]
     // fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
     //     let mut result_buf = self.feature_version.encode_var_vec();
     //     let value: CborValue = self.to_object(skip_signature)?.try_into()?;

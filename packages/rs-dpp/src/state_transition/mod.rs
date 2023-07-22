@@ -148,17 +148,17 @@ pub enum StateTransition {
 //         }
 //     }
 //
-//     #[cfg(feature = "cbor")]
+//     #[cfg(feature = "state-transition-cbor-conversion")]
 //     fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
 //         call_method!(self, to_cbor_buffer, true)
 //     }
 //
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
 //         call_method!(self, to_json, skip_signature)
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_object(
 //         &self,
 //         skip_signature: bool,
@@ -178,7 +178,7 @@ pub enum StateTransition {
 //         panic!("Static call is not supported")
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
 //         call_method!(self, to_cleaned_object, skip_signature)
 //     }

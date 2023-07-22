@@ -22,11 +22,12 @@ use crate::serialization_traits::{
 };
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+
+use crate::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionV0,
+};
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
+use crate::state_transition::StateTransitionType;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::{

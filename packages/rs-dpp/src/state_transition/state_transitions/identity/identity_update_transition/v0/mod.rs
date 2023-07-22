@@ -1,10 +1,10 @@
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use crate::platform_serialization::PlatformSignable;
@@ -35,17 +35,12 @@ use crate::{
 };
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(
-    Serialize,
-    Deserialize,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
-    Debug,
-    Clone,
-    PartialEq,
+#[derive(PlatformDeserialize, PlatformSerialize, PlatformSignable, Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[serde(rename_all = "camelCase")]
 #[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityUpdateTransitionV0 {
@@ -57,12 +52,12 @@ pub struct IdentityUpdateTransitionV0 {
 
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[serde(default)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(default))]
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub add_public_keys: Vec<IdentityPublicKeyInCreation>,
 
     /// Identity Public Keys ID's to disable for the Identity
-    #[serde(default)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(default))]
     pub disable_public_keys: Vec<KeyID>,
 
     /// Timestamp when keys were disabled
@@ -144,7 +139,7 @@ where
 //
 //     #[test]
 //     fn conversion_to_raw_object() {
-//         let public_key = identity_fixture().get_public_keys()[&0].to_owned();
+//         let public_key = identity_fixture().public_keys()[&0].to_owned();
 //         let mut buffer = [0u8; 33];
 //         let _ = getrandom(&mut buffer);
 //         let transition = IdentityUpdateTransitionV0 {

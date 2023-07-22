@@ -1,5 +1,5 @@
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-#[cfg(feature = "cbor")]
+#[cfg(feature = "state-transition-cbor-conversion")]
 use ciborium::value::Value as CborValue;
 
 use std::collections::BTreeMap;
@@ -18,9 +18,9 @@ use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::platform_serialization::PlatformSignable;
 
-#[cfg(feature = "cbor")]
+#[cfg(feature = "state-transition-cbor-conversion")]
 use crate::util::cbor_serializer;
-#[cfg(feature = "cbor")]
+#[cfg(feature = "state-transition-cbor-conversion")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
 
@@ -72,7 +72,7 @@ impl Convertible for IdentityPublicKeyInCreationV0 {
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
-    #[cfg(feature = "cbor")]
+    #[cfg(feature = "state-transition-cbor-conversion")]
     fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let object = self.to_object()?;
 
@@ -103,7 +103,7 @@ impl IdentityPublicKeyInCreationV0 {
         .into()
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
         raw_object.try_into().map_err(ProtocolError::ValueError)
     }
@@ -248,7 +248,7 @@ impl IdentityPublicKeyInCreationV0 {
             })
     }
 
-    #[cfg(feature = "cbor")]
+    #[cfg(feature = "state-transition-cbor-conversion")]
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
         let key_value_map = cbor_value.as_map().ok_or_else(|| {
             ProtocolError::DecodingError(String::from(
@@ -280,7 +280,7 @@ impl IdentityPublicKeyInCreationV0 {
         })
     }
 
-    #[cfg(feature = "cbor")]
+    #[cfg(feature = "state-transition-cbor-conversion")]
     pub fn to_cbor_value(&self) -> CborValue {
         let mut pk_map = CborCanonicalMap::new();
 

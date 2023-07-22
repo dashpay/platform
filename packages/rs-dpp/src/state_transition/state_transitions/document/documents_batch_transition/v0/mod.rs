@@ -1,12 +1,12 @@
-#[cfg(feature = "cbor")]
+#[cfg(feature = "state-transition-cbor-conversion")]
 mod cbor_conversion;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use crate::identity::KeyID;
@@ -25,15 +25,10 @@ use platform_value::{BinaryData, Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
+#[derive(Debug, Clone, PartialEq, PlatformDeserialize, PlatformSerialize, PlatformSignable)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(allow_nested)]

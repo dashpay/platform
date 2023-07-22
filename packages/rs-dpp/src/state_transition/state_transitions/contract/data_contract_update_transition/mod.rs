@@ -16,13 +16,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod serialize;
 mod state_transition_like;
 mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 pub use fields::*;
@@ -35,23 +35,25 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 #[derive(
     Debug,
     Clone,
-    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
     From,
     PartialEq,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
     platform_version_path = "state_transitions.contract_update_state_transition",
     allow_nested
 )]
-#[serde(untagged)]
 pub enum DataContractUpdateTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractUpdateTransitionV0),
 }
 

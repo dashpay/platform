@@ -1,10 +1,10 @@
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use crate::identity::SecurityLevel::MASTER;
@@ -24,17 +24,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-#[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
-    PartialEq,
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSignable, PartialEq)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[serde(rename_all = "camelCase")]
 #[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreditTransferTransitionV0 {

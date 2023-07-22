@@ -113,7 +113,7 @@ pub trait DataContractLike<'a> {
                                          // #[serde(untagged)]
                                          // #[platform_serde_versioned(version_field = "$version")]
 pub enum DataContract {
-    //#[versioned(0)]
+    //#[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractV0),
 }
 

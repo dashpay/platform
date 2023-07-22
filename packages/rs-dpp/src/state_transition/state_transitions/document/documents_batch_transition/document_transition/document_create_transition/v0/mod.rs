@@ -106,7 +106,7 @@ pub struct DocumentCreateTransitionV0 {
 // }
 
 impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
@@ -139,7 +139,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         Ok(document)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -150,7 +150,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         Self::from_value_map(map, data_contract)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -170,12 +170,12 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         })
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
         transition_base_map.insert(
@@ -200,14 +200,14 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         Ok(transition_base_map)
     }
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }

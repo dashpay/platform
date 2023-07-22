@@ -39,10 +39,13 @@ where
             .state_transition_signing
             .sign_external
         {
-            0 => self.sign_external_0(identity_public_key, signer),
-            _ => {}
+            0 => self.sign_external_v0(identity_public_key, signer),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "StateTransitionIdentitySignedV0::sign_external".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
-        Ok(())
     }
 
     fn sign(

@@ -1,10 +1,10 @@
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 
 use crate::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -32,17 +32,12 @@ use crate::version::PlatformVersion;
 
 ///DataContractCreateTransitionV0 has the same encoding structure
 
-#[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PartialEq,
-    PlatformSignable,
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PartialEq, PlatformSignable)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransitionV0 {
     //#[platform_serialization(versioned_structure, versioned_serialization)]

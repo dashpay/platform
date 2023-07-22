@@ -14,7 +14,7 @@ pub struct DocumentDeleteTransitionV0 {
 }
 //
 // impl DocumentTransitionObjectLike for DocumentDeleteTransitionV0 {
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn from_json_object(
 //         json_value: JsonValue,
 //         data_contract: DataContract,
@@ -25,7 +25,7 @@ pub struct DocumentDeleteTransitionV0 {
 //         Ok(document)
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn from_object(
 //         raw_transition: Value,
 //         data_contract: DataContract,
@@ -35,7 +35,7 @@ pub struct DocumentDeleteTransitionV0 {
 //         Ok(DocumentDeleteTransitionV0 { base })
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn from_value_map(
 //         mut map: BTreeMap<String, Value>,
 //         data_contract: DataContract,
@@ -48,22 +48,22 @@ pub struct DocumentDeleteTransitionV0 {
 //         Ok(DocumentDeleteTransitionV0 { base })
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_object(&self) -> Result<Value, ProtocolError> {
 //         self.base.to_object()
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
 //         self.base.to_value_map()
 //     }
 //
-//     #[cfg(feature = "json-object")]
+//     #[cfg(feature = "state-transition-json-conversion")]
 //     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
 //         self.base.to_json()
 //     }
 //
-//     #[cfg(feature = "platform-value")]
+//     #[cfg(feature = "state-transition-value-conversion")]
 //     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
 //         self.base.to_cleaned_object()
 //     }
