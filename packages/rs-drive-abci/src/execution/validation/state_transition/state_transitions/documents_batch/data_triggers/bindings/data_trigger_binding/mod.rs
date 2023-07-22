@@ -1,3 +1,4 @@
+use dpp::document::action_type::DocumentActionType;
 use dpp::identifier::Identifier;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::DataTriggerBinding;
 use dpp::version::PlatformVersion;
@@ -29,7 +30,7 @@ impl DataTriggerBindingV0Getters for DataTriggerBinding {
         &self,
         data_contract_id: &Identifier,
         document_type: &str,
-        transition_action: Action,
+        transition_action: DocumentActionType,
     ) -> bool {
         match self {
             DataTriggerBinding::V0(binding) => {

@@ -33,7 +33,7 @@ type DataTrigger = Box<
 ///
 /// This type is used to represent the result of executing a data trigger on the blockchain. It contains either a
 /// successful result or a `DataTriggerActionError`, indicating the failure of the trigger.
-type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionError>;
+pub(super) type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionError>;
 
 /// An enumeration representing the different kinds of data triggers that can be executed on the blockchain.
 ///

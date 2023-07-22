@@ -1,32 +1,24 @@
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
-    data_trigger_bindings_list, DataTriggerExecutionContext,
+    data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutionResult,
+    DataTriggerExecutor,
 };
-use dpp::consensus::ConsensusError;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 
-fn execute_data_triggers() {
-    let data_trigger_execution_context = DataTriggerExecutionContext {
-        platform,
-        transaction,
-        owner_id: &owner_id,
-        data_contract,
-        state_transition_execution_context: execution_context,
-    };
-
-    let data_trigger_bindings = data_trigger_bindings_list(plat)?;
+pub fn execute_data_triggers(
+    document_transition_actions: Vec<DocumentTransitionAction>,
+    context: &DataTriggerExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<DataTriggerExecutionResult, ProtocolError> {
+    let data_trigger_bindings = data_trigger_bindings_list(platform_version)?;
 
     for document_transition_action in document_transition_actions {
         let data_trigger_execution_result =
-            document_transition_action.validate_with_data_triggers(data_trigger_execution_context);
+            document_transition_action.validate_with_data_triggers(context, data_trigger_bindings);
 
         if !data_trigger_execution_result.is_valid() {
-            return Ok(ConsensusValidationResult::new_with_errors(
-                execution_result
-                    .errors
-                    .into_iter()
-                    .map(|e| ConsensusError::StateError(e.into()))
-                    .collect(),
-            ));
+            return Ok(data_trigger_execution_result);
         }
     }
 }
