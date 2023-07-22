@@ -29,6 +29,12 @@ pub struct DriveMethodVersions {
     pub platform_system: DrivePlatformSystemMethodVersions,
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
+    pub prove: DriveProveMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveProveMethodVersions {
+    pub prove_multiple: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -193,11 +199,18 @@ pub struct DriveSystemEstimationCostsMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
+    pub query: DriveDocumentQueryMethodVersions,
     pub delete: DriveDocumentDeleteMethodVersions,
     pub insert: DriveDocumentInsertMethodVersions,
     pub update: DriveDocumentUpdateMethodVersions,
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentQueryMethodVersions {
+    pub query_documents: FeatureVersion,
+    pub query_serialized_documents: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
