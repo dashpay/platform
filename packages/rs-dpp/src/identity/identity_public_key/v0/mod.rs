@@ -27,6 +27,7 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 #[derive(
