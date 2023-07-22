@@ -164,24 +164,6 @@ impl IdentityPublicKeyV0 {
         })
     }
 
-    pub fn max_possible_size_key(id: KeyID) -> Self {
-        let key_type = *KEY_TYPE_MAX_SIZE_TYPE;
-        let purpose = AUTHENTICATION;
-        let security_level = MASTER;
-        let read_only = false;
-        let data = BinaryData::new(vec![255; key_type.default_size()]);
-
-        IdentityPublicKeyV0 {
-            id,
-            key_type,
-            purpose,
-            security_level,
-            read_only,
-            disabled_at: None,
-            data,
-        }
-    }
-
     pub fn random_ecdsa_master_authentication_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,

@@ -210,38 +210,6 @@ impl IdentityPublicKey {
         }
     }
 
-    /// Generates an identity public key with the maximum possible size based on the platform version.
-    ///
-    /// This method constructs a key of the largest possible size for the given platform version.
-    /// This can be useful for stress testing or benchmarking purposes.
-    ///
-    /// # Parameters
-    ///
-    /// * `id`: The `KeyID` for the generated key.
-    /// * `platform_version`: The platform version which determines the structure of the identity key.
-    ///
-    /// # Returns
-    ///
-    /// * `Self`: An instance of the `IdentityPublicKey` struct.
-    ///
-    pub fn max_possible_size_key(
-        id: KeyID,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .identity_versions
-            .identity_key_structure_version
-        {
-            0 => Ok(IdentityPublicKeyV0::max_possible_size_key(id).into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "IdentityPublicKey::max_possible_size_key".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
     /// Generates a random ECDSA master authentication public key along with its corresponding private key.
     ///
     /// This method constructs a random ECDSA (using the secp256k1 curve) master authentication public key

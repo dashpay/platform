@@ -24,6 +24,9 @@ use dashcore::hashes::Hash;
 use crate::identity::{KeyID, TimestampMillis};
 use crate::util::vec;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
+use crate::identity::Purpose::AUTHENTICATION;
+use crate::identity::SecurityLevel::MASTER;
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
@@ -39,6 +42,26 @@ pub struct IdentityPublicKeyV0 {
     pub data: BinaryData,
     #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,
+}
+
+impl IdentityPublicKeyV0 {
+    pub fn max_possible_size_key(id: KeyID) -> Self {
+        let key_type = *KEY_TYPE_MAX_SIZE_TYPE;
+        let purpose = AUTHENTICATION;
+        let security_level = MASTER;
+        let read_only = false;
+        let data = BinaryData::new(vec![255; key_type.default_size()]);
+
+        IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level,
+            read_only,
+            disabled_at: None,
+            data,
+        }
+    }
 }
 
 #[cfg(feature = "state-transitions")]

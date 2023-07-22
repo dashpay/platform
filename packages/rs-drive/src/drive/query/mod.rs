@@ -51,6 +51,7 @@ use crate::drive::system::protocol_version;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+#[cfg(test)]
 use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::version::PlatformVersion;
@@ -233,6 +234,7 @@ impl Drive {
         self.query_documents_as_serialized(query, epoch, transaction, protocol_version)
     }
 
+    #[cfg(test)]
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,

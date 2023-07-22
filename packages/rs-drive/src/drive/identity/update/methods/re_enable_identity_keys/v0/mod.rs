@@ -18,6 +18,28 @@ use integer_encoding::VarInt;
 use std::collections::HashMap;
 
 impl Drive {
+    /// Re-enables a set of identity keys for a specific identity in version 0.
+    ///
+    /// This method is used to reverse the disabling of specific identity keys. If keys
+    /// were previously disabled for the identity identified by `identity_id`,
+    /// this method can be used to re-enable them.
+    ///
+    /// # Parameters
+    ///
+    /// * `identity_id`: A unique identifier for the identity, given as a 32-byte array.
+    /// * `key_ids`: A vector of `KeyID` that represents the keys to be re-enabled.
+    /// * `estimated_costs_only_with_layer_info`: An optional mutable reference to a map that,
+    ///   if provided, will be populated with estimated layer information about the operation.
+    ///   This can be useful for gauging the impact of the operation without actually executing it.
+    ///   If `None`, the real operations for re-enabling the keys are executed.
+    /// * `transaction`: A transaction argument used during the re-enabling process.
+    /// * `platform_version`: Represents the platform version to ensure the operations are compatible.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a vector of `LowLevelDriveOperation` which represents the operations
+    /// performed during the re-enabling process, or an `Error` if the process fails.
+    ///
     pub fn re_enable_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],

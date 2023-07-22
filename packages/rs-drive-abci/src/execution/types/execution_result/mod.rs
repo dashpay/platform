@@ -5,7 +5,6 @@ use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::validation::SimpleConsensusValidationResult;
 
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::fee_result::FeeResult;
 use dpp::fee::SignedCredits;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
