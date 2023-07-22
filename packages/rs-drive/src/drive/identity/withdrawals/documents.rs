@@ -10,8 +10,9 @@ use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use lazy_static::__Deref;
 
+use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::{
-    drive::{query::QuerySerializedDocumentsOutcome, Drive},
+    drive::Drive,
     error::{drive::DriveError, Error},
     query::{DriveQuery, InternalClauses, OrderClause, WhereClause},
 };
@@ -85,29 +86,15 @@ impl Drive {
             block_time_ms: None,
         };
 
-        let QuerySerializedDocumentsOutcome {
-            items,
-            skipped: _,
-            cost: _,
-        } = self.query_documents_as_serialized(
+        let outcome = self.query_documents(
             drive_query,
             None,
+            false,
             transaction,
             Some(platform_version.protocol_version),
         )?;
 
-        let documents = items
-            .iter()
-            .map(|document_cbor| {
-                Document::from_bytes(document_cbor, document_type, platform_version).map_err(|e| {
-                    Error::Drive(DriveError::CorruptedDriveState(format!(
-                        "can't create document from bytes : {e}"
-                    )))
-                })
-            })
-            .collect::<Result<Vec<Document>, Error>>()?;
-
-        Ok(documents)
+        Ok(outcome.documents_owned())
     }
 
     /// Find one document by it's transactionId field
@@ -169,41 +156,24 @@ impl Drive {
                 equal_clauses: where_clauses,
             },
             offset: None,
-            limit: Some(100),
+            limit: Some(1),
             order_by: IndexMap::new(),
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
         };
 
-        let QuerySerializedDocumentsOutcome {
-            items,
-            skipped: _,
-            cost: _,
-        } = self.query_documents_as_serialized(
+        let outcome = self.query_documents(
             drive_query,
             None,
+            false,
             transaction,
             Some(platform_version.protocol_version),
         )?;
 
-        let documents = items
-            .iter()
-            .map(|document_cbor| {
-                Document::from_bytes(document_cbor, document_type, platform_version).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedDriveState(
-                        "can't create document from bytes".to_string(),
-                    ))
-                })
-            })
-            .collect::<Result<Vec<Document>, Error>>()?;
-
-        let document = documents
-            .get(0)
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "document was not found by transactionId".to_string(),
-            )))?
-            .clone();
+        let document = outcome.documents_owned().pop().ok_or(Error::Drive(
+            DriveError::CorruptedDriveState("document was not found by transactionId".to_string()),
+        ))?;
 
         Ok(document)
     }

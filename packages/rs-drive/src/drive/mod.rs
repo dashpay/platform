@@ -98,8 +98,6 @@ pub mod object_size_info;
 #[cfg(feature = "full")]
 mod protocol_upgrade;
 #[cfg(feature = "full")]
-pub mod query;
-#[cfg(feature = "full")]
 mod shared_estimation_costs;
 #[cfg(feature = "full")]
 mod system;

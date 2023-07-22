@@ -64,6 +64,8 @@ mod index_uniqueness;
 #[cfg(feature = "full")]
 mod insert;
 #[cfg(feature = "full")]
+pub mod query;
+#[cfg(feature = "full")]
 mod update;
 
 #[cfg(any(feature = "full", feature = "verify"))]
