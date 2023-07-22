@@ -8,10 +8,12 @@ use crate::consensus::basic::document::InconsistentCompoundIndexDataError;
 use crate::{
     consensus::basic::BasicError,
     data_contract::DataContract,
-    util::json_schema::{Index, JsonSchemaExt},
+    util::json_schema::{JsonSchemaExt},
     validation::SimpleConsensusValidationResult,
     ProtocolError,
 };
+use crate::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+use crate::data_contract::document_type::Index;
 
 pub fn validate_partial_compound_indices<'a>(
     raw_document_transitions: impl IntoIterator<Item = &'a Value>,

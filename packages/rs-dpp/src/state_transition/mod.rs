@@ -13,14 +13,9 @@ use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
-mod state_transition_facade;
-mod state_transition_factory;
 use crate::ProtocolError;
-pub use state_transition_facade::*;
-pub use state_transition_factory::*;
 
 mod state_transition_types;
-pub mod validation;
 
 pub mod errors;
 pub mod fee;

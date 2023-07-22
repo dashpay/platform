@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use dpp::{state_transition::{
-    validation::{
+    state_transition_validation::{
         validate_state_transition_basic::StateTransitionBasicValidator,
         validate_state_transition_by_type::StateTransitionByTypeValidator,
     },

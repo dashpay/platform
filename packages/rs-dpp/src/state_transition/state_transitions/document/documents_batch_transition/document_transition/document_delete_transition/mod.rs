@@ -4,6 +4,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 
 use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 
@@ -74,7 +75,6 @@ impl DocumentTransitionObjectLike for DocumentDeleteTransition {
 
 #[cfg(test)]
 mod test {
-    use crate::document::document_transition::Action;
 
     use super::*;
 

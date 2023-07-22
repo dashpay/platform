@@ -1,18 +1,3 @@
-use crate::state_repository::StateRepositoryLike;
-use std::sync::Arc;
-use crate::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_state::DataContractCreateTransitionStateValidator;
-use crate::data_contract::state_transition::data_contract_update_transition::validation::state::validate_data_contract_update_transition_state::DataContractUpdateTransitionStateValidator;
-use crate::document::validation::state::validate_documents_batch_transition_state::DocumentsBatchTransitionStateValidator;
-use crate::identity::state_transition::identity_create_transition::validation::state::IdentityCreateTransitionStateValidator;
-use crate::identity::state_transition::identity_credit_withdrawal_transition::validation::state::validate_identity_credit_withdrawal_transition_state::IdentityCreditWithdrawalTransitionValidator;
-use crate::identity::state_transition::identity_topup_transition::validation::state::IdentityTopUpTransitionStateValidator;
-use crate::identity::state_transition::identity_update_transition::validate_identity_update_transition_state::IdentityUpdateTransitionStateValidator;
-use crate::identity::state_transition::identity_update_transition::validate_public_keys::IdentityUpdatePublicKeysValidator;
-use crate::identity::state_transition::identity_credit_transfer_transition::validation::state::identity_credit_transfer_state::IdentityCreditTransferTransitionStateValidator;
-use crate::ProtocolError;
-use crate::state_transition::{StateTransition, StateTransitionAction};
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction, IdentityCreditTransferAction};
 use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 
 pub struct StateTransitionStateValidator<SR>

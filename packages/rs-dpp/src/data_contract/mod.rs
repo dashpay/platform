@@ -10,7 +10,7 @@ use derive_more::From;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 pub use generate_data_contract::*;
-use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value, ValueMap, ValueMapHelper};
 use serde::Serialize;
 use std::collections::BTreeMap;

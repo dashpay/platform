@@ -9,6 +9,7 @@ mod value_conversion;
 use std::convert::{TryFrom, TryInto};
 
 use crate::platform_serialization::PlatformSignable;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationSignable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};

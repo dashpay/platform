@@ -30,6 +30,7 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use crate::identity::SecurityLevel;
 use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
+use crate::withdrawal::Pooling;
 
 #[derive(
     Debug,

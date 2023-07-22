@@ -1,7 +1,8 @@
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use std::collections::BTreeMap;
+use anyhow::Context;
 
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::btreemap_extensions::{BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -18,7 +19,7 @@ use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::fields::property_names::TRANSITIONS;
 use crate::state_transition::documents_batch_transition::fields::*;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
+use crate::state_transition::documents_batch_transition::{document_base_transition, document_create_transition, DocumentsBatchTransitionV0};
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use bincode::{config, Decode, Encode};
 
@@ -30,28 +31,28 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
     fn to_value_map(&self, skip_signature: bool) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map = BTreeMap::new();
         map.insert(
-            super::property_names::PROTOCOL_VERSION.to_string(),
+            property_names::PROTOCOL_VERSION.to_string(),
             Value::U16(self.feature_version),
         );
         map.insert(
-            super::property_names::TRANSITION_TYPE.to_string(),
+            property_names::TRANSITION_TYPE.to_string(),
             Value::U8(self.transition_type as u8),
         );
         map.insert(
-            super::property_names::OWNER_ID.to_string(),
+            property_names::OWNER_ID.to_string(),
             Value::Identifier(self.owner_id.to_buffer()),
         );
 
         if !skip_signature {
             if let Some(signature) = self.signature.as_ref() {
                 map.insert(
-                    super::property_names::SIGNATURE.to_string(),
+                    property_names::SIGNATURE.to_string(),
                     Value::Bytes(signature.to_vec()),
                 );
             }
             if let Some(signature_key_id) = self.signature_public_key_id {
                 map.insert(
-                    super::property_names::SIGNATURE.to_string(),
+                    property_names::SIGNATURE.to_string(),
                     Value::U32(signature_key_id),
                 );
             }
@@ -61,7 +62,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
             transitions.push(transition.to_object()?)
         }
         map.insert(
-            super::property_names::TRANSITIONS.to_string(),
+            property_names::TRANSITIONS.to_string(),
             Value::Array(transitions),
         );
 
@@ -75,7 +76,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
     ) -> Result<Self, ProtocolError> {
         let mut json_value = json_value;
 
-        let maybe_signature = json_value.get_string(super::property_names::SIGNATURE).ok();
+        let maybe_signature = json_value.get_string(property_names::SIGNATURE).ok();
         let signature = if let Some(signature) = maybe_signature {
             Some(BinaryData(
                 base64::decode(signature).context("signature exists but isn't valid base64")?,
@@ -86,23 +87,23 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
 
         let mut batch_transitions = DocumentsBatchTransition {
             feature_version: json_value
-                .get_u64(super::property_names::STATE_TRANSITION_PROTOCOL_VERSION)
+                .get_u64(property_names::STATE_TRANSITION_PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u16,
             signature,
             signature_public_key_id: json_value
-                .get_u64(super::property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
                 .ok()
                 .map(|v| v as KeyID),
             owner_id: Identifier::from_string(
-                json_value.get_string(super::property_names::OWNER_ID)?,
+                json_value.get_string(property_names::OWNER_ID)?,
                 Encoding::Base58,
             )?,
             ..Default::default()
         };
 
         let mut document_transitions: Vec<DocumentTransition> = vec![];
-        let maybe_transitions = json_value.remove(super::property_names::TRANSITIONS);
+        let maybe_transitions = json_value.remove(property_names::TRANSITIONS);
         if let Ok(JsonValue::Array(json_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
@@ -111,7 +112,7 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
 
             for json_transition in json_transitions {
                 let id = Identifier::from_string(
-                    json_transition.get_string(super::property_names::DATA_CONTRACT_ID)?,
+                    json_transition.get_string(property_names::DATA_CONTRACT_ID)?,
                     Encoding::Base58,
                 )?;
                 let data_contract =
@@ -151,24 +152,24 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
             feature_version: map
-                .get_integer(super::property_names::PROTOCOL_VERSION)
+                .get_integer(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u16,
             signature: map
-                .get_optional_binary_data(super::property_names::SIGNATURE)
+                .get_optional_binary_data(property_names::SIGNATURE)
                 .map_err(ProtocolError::ValueError)?,
             signature_public_key_id: map
-                .get_optional_integer(super::property_names::SIGNATURE_PUBLIC_KEY_ID)
+                .get_optional_integer(property_names::SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?,
             owner_id: Identifier::from(
-                map.get_hash256_bytes(super::property_names::OWNER_ID)
+                map.get_hash256_bytes(property_names::OWNER_ID)
                     .map_err(ProtocolError::ValueError)?,
             ),
             ..Default::default()
         };
 
         let mut document_transitions: Vec<DocumentTransition> = vec![];
-        let maybe_transitions = map.remove(super::property_names::TRANSITIONS);
+        let maybe_transitions = map.remove(property_names::TRANSITIONS);
         if let Some(Value::Array(raw_transitions)) = maybe_transitions {
             let data_contracts_map: HashMap<Vec<u8>, DataContract> = data_contracts
                 .into_iter()
@@ -180,9 +181,9 @@ impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
                     .into_btree_string_map()
                     .map_err(ProtocolError::ValueError)?;
                 let data_contract_id = raw_transition_map
-                    .get_hash256_bytes(super::property_names::DATA_CONTRACT_ID)?;
+                    .get_hash256_bytes(property_names::DATA_CONTRACT_ID)?;
                 let document_type =
-                    raw_transition_map.get_str(super::property_names::DOCUMENT_TYPE)?;
+                    raw_transition_map.get_str(property_names::DOCUMENT_TYPE)?;
                 let data_contract = data_contracts_map
                     .get(data_contract_id.as_slice())
                     .ok_or_else(|| {

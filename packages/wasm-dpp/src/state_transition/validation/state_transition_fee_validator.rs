@@ -1,5 +1,5 @@
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
-use dpp::state_transition::validation::validate_state_transition_fee::StateTransitionFeeValidator;
+use dpp::state_transition::state_transition_validation::validate_state_transition_fee::StateTransitionFeeValidator;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;

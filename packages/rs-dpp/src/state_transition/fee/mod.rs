@@ -1,8 +1,6 @@
 use crate::block::epoch::Epoch;
 use crate::ProtocolError;
 
-use crate::state_transition::fee::fee_result::FeeResult;
-
 pub mod calculate_operation_fees;
 pub mod calculate_state_transition_fee_factory;
 pub mod calculate_state_transition_fee_from_operations_factory;

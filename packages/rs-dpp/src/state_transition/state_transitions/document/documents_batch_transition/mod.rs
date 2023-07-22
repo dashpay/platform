@@ -11,7 +11,7 @@ use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
-use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
+use platform_value::{BinaryData, Identifier, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -50,6 +50,8 @@ pub mod validation;
 mod value_conversion;
 
 pub use v0::*;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use crate::state_transition::documents_batch_transition::fields::property_names;
 
 #[derive(
     Debug,

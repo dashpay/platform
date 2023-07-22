@@ -14,7 +14,7 @@ use dpp::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
         SignatureError,
     },
-    state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
+    state_transition::state_transition_validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
     NativeBlsModule,
 };
 use drive::dpp::identity::KeyType;

@@ -130,7 +130,7 @@ mod test {
 
     use crate::{
         data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
-        state_transition::validation::validate_state_transition_by_type::MockValidatorByStateTransitionType,
+        state_transition::state_transition_validation::validate_state_transition_by_type::MockValidatorByStateTransitionType,
         validation::AsyncDataValidatorWithContext,
     };
 

@@ -79,7 +79,6 @@ pub struct IdentityUpdateTransitionV0 {
 impl Default for IdentityUpdateTransitionV0 {
     fn default() -> Self {
         Self {
-            transition_type: StateTransitionType::IdentityUpdate,
             signature: Default::default(),
             signature_public_key_id: Default::default(),
             identity_id: Default::default(),
@@ -135,7 +134,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
+    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert};
     use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
     use getrandom::getrandom;
 

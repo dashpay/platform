@@ -1,6 +1,7 @@
 use crate::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 

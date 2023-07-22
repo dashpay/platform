@@ -4,9 +4,12 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 use crate::{
-    document::document_transition::DocumentTransition, prelude::DataContract,
-    util::json_schema::Index, ProtocolError,
+    prelude::DataContract,
+    ProtocolError,
 };
+use crate::data_contract::base::DataContractBaseMethodsV0;
+use crate::data_contract::document_type::Index;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 
 #[macro_export]
 /// Getter of Document Transition Base properties

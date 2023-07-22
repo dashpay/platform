@@ -44,8 +44,6 @@ pub trait DocumentTransitionExt {
     fn get_id(&self) -> &Identifier;
     /// get the document type
     fn get_document_type(&self) -> &String;
-    /// get the transition action
-    fn get_action(&self) -> Action;
     /// get the data contract
     fn get_data_contract(&self) -> &DataContract;
     /// get the data contract id

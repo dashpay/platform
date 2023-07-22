@@ -13,13 +13,13 @@ use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
-use crate::document::document_transition::document_base_transition::DocumentBaseTransitionV0;
-use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransitionV0;
 
 use crate::document::INITIAL_REVISION;
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 
 pub(self) mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -215,9 +215,9 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
 #[cfg(test)]
 mod test {
 
-    use crate::document::document_transition::DocumentCreateTransition;
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
+    use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 
     use super::*;
 

@@ -22,7 +22,6 @@ use crate::state_transition::{
 };
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -32,10 +31,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
-use std::fmt;
 pub use v0::*;
-pub use v0_action::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 

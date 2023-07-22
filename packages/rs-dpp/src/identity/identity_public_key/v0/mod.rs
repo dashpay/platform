@@ -27,6 +27,7 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
+use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
@@ -65,9 +66,9 @@ impl IdentityPublicKeyV0 {
 }
 
 #[cfg(feature = "state-transitions")]
-impl Into<IdentityPublicKeyV0InCreation> for &IdentityPublicKeyV0 {
-    fn into(self) -> IdentityPublicKeyV0InCreation {
-        IdentityPublicKeyV0InCreation {
+impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKeyV0 {
+    fn into(self) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreation {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,

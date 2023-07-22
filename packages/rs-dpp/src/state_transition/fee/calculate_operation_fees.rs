@@ -3,7 +3,6 @@ use crate::NonConsensusError;
 
 use super::{
     operations::{Operation, OperationLike},
-    DummyFeesResult, Refunds,
 };
 
 pub fn calculate_operation_fees(

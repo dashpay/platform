@@ -2,7 +2,7 @@ mod fields;
 #[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
-mod v0;
+pub(crate) mod v0;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
@@ -13,7 +13,6 @@ use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
-pub use action::IdentityTopUpTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};

@@ -14,6 +14,7 @@ use crate::prelude::Identifier;
 use crate::prelude::{ExtendedDocument, Revision};
 use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 
 use super::{document_base_transition::DocumentBaseTransition, DocumentTransitionObjectLike};
 

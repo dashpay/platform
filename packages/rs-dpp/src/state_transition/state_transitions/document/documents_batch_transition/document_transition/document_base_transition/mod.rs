@@ -1,12 +1,12 @@
 mod fields;
-mod v0;
+pub mod v0;
 
 use crate::data_contract::DataContract;
 use bincode::{Decode, Encode};
 pub use fields::*;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
-pub use v0::*;
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::{DocumentBaseTransitionV0, DocumentBaseTransitionV0Methods};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 pub enum DocumentBaseTransition {

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::fee::Credits;
 use crate::{
-    state_transition::fee::{DummyFeesResult, Refunds},
+    state_transition::fee::{Refunds},
     NonConsensusError,
 };
 

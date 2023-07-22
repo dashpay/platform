@@ -5,16 +5,12 @@ mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
-mod v0;
+pub(crate) mod v0;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
 
-pub use action::IdentityCreditWithdrawalTransitionAction;
-
 use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::{Convertible, ProtocolError};

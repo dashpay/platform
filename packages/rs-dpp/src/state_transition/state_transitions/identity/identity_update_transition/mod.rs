@@ -3,7 +3,7 @@ mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
-mod v0;
+pub mod v0;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
@@ -15,7 +15,6 @@ use crate::state_transition::identity_update_transition::fields::property_names:
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
-pub use action::IdentityUpdateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
