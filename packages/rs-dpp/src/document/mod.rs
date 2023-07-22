@@ -167,6 +167,7 @@ impl DocumentMethodsV0 for Document {
 mod tests {
     use super::*;
     use crate::data_contract::extra::common::json_document_to_contract;
+    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use regex::Regex;
 
     #[test]
@@ -188,8 +189,7 @@ mod tests {
             .serialize(document_type)
             .expect("expected to serialize");
 
-        let deserialized_document = document_type
-            .document_from_bytes(serialized_document.as_slice())
+        let document = Document::from_bytes(document_cbor, document_type, platform_version)
             .expect("expected to deserialize a document");
         assert_eq!(document, deserialized_document);
         assert!(serialized_document.len() < document_cbor.len());

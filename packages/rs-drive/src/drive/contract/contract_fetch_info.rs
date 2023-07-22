@@ -2,6 +2,7 @@ use crate::drive::flags::StorageFlags;
 use costs::OperationCost;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
+#[cfg(test)]
 use dpp::tests::fixtures::get_dpns_data_contract_fixture;
 
 #[cfg(any(feature = "full", feature = "verify"))]

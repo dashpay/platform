@@ -50,6 +50,8 @@ pub use update_document_for_contract_id::*;
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
 mod internal;
+#[cfg(test)]
+mod test_helpers;
 mod update_document_with_serialization_for_contract;
 
 pub use update_document_with_serialization_for_contract::*;
@@ -94,10 +96,6 @@ use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
-use dpp::document::serialization_traits::{
-    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
-};
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
@@ -105,43 +103,6 @@ use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
-
-impl Drive {
-    /// Updates a serialized document given a contract CBOR and returns the associated fee.
-    pub fn update_document_for_contract_cbor(
-        &self,
-        serialized_document: &[u8],
-        contract_cbor: &[u8],
-        document_type_name: &str,
-        owner_id: Option<[u8; 32]>,
-        block_info: BlockInfo,
-        apply: bool,
-        storage_flags: Option<Cow<StorageFlags>>,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<FeeResult, Error> {
-        let contract = DataContract::from_cbor(contract_cbor, platform_version)?;
-
-        let document = Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
-
-        let document_type = contract.document_type_for_name(document_type_name)?;
-
-        let reserialized_document = document.serialize(document_type, platform_version)?;
-
-        self.update_document_with_serialization_for_contract(
-            &document,
-            reserialized_document.as_slice(),
-            &contract,
-            document_type_name,
-            owner_id,
-            block_info,
-            apply,
-            storage_flags,
-            transaction,
-            platform_version,
-        )
-    }
-}
 
 #[cfg(feature = "full")]
 #[cfg(test)]
@@ -174,9 +135,10 @@ mod tests {
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
     use dpp::data_contract::extra::common::json_document_to_document;
     use dpp::document::serialization_traits::{
-        DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
     };
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;

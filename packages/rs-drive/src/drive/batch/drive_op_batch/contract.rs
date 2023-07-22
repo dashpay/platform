@@ -4,7 +4,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Identifier;
 use dpp::version::drive_versions::DriveVersion;
@@ -17,15 +16,6 @@ use std::collections::HashMap;
 /// Operations onDataContracts
 #[derive(Clone, Debug)]
 pub enum DataContractOperationType<'a> {
-    /// Deserializes a contract from CBOR and applies it.
-    ApplyContractCbor {
-        /// The cbor serialized contract
-        contract_cbor: Vec<u8>,
-        /// The contract id, if it is not present will try to recover it from the contract
-        contract_id: Option<[u8; 32]>,
-        /// Storage flags for the contract
-        storage_flags: Option<Cow<'a, StorageFlags>>,
-    },
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
     ApplyContractWithSerialization {
@@ -62,28 +52,6 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
-            DataContractOperationType::ApplyContractCbor {
-                contract_cbor,
-                contract_id,
-                storage_flags,
-            } => {
-                // first we need to deserialize the contract
-                let contract = DataContract::from_cbor_with_id(
-                    &contract_cbor,
-                    contract_id.map(Identifier::from),
-                    platform_version,
-                )?;
-
-                drive.apply_contract_with_serialization_operations(
-                    &contract,
-                    contract_cbor,
-                    block_info,
-                    estimated_costs_only_with_layer_info,
-                    storage_flags,
-                    transaction,
-                    platform_version,
-                )
-            }
             DataContractOperationType::ApplyContractWithSerialization {
                 contract,
                 serialized_contract: contract_serialization,
