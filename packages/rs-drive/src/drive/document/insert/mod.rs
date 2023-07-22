@@ -123,6 +123,7 @@ use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+#[cfg(test)]
 use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;

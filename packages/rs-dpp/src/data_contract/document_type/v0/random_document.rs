@@ -106,15 +106,6 @@ impl CreateRandomDocument for DocumentTypeV0 {
         Ok(vec)
     }
 
-    /// Creates a Document from a serialized Document.
-    fn document_from_bytes(
-        &self,
-        bytes: &[u8],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        Document::from_bytes(bytes, DocumentTypeRef::V0(self), PlatformVersion::latest())
-    }
-
     /// Creates a random Document using a seed if given, otherwise entropy.
     fn random_document(
         &self,

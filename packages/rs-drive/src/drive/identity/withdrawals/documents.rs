@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use dpp::contracts::withdrawals_contract;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -100,13 +99,11 @@ impl Drive {
         let documents = items
             .iter()
             .map(|document_cbor| {
-                document_type
-                    .document_from_bytes(document_cbor, platform_version)
-                    .map_err(|e| {
-                        Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "can't create document from bytes : {e}"
-                        )))
-                    })
+                Document::from_bytes(document_cbor, document_type, platform_version).map_err(|e| {
+                    Error::Drive(DriveError::CorruptedDriveState(format!(
+                        "can't create document from bytes : {e}"
+                    )))
+                })
             })
             .collect::<Result<Vec<Document>, Error>>()?;
 

@@ -32,12 +32,6 @@ pub trait CreateRandomDocument {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError>;
-    /// Document from bytes
-    fn document_from_bytes(
-        &self,
-        bytes: &[u8],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError>;
     /// Random document
     fn random_document(
         &self,
@@ -116,17 +110,6 @@ impl CreateRandomDocument for DocumentType {
             DocumentType::V0(v0) => {
                 v0.random_documents_with_params(count, identities, time_ms, rng, platform_version)
             } // Add more cases as necessary for other variants
-        }
-    }
-
-    fn document_from_bytes(
-        &self,
-        bytes: &[u8],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentType::V0(v0) => v0.document_from_bytes(bytes, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -238,17 +221,6 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => {
                 v0.random_documents_with_params(count, identities, time_ms, rng, platform_version)
             } // Add more cases as necessary for other variants
-        }
-    }
-
-    fn document_from_bytes(
-        &self,
-        bytes: &[u8],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.document_from_bytes(bytes, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 

@@ -63,6 +63,7 @@ use dpp::data_contract::DataContract;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+#[cfg(test)]
 use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
@@ -98,7 +99,7 @@ pub fn setup_contract(
     contract
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Serializes to CBOR and applies to Drive a contract from hex string format.
 pub fn setup_contract_from_cbor_hex(
     drive: &Drive,
@@ -123,7 +124,7 @@ pub fn setup_contract_from_cbor_hex(
     contract
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Serializes a hex string to CBOR.
 pub fn cbor_from_hex(hex_string: String) -> Vec<u8> {
     hex::decode(hex_string).expect("Decoding failed")
@@ -137,7 +138,7 @@ pub fn text_file_strings(path: impl AsRef<Path>) -> Vec<String> {
     reader.into_iter().map(|a| a.unwrap()).collect()
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Retrieves the value of a key from a CBOR map.
 pub fn get_key_from_cbor_map<'a>(
     cbor_map: &'a [(Value, Value)],
@@ -155,7 +156,7 @@ pub fn get_key_from_cbor_map<'a>(
     None
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Retrieves the value of a key from a CBOR map if it's a map itself.
 pub fn cbor_inner_map_value<'a>(
     document_type: &'a [(Value, Value)],
