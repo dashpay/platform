@@ -124,7 +124,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 true,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             IdentityOperationType::DisableIdentityKeys {
                 identity_id,
@@ -136,7 +136,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 disable_at,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             IdentityOperationType::ReEnableIdentityKeys {
                 identity_id,
@@ -155,7 +155,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 identity_id,
                 revision,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                platform_version,
             )?]),
         }
     }

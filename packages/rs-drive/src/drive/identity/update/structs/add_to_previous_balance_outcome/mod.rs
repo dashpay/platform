@@ -1,10 +1,12 @@
 use dpp::fee::Credits;
+use derive_more::From;
 
 mod v0;
 
 pub use v0::*;
 
 /// The outcome of paying for a fee
+#[derive(Debug, From)]
 pub(in crate::drive::identity::update) enum AddToPreviousBalanceOutcome {
     V0(AddToPreviousBalanceOutcomeV0),
 }

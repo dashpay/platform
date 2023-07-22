@@ -64,6 +64,7 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting
@@ -191,7 +192,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
 fn element_to_identity_public_key_id(element: Element) -> Result<KeyID, Error> {
     let public_key = element_to_identity_public_key(element)?;
 
-    Ok(public_key.id)
+    Ok(public_key.id())
 }
 
 #[cfg(feature = "full")]
@@ -200,7 +201,7 @@ fn element_to_identity_public_key_id_and_object_pair(
 ) -> Result<(KeyID, IdentityPublicKey), Error> {
     let public_key = element_to_identity_public_key(element)?;
 
-    Ok((public_key.id, public_key))
+    Ok((public_key.id(), public_key))
 }
 
 #[cfg(feature = "full")]
@@ -210,7 +211,7 @@ fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
     if let Some(element) = maybe_element {
         let public_key = element_to_identity_public_key(element)?;
 
-        return Ok((public_key.id, Some(public_key)));
+        return Ok((public_key.id(), Some(public_key)));
     }
 
     let (key_id, _) = KeyID::decode_var(key.as_slice())
@@ -882,6 +883,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("expected to insert identity");
 

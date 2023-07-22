@@ -29,9 +29,9 @@ impl Drive {
         transaction: TransactionArg,
         result_type: QueryResultType,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
+        drive_version: &DriveVersion,
     ) -> Result<(QueryResultElements, u16), Error> {
-        match platform_version.drive.grove_methods.basic.grove_get_raw_path_query {
+        match drive_version.grove_methods.basic.grove_get_raw_path_query {
             0 => self.grove_get_raw_path_query_v0(
                 path_query,
                 transaction,

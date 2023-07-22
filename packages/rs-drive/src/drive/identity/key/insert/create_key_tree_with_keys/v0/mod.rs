@@ -9,6 +9,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 impl Drive {
     pub(super) fn create_key_tree_with_keys_operations_v0(
@@ -57,7 +58,7 @@ impl Drive {
 
         let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) = keys
             .into_iter()
-            .partition(|key| key.key_type.is_unique_key_type());
+            .partition(|key| key.key_type().is_unique_key_type());
 
         for key in unique_keys.into_iter() {
             self.insert_new_unique_key_operations(

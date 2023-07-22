@@ -27,6 +27,7 @@ use dpp::fee::default_costs::KnownCostItem::{
 };
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::fee_result::FeeResult;
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 /// Base ops
 #[derive(Debug, Enum)]

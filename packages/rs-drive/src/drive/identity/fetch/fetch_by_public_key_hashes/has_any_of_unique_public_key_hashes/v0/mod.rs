@@ -18,6 +18,7 @@ use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Do any keys with given public key hashes already exist in the unique tree?
@@ -26,14 +27,14 @@ impl Drive {
         &self,
         public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 20]>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.has_any_of_unique_public_key_hashes_operations_v0(
             public_key_hashes,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -44,7 +45,7 @@ impl Drive {
         public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 20]>, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path_vec();
         let mut query = Query::new();
@@ -60,7 +61,7 @@ impl Drive {
             transaction,
             QueryResultType::QueryKeyElementPairResultType,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
         results
             .to_keys()

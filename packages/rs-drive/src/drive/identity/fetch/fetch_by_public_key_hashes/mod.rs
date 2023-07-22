@@ -3,7 +3,6 @@ mod fetch_full_identity_by_unique_public_key_hash;
 mod fetch_identity_id_by_unique_public_key_hash;
 mod fetch_identity_ids_by_non_unique_public_key_hash;
 mod fetch_identity_ids_by_unique_public_key_hashes;
-mod fetch_serialized_full_identity_by_unique_public_key_hash;
 mod has_any_of_unique_public_key_hashes;
 mod has_non_unique_public_key_hash;
 mod has_non_unique_public_key_hash_already_for_identity;
@@ -18,8 +17,8 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
-    use std::hash::Hash;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
@@ -68,7 +67,7 @@ mod tests {
                     .fetch_identity_id_by_unique_public_key_hash(
                         hash,
                         Some(&transaction),
-                        &drive_version,
+                        platform_version,
                     )
                     .expect("expected to fetch identity_id")
                     .expect("expected to get an identity id");

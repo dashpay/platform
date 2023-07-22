@@ -26,7 +26,7 @@ pub trait IdentityPublicKeyGettersV0 {
     fn data(&self) -> &BinaryData;
 
     /// Returns the disabled_at timestamp as Option
-    fn disabled_at(&self) -> Option<&TimestampMillis>;
+    fn disabled_at(&self) -> Option<TimestampMillis>;
 
     /// Is public key disabled
     fn is_disabled(&self) -> bool;

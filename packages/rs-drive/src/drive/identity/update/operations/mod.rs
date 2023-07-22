@@ -2,3 +2,4 @@ mod initialize_identity_revision_operation;
 mod initialize_negative_identity_balance_operation;
 mod insert_identity_balance_operation;
 mod update_identity_balance_operation;
+mod update_identity_revision_operation;

@@ -6,6 +6,7 @@ use dpp::version::PlatformVersion;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use dpp::identity::PartialIdentity;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 
 impl Drive {
     /// Fetches the Identity's balance along with its keys as `PartialIdentityInfo` from the backing store.
@@ -37,11 +38,11 @@ impl Drive {
             0 => self.fetch_identity_balance_with_keys_and_revision_v0(
                 identity_key_request, transaction, platform_version
             ),
-            version => Err(Error::UnknownVersionMismatch {
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_with_keys_and_revision".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

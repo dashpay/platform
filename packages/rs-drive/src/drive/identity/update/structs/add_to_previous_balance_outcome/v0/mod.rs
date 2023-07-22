@@ -1,6 +1,7 @@
 use dpp::fee::Credits;
 
 /// The outcome of adding to a previous balance
+#[derive(Debug)]
 pub(in crate::drive::identity::update) struct AddToPreviousBalanceOutcomeV0 {
     /// Is some if the balance was modified
     pub(in crate::drive::identity::update) balance_modified: Option<Credits>,

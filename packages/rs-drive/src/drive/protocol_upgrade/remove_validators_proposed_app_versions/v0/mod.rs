@@ -18,6 +18,7 @@ use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
 use nohash_hasher::IntMap;
 use std::ops::RangeFull;
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 impl Drive {
     /// Removes the proposed app versions for a list of validators.
@@ -68,6 +69,7 @@ impl Drive {
                 transaction,
                 grove_db_operations,
                 &mut vec![],
+                drive_version
             )?;
         }
         Ok(inserted)

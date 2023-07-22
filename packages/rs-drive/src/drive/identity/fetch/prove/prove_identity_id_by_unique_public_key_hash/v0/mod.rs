@@ -33,22 +33,25 @@ mod tests {
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 
     #[test]
     fn should_prove_a_single_identity_id() {
         let drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
-        let identity = Identity::random_identity(3, Some(14));
+        let identity = Identity::random_identity(3, Some(14), platform_version).expect("expected a random identity");
 
         let identity_id = identity.id().to_buffer();
         drive
-            .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+            .add_new_identity(identity.clone(), &BlockInfo::default(), true, None, platform_version)
             .expect("expected to add an identity");
 
         let first_key_hash = identity
-            .public_keys
+            .public_keys()
             .values()
-            .find(|public_key| public_key.key_type.is_unique_key_type())
+            .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
             .hash()
             .expect("expected to hash data")
@@ -64,7 +67,7 @@ mod tests {
             .expect("should not error when proving an identity");
 
         let (_, proved_identity_id) =
-            Drive::verify_identity_id_by_public_key_hash(proof.as_slice(), false, first_key_hash)
+            Drive::verify_identity_id_by_public_key_hash(proof.as_slice(), false, first_key_hash, platform_version)
                 .expect("expect that this be verified");
 
         assert_eq!(proved_identity_id, Some(identity_id));

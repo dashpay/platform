@@ -33,7 +33,7 @@ impl Drive {
             true,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            platform_version,
+            &platform_version.drive,
         )?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.apply_batch_low_level_drive_operations(
@@ -41,7 +41,7 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            platform_version,
+            &platform_version.drive,
         )?;
         let fees = Drive::calculate_fee(
             None,

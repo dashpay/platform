@@ -17,6 +17,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     //todo: this should probably not exist
@@ -28,7 +29,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         // TODO: In case of dry run we will get less because we replace the same bytes
 
@@ -42,7 +43,8 @@ impl Drive {
             identity_id,
             revision,
             &mut estimated_costs_only_with_layer_info,
-        )];
+            &platform_version.drive,
+        )?];
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -51,10 +53,10 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
-        let fees = Drive::calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        let fees = Drive::calculate_fee(None, Some(drive_operations), &block_info.epoch, platform_version)?;
 
         Ok(fees)
     }

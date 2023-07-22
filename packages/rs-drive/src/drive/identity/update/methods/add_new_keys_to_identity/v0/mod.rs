@@ -20,14 +20,14 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
 
@@ -39,7 +39,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
 
@@ -51,7 +51,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
         Ok(drive_operations)

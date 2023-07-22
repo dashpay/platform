@@ -1162,6 +1162,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
+ "derive_more",
  "dpp",
  "enum-map",
  "grovedb",

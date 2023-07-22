@@ -11,7 +11,7 @@ pub enum DriveError {
 
     /// Platform expected some specific versions
     #[error(
-        "drive unknown version on {method}, known versions: {known_versions}, received: {received}"
+        "drive unknown version on {method}, received: {received}"
     )]
     UnknownVersionMismatch {
         /// method
@@ -20,6 +20,17 @@ pub enum DriveError {
         known_versions: Vec<FeatureVersion>,
         /// requested core height
         received: FeatureVersion,
+    },
+
+    /// Platform expected some specific versions
+    #[error(
+    "{method} not active for drive version"
+    )]
+    VersionNotActive {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
     },
 
     /// Error

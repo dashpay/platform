@@ -15,19 +15,20 @@ use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
+use crate::error::Error;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
         contract: &DataContract,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
-    ) {
+    ) -> Result<(), Error> {
         Self::add_estimation_costs_for_levels_up_to_contract(
             estimated_costs_only_with_layer_info,
             drive_version,
         )?;
 
-        let document_type_count = contract.documents().len() as u32;
+        let document_type_count = contract.documents()?.len() as u32;
 
         // we only store the owner_id storage
         let storage_flags = if contract.config().can_be_deleted() {
@@ -57,5 +58,7 @@ impl Drive {
                 ),
             },
         );
+
+        Ok(())
     }
 }

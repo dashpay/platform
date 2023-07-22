@@ -6,6 +6,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::convert::TryInto;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Checks if any keys with given public key hashes already exist in the unique tree.
@@ -25,9 +26,9 @@ impl Drive {
         &self,
         public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion
     ) -> Result<Vec<[u8; 20]>, Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .identity
             .fetch
@@ -37,7 +38,7 @@ impl Drive {
             0 => self.has_any_of_unique_public_key_hashes_v0(
                 public_key_hashes,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "has_any_of_unique_public_key_hashes".to_string(),
@@ -66,9 +67,9 @@ impl Drive {
         public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion
     ) -> Result<Vec<[u8; 20]>, Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .identity
             .fetch
@@ -79,7 +80,7 @@ impl Drive {
                 public_key_hashes,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "has_any_of_unique_public_key_hashes_operations".to_string(),

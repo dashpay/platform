@@ -43,6 +43,7 @@ use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 impl Drive {
     /// Creates the initial state structure.

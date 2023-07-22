@@ -68,7 +68,7 @@ impl Drive {
                         false,
                         estimated_costs_only_with_layer_info,
                         transaction,
-                        &platform_version.drive,
+                        platform_version,
                     )?;
                 }
             }

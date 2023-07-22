@@ -34,6 +34,8 @@ mod tests {
     use dpp::version::drive_versions::DriveVersion;
     use std::collections::BTreeMap;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -57,9 +59,9 @@ mod tests {
             .values()
             .flat_map(|identity| {
                 identity
-                    .public_keys
+                    .public_keys()
                     .values()
-                    .filter(|public_key| public_key.key_type.is_unique_key_type())
+                    .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
                             public_key

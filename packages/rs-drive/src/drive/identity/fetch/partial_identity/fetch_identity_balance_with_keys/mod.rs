@@ -7,6 +7,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 
 impl Drive {
     /// Fetches the Identity's balance along with its keys as `PartialIdentityInfo` from the backing store.
@@ -38,11 +39,11 @@ impl Drive {
             0 => self.fetch_identity_balance_with_keys_v0(
                 identity_key_request, transaction, platform_version
             ),
-            version => Err(Error::UnknownVersionMismatch {
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_with_keys".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 
@@ -80,11 +81,11 @@ impl Drive {
             0 => self.fetch_identity_balance_with_keys_with_cost_v0(
                 identity_key_request, apply, epoch, transaction, platform_version
             ),
-            version => Err(Error::UnknownVersionMismatch {
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_with_keys_with_cost".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

@@ -264,6 +264,8 @@ impl InternalClauses {
 pub enum QueryResultEncoding {
     /// Cbor encoding
     CborEncodedQueryResult,
+    /// Platform base encoding
+    PlatformEncodedQueryResult,
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -275,6 +277,9 @@ impl QueryResultEncoding {
             QueryResultEncoding::CborEncodedQueryResult => {
                 ciborium::ser::into_writer(value, &mut buffer)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+            }
+            QueryResultEncoding::PlatformEncodedQueryResult => {
+
             }
         }
         Ok(buffer)

@@ -1,4 +1,4 @@
-use crate::version::{FeatureVersion, FeatureVersionBounds};
+use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
@@ -386,6 +386,7 @@ pub struct DriveIdentityFetchMethodVersions {
     pub public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions,
     pub attributes: DriveIdentityFetchAttributesMethodVersions,
     pub partial_identity: DriveIdentityFetchPartialIdentityMethodVersions,
+    pub full_identity: DriveIdentityFetchFullIdentityMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -409,6 +410,13 @@ pub struct DriveIdentityFetchAttributesMethodVersions {
     pub balance_include_debt: FeatureVersion,
     pub negative_balance: FeatureVersion,
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityFetchFullIdentityMethodVersions {
+    pub fetch_full_identity: OptionalFeatureVersion,
+    pub fetch_full_identities: OptionalFeatureVersion,
+}
+
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityFetchPartialIdentityMethodVersions {

@@ -46,7 +46,7 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKey {
         }
     }
 
-    fn disabled_at(&self) -> Option<&TimestampMillis> {
+    fn disabled_at(&self) -> Option<TimestampMillis> {
         match self {
             IdentityPublicKey::V0(v0) => v0.disabled_at(),
         }
