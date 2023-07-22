@@ -1,6 +1,4 @@
 use crate::identity::KeyID;
-use crate::state_transition::documents_batch_transition::v0::v0_methods::DataContractCreateTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::DataContractCreateTransition;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;

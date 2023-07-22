@@ -27,8 +27,6 @@ use std::collections::{BTreeMap, HashMap};
 
 #[derive(
     Debug,
-    Encode,
-    Decode,
     Clone,
     PartialEq,
     Serialize,
@@ -38,6 +36,7 @@ use std::collections::{BTreeMap, HashMap};
     PlatformSignable,
 )]
 #[platform_error_type(ProtocolError)]
+#[platform_serialize(allow_nested)]
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,

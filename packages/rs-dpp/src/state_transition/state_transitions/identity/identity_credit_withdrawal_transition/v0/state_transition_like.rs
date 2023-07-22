@@ -17,6 +17,7 @@ use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use bincode::{config, Decode, Encode};
 
 use crate::state_transition::StateTransition;

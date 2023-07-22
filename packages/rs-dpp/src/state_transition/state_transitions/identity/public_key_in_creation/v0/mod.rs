@@ -6,18 +6,17 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use bincode::{config, Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::PlatformMessageSignable;
-use crate::serialization_traits::Signable;
 
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
@@ -25,6 +24,10 @@ use crate::util::cbor_serializer;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
 
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use crate::serialization_traits::PlatformMessageSignable;
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
@@ -32,7 +35,7 @@ pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
 #[platform_error_type(ProtocolError)]
 #[serde(rename_all = "camelCase")]
-pub struct IdentityPublicKeyInCreation {
+pub struct IdentityPublicKeyInCreationV0 {
     pub id: KeyID,
     #[serde(rename = "type")]
     pub key_type: KeyType,
@@ -45,7 +48,7 @@ pub struct IdentityPublicKeyInCreation {
     pub signature: BinaryData,
 }
 
-impl Convertible for IdentityPublicKeyInCreation {
+impl Convertible for IdentityPublicKeyInCreationV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
@@ -77,7 +80,7 @@ impl Convertible for IdentityPublicKeyInCreation {
     }
 }
 
-impl IdentityPublicKeyInCreation {
+impl IdentityPublicKeyInCreationV0 {
     pub fn to_identity_public_key(self) -> IdentityPublicKey {
         let Self {
             id,
@@ -88,7 +91,7 @@ impl IdentityPublicKeyInCreation {
             read_only,
             ..
         } = self;
-        IdentityPublicKey {
+        IdentityPublicKeyV0 {
             id,
             purpose,
             security_level,
@@ -97,6 +100,7 @@ impl IdentityPublicKeyInCreation {
             read_only,
             disabled_at: None,
         }
+        .into()
     }
 
     #[cfg(feature = "platform-value")]
@@ -111,7 +115,7 @@ impl IdentityPublicKeyInCreation {
         bls: &impl BlsModule,
     ) -> Result<Self, ProtocolError> {
         let key_type = public_key.key_type;
-        let mut public_key_with_witness: IdentityPublicKeyInCreation = public_key.into();
+        let mut public_key_with_witness: IdentityPublicKeyInCreationV0 = public_key.into();
         public_key_with_witness.signature = state_transition_bytes
             .sign_by_private_key(private_key, key_type, bls)?
             .into();
@@ -123,7 +127,7 @@ impl IdentityPublicKeyInCreation {
         state_transition_bytes: &[u8],
         signer: &S,
     ) -> Result<Self, ProtocolError> {
-        let mut public_key_with_witness: IdentityPublicKeyInCreation = public_key.clone().into();
+        let mut public_key_with_witness: IdentityPublicKeyInCreationV0 = public_key.clone().into();
         match public_key.key_type {
             KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
                 public_key_with_witness.signature =
@@ -295,9 +299,9 @@ impl IdentityPublicKeyInCreation {
     }
 }
 
-impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
-    fn from(val: &IdentityPublicKeyInCreation) -> Self {
-        IdentityPublicKey {
+impl From<&IdentityPublicKeyInCreationV0> for IdentityPublicKey {
+    fn from(val: &IdentityPublicKeyInCreationV0) -> Self {
+        IdentityPublicKeyV0 {
             id: val.id,
             purpose: val.purpose,
             security_level: val.security_level,
@@ -306,24 +310,25 @@ impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
             data: val.data.clone(),
             disabled_at: None,
         }
+        .into()
     }
 }
 
-impl From<IdentityPublicKey> for IdentityPublicKeyInCreation {
+impl From<IdentityPublicKey> for IdentityPublicKeyInCreationV0 {
     fn from(val: IdentityPublicKey) -> Self {
-        IdentityPublicKeyInCreation {
-            id: val.id,
-            purpose: val.purpose,
-            security_level: val.security_level,
-            key_type: val.key_type,
-            read_only: val.read_only,
-            data: val.data,
+        IdentityPublicKeyInCreationV0 {
+            id: val.id(),
+            purpose: val.purpose(),
+            security_level: val.security_level(),
+            key_type: val.key_type(),
+            read_only: val.read_only(),
+            data: val.data(),
             signature: Default::default(),
         }
     }
 }
 
-impl TryFrom<Value> for IdentityPublicKeyInCreation {
+impl TryFrom<Value> for IdentityPublicKeyInCreationV0 {
     type Error = platform_value::Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -331,18 +336,18 @@ impl TryFrom<Value> for IdentityPublicKeyInCreation {
     }
 }
 
-impl TryFrom<IdentityPublicKeyInCreation> for Value {
+impl TryFrom<IdentityPublicKeyInCreationV0> for Value {
     type Error = platform_value::Error;
 
-    fn try_from(value: IdentityPublicKeyInCreation) -> Result<Self, Self::Error> {
+    fn try_from(value: IdentityPublicKeyInCreationV0) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }
 }
 
-impl TryFrom<&IdentityPublicKeyInCreation> for Value {
+impl TryFrom<&IdentityPublicKeyInCreationV0> for Value {
     type Error = platform_value::Error;
 
-    fn try_from(value: &IdentityPublicKeyInCreation) -> Result<Self, Self::Error> {
+    fn try_from(value: &IdentityPublicKeyInCreationV0) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }
 }

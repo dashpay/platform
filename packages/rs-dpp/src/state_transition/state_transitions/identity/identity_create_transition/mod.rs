@@ -2,7 +2,7 @@ mod fields;
 #[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
-pub(crate)  mod v0;
+pub(crate) mod v0;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
@@ -11,6 +11,7 @@ use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
@@ -31,13 +32,14 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
+#[platform_serialize(
+    platform_version_path = "state_transitions.identity_create_state_transition",
+    allow_nested
+)]
 #[serde(untagged)]
 pub enum IdentityCreateTransition {
     #[versioned(0)]

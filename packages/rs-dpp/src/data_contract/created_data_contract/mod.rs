@@ -1,5 +1,5 @@
 mod fields;
-mod v0;
+pub mod v0;
 
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 use crate::prelude::DataContract;

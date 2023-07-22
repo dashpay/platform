@@ -4,7 +4,7 @@ use dpp::consensus::basic::BasicError;
 
 use dpp::identity::KeyID;
 use dpp::platform_value::Identifier;
-use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;

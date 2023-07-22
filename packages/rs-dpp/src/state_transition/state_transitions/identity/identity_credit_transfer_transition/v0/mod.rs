@@ -29,14 +29,13 @@ use std::convert::TryInto;
     Clone,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
     PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
+#[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields

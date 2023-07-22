@@ -45,22 +45,13 @@ use crate::version::PlatformVersion;
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransitionV0 {
-    #[platform_serialization(versioned_structure, versioned_serialization)]
+    //#[platform_serialization(versioned_structure, versioned_serialization)]
     pub data_contract: DataContract,
     pub entropy: Bytes32,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl PlatformSerializableWithPlatformVersion for DataContractCreateTransitionV0 {
-    fn serialize_with_platform_version(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
-        bincode::enc::Encoder
-    }
 }
 
 impl Default for DataContractCreateTransitionV0 {

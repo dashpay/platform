@@ -13,7 +13,7 @@ use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
-use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use std::collections::HashMap;
 
 /// This will validate that all keys are valid against the state

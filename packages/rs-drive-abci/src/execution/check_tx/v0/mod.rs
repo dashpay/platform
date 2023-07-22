@@ -132,8 +132,8 @@ mod tests {
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization_traits::{PlatformSerializable, Signable};
-    use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
     use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionType};
     use dpp::version::{PlatformVersion, LATEST_VERSION};
     use rand::rngs::StdRng;

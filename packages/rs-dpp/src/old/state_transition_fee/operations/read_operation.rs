@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use super::OperationLike;
 
-use crate::fee::Credits;
-use crate::{NonConsensusError};
 use crate::fee::default_costs::constants::{PROCESSING_CREDIT_PER_BYTE, READ_BASE_PROCESSING_COST};
+use crate::fee::Credits;
+use crate::NonConsensusError;
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

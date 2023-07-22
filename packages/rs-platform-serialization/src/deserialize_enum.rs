@@ -225,7 +225,7 @@ pub(super) fn derive_platform_deserialize_enum(
         #platform_deserialize_body
     };
 
-    eprintln!("Processing variant: {}", &expanded);
+    // eprintln!("Processing variant: {}", &expanded);
 
     TokenStream::from(expanded)
 }

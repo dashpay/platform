@@ -37,14 +37,13 @@ use crate::withdrawal::Pooling;
     Clone,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
     PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
+#[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,

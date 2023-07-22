@@ -12,6 +12,7 @@ mod value_conversion;
 
 use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
 use crate::serialization_traits::Signable;
+use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
@@ -32,13 +33,14 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
+#[platform_serialize(
+    platform_version_path = "state_transitions.identity_credit_withdrawal_state_transition",
+    allow_nested
+)]
 #[serde(untagged)]
 pub enum IdentityCreditWithdrawalTransition {
     #[versioned(0)]

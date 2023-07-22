@@ -13,6 +13,7 @@ use fields::*;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::identity_update_transition::fields::property_names::ADD_PUBLIC_KEYS_SIGNATURE;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
@@ -30,13 +31,14 @@ use serde::Serialize;
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
+#[platform_serialize(
+    platform_version_path = "state_transitions.identity_update_state_transition",
+    allow_nested
+)]
 #[serde(untagged)]
 pub enum IdentityUpdateTransition {
     #[versioned(0)]

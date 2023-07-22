@@ -112,8 +112,6 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         })
         .expect("Missing platform_error_type attribute");
 
-
-
     let mut passthrough = false;
     let mut nested = false;
     let mut platform_serialize_limit = None;
@@ -127,7 +125,8 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     if let Some(platform_serialize_attr) = input
         .attrs
         .iter()
-        .find(|attr| attr.path().is_ident("platform_serialize")) {
+        .find(|attr| attr.path().is_ident("platform_serialize"))
+    {
         platform_serialize_attr
             .parse_nested_meta(|meta| {
                 if meta.path.is_ident("crate_name") {
@@ -164,15 +163,14 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                     let value = meta.value()?;
                     platform_version_path = Some(value.parse()?);
                 } else {
-                    return Err(meta
-                        .error(format!("unsupported parameter {:?}", meta.path.get_ident()).as_str()));
+                    return Err(meta.error(
+                        format!("unsupported parameter {:?}", meta.path.get_ident()).as_str(),
+                    ));
                 }
                 Ok(())
             })
             .expect("expected to parse nested meta");
     }
-
-
 
     if passthrough
         && (platform_serialize_limit.is_some() || untagged || platform_serialize_into.is_some())
@@ -251,47 +249,50 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     if let Some(platform_serialize_attr) = input
         .attrs
         .iter()
-        .find(|attr| attr.path().is_ident("platform_serialize")) {
-        platform_serialize_attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("crate_name") {
-                let value = meta.value()?;
-                let crate_name_str: LitStr = value.parse()?;
-                crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
-            } else if meta.path.is_ident("passthrough") {
-                passthrough = true;
-            } else if meta.path.is_ident("allow_nested") {
-                nested = true;
-            } else if meta.path.is_ident("allow_prepend_version") {
-                allow_prepend_version = true;
-            } else if meta.path.is_ident("force_prepend_version") {
-                force_prepend_version = true;
-            } else if meta.path.is_ident("limit") {
-                let value = meta.value()?;
-                let parsed_limit: LitInt = value.parse()?;
-                platform_serialize_limit = Some(
-                    parsed_limit
-                        .base10_parse::<usize>()
-                        .expect("Expected a number for 'limit'"),
-                );
-            } else if meta.path.is_ident("untagged") {
-                untagged = true;
-            } else if meta.path.is_ident("into") {
-                let value = meta.value()?;
-                let parsed_into: LitStr = value.parse()?;
-                platform_serialize_into = Some(
-                    parsed_into
-                        .parse::<syn::Path>()
-                        .expect("Expected a valid path for 'into'"),
-                );
-            } else if meta.path.is_ident("platform_version_path") {
-                let value = meta.value()?;
-                platform_version_path = Some(value.parse()?);
-            } else {
-                return Err(meta
-                    .error(format!("unsupported parameter {:?}", meta.path.get_ident()).as_str()));
-            }
-            Ok(())
-        })
+        .find(|attr| attr.path().is_ident("platform_serialize"))
+    {
+        platform_serialize_attr
+            .parse_nested_meta(|meta| {
+                if meta.path.is_ident("crate_name") {
+                    let value = meta.value()?;
+                    let crate_name_str: LitStr = value.parse()?;
+                    crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
+                } else if meta.path.is_ident("passthrough") {
+                    passthrough = true;
+                } else if meta.path.is_ident("allow_nested") {
+                    nested = true;
+                } else if meta.path.is_ident("allow_prepend_version") {
+                    allow_prepend_version = true;
+                } else if meta.path.is_ident("force_prepend_version") {
+                    force_prepend_version = true;
+                } else if meta.path.is_ident("limit") {
+                    let value = meta.value()?;
+                    let parsed_limit: LitInt = value.parse()?;
+                    platform_serialize_limit = Some(
+                        parsed_limit
+                            .base10_parse::<usize>()
+                            .expect("Expected a number for 'limit'"),
+                    );
+                } else if meta.path.is_ident("untagged") {
+                    untagged = true;
+                } else if meta.path.is_ident("into") {
+                    let value = meta.value()?;
+                    let parsed_into: LitStr = value.parse()?;
+                    platform_serialize_into = Some(
+                        parsed_into
+                            .parse::<syn::Path>()
+                            .expect("Expected a valid path for 'into'"),
+                    );
+                } else if meta.path.is_ident("platform_version_path") {
+                    let value = meta.value()?;
+                    platform_version_path = Some(value.parse()?);
+                } else {
+                    return Err(meta.error(
+                        format!("unsupported parameter {:?}", meta.path.get_ident()).as_str(),
+                    ));
+                }
+                Ok(())
+            })
             .expect("expected to parse nested meta");
     }
 
@@ -530,9 +531,9 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                impl #impl_generics Signable for #name #ty_generics #where_clause {
+                impl #impl_generics crate::serialization_traits::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
-                        let config = config::standard().with_big_endian();
+                        let config = bincode::config::standard().with_big_endian();
 
                         let intermediate : #intermediate_name = self.into();
 
@@ -544,6 +545,40 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             }
         }
         Data::Enum(data) => {
+            let intermediate_name = syn::Ident::new(&format!("{}Signable", name), name.span());
+
+            let transformed_variants = data
+                .variants
+                .iter()
+                .map(|variant| {
+                    let variant_ident = &variant.ident;
+                    match &variant.fields {
+                        syn::Fields::Unnamed(fields) => {
+                            let transformed_fields: Vec<_> = fields
+                                .unnamed
+                                .iter()
+                                .map(|field| {
+                                    if let syn::Type::Path(type_path) = &field.ty {
+                                        let last_segment = type_path.path.segments.last().unwrap();
+                                        let new_name = format!("{}Signable", last_segment.ident);
+                                        let new_ident =
+                                            syn::Ident::new(&new_name, last_segment.ident.span());
+                                        quote! { #new_ident<'a> }
+                                    } else {
+                                        panic!("Unsupported field type in enum variant");
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+
+                            quote! {
+                                #variant_ident( #( #transformed_fields ),* )
+                            }
+                        }
+                        _ => panic!("Only tuple-style enum variants are supported"),
+                    }
+                })
+                .collect::<Vec<_>>();
+
             let variants = &data.variants;
 
             let variant_arms = variants.iter().enumerate().map(|(i, variant)| {
@@ -571,9 +606,14 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
             quote! {
-                impl #impl_generics Signable for #name #ty_generics #where_clause {
+                #[derive(Debug, Clone)]
+                pub enum #intermediate_name<'a> #impl_generics {
+                    #( #transformed_variants, )*
+                }
+
+                impl #impl_generics crate::serialization_traits::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
-                        let config = config::standard().with_big_endian();
+                        let config = bincode::config::standard().with_big_endian();
 
                         let signable_bytes = match self {
                             #( #variant_arms, )*
@@ -586,6 +626,8 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         }
         Data::Union(_) => panic!("PlatformSignable cannot be derived for unions"),
     };
+
+    eprintln!("Signable variant: {}", &expanded);
 
     TokenStream::from(expanded)
 }

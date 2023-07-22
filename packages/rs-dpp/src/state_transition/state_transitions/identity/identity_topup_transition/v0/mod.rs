@@ -43,14 +43,13 @@ mod property_names {
     Clone,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
     PartialEq,
 )]
 #[serde(rename_all = "camelCase")]
+#[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityTopUpTransitionV0 {
     // Own ST fields

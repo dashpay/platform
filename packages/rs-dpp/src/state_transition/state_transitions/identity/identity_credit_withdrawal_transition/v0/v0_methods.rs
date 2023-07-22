@@ -15,7 +15,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 
 use crate::identity::SecurityLevel::{CRITICAL, MASTER};
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},

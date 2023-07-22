@@ -1,9 +1,9 @@
 use crate::contracts::withdrawals_contract;
-use crate::document::{generate_document_id, DocumentV0, Document};
-use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
-use platform_value::platform_value;
+use crate::document::{generate_document_id, Document, DocumentV0};
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use crate::withdrawal::Pooling;
+use platform_value::platform_value;
 
 impl IdentityCreditWithdrawalTransitionActionV0 {
     pub fn from_identity_credit_withdrawal(

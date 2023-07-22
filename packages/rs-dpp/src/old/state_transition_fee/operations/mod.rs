@@ -13,8 +13,6 @@ pub use signature_verification_operation::*;
 
 use crate::NonConsensusError;
 
-use super::Refunds;
-
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
 pub const STORAGE_PROCESSING_CREDIT_PER_BYTE: i64 = 5000;
 

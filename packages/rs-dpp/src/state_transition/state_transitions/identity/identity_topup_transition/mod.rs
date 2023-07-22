@@ -11,6 +11,7 @@ use fields::*;
 
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
@@ -28,13 +29,14 @@ use serde::Serialize;
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
+#[platform_serialize(
+    platform_version_path = "state_transitions.identity_top_up_state_transition",
+    allow_nested
+)]
 #[serde(untagged)]
 pub enum IdentityTopUpTransition {
     #[versioned(0)]

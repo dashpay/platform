@@ -15,11 +15,11 @@ pub use security_level::SecurityLevel;
 pub mod accessors;
 pub(crate) mod conversion;
 mod fields;
-mod v0;
+pub(crate) mod v0;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::version::PlatformVersion;
 
 pub mod methods;
 #[cfg(feature = "random-public-keys")]

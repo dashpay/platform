@@ -1,4 +1,3 @@
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
@@ -42,13 +41,14 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.contract_update_state_transition)]
+#[platform_serialize(
+    platform_version_path = "state_transitions.contract_update_state_transition",
+    allow_nested
+)]
 #[serde(untagged)]
 pub enum DataContractUpdateTransition {
     #[versioned(0)]
@@ -76,7 +76,7 @@ mod test {
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
-    use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
+    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use crate::data_contract::DataContract;
     use crate::state_transition::{
         JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
@@ -93,7 +93,7 @@ mod test {
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None).data_contract;
+        let data_contract = get_data_contract_fixture(None, 1).data_contract_owned();
 
         let value_map = BTreeMap::from([
             (

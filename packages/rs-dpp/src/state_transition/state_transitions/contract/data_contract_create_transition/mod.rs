@@ -28,7 +28,6 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSig
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
-use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use v0::*;
@@ -44,13 +43,12 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
     Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.contract_create_state_transition)]
+#[platform_serialize(platform_version_path = "state_transitions.contract_create_state_transition")]
 #[serde(untagged)]
 pub enum DataContractCreateTransition {
     #[versioned(0)]
@@ -88,11 +86,11 @@ impl DataContractCreateTransition {
 #[cfg(test)]
 mod test {
     use crate::data_contract::created_data_contract::CreatedDataContract;
-    use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
     use integer_encoding::VarInt;
     use platform_value::Bytes32;
 
     use super::*;
+    use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;

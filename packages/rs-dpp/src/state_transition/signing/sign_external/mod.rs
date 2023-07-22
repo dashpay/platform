@@ -3,7 +3,7 @@ use crate::identity::IdentityPublicKey;
 use crate::state_transition::StateTransitionLike;
 use crate::ProtocolError;
 
-pub(super) trait StateTransitionIdentitySignExternalV0
+pub(crate) trait StateTransitionIdentitySignExternalV0
 where
     Self: StateTransitionLike,
 {

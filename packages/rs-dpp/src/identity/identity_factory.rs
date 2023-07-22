@@ -21,11 +21,11 @@ use crate::state_transition::identity_create_transition::IdentityCreateTransitio
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-#[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
 use platform_value::Value;
 use std::sync::Arc;

@@ -31,8 +31,6 @@ use crate::{
     Clone,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PartialEq,
@@ -40,6 +38,7 @@ use crate::{
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
+#[platform_serialize(allow_nested)]
 pub struct DataContractUpdateTransitionV0 {
     pub data_contract: DataContract,
     #[platform_signable(exclude_from_sig_hash)]

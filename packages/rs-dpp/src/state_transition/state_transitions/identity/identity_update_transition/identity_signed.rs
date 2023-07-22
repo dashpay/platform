@@ -19,9 +19,7 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
 
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {
         match self {
-            IdentityUpdateTransition::V0(transition) => {
-                transition.security_level_requirement(key_id)
-            }
+            IdentityUpdateTransition::V0(transition) => transition.security_level_requirement(),
         }
     }
 }

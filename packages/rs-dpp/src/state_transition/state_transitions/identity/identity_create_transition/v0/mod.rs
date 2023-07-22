@@ -9,9 +9,9 @@ mod value_conversion;
 use std::convert::{TryFrom, TryInto};
 
 use crate::platform_serialization::PlatformSignable;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationSignable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
@@ -27,7 +27,7 @@ use crate::prelude::Identifier;
 
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::{
     StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
@@ -40,14 +40,13 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
     Debug,
     Clone,
     PartialEq,
-    Encode,
-    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
 )]
 #[serde(rename_all = "camelCase")]
 #[serde(try_from = "IdentityCreateTransitionV0Inner")]
+#[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreateTransitionV0 {
     #[serde(rename = "type")]

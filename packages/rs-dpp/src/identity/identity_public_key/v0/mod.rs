@@ -21,14 +21,15 @@ use crate::Convertible;
 use bincode::{config, Decode, Encode};
 use dashcore::hashes::Hash;
 
-use crate::identity::{KeyID, TimestampMillis};
-use crate::util::vec;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
+use crate::identity::{KeyID, TimestampMillis};
+use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::util::vec;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
@@ -67,9 +68,9 @@ impl IdentityPublicKeyV0 {
 }
 
 #[cfg(feature = "state-transitions")]
-impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKeyV0 {
-    fn into(self) -> IdentityPublicKeyInCreation {
-        IdentityPublicKeyInCreation {
+impl Into<IdentityPublicKeyInCreationV0> for &IdentityPublicKeyV0 {
+    fn into(self) -> IdentityPublicKeyInCreationV0 {
+        IdentityPublicKeyInCreationV0 {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,

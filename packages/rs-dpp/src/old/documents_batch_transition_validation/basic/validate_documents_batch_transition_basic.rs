@@ -12,8 +12,6 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
 };
 use crate::consensus::basic::value_error::ValueError;
-use crate::document::state_transition::documents_batch_transition::property_names;
-use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,
@@ -21,12 +19,8 @@ use crate::{
         enrich_with_base_schema::{PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3},
         DataContract,
     },
-    document::generate_document_id::generate_document_id_v0,
     prelude::Identifier,
-    state_repository::StateRepositoryLike,
-    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::JsonSchemaValidator,
-    version::ProtocolVersionValidator,
     ProtocolError,
 };
 use anyhow::anyhow;
@@ -42,22 +36,22 @@ use super::{
 };
 
 lazy_static! {
-    pub static ref BASE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/document/stateTransition/documentTransition/base.json"
-    ))
-    .unwrap();
-    pub static ref CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/document/stateTransition/documentTransition/create.json"
-    ))
-    .unwrap();
-    pub static ref REPLACE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/document/stateTransition/documentTransition/replace.json"
-    ))
-    .unwrap();
-    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(
-        include_str!("../../../../../schema/document/stateTransition/documentsBatch.json")
-    )
-    .unwrap();
+    // pub static ref BASE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    //     "../../../../../../schema/document/v0/stateTransition/documentTransition/base.json"
+    // ))
+    // .unwrap();
+    // pub static ref CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    //     "../../../../../../schema/document/v0/stateTransition/documentTransition/create.json"
+    // ))
+    // .unwrap();
+    // pub static ref REPLACE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    //     "../../../../../../schema/document/v0/stateTransition/documentTransition/replace.json"
+    // ))
+    // .unwrap();
+    // pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(
+    //     include_str!("../../../../../../schema/document/v0/stateTransition/documentsBatch.json")
+    // )
+    // .unwrap();
     pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR: JsonSchemaValidator =
         JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone())
             .expect("unable to compile jsonschema");

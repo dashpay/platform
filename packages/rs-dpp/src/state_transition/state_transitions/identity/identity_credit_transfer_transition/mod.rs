@@ -3,18 +3,17 @@ mod identity_signed;
 #[cfg(feature = "json-object")]
 mod json_conversion;
 mod state_transition_like;
-pub(crate)  mod v0;
+pub(crate) mod v0;
 mod v0_methods;
 #[cfg(feature = "platform-value")]
 mod value_conversion;
-
-pub use action::IdentityCreditTransferTransitionAction;
 
 use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::Signable;
 use crate::state_transition::identity_credit_transfer_transition::fields::property_names::RECIPIENT_ID;
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
@@ -35,13 +34,14 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
     PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
+#[platform_serialize(
+    platform_version_path = "state_transitions.identity_credit_transfer_state_transition",
+    allow_nested
+)]
 #[serde(untagged)]
 pub enum IdentityCreditTransferTransition {
     #[versioned(0)]
