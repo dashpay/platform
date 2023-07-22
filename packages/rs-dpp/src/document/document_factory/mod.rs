@@ -72,6 +72,12 @@ impl DocumentFactory {
         }
     }
 
+    pub fn data_contract(&self) -> &DataContract {
+        match self {
+            DocumentFactory::V0(v0) => &v0.data_contract,
+        }
+    }
+
     pub fn create_document(
         &self,
         owner_id: Identifier,

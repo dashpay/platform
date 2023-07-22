@@ -15,9 +15,21 @@ impl DocumentV0Getters for Document {
         }
     }
 
+    fn id_ref(&self) -> &Identifier {
+        match self {
+            Document::V0(v0) => &v0.id,
+        }
+    }
+
     fn owner_id(&self) -> Identifier {
         match self {
             Document::V0(v0) => v0.owner_id,
+        }
+    }
+
+    fn owner_id_ref(&self) -> &Identifier {
+        match self {
+            Document::V0(v0) => &v0.owner_id,
         }
     }
 

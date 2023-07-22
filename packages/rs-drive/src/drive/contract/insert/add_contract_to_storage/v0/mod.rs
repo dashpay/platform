@@ -37,7 +37,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let contract_root_path = paths::contract_root_path(contract.id().as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id_ref().as_bytes());
         if contract.config().keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
@@ -89,7 +89,7 @@ impl Drive {
 
             let encoded_time = encode_u64(block_info.time_ms);
             let contract_keeping_history_storage_path =
-                paths::contract_keeping_history_storage_path(contract.id().as_bytes());
+                paths::contract_keeping_history_storage_path(contract.id_ref().as_bytes());
 
             if !is_first_insert {
                 // we can use a DirectQueryType::StatefulDirectQuery because if we were stateless we would always think

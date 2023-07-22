@@ -87,11 +87,13 @@ impl Drive {
         //  * Document andDataContract root tree
         //  *DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
-        let contract_document_type_path =
-            contract_document_type_path(contract.id().as_bytes(), document_type.name().as_str());
+        let contract_document_type_path = contract_document_type_path(
+            contract.id_ref().as_bytes(),
+            document_type.name().as_str(),
+        );
 
         let contract_documents_primary_key_path = contract_documents_primary_key_path(
-            contract.id().as_bytes(),
+            contract.id_ref().as_bytes(),
             document_type.name().as_str(),
         );
 
@@ -105,9 +107,9 @@ impl Drive {
         let old_document_element = if document_type.documents_keep_history() {
             let contract_documents_keeping_history_primary_key_path_for_document_id =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
-                    contract.id().as_bytes(),
+                    contract.id_ref().as_bytes(),
                     document_type.name().as_str(),
-                    document.id().as_slice(),
+                    document.id_ref().as_slice(),
                 );
             // When keeping document history the 0 is a reference that points to the current value
             // O is just on one byte, so we have at most one hop of size 1 (1 byte)

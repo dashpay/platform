@@ -84,7 +84,7 @@ impl Drive {
         //  *DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
         let contract_documents_primary_key_path = contract_documents_primary_key_path(
-            contract.id().as_bytes(),
+            contract.id_ref().as_bytes(),
             document_type.name().as_str(),
         );
 

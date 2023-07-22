@@ -90,11 +90,11 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => {
-                KeyRefRequest(document.id().as_slice())
+                KeyRefRequest(document.id_ref().as_slice())
             }
             DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
-                KeyRefRequest(document.id().as_slice())
+                KeyRefRequest(document.id_ref().as_slice())
             }
             DocumentInfo::DocumentEstimatedAverageSize(document_max_size) => {
                 KeyValueMaxSize((32, *document_max_size))
@@ -248,10 +248,10 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
     fn get_document_id_as_slice(&self) -> Option<&[u8]> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id().as_slice()),
+            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id_ref().as_slice()),
             DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
-                Some(document.id().as_slice())
+                Some(document.id_ref().as_slice())
             }
             DocumentInfo::DocumentEstimatedAverageSize(_) => None,
         }

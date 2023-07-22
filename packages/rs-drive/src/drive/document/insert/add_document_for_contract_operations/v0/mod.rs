@@ -30,7 +30,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let primary_key_path = contract_documents_primary_key_path(
-            document_and_contract_info.contract.id().as_bytes(),
+            document_and_contract_info.contract.id_ref().as_bytes(),
             document_and_contract_info.document_type.name().as_str(),
         );
 

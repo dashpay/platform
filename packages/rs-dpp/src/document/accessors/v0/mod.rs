@@ -1,3 +1,4 @@
+use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -33,6 +34,8 @@ pub trait DocumentV0Getters {
     fn get(&self, path: &str) -> Option<&Value> {
         self.properties().get_optional_at_path(path).ok().flatten()
     }
+    fn id_ref(&self) -> &Identifier;
+    fn owner_id_ref(&self) -> &Identifier;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {

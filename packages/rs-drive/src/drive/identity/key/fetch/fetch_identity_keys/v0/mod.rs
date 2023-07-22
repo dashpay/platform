@@ -1,4 +1,4 @@
-use crate::drive::identity::key::fetch::KeyRequestType::{SearchKey, SpecificKeys};
+use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, SearchKey, SpecificKeys};
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyResult};
 use crate::drive::Drive;
 use crate::error::Error;

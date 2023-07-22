@@ -48,7 +48,7 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 /// Factory for creating documents
 pub struct DocumentFactoryV0 {
     protocol_version: u32,
-    data_contract: DataContract,
+    pub(super) data_contract: DataContract,
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 

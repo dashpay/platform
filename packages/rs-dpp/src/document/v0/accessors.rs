@@ -32,6 +32,14 @@ impl DocumentV0Getters for DocumentV0 {
     fn updated_at(&self) -> Option<TimestampMillis> {
         self.updated_at
     }
+
+    fn id_ref(&self) -> &Identifier {
+        &self.id
+    }
+
+    fn owner_id_ref(&self) -> &Identifier {
+        &self.owner_id
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {

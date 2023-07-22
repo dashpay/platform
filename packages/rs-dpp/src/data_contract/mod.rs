@@ -209,6 +209,12 @@ impl DataContract {
         }
     }
 
+    pub fn id_ref(&self) -> &Identifier {
+        match self {
+            DataContract::V0(v0) => &v0.id,
+        }
+    }
+
     pub fn set_id(&mut self, id: Identifier) {
         match self {
             DataContract::V0(v0) => v0.id = id,

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
-    pub fn apply_balance_change_from_fee_to_identity_v0(
+    pub(super) fn apply_balance_change_from_fee_to_identity_v0(
         &self,
         balance_change: BalanceChangeForIdentity,
         transaction: TransactionArg,

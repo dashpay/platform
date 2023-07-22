@@ -21,7 +21,7 @@ use std::convert::TryFrom;
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
 /// a dust refund limit is used
-const MIN_REFUND_LIMIT_BYTES: u64 = 32;
+const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<[u8; 32], CreditsPerEpoch>;
@@ -32,10 +32,14 @@ pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
-    pub fn from_storage_removal(
-        storage_removal: CreditsPerEpochByIdentifier,
+    pub fn from_storage_removal<I, C>(
+        storage_removal: I,
         current_epoch_index: EpochIndex,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, ProtocolError>
+    where
+        I: IntoIterator<Item = ([u8; 32], C)>,
+        C: IntoIterator<Item = (u64, u32)>,
+    {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
             .map(|(identifier, bytes_per_epochs)| {

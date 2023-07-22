@@ -313,7 +313,7 @@ pub struct DriveQuery<'a> {
 impl<'a> DriveQuery<'a> {
     #[cfg(feature = "full")]
     /// Returns any item
-    pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef) -> Self {
+    pub fn any_item_query(contract: &'a DataContract, document_type: DocumentTypeRef<'a>) -> Self {
         DriveQuery {
             contract,
             document_type,
@@ -349,7 +349,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_cbor(
         query_cbor: &[u8],
         contract: &'a DataContract,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
@@ -365,7 +365,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_value(
         query_value: Value,
         contract: &'a DataContract,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
@@ -377,7 +377,7 @@ impl<'a> DriveQuery<'a> {
     pub fn from_btree_map_value(
         mut query_document: BTreeMap<String, Value>,
         contract: &'a DataContract,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let maybe_limit: Option<u16> = query_document
@@ -506,7 +506,7 @@ impl<'a> DriveQuery<'a> {
         start_at_included: bool,
         block_time_ms: Option<u64>,
         contract: &'a DataContract,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
         let _limit = maybe_limit
@@ -1832,10 +1832,9 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let platform_version = PlatformVersion::latest();
-        let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
@@ -1864,9 +1863,8 @@ mod tests {
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
         let platform_version = PlatformVersion::latest();
-        let db_transaction = drive.grove.start_transaction();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path =

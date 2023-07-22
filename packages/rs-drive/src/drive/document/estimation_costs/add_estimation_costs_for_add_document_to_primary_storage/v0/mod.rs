@@ -70,9 +70,9 @@ impl Drive {
             );
             let document_id_in_primary_path =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
-                    contract.id().as_bytes(),
+                    contract.id_ref().as_bytes(),
                     document_type.name().as_str(),
-                    document.id().as_slice(),
+                    document.id_ref().as_slice(),
                 );
             // we are dealing with a sibling reference
             // sibling reference serialized size is going to be the encoded time size

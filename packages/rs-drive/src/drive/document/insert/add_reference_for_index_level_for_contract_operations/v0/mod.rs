@@ -100,7 +100,7 @@ impl Drive {
                             document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
-                        KeyElement((document.id().as_slice(), document_reference))
+                        KeyElement((document.id_ref().as_slice(), document_reference))
                     }
                     DocumentOwnedInfo((document, storage_flags))
                     | DocumentAndSerialization((document, _, storage_flags)) => {
@@ -109,7 +109,7 @@ impl Drive {
                             document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                         );
-                        KeyElement((document.id().as_slice(), document_reference))
+                        KeyElement((document.id_ref().as_slice(), document_reference))
                     }
                     DocumentEstimatedAverageSize(max_size) => KeyUnknownElementSize((
                         KeyInfo::MaxKeySize {

@@ -1938,7 +1938,8 @@ mod tests {
 
         let document_type_name = "niceDocument".to_string();
 
-        let document_type = contract
+        let document_type = document_factory
+            .data_contract()
             .document_type_for_name(document_type_name.as_str())
             .expect("expected document type");
 
@@ -1964,7 +1965,7 @@ mod tests {
                         document_info,
                         owner_id: Some(owner_id.to_buffer()),
                     },
-                    contract: &contract,
+                    contract: document_factory.data_contract(),
                     document_type,
                 },
                 false,
@@ -1986,7 +1987,7 @@ mod tests {
         let update_fees = drive
             .update_document_for_contract(
                 &document,
-                &contract,
+                document_factory.data_contract(),
                 document_type,
                 Some(owner_id.to_buffer()),
                 block_info,

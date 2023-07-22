@@ -267,7 +267,7 @@ impl Drive {
 
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
-        let contract_documents_path = contract_documents_path(contract.id().as_bytes());
+        let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
         for (type_key, document_type) in contract.document_types().iter() {
             let original_document_type = &original_contract.document_types().get(type_key);
             if let Some(original_document_type) = original_document_type {
