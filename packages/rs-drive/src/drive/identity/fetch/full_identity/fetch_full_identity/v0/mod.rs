@@ -1,4 +1,3 @@
-
 use crate::drive::defaults::PROTOCOL_VERSION;
 
 use crate::drive::Drive;
@@ -89,8 +88,6 @@ impl Drive {
     //     Ok(identities)
     // }
 
-
-
     /// Fetches an identity with all its information from storage.
     pub(super) fn fetch_full_identity_v0(
         &self,
@@ -158,7 +155,7 @@ impl Drive {
                     balance,
                     revision,
                 }
-                    .into(),
+                .into(),
             )),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_full_identity_operations (for identity structure)".to_string(),

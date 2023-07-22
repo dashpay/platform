@@ -2,10 +2,10 @@ use crate::data_contract::errors::StructureError;
 use crate::document::v0::cbor_conversion::DocumentForCbor;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use std::collections::BTreeMap;
-use crate::version::PlatformVersion;
 
 pub trait DocumentCborMethodsV0 {
     /// Reads a CBOR-serialized document and creates a Document from it.

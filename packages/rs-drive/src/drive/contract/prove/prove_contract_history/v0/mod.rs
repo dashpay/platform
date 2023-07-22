@@ -1,8 +1,8 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
-use grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves the existence of the specified contract's history.
@@ -38,6 +38,12 @@ impl Drive {
         let history_query =
             Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
 
-        self.grove_get_proved_path_query(&history_query, false, transaction, &mut vec![], &platform_version.drive)
+        self.grove_get_proved_path_query(
+            &history_query,
+            false,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )
     }
 }

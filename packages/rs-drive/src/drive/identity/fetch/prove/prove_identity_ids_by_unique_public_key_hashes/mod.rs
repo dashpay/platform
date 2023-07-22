@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves identity ids against public key hashes.
@@ -27,7 +27,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .prove

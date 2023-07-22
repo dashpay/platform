@@ -14,6 +14,7 @@ use crate::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use crate::document::v0::DocumentV0;
+use crate::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
@@ -23,7 +24,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
-use crate::version::PlatformVersion;
 
 #[cfg(feature = "cbor")]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

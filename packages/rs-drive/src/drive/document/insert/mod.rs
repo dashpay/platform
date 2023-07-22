@@ -129,7 +129,6 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 
-
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
@@ -151,7 +150,8 @@ mod tests {
         ) -> Result<FeeResult, Error> {
             let contract = DataContract::from_cbor(serialized_contract, platform_version)?;
 
-            let document = Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
+            let document =
+                Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
 
             let document_info = DocumentRefInfo((&document, storage_flags));
 
@@ -1036,7 +1036,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
-                platform_version
+                platform_version,
             )
             .expect("should create dash tld");
 

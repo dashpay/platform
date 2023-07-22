@@ -94,7 +94,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version.drive.methods.identity.update.disable_identity_keys {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .update
+            .disable_identity_keys
+        {
             0 => self.disable_identity_keys_operations_v0(
                 identity_id,
                 key_ids,

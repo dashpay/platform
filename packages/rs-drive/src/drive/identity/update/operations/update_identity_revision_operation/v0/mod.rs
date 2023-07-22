@@ -15,11 +15,11 @@ use dpp::fee::fee_result::FeeResult;
 
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
+use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Update the revision of the identity
@@ -37,13 +37,13 @@ impl Drive {
             Self::add_estimation_costs_for_update_revision(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-                &platform_version.drive
+                &platform_version.drive,
             )?;
         }
         let identity_path = identity_path_vec(identity_id.as_slice());
         let revision_bytes = revision.to_be_bytes().to_vec();
 
-        Ok(        LowLevelDriveOperation::replace_for_known_path_key_element(
+        Ok(LowLevelDriveOperation::replace_for_known_path_key_element(
             identity_path,
             Into::<&[u8; 1]>::into(IdentityRootStructure::IdentityTreeRevision).to_vec(),
             Element::new_item(revision_bytes),

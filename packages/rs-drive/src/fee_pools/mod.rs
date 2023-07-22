@@ -108,9 +108,10 @@ mod tests {
         fn test_values_are_set() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+            let platform_version = PlatformVersion::latest();
 
             let storage_fee_pool = drive
-                .get_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction), platform_version)
                 .expect("should get storage fee pool");
 
             assert_eq!(storage_fee_pool, 0u64);
@@ -173,7 +174,7 @@ mod tests {
                 .expect("should apply batch");
 
             let stored_storage_fee = drive
-                .get_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction), platform_version)
                 .expect("should get storage fee pool");
 
             assert_eq!(storage_fee, stored_storage_fee);

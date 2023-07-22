@@ -5,9 +5,9 @@ use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::Identity;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Fetches identities with all their related information from storage based on unique public key hashes.
@@ -30,7 +30,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -72,7 +73,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch

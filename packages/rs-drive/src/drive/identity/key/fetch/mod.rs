@@ -38,6 +38,7 @@ use dpp::fee::default_costs::EpochCosts;
 use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 #[cfg(feature = "full")]
 use dpp::fee::Credits;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
 use dpp::identity::IDENTITY_MAX_KEYS;
@@ -64,7 +65,6 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting

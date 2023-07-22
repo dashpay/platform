@@ -8,10 +8,10 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Add new non-unique keys to an identity. This function is version controlled.
@@ -37,7 +37,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .update

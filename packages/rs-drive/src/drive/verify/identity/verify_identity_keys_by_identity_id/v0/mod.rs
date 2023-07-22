@@ -11,6 +11,7 @@ use dpp::fee::Credits;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
@@ -61,8 +62,8 @@ impl Drive {
             if path == identity_keys_path {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
-                    let key = IdentityPublicKey::deserialize(&item_bytes, platform_version)?;
-                    keys.insert(key.id, key);
+                    let key = IdentityPublicKey::deserialize(&item_bytes)?;
+                    keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "we received an absence proof for a key but didn't request one",

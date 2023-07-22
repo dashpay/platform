@@ -1,3 +1,4 @@
+use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0Methods;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -10,7 +11,6 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0Methods;
 
 impl Drive {
     /// Balances are stored in the balance tree under the identity's id
@@ -105,21 +105,19 @@ impl Drive {
         )?;
 
         if let Some(new_balance) = add_to_previous_balance.balance_modified() {
-            drive_operations.push(self.update_identity_balance_operation(
-                identity_id,
-                new_balance,
-                drive_version,
-            )?);
+            drive_operations
+                .push(self.update_identity_balance_operation_v0(identity_id, new_balance)?);
         }
 
         if let Some(new_negative_balance) =
             add_to_previous_balance.negative_credit_balance_modified()
         {
-            drive_operations.push(self.update_identity_negative_credit_operation(
-                identity_id,
-                new_negative_balance,
-                platform_version,
-            )?);
+            drive_operations.push(
+                self.update_identity_negative_credit_operation_v0(
+                    identity_id,
+                    new_negative_balance,
+                ),
+            );
         }
 
         Ok(drive_operations)

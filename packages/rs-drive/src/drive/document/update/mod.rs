@@ -95,7 +95,9 @@ use crate::error::document::DocumentError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
-use dpp::document::serialization_traits::{DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0};
+use dpp::document::serialization_traits::{
+    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+};
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
@@ -173,8 +175,10 @@ mod tests {
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_document;
+    use dpp::document::serialization_traits::{
+        DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+    };
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
-    use dpp::document::serialization_traits::{DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
@@ -258,8 +262,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract =
-            DataContract::from_cbor(contract_cbor.as_slice(), platform_version).expect("expected to create contract");
+        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
+            .expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -276,8 +280,9 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
-            .expect("expected to get a document");
+        let alice_profile =
+            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get a document");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -352,8 +357,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract =
-            DataContract::from_cbor(contract_cbor.as_slice(), platform_version).expect("expected to create contract");
+        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
+            .expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -370,8 +375,9 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
-            .expect("expected to get a document");
+        let alice_profile =
+            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get a document");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -466,8 +472,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract =
-            DataContract::from_cbor(contract_cbor.as_slice(), platform_version).expect("expected to create contract");
+        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
+            .expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -484,8 +490,9 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
-            .expect("expected to get a document");
+        let alice_profile =
+            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get a document");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -626,7 +633,8 @@ mod tests {
         });
 
         // first we need to deserialize the contract
-        let contract = DataContract::from_object(contract,  platform_version).expect("expected data contract");
+        let contract =
+            DataContract::from_object(contract, platform_version).expect("expected data contract");
 
         drive
             .apply_contract(
@@ -653,13 +661,22 @@ mod tests {
            "$updatedAt":1647535750329_u64,
         });
 
-        let document = Document::from_platform_value(document_values, platform_version).expect("expected to make document");
+        let document = Document::from_platform_value(document_values, platform_version)
+            .expect("expected to make document");
 
-        let document_type = contract.document_type_for_name("indexedDocument").expect("expected to get a document type");
+        let document_type = contract
+            .document_type_for_name("indexedDocument")
+            .expect("expected to get a document type");
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo { document_info: DocumentOwnedInfo((document, StorageFlags::optional_default_as_cow())), owner_id: None },
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((
+                            document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
                     contract: &contract,
                     document_type,
                 },
@@ -685,7 +702,8 @@ mod tests {
            "$updatedAt":1647535754556_u64,
         });
 
-        let document = Document::from_platform_value(document_values, platform_version).expect("expected to make document");
+        let document = Document::from_platform_value(document_values, platform_version)
+            .expect("expected to make document");
 
         drive
             .update_document_for_contract(
@@ -1127,7 +1145,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1264,7 +1282,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1316,7 +1334,7 @@ mod tests {
 
         let removed_credits = update_fees
             .fee_refunds
-            .get(&owner_id)
+            .get(owner_id.as_bytes())
             .unwrap()
             .get(&0)
             .unwrap();

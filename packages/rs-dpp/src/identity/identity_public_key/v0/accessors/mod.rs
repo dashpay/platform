@@ -70,4 +70,8 @@ impl IdentityPublicKeySettersV0 for IdentityPublicKeyV0 {
     fn set_disabled_at(&mut self, timestamp_millis: u64) {
         self.disabled_at = Some(timestamp_millis);
     }
+
+    fn remove_disabled_at(&mut self) {
+        self.disabled_at = None;
+    }
 }

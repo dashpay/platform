@@ -23,13 +23,13 @@ pub struct DataContractFetchInfo {
 #[cfg(test)]
 impl DataContractFetchInfo {
     /// This should ONLY be used for tests
-    pub fn dpns_contract_fixture(protocol_version : u32) -> Self {
+    pub fn dpns_contract_fixture(protocol_version: u32) -> Self {
         let dpns = get_dpns_data_contract_fixture(None, protocol_version);
         DataContractFetchInfo {
             contract: dpns.data_contract_owned(),
             storage_flags: None,
             cost: OperationCost::with_seek_count(1), //Just so there's a cost
-            fee: Some(FeeResult::new_from_processing_fee(30000))
+            fee: Some(FeeResult::new_from_processing_fee(30000)),
         }
     }
 }

@@ -21,6 +21,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -35,7 +36,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 impl Drive {
     /// Gathers operations for updating a document.

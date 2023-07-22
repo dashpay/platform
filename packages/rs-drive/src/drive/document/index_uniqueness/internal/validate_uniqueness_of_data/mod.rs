@@ -14,9 +14,9 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 // We don't create an enum version of this
 // If this would ever need to be changed all index uniqueness methods would need to be changed
@@ -55,7 +55,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .document
             .index_uniqueness

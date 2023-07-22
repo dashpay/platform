@@ -1,5 +1,8 @@
-use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcome;
+use crate::drive::identity::update::add_to_previous_balance_outcome;
 use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0;
+use crate::drive::identity::update::add_to_previous_balance_outcome::{
+    AddToPreviousBalanceOutcome, AddToPreviousBalanceOutcomeV0Methods,
+};
 use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcome;
 use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0;
 use crate::drive::Drive;
@@ -7,9 +10,11 @@ use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -73,10 +78,7 @@ impl Drive {
                 "there should always be a balance if apply is set to true",
             )))?;
 
-        let AddToPreviousBalanceOutcomeV0 {
-            balance_modified,
-            negative_credit_balance_modified,
-        } = match balance_change.change() {
+        let add_to_previous_balance_outcome = match balance_change.change() {
             BalanceChange::AddToBalance(balance_to_add) => self.add_to_previous_balance(
                 balance_change.identity_id.to_buffer(),
                 previous_balance,
@@ -107,30 +109,32 @@ impl Drive {
                             *desired_removed_balance - previous_balance,
                         ),
                     }
+                    .into()
                 } else {
                     // we have enough balance
                     AddToPreviousBalanceOutcomeV0 {
                         balance_modified: Some(previous_balance - desired_removed_balance),
                         negative_credit_balance_modified: None,
                     }
+                    .into()
                 }
             }
             BalanceChange::NoBalanceChange => unreachable!(),
         };
 
-        if let Some(new_balance) = balance_modified {
-            drive_operations.push(self.update_identity_balance_operation(
-                balance_change.identity_id,
+        if let Some(new_balance) = add_to_previous_balance_outcome.balance_modified() {
+            drive_operations.push(self.update_identity_balance_operation_v0(
+                balance_change.identity_id.to_buffer(),
                 new_balance,
-                drive_version,
             )?);
         }
 
-        if let Some(new_negative_balance) = negative_credit_balance_modified {
-            drive_operations.push(self.update_identity_negative_credit_operation(
-                balance_change.identity_id,
+        if let Some(new_negative_balance) =
+            add_to_previous_balance_outcome.negative_credit_balance_modified()
+        {
+            drive_operations.push(self.update_identity_negative_credit_operation_v0(
+                balance_change.identity_id.to_buffer(),
                 new_negative_balance,
-                drive_version,
             ));
         }
 
@@ -140,17 +144,19 @@ impl Drive {
                 None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>;
 
             drive_operations.extend(self.add_to_identity_balance_operations(
-                identity_id,
+                identity_id.to_buffer(),
                 credits,
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             )?);
         }
 
         Ok((
             drive_operations,
-            balance_change.fee_result_outcome(previous_balance)?,
+            balance_change
+                .fee_result_outcome::<ConsensusError>(previous_balance)
+                .map_err(|e| ProtocolError::ConsensusError(Box::new(e)))?,
         ))
     }
 }

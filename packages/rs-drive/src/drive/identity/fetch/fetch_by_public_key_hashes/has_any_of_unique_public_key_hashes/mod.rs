@@ -4,9 +4,9 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::convert::TryInto;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Checks if any keys with given public key hashes already exist in the unique tree.
@@ -26,9 +26,10 @@ impl Drive {
         &self,
         public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 20]>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -67,9 +68,10 @@ impl Drive {
         public_key_hashes: Vec<[u8; 20]>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<[u8; 20]>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch

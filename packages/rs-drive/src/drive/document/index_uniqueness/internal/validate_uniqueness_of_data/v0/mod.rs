@@ -7,6 +7,7 @@ use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
@@ -17,7 +18,6 @@ use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 impl Drive {
     /// Internal method validating uniqueness

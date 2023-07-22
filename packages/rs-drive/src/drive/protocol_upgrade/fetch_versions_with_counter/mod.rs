@@ -45,7 +45,7 @@ impl Drive {
             .protocol_upgrade
             .fetch_versions_with_counter
         {
-            0 => self.fetch_versions_with_counter_v0(transaction,drive_version),
+            0 => self.fetch_versions_with_counter_v0(transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_versions_with_counter".to_string(),
                 known_versions: vec![0],

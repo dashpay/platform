@@ -32,6 +32,7 @@ use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
+use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
@@ -40,7 +41,6 @@ use drive::error::contract::ContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
-use dpp::version::PlatformVersion;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     match value {
@@ -98,7 +98,7 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         let metadata = ResponseMetadata {
@@ -412,7 +412,12 @@ impl<C> Platform<C> {
                 } else {
                     let contracts = check_validation_result_with_data!(self
                         .drive
-                        .get_contracts_with_fetch_info(contract_ids.as_slice(), false, None, platform_version));
+                        .get_contracts_with_fetch_info(
+                            contract_ids.as_slice(),
+                            false,
+                            None,
+                            platform_version
+                        ));
 
                     let contracts = check_validation_result_with_data!(contracts
                         .into_iter()

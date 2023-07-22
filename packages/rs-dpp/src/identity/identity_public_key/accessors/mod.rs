@@ -101,4 +101,10 @@ impl IdentityPublicKeySettersV0 for IdentityPublicKey {
             v0.set_disabled_at(timestamp_millis);
         }
     }
+
+    fn remove_disabled_at(&mut self) {
+        if let IdentityPublicKey::V0(v0) = self {
+            v0.remove_disabled_at();
+        }
+    }
 }

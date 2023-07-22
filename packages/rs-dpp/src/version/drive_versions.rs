@@ -343,7 +343,6 @@ pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
     pub get_storage_fees_from_distribution_pool: FeatureVersion,
 }
 
-
 #[derive(Clone, Debug, Default)]
 pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
@@ -417,7 +416,6 @@ pub struct DriveIdentityFetchFullIdentityMethodVersions {
     pub fetch_full_identities: OptionalFeatureVersion,
 }
 
-
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityFetchPartialIdentityMethodVersions {
     pub fetch_identity_balance_with_keys: FeatureVersion,
@@ -486,6 +484,7 @@ pub struct DriveIdentityInsertMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveIdentityUpdateMethodVersions {
     pub update_identity_revision: FeatureVersion,
+    pub update_identity_negative_credit_operation: FeatureVersion,
     pub initialize_identity_revision: FeatureVersion,
     pub disable_identity_keys: FeatureVersion,
     pub re_enable_identity_keys: FeatureVersion,
@@ -494,8 +493,6 @@ pub struct DriveIdentityUpdateMethodVersions {
     pub add_new_keys_to_identity: FeatureVersion,
     pub insert_identity_balance: FeatureVersion,
     pub initialize_negative_identity_balance: FeatureVersion,
-    pub update_identity_balance_operation: FeatureVersion,
-    pub update_identity_negative_credit: FeatureVersion,
     pub add_to_identity_balance: FeatureVersion,
     pub add_to_previous_balance: FeatureVersion,
     pub apply_balance_change_from_fee_to_identity: FeatureVersion,

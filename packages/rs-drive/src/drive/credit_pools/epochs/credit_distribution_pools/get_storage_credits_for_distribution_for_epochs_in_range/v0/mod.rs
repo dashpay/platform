@@ -23,8 +23,12 @@ impl Drive {
         epoch_range
             .map(|index| {
                 let epoch = Epoch::new(index).unwrap();
-                self.get_epoch_storage_credits_for_distribution(&epoch, transaction, platform_version)
-                    .expect("should get storage fee")
+                self.get_epoch_storage_credits_for_distribution(
+                    &epoch,
+                    transaction,
+                    platform_version,
+                )
+                .expect("should get storage fee")
             })
             .collect()
     }

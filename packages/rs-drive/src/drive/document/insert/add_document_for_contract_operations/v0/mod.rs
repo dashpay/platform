@@ -6,13 +6,13 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
@@ -41,7 +41,9 @@ impl Drive {
             StatelessDirectQuery {
                 in_tree_using_sums: false,
                 query_target: QueryTargetValue(
-                    document_and_contract_info.document_type.estimated_size(platform_version)? as u32,
+                    document_and_contract_info
+                        .document_type
+                        .estimated_size(platform_version)? as u32,
                 ),
             }
         };

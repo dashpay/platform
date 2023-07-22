@@ -154,7 +154,9 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::document::serialization_traits::{DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0};
+    use dpp::document::serialization_traits::{
+        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+    };
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
@@ -391,8 +393,8 @@ mod tests {
         let serialized = person_document0
             .serialize(document_type, platform_version)
             .expect("expected to serialize");
-        let _deserialized =
-            Document::from_bytes(&serialized, document_type, platform_version).expect("expected to deserialize");
+        let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
+            .expect("expected to deserialize");
     }
 
     #[test]
@@ -1070,8 +1072,9 @@ mod tests {
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let mut document = Document::from_cbor(&serialized_document, None, None, platform_version)
-                    .expect("expected to deserialize the document");
+                let mut document =
+                    Document::from_cbor(&serialized_document, None, None, platform_version)
+                        .expect("expected to deserialize the document");
 
                 // Not sure why original documents were missing created at
                 document.set_created_at(Some(5));

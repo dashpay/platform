@@ -1,8 +1,8 @@
-use dpp::block::epoch::EpochIndex;
-use dpp::fee::epoch::SignedCreditsPerEpoch;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
+use dpp::block::epoch::EpochIndex;
+use dpp::fee::epoch::SignedCreditsPerEpoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::fee::epoch::distribution::{
@@ -82,9 +82,11 @@ mod tests {
         use dpp::balances::credits::Creditable;
         use dpp::block::epoch::Epoch;
         use dpp::block::extended_block_info::BlockInfo;
-        use dpp::fee::Credits;
-        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS, SignedCreditsPerEpoch};
         use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
+        use dpp::fee::epoch::{
+            CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
+        };
+        use dpp::fee::Credits;
         use drive::drive::batch::DriveOperation;
         use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
@@ -100,7 +102,7 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
-            
+
             let platform_version = PlatformVersion::latest();
 
             /*
@@ -175,7 +177,13 @@ mod tests {
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction), platform_version)
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -203,7 +211,7 @@ mod tests {
                 &platform.drive,
                 GENESIS_EPOCH_INDEX..current_epoch_index + PERPETUAL_STORAGE_EPOCHS,
                 Some(&transaction),
-                platform_version
+                platform_version,
             );
 
             // Assert total distributed fees

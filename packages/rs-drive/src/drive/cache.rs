@@ -98,7 +98,9 @@ mod tests {
             let protocol_version = PlatformVersion::latest().protocol_version;
 
             // Create global contract
-            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
 
             let contract_id = fetch_info_global.contract.id().to_buffer();
 
@@ -107,7 +109,8 @@ mod tests {
                 .insert(contract_id, Arc::clone(&fetch_info_global));
 
             // Create transactional contract with a new version
-            let mut fetch_info_block = DataContractFetchInfo::dpns_contract_fixture(protocol_version);
+            let mut fetch_info_block =
+                DataContractFetchInfo::dpns_contract_fixture(protocol_version);
 
             fetch_info_block.contract.increment_version();
 
@@ -130,7 +133,9 @@ mod tests {
 
             let protocol_version = PlatformVersion::latest().protocol_version;
 
-            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
 
             let contract_id = fetch_info_global.contract.id().to_buffer();
 
@@ -151,7 +156,9 @@ mod tests {
 
             let protocol_version = PlatformVersion::latest().protocol_version;
 
-            let fetch_info_block = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info_block = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
 
             let contract_id = fetch_info_block.contract.id().to_buffer();
 

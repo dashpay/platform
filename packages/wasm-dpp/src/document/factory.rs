@@ -123,11 +123,7 @@ impl DocumentFactoryWASM {
         let dynamic_data = data.with_serde_to_platform_value()?;
         let extended_document = self
             .0
-            .create_extended_document(
-                owner_id,
-                document_type.to_string(),
-                dynamic_data,
-            )
+            .create_extended_document(owner_id, document_type.to_string(), dynamic_data)
             .with_js_error()?;
 
         Ok(extended_document.into())

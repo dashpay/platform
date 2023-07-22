@@ -1,4 +1,3 @@
-
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
     KeyIDOptionalIdentityPublicKeyPairBTreeMap,

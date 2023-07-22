@@ -14,9 +14,9 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document would be unique in the state.
@@ -49,7 +49,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .document
             .index_uniqueness

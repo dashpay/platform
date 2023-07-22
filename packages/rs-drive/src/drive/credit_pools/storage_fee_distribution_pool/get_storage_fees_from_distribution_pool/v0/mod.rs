@@ -1,4 +1,3 @@
-
 use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -52,7 +51,8 @@ mod tests {
 
             let platform_version = PlatformVersion::first();
 
-            let result = drive.get_storage_fees_from_distribution_pool(Some(&transaction), platform_version);
+            let result =
+                drive.get_storage_fees_from_distribution_pool(Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,
@@ -79,7 +79,8 @@ mod tests {
                 .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
-            let result = drive.get_storage_fees_from_distribution_pool(Some(&transaction), platform_version);
+            let result =
+                drive.get_storage_fees_from_distribution_pool(Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,

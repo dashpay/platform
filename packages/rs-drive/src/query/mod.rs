@@ -278,9 +278,7 @@ impl QueryResultEncoding {
                 ciborium::ser::into_writer(value, &mut buffer)
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
             }
-            QueryResultEncoding::PlatformEncodedQueryResult => {
-
-            }
+            QueryResultEncoding::PlatformEncodedQueryResult => {}
         }
         Ok(buffer)
     }
@@ -1906,8 +1904,9 @@ mod tests {
             ]
         });
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1934,7 +1933,9 @@ mod tests {
             "invalid": 0,
         });
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1962,7 +1963,9 @@ mod tests {
         });
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1990,8 +1993,9 @@ mod tests {
         });
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2018,8 +2022,9 @@ mod tests {
             ],
         });
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2283,8 +2288,9 @@ mod tests {
         });
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2310,8 +2316,9 @@ mod tests {
         });
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2337,8 +2344,9 @@ mod tests {
         });
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2364,8 +2372,9 @@ mod tests {
         });
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
-        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
-
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");

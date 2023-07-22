@@ -6,10 +6,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes the document from primary storage.
@@ -38,7 +38,8 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .document
             .delete

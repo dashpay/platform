@@ -5,10 +5,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Retrieves the specified contracts and their associated fetch information.
@@ -46,7 +46,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<Arc<DataContractFetchInfo>>>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .contract
             .get

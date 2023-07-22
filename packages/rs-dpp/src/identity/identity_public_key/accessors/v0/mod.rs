@@ -1,8 +1,8 @@
 use crate::identity::identity_public_key::KeyID;
-use crate::identity::KeyType;
 use crate::identity::Purpose;
 use crate::identity::SecurityLevel;
 use crate::identity::TimestampMillis;
+use crate::identity::{IdentityPublicKey, KeyType};
 use platform_value::BinaryData;
 
 /// Trait for getters in IdentityPublicKeyV0
@@ -54,4 +54,5 @@ pub trait IdentityPublicKeySettersV0 {
 
     /// Sets the disabled_at timestamp
     fn set_disabled_at(&mut self, timestamp_millis: u64);
+    fn remove_disabled_at(&mut self);
 }

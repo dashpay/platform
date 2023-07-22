@@ -48,7 +48,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .document
             .index_uniqueness

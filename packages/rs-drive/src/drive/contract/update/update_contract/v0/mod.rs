@@ -9,6 +9,8 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -17,8 +19,6 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 
 impl Drive {
     /// Updates a data contract.

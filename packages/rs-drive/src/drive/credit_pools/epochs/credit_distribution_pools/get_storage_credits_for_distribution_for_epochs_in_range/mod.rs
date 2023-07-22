@@ -34,7 +34,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u64>, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .credit_pools
             .epochs

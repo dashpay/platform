@@ -24,7 +24,7 @@ use std::convert::TryFrom;
 const MIN_REFUND_LIMIT_BYTES: u64 = 32;
 
 /// Credits per Epoch by Identifier
-pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
+pub type CreditsPerEpochByIdentifier = BTreeMap<[u8; 32], CreditsPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
@@ -95,12 +95,12 @@ impl FeeRefunds {
     }
 
     /// Passthrough method for get
-    pub fn get(&self, key: &Identifier) -> Option<&CreditsPerEpoch> {
+    pub fn get(&self, key: &[u8; 32]) -> Option<&CreditsPerEpoch> {
         self.0.get(key)
     }
 
     /// Passthrough method for iteration
-    pub fn iter(&self) -> Iter<Identifier, CreditsPerEpoch> {
+    pub fn iter(&self) -> Iter<[u8; 32], CreditsPerEpoch> {
         self.0.iter()
     }
 
@@ -133,10 +133,10 @@ impl FeeRefunds {
                 }
 
                 let credits = self
-                    .calculate_refunds_amount_for_identity(identifier)
+                    .calculate_refunds_amount_for_identity(identifier.into())
                     .unwrap();
 
-                Some((identifier, credits))
+                Some((identifier.into(), credits))
             })
             .collect()
     }
@@ -146,7 +146,7 @@ impl FeeRefunds {
         &self,
         identity_id: Identifier,
     ) -> Option<Credits> {
-        let Some(credits_per_epoch) = self.get(&identity_id) else {
+        let Some(credits_per_epoch) = self.get(identity_id.as_bytes()) else {
             return None;
         };
 
@@ -160,8 +160,8 @@ impl FeeRefunds {
 }
 
 impl IntoIterator for FeeRefunds {
-    type Item = (Identifier, CreditsPerEpoch);
-    type IntoIter = std::collections::btree_map::IntoIter<Identifier, CreditsPerEpoch>;
+    type Item = ([u8; 32], CreditsPerEpoch);
+    type IntoIter = std::collections::btree_map::IntoIter<[u8; 32], CreditsPerEpoch>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

@@ -5,9 +5,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, TransactionArg};
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Retrieves the raw results of a path query from GroveDB.

@@ -1,9 +1,11 @@
+use derive_more::From;
 use dpp::fee::fee_result::FeeResult;
 
 mod v0;
 pub use v0::*;
 
 /// The outcome of paying for a fee
+#[derive(Debug, From)]
 pub enum ApplyBalanceChangeOutcome {
     V0(ApplyBalanceChangeOutcomeV0),
 }

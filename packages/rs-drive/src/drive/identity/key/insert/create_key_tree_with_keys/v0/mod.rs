@@ -3,13 +3,13 @@ use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, I
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 impl Drive {
     pub(super) fn create_key_tree_with_keys_operations_v0(

@@ -14,11 +14,11 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {

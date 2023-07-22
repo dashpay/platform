@@ -38,7 +38,7 @@ impl<'a> DriveQuery<'a> {
             .document
             .verify_proof_keep_serialized
         {
-            0 => self.verify_proof_keep_serialized_v0(proof),
+            0 => self.verify_proof_keep_serialized_v0(proof, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_proof_keep_serialized".to_string(),
                 known_versions: vec![0],

@@ -1,4 +1,3 @@
-
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
     KeyIDOptionalIdentityPublicKeyPairBTreeMap,
@@ -68,13 +67,13 @@ impl Drive {
                 &mut drive_operations,
                 platform_version,
             )?
-                .map(|balance| PartialIdentity {
-                    id: Identifier::new(identity_id),
-                    loaded_public_keys: Default::default(),
-                    balance: Some(balance),
-                    revision: None,
-                    not_found_public_keys: Default::default(),
-                }),
+            .map(|balance| PartialIdentity {
+                id: Identifier::new(identity_id),
+                loaded_public_keys: Default::default(),
+                balance: Some(balance),
+                revision: None,
+                not_found_public_keys: Default::default(),
+            }),
             FeeResult::new_from_processing_fee(balance_cost),
         ))
     }

@@ -45,6 +45,7 @@ use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "full")]
 use dpp::document::Document;
+use dpp::document::DocumentV0Getters;
 #[cfg(feature = "full")]
 use grovedb::batch::key_info::KeyInfo;
 #[cfg(feature = "full")]
@@ -53,7 +54,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 #[cfg(feature = "full")]
 use grovedb::Element;
-use dpp::document::DocumentV0Getters;
 
 #[cfg(feature = "full")]
 mod delete;

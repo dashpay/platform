@@ -30,6 +30,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
 
     use crate::drive::Drive;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
@@ -39,7 +40,6 @@ mod tests {
     use std::borrow::Borrow;
     use std::collections::BTreeMap;
     use std::ops::RangeFull;
-    use dpp::identity::accessors::IdentityGettersV0;
 
     #[test]
     fn should_prove_full_identity_query_no_tx() {
@@ -49,11 +49,17 @@ mod tests {
         let identity = Identity::random_identity(3, Some(14), platform_version)
             .expect("expected a random identity");
         drive
-            .add_new_identity(identity.clone(), &BlockInfo::default(), true, None, platform_version)
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
             .expect("expected to insert identity");
 
-        let path_query =
-            Drive::full_identity_query(identity.id().as_bytes()).expect("expected to make the query");
+        let path_query = Drive::full_identity_query(identity.id().as_bytes())
+            .expect("expected to make the query");
 
         // The query is querying
         //                     root

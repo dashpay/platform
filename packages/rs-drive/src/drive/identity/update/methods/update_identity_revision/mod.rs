@@ -13,11 +13,11 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Updates the revision for a specific identity. This function is version controlled.
@@ -43,7 +43,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match platform_version.drive.methods.identity.update.update_identity_revision {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .update
+            .update_identity_revision
+        {
             0 => self.update_identity_revision_v0(
                 identity_id,
                 revision,
@@ -80,7 +86,8 @@ impl Drive {
         >,
         platform_version: &PlatformVersion,
     ) -> Result<LowLevelDriveOperation, Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .update

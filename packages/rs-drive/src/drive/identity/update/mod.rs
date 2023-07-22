@@ -388,7 +388,7 @@ mod tests {
                     &block_info,
                     true,
                     Some(&db_transaction),
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should update revision");
 
@@ -441,7 +441,7 @@ mod tests {
                     &block_info,
                     false,
                     None,
-                    &platform_version.drive,
+                    platform_version,
                 )
                 .expect("should estimate the revision update");
 

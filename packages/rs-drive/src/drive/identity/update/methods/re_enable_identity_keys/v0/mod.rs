@@ -5,9 +5,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -41,12 +45,12 @@ impl Drive {
             key_ids
                 .into_iter()
                 .map(|key_id| {
-                    (
+                    Ok((
                         key_id,
-                        IdentityPublicKey::max_possible_size_key(key_id, platform_version),
-                    )
+                        IdentityPublicKey::max_possible_size_key(key_id, platform_version)?,
+                    ))
                 })
-                .collect()
+                .collect::<Result<Vec<_>, ProtocolError>>()?
         } else {
             let key_request = IdentityKeysRequest {
                 identity_id,
@@ -73,9 +77,9 @@ impl Drive {
         const RE_ENABLE_KEY_TIME_BYTE_COST: i32 = 9;
 
         for (_, mut key) in keys {
-            key.disabled_at = None;
+            key.remove_disabled_at();
 
-            let key_id_bytes = key.id.encode_var_vec();
+            let key_id_bytes = key.id().encode_var_vec();
 
             self.replace_key_in_storage_operations(
                 identity_id.as_slice(),

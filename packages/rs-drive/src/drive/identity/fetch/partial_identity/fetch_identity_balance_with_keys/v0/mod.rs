@@ -1,4 +1,3 @@
-
 use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
     KeyIDOptionalIdentityPublicKeyPairBTreeMap,
@@ -67,7 +66,6 @@ impl Drive {
             not_found_public_keys,
         }))
     }
-
 
     /// Fetches the Identity's balance with keys as PartialIdentityInfo from the backing store
     /// Passing apply as false get the estimated cost instead

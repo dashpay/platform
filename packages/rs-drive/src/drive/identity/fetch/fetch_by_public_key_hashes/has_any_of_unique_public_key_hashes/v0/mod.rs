@@ -14,11 +14,11 @@ use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
 
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 use std::ops::RangeFull;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Do any keys with given public key hashes already exist in the unique tree?

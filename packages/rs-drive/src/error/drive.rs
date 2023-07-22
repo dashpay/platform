@@ -10,9 +10,7 @@ pub enum DriveError {
     CorruptedCodeExecution(&'static str),
 
     /// Platform expected some specific versions
-    #[error(
-        "drive unknown version on {method}, received: {received}"
-    )]
+    #[error("drive unknown version on {method}, received: {received}")]
     UnknownVersionMismatch {
         /// method
         method: String,
@@ -23,9 +21,7 @@ pub enum DriveError {
     },
 
     /// Platform expected some specific versions
-    #[error(
-    "{method} not active for drive version"
-    )]
+    #[error("{method} not active for drive version")]
     VersionNotActive {
         /// method
         method: String,

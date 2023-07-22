@@ -12,6 +12,8 @@ use crate::drive::LowLevelDriveOperation;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -19,8 +21,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl Drive {
     /// Adds a contract to storage.

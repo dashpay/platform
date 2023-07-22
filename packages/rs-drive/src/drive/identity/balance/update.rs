@@ -107,17 +107,20 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let platform_version = PlatformVersion::latest();
 
-            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version).expect("expected an identity");
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
+                .expect("expected an identity");
 
             let added_balance = 300;
             let negative_amount = 100;
 
             // Persist negative balance
-            let batch = vec![drive.update_identity_negative_credit_operation(
-                identity.id().to_buffer(),
-                negative_amount,
-                platform_version,
-            ).expect("expected to get an update_identity_negative_credit_operation")];
+            let batch = vec![drive
+                .update_identity_negative_credit_operation(
+                    identity.id().to_buffer(),
+                    negative_amount,
+                    platform_version,
+                )
+                .expect("expected to get an update_identity_negative_credit_operation")];
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
@@ -186,17 +189,20 @@ mod tests {
         fn should_keep_nil_balance_and_reduce_debt_if_added_balance_is_lower() {
             let drive = setup_drive_with_initial_state_structure();
             let platform_version = PlatformVersion::latest();
-            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version).expect("expected an identity");
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
+                .expect("expected an identity");
 
             let added_balance = 50;
             let negative_amount = 100;
 
             // Persist negative balance
-            let batch = vec![drive.update_identity_negative_credit_operation(
-                identity.id().to_buffer(),
-                negative_amount,
-                platform_version,
-            ).expect("expected to get an update_identity_negative_credit_operation")];
+            let batch = vec![drive
+                .update_identity_negative_credit_operation(
+                    identity.id().to_buffer(),
+                    negative_amount,
+                    platform_version,
+                )
+                .expect("expected to get an update_identity_negative_credit_operation")];
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
@@ -490,7 +496,8 @@ mod tests {
             let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
                 .expect("expected to create an identity");
             let other_identity =
-                create_test_identity(&drive, [1; 32], Some(16), None, platform_version).expect("expected to create an identity");;
+                create_test_identity(&drive, [1; 32], Some(16), None, platform_version)
+                    .expect("expected to create an identity");
 
             let removed_credits = 100000;
             let other_removed_credits = 200000;
@@ -503,8 +510,8 @@ mod tests {
 
             let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
                 BTreeMap::from_iter([
-                    (identity.id(), credits_per_epoch),
-                    (other_identity.id(), other_credits_per_epoch),
+                    (identity.id().to_buffer(), credits_per_epoch),
+                    (other_identity.id().to_buffer(), other_credits_per_epoch),
                 ]);
 
             let fee_result = FeeResult {
@@ -578,11 +585,13 @@ mod tests {
                 .expect("expected to create an identity");
 
             // Persist negative balance
-            let batch = vec![drive.update_identity_negative_credit_operation(
-                identity.id().to_buffer(),
-                negative_amount,
-                platform_version,
-            ).expect("expected to get an update_identity_negative_credit_operation")];
+            let batch = vec![drive
+                .update_identity_negative_credit_operation(
+                    identity.id().to_buffer(),
+                    negative_amount,
+                    platform_version,
+                )
+                .expect("expected to get an update_identity_negative_credit_operation")];
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
@@ -599,7 +608,7 @@ mod tests {
                 IntMap::from_iter([(GENESIS_EPOCH_INDEX, removed_credits)]);
 
             let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
-                BTreeMap::from_iter([(identity.id(), credits_per_epoch)]);
+                BTreeMap::from_iter([(identity.id().to_buffer(), credits_per_epoch)]);
 
             let fee_result = FeeResult {
                 fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
@@ -651,11 +660,13 @@ mod tests {
                 .expect("expected to create an identity");
 
             // Persist negative balance
-            let batch = vec![drive.update_identity_negative_credit_operation(
-                identity.id().to_buffer(),
-                negative_amount,
-                platform_version,
-            ).expect("expected to get an update_identity_negative_credit_operation")];
+            let batch = vec![drive
+                .update_identity_negative_credit_operation(
+                    identity.id().to_buffer(),
+                    negative_amount,
+                    platform_version,
+                )
+                .expect("expected to get an update_identity_negative_credit_operation")];
 
             let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
             drive
@@ -672,7 +683,7 @@ mod tests {
                 IntMap::from_iter([(GENESIS_EPOCH_INDEX, removed_credits)]);
 
             let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
-                BTreeMap::from_iter([(identity.id(), credits_per_epoch)]);
+                BTreeMap::from_iter([(identity.id().to_buffer(), credits_per_epoch)]);
 
             let fee_result = FeeResult {
                 fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),

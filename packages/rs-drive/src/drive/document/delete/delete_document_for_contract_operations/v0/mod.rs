@@ -98,7 +98,9 @@ impl Drive {
             )?;
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums: false,
-                query_target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
+                query_target: QueryTargetValue(
+                    document_type.estimated_size(platform_version)? as u32
+                ),
             }
         } else {
             DirectQueryType::StatefulDirectQuery

@@ -1,8 +1,8 @@
 use crate::drive::Drive;
 use crate::error::Error;
 
-use grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Proves the existence of the specified contracts.
@@ -32,6 +32,12 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let contracts_query = Self::fetch_contracts_query(contract_ids)?;
-        self.grove_get_proved_path_query(&contracts_query, false, transaction, &mut vec![], &platform_version.drive)
+        self.grove_get_proved_path_query(
+            &contracts_query,
+            false,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )
     }
 }

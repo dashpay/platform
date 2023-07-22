@@ -168,10 +168,10 @@ mod tests {
     use dpp::identity::Identity;
 
     use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
     use tempfile::TempDir;
-    use dpp::identity::accessors::IdentityGettersV0;
 
     use crate::drive::Drive;
 

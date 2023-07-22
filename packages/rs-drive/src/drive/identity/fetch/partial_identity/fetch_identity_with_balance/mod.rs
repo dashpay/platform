@@ -1,14 +1,14 @@
 mod v0;
 
-use crate::error::Error;
-use dpp::version::PlatformVersion;
-use dpp::identifier::Identifier;
-use dpp::identity::PartialIdentity;
-use grovedb::TransactionArg;
-use dpp::fee::fee_result::FeeResult;
-use dpp::block::epoch::Epoch;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::Error;
+use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
+use dpp::identifier::Identifier;
+use dpp::identity::PartialIdentity;
+use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches the Identity's balance as `PartialIdentityInfo` from the backing store.
@@ -36,7 +36,14 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<PartialIdentity>, Error> {
-        match platform_version.drive.methods.identity.fetch.partial_identity.fetch_identity_with_balance {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .fetch
+            .partial_identity
+            .fetch_identity_with_balance
+        {
             0 => self.fetch_identity_with_balance_v0(identity_id, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_with_balance".to_string(),
@@ -76,9 +83,20 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Option<PartialIdentity>, FeeResult), Error> {
-        match platform_version.drive.methods.identity.fetch.partial_identity.fetch_identity_with_balance  {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .fetch
+            .partial_identity
+            .fetch_identity_with_balance
+        {
             0 => self.fetch_identity_with_balance_with_cost_v0(
-                identity_id, apply, epoch, transaction, platform_version
+                identity_id,
+                apply,
+                epoch,
+                transaction,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_with_balance_with_cost".to_string(),

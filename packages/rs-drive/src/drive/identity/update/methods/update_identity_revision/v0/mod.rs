@@ -14,10 +14,10 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::version::PlatformVersion;
 
 impl Drive {
     //todo: this should probably not exist
@@ -39,11 +39,11 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let batch_operations = vec![self.update_identity_revision_operation(
+        let batch_operations = vec![self.update_identity_revision_operation_v0(
             identity_id,
             revision,
             &mut estimated_costs_only_with_layer_info,
-            &platform_version.drive,
+            platform_version,
         )?];
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -56,7 +56,12 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let fees = Drive::calculate_fee(None, Some(drive_operations), &block_info.epoch, platform_version)?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform_version,
+        )?;
 
         Ok(fees)
     }
