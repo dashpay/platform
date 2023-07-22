@@ -11,9 +11,11 @@ use dpp::fee::Credits;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
@@ -44,6 +46,7 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         identity_id: [u8; 32],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let path_query = key_request.into_path_query();
@@ -60,7 +63,7 @@ impl Drive {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
                     let key = IdentityPublicKey::deserialize(&item_bytes)?;
-                    keys.insert(key.id, key);
+                    keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "we received an absence proof for a key but didn't request one",

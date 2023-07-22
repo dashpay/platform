@@ -46,15 +46,22 @@ mod tests {
 
     mod get_epoch_start_time {
         use super::*;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::latest();
+
             let non_initiated_epoch_tree = Epoch::new(7000).unwrap();
 
-            let result = drive.get_epoch_start_time(&non_initiated_epoch_tree, Some(&transaction));
+            let result = drive.get_epoch_start_time(
+                &non_initiated_epoch_tree,
+                Some(&transaction),
+                platform_version,
+            );
 
             assert!(matches!(
                 result,
@@ -67,9 +74,12 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::latest();
+
             let epoch_tree = Epoch::new(0).unwrap();
 
-            let result = drive.get_epoch_start_time(&epoch_tree, Some(&transaction));
+            let result =
+                drive.get_epoch_start_time(&epoch_tree, Some(&transaction), platform_version);
 
             assert!(matches!(result, Err(Error::GroveDB(_))));
         }
@@ -78,6 +88,8 @@ mod tests {
         fn test_error_if_element_has_invalid_type() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let epoch = Epoch::new(0).unwrap();
 
@@ -93,7 +105,7 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_time(&epoch, Some(&transaction));
+            let result = drive.get_epoch_start_time(&epoch, Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,
@@ -105,6 +117,8 @@ mod tests {
         fn test_error_if_value_has_invalid_length() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let epoch_tree = Epoch::new(0).unwrap();
 
@@ -120,7 +134,8 @@ mod tests {
                 .unwrap()
                 .expect("should insert invalid data");
 
-            let result = drive.get_epoch_start_time(&epoch_tree, Some(&transaction));
+            let result =
+                drive.get_epoch_start_time(&epoch_tree, Some(&transaction), platform_version);
 
             assert!(matches!(
                 result,

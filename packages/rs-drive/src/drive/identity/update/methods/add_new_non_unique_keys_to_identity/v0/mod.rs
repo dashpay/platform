@@ -41,7 +41,7 @@ impl Drive {
             transaction,
             batch_operations,
             &mut drive_operations,
-            platform_version,
+            &platform_version.drive,
         )?;
         let fees = Drive::calculate_fee(
             None,

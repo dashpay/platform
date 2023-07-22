@@ -58,7 +58,7 @@ impl Drive {
             0 => self.remove_validators_proposed_app_versions_v0(
                 validator_pro_tx_hashes,
                 transaction,
-                &self.drive_version,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_validators_proposed_app_versions".to_string(),
@@ -108,7 +108,7 @@ impl Drive {
                 validator_pro_tx_hashes,
                 transaction,
                 drive_operations,
-                &self.drive_version,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_validators_proposed_app_versions_operations".to_string(),

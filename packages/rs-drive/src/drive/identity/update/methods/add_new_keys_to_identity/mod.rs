@@ -37,9 +37,10 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .update
@@ -52,7 +53,7 @@ impl Drive {
                 with_references,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_keys_to_identity_operations".to_string(),

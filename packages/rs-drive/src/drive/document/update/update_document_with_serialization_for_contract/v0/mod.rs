@@ -50,7 +50,7 @@ impl Drive {
                     owner_id,
                 },
                 contract,
-                document_type: &document_type,
+                document_type,
             },
             &block_info,
             estimated_costs_only_with_layer_info,

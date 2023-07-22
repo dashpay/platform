@@ -112,14 +112,15 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
-            DriveOperation::ContractOperation(contract_operation_type) => contract_operation_type
-                .into_low_level_drive_operations(
+            DriveOperation::DataContractOperation(contract_operation_type) => {
+                contract_operation_type.into_low_level_drive_operations(
                     drive,
                     estimated_costs_only_with_layer_info,
                     block_info,
                     transaction,
                     platform_version,
-                ),
+                )
+            }
             DriveOperation::DocumentOperation(document_operation_type) => document_operation_type
                 .into_low_level_drive_operations(
                     drive,
@@ -176,7 +177,9 @@ mod tests {
 
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::serialization_traits::PlatformSerializable;
+    use dpp::serialization_traits::{
+        PlatformSerializable, PlatformSerializableWithPlatformVersion,
+    };
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
@@ -238,7 +241,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -253,7 +256,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: &document_type,
+                document_type,
             },
             override_document: false,
         }));
@@ -282,7 +285,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize()
+                    .serialize_with_platform_version(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )
@@ -302,10 +305,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);
@@ -350,7 +354,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get contract");
@@ -362,7 +366,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: &contract
+                document_type: contract
                     .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
@@ -374,7 +378,7 @@ mod tests {
         let dashpay_cr_1_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get contract");
@@ -386,7 +390,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: &contract
+                document_type: contract
                     .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
@@ -417,10 +421,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -466,7 +471,7 @@ mod tests {
         let document0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document 0");
@@ -474,7 +479,7 @@ mod tests {
         let document1 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document 1");
@@ -508,7 +513,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
             },
         ));
@@ -537,7 +542,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize()
+                    .serialize_with_platform_version(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )
@@ -557,10 +562,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -602,7 +608,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -612,7 +618,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3.json",
             Some(random_owner_id1.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -648,7 +654,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
             },
         ));
@@ -677,10 +683,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -722,7 +729,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -732,7 +739,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3.json",
             Some(random_owner_id1.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -766,7 +773,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
             },
         ));
@@ -790,7 +797,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0-older.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -800,7 +807,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3-older.json",
             Some(random_owner_id1.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -826,7 +833,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
             },
         ));
@@ -855,10 +862,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -878,10 +886,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 0);
@@ -901,10 +910,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -946,7 +956,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -956,7 +966,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3-older.json",
             Some(random_owner_id1.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -990,7 +1000,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
             },
         ));
@@ -1012,7 +1022,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0-older.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -1020,7 +1030,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person3.json",
             Some(random_owner_id1.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -1046,7 +1056,7 @@ mod tests {
                 document_operations: DocumentOperationsForContractDocumentType {
                     operations,
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
             },
         ));
@@ -1076,10 +1086,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 2);
@@ -1099,10 +1110,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);
@@ -1122,10 +1134,11 @@ mod tests {
         let (docs, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                &document_type,
+                document_type,
                 where_cbor.as_slice(),
                 None,
                 Some(&db_transaction),
+                Some(platform_version.protocol_version),
             )
             .expect("expected to query");
         assert_eq!(docs.len(), 1);

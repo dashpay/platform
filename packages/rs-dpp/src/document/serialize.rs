@@ -13,7 +13,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize(
         &self,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
@@ -27,7 +27,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_consume(
         mut self,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
@@ -40,7 +40,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
     /// Reads a serialized document and creates a Document from it.
     fn from_bytes(
         serialized_document: &[u8],
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

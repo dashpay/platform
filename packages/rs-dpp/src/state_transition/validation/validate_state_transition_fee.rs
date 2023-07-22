@@ -247,7 +247,7 @@ mod test {
         tests::{
             fixtures::{
                 get_data_contract_fixture, get_document_transitions_fixture,
-                get_documents_fixture_with_owner_id_from_contract, identity_fixture,
+                get_extended_documents_fixture_with_owner_id_from_contract, identity_fixture,
             },
             utils::get_fee_error_from_result,
         },
@@ -348,7 +348,8 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
-            get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+            get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
+                .unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
@@ -379,7 +380,8 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
-            get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+            get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
+                .unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
@@ -408,7 +410,8 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
-            get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+            get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
+                .unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         execution_context.enable_dry_run();

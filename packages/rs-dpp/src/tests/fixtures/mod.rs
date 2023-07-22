@@ -26,7 +26,6 @@ mod get_dashpay_document_fixture;
 #[cfg(feature = "state-transitions")]
 mod get_document_transitions_fixture;
 
-mod get_masternode_reward_shares_documents_fixture;
 pub use get_masternode_reward_shares_documents_fixture::*;
 
 pub use get_documents_fixture::*;
@@ -39,6 +38,7 @@ mod get_dpns_document_fixture;
 mod get_dpp;
 #[cfg(feature = "state-transitions")]
 mod get_identity_update_transition_fixture;
+mod get_masternode_reward_shares_documents_fixture;
 #[cfg(feature = "state-transitions")]
 mod identity_credit_withdrawal_transition_fixture;
 mod identity_fixture;

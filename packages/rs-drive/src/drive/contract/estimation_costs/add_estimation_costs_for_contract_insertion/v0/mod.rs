@@ -8,6 +8,8 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
 use crate::error::Error;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::drive_versions::DriveVersion;
@@ -33,13 +35,13 @@ impl Drive {
         )?;
 
         // we only store the owner_id storage
-        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
+        let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None
         };
 
-        for document_type_name in contract.document_types.keys() {
+        for document_type_name in contract.document_types().keys() {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
                     contract.id().as_bytes(),
@@ -57,7 +59,7 @@ impl Drive {
             );
         }
 
-        if contract.config.keeps_history {
+        if contract.config().keeps_history() {
             // we are dealing with a sibling reference
             // sibling reference serialized size is going to be the encoded time size
             // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of

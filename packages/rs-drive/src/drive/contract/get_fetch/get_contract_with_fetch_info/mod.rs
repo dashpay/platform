@@ -46,9 +46,10 @@ impl Drive {
         epoch: Option<&Epoch>,
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<FeeResult>, Option<Arc<DataContractFetchInfo>>), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .get
@@ -59,7 +60,7 @@ impl Drive {
                 epoch,
                 add_to_cache_if_pulled,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_contract_with_fetch_info_and_fee".to_string(),
@@ -98,9 +99,10 @@ impl Drive {
         contract_id: [u8; 32],
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContractFetchInfo>>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .contract
             .get
@@ -110,6 +112,7 @@ impl Drive {
                 contract_id,
                 add_to_cache_if_pulled,
                 transaction,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_contract_with_fetch_info".to_string(),
@@ -182,10 +185,13 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
+    use crate::drive::contract::tests::setup_reference_contract;
     use crate::drive::flags::StorageFlags;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::fee::fee_result::FeeResult;
     use dpp::prelude::Identifier;
@@ -213,12 +219,18 @@ mod tests {
             .expect("should update contract");
 
         let fetch_info_from_database = drive
-            .get_contract_with_fetch_info_and_fee(contract.id().to_buffer(), None, true, None)
+            .get_contract_with_fetch_info_and_fee(
+                contract.id().to_buffer(),
+                None,
+                true,
+                None,
+                platform_version,
+            )
             .expect("should get contract")
             .1
             .expect("should be present");
 
-        assert_eq!(fetch_info_from_database.contract.version, 1);
+        assert_eq!(fetch_info_from_database.contract.version(), 1);
 
         let fetch_info_from_cache = drive
             .get_contract_with_fetch_info_and_fee(
@@ -226,21 +238,22 @@ mod tests {
                 None,
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("should get contract")
             .1
             .expect("should be present");
 
-        assert_eq!(fetch_info_from_cache.contract.version, 2);
+        assert_eq!(fetch_info_from_cache.contract.version(), 2);
     }
 
     #[test]
     fn should_return_none_if_contract_not_exist() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let result = drive
-            .get_contract_with_fetch_info_and_fee([0; 32], None, true, None, &drive_version)
+            .get_contract_with_fetch_info_and_fee([0; 32], None, true, None, platform_version)
             .expect("should get contract");
 
         assert!(result.0.is_none());
@@ -250,7 +263,7 @@ mod tests {
     #[test]
     fn should_return_fees_for_non_existing_contract_if_epoch_is_passed() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         let result = drive
             .get_contract_with_fetch_info_and_fee(
@@ -258,7 +271,7 @@ mod tests {
                 Some(&Epoch::new(0).unwrap()),
                 true,
                 None,
-                &drive_version,
+                platform_version,
             )
             .expect("should get contract");
 
@@ -279,7 +292,7 @@ mod tests {
         // we get could get different costs. To avoid of it we fetch contracts without tree caching
 
         let (drive, mut ref_contract) = setup_reference_contract();
-        let drive_version = DriveVersion::latest();
+        let platform_version = PlatformVersion::latest();
 
         /*
          * Firstly, we create multiple contracts during block processing (in transaction)
@@ -291,7 +304,7 @@ mod tests {
 
         // Create more contracts to trigger re-balancing
         for i in 0..150u8 {
-            ref_contract.id() = Identifier::from([i; 32]);
+            ref_contract.set_id(Identifier::from([i; 32]));
 
             drive
                 .apply_contract(
@@ -300,6 +313,7 @@ mod tests {
                     true,
                     StorageFlags::optional_default_as_cow(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("expected to apply contract successfully");
         }
@@ -315,6 +329,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&transaction),
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -324,6 +339,7 @@ mod tests {
                 Some(&Epoch::new(0).unwrap()),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("got contract")
             .1
@@ -335,6 +351,7 @@ mod tests {
                 Some(&Epoch::new(0).unwrap()),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("got contract")
             .1
@@ -356,13 +373,25 @@ mod tests {
          */
 
         let deep_contract_fetch_info = drive
-            .get_contract_with_fetch_info_and_fee(deep_contract.id().to_buffer(), None, true, None)
+            .get_contract_with_fetch_info_and_fee(
+                deep_contract.id().to_buffer(),
+                None,
+                true,
+                None,
+                platform_version,
+            )
             .expect("got contract")
             .1
             .expect("got contract fetch info");
 
         let ref_contract_fetch_info = drive
-            .get_contract_with_fetch_info_and_fee(ref_contract_id_buffer, None, true, None)
+            .get_contract_with_fetch_info_and_fee(
+                ref_contract_id_buffer,
+                None,
+                true,
+                None,
+                platform_version,
+            )
             .expect("got contract")
             .1
             .expect("got contract fetch info");
@@ -382,7 +411,9 @@ mod tests {
          */
 
         // Drop cache so contract will be fetched once again
-        drive.drop_cache();
+        drive
+            .drop_cache(&platform_version.drive)
+            .expect("expected to drop cache");
 
         /*
          * Other nodes weren't restarted so contracts queried by user after restart
@@ -391,13 +422,25 @@ mod tests {
          */
 
         let deep_contract_fetch_info_without_cache = drive
-            .get_contract_with_fetch_info_and_fee(deep_contract.id().to_buffer(), None, true, None)
+            .get_contract_with_fetch_info_and_fee(
+                deep_contract.id().to_buffer(),
+                None,
+                true,
+                None,
+                platform_version,
+            )
             .expect("got contract")
             .1
             .expect("got contract fetch info");
 
         let ref_contract_fetch_info_without_cache = drive
-            .get_contract_with_fetch_info_and_fee(ref_contract_id_buffer, None, true, None)
+            .get_contract_with_fetch_info_and_fee(
+                ref_contract_id_buffer,
+                None,
+                true,
+                None,
+                platform_version,
+            )
             .expect("got contract")
             .1
             .expect("got contract fetch info");
@@ -425,7 +468,9 @@ mod tests {
         /*
          * Let's imagine that many blocks were executed and the node is restarted again
          */
-        drive.drop_cache();
+        drive
+            .drop_cache(&platform_version.drive)
+            .expect("expected to drop cache");
 
         /*
          * Drive executes a new block
@@ -435,7 +480,7 @@ mod tests {
 
         // Create more contracts to trigger re-balancing
         for i in 150..200u8 {
-            ref_contract.id() = Identifier::from([i; 32]);
+            ref_contract.set_id(Identifier::from([i; 32]));
 
             drive
                 .apply_contract(
@@ -444,6 +489,7 @@ mod tests {
                     true,
                     StorageFlags::optional_default_as_cow(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("expected to apply contract successfully");
         }
@@ -459,6 +505,7 @@ mod tests {
                 Some(&Epoch::new(0).unwrap()),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("got contract")
             .1
@@ -470,6 +517,7 @@ mod tests {
                 Some(&Epoch::new(0).unwrap()),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("got contract")
             .1

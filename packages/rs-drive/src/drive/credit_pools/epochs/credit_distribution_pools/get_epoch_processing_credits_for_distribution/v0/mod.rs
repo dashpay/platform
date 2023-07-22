@@ -1,3 +1,4 @@
+use dpp::balances::credits::Creditable;
 use grovedb::{Element, TransactionArg};
 use std::ops::Range;
 

@@ -35,7 +35,7 @@ impl Drive {
             .cost_estimation
             .for_negative_credit
         {
-            0 => Ok(Self.add_estimation_costs_for_negative_credit_v0(
+            0 => Ok(Self::add_estimation_costs_for_negative_credit_v0(
                 identity_id,
                 estimated_costs_only_with_layer_info,
             )),

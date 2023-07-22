@@ -1,7 +1,7 @@
 use crate::document::property_names::FEATURE_VERSION;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::{Document, DocumentV0};
-use crate::version::FeatureVersion;
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use platform_value::Value;
 use std::collections::BTreeMap;
@@ -36,11 +36,18 @@ impl DocumentPlatformValueMethodsV0 for Document {
     }
 
     /// Create a document from a platform value.
-    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
-        let version: FeatureVersion = document_value.get_integer(FEATURE_VERSION)?;
-        match version {
+    fn from_platform_value(
+        document_value: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
             0 => Ok(Document::V0(DocumentV0::from_platform_value(
                 document_value,
+                platform_version,
             )?)),
             version => Err(ProtocolError::UnknownVersionError(format!(
                 "version {version} not known for document for call from_platform_value"

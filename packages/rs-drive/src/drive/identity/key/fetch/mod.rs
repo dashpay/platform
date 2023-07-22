@@ -38,6 +38,7 @@ use dpp::fee::default_costs::EpochCosts;
 use dpp::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 #[cfg(feature = "full")]
 use dpp::fee::Credits;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
 use dpp::identity::IDENTITY_MAX_KEYS;
@@ -191,7 +192,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
 fn element_to_identity_public_key_id(element: Element) -> Result<KeyID, Error> {
     let public_key = element_to_identity_public_key(element)?;
 
-    Ok(public_key.id)
+    Ok(public_key.id())
 }
 
 #[cfg(feature = "full")]
@@ -200,7 +201,7 @@ fn element_to_identity_public_key_id_and_object_pair(
 ) -> Result<(KeyID, IdentityPublicKey), Error> {
     let public_key = element_to_identity_public_key(element)?;
 
-    Ok((public_key.id, public_key))
+    Ok((public_key.id(), public_key))
 }
 
 #[cfg(feature = "full")]
@@ -210,7 +211,7 @@ fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
     if let Some(element) = maybe_element {
         let public_key = element_to_identity_public_key(element)?;
 
-        return Ok((public_key.id, Some(public_key)));
+        return Ok((public_key.id(), Some(public_key)));
     }
 
     let (key_id, _) = KeyID::decode_var(key.as_slice())
@@ -856,6 +857,7 @@ impl IdentityKeysRequest {
 mod tests {
     use crate::tests::helpers::setup::setup_drive;
     use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
 
@@ -872,16 +874,8 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
 
         drive
             .add_new_identity(
@@ -889,12 +883,13 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
+                platform_version,
             )
             .expect("expected to insert identity");
 
         let public_keys = drive
             .fetch_all_identity_keys(
-                identity.id.to_buffer(),
+                identity.id().to_buffer(),
                 Some(&transaction),
                 platform_version,
             )
@@ -916,16 +911,8 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
 
         drive
             .add_new_identity(
@@ -938,14 +925,14 @@ mod tests {
             .expect("expected to insert identity");
 
         let key_request = IdentityKeysRequest {
-            identity_id: identity.id.to_buffer(),
+            identity_id: identity.id().to_buffer(),
             request_type: SpecificKeys(vec![0]),
             limit: Some(1),
             offset: None,
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 1);
@@ -964,16 +951,8 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
 
         drive
             .add_new_identity(
@@ -981,19 +960,19 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 
         let key_request = IdentityKeysRequest {
-            identity_id: identity.id.to_buffer(),
+            identity_id: identity.id().to_buffer(),
             request_type: SpecificKeys(vec![0, 4]),
             limit: Some(2),
             offset: None,
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 2);
@@ -1012,16 +991,8 @@ mod tests {
             .create_initial_state_structure(Some(&transaction), platform_version)
             .expect("expected to create root tree successfully");
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
 
         drive
             .add_new_identity(
@@ -1029,25 +1000,25 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                &drive_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 
         let key_request = IdentityKeysRequest {
-            identity_id: identity.id.to_buffer(),
+            identity_id: identity.id().to_buffer(),
             request_type: SpecificKeys(vec![0, 6]),
             limit: Some(2),
             offset: None,
         };
 
         let public_keys: KeyIDIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request.clone(), Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request.clone(), Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 1); //because we are not requesting with options
 
         let public_keys: KeyIDOptionalIdentityPublicKeyPairBTreeMap = drive
-            .fetch_identity_keys(key_request, Some(&transaction), &drive_version)
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
             .expect("expected to fetch keys");
 
         assert_eq!(public_keys.len(), 2);

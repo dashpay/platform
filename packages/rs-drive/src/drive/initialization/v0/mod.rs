@@ -34,6 +34,7 @@ use path::SubtreePath;
 use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
 use crate::drive::batch::GroveDbOpBatch;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
 use crate::drive::{Drive, RootTree};
@@ -60,7 +61,7 @@ impl Drive {
 
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
-            &[RootTree::ContractDocuments as u8],
+            &[RootTree::DataContractDocuments as u8],
             transaction,
             None,
             &mut drive_operations,
@@ -245,7 +246,7 @@ mod tests {
 
         // Merk Level 0
         let mut query = Query::new();
-        query.insert_key(vec![RootTree::ContractDocuments as u8]);
+        query.insert_key(vec![RootTree::DataContractDocuments as u8]);
         let root_path_query = PathQuery::new(
             vec![],
             SizedQuery {

@@ -95,10 +95,13 @@ mod tests {
     };
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_enqueue_and_dequeue() {
         let drive = setup_drive_with_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -118,7 +121,13 @@ mod tests {
         drive.add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
 
         drive
-            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("to apply batch");
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -128,7 +137,13 @@ mod tests {
             .expect("to dequeue withdrawals");
 
         drive
-            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("to apply batch");
 
         assert_eq!(withdrawals.len(), 16);
@@ -140,7 +155,13 @@ mod tests {
             .expect("to dequeue withdrawals");
 
         drive
-            .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+            .apply_drive_operations(
+                drive_operations,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("to apply batch");
 
         assert_eq!(withdrawals.len(), 1);

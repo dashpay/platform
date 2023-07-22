@@ -1,3 +1,4 @@
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::push_drive_operation_result;

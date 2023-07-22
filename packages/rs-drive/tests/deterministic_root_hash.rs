@@ -261,7 +261,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .grove
         .insert(
             SubtreePath::empty(),
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+            Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
             Element::empty_tree(),
             None,
             Some(db_transaction),

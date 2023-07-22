@@ -30,6 +30,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
 
     use crate::drive::Drive;
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
@@ -45,23 +46,20 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let platform_version = PlatformVersion::latest();
 
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            5,
-            Some(12345),
-        );
-
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
         drive
-            .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
             .expect("expected to insert identity");
 
-        let path_query =
-            Drive::full_identity_query(identity.id.as_bytes()).expect("expected to make the query");
+        let path_query = Drive::full_identity_query(identity.id().as_bytes())
+            .expect("expected to make the query");
 
         // The query is querying
         //                     root
@@ -100,7 +98,7 @@ mod tests {
         assert_eq!(balance_subquery.items.len(), 1);
         assert_eq!(
             balance_subquery.items.first().unwrap(),
-            &QueryItem::Key(identity.id.to_buffer().to_vec())
+            &QueryItem::Key(identity.id().to_buffer().to_vec())
         );
 
         // Moving on to Identity subquery
@@ -108,7 +106,7 @@ mod tests {
         // The subquery path is our identity
         assert_eq!(
             identity_conditional_subquery.subquery_path,
-            Some(vec![identity.id.to_buffer().to_vec()])
+            Some(vec![identity.id().to_buffer().to_vec()])
         );
 
         let identity_subquery = *identity_conditional_subquery
@@ -156,7 +154,7 @@ mod tests {
         assert_eq!(elements.len(), 7);
 
         let fetched_identity = drive
-            .prove_full_identity_v0(identity.id.to_buffer(), None, &platform_version.drive)
+            .prove_full_identity_v0(identity.id().to_buffer(), None, &platform_version.drive)
             .expect("should fetch an identity");
 
         let (_hash, proof) = GroveDb::verify_query(fetched_identity.as_slice(), &path_query)

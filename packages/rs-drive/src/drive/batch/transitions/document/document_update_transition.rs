@@ -22,7 +22,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let data_contract_id = self.base().data_contract_id();
-        let document_type_name = self.base().document_type_name();
+        let document_type_name = self.base().document_type_name().clone();
         let document =
             Document::try_from_owned_replace_transition(self, owner_id, platform_version)?;
 
@@ -35,7 +35,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
                 owner_id: Some(owner_id.into_buffer()),
             },
             contract_id: data_contract_id,
-            document_type_name: Cow::Borrowed(document_type_name),
+            document_type_name: Cow::Owned(document_type_name),
         }));
 
         Ok(drive_operations)

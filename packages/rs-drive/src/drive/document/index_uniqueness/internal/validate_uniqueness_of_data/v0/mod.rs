@@ -2,18 +2,20 @@ use dpp::data_contract::DataContract;
 
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -21,11 +23,11 @@ impl Drive {
     /// Internal method validating uniqueness
     pub(super) fn validate_uniqueness_of_data_v0(
         &self,
-        request: UniquenessOfDataRequestV0,
+        request: UniquenessOfDataRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let UniquenessOfDataRequestV0 {
+        let UniquenessOfDataRequest {
             contract,
             document_type,
             owner_id,
@@ -37,7 +39,7 @@ impl Drive {
         } = request;
 
         let validation_results = document_type
-            .indices
+            .indices()
             .iter()
             .filter_map(|index| {
                 if !index.unique {
@@ -50,18 +52,18 @@ impl Drive {
                         .filter_map(|property| {
                             let value = match property.name.as_str() {
                                 "$ownerId" => {
-                                    platform_value!(*owner_id)
+                                    platform_value!(owner_id)
                                 }
                                 "$createdAt" => {
                                     if let Some(created_at) = created_at {
-                                        platform_value!(*created_at)
+                                        platform_value!(created_at)
                                     } else {
                                         return None;
                                     }
                                 }
                                 "$updatedAt" => {
                                     if let Some(updated_at) = updated_at {
-                                        platform_value!(*updated_at)
+                                        platform_value!(updated_at)
                                     } else {
                                         return None;
                                     }
@@ -108,21 +110,27 @@ impl Drive {
                             block_time_ms: None,
                         };
 
-                        let query_result = self.query_documents(query, None, false, transaction);
+                        let query_result = self.query_documents(
+                            query,
+                            None,
+                            false,
+                            transaction,
+                            Some(platform_version.protocol_version),
+                        );
                         match query_result {
                             Ok(query_outcome) => {
                                 let documents = query_outcome.documents;
                                 let would_be_unique = documents.is_empty()
                                     || (allow_original
                                         && documents.len() == 1
-                                        && documents[0].id == document_id);
+                                        && documents[0].id() == document_id);
                                 if would_be_unique {
                                     Some(Ok(SimpleConsensusValidationResult::default()))
                                 } else {
                                     Some(Ok(SimpleConsensusValidationResult::new_with_error(
                                         StateError::DuplicateUniqueIndexError(
                                             DuplicateUniqueIndexError::new(
-                                                *document_id,
+                                                document_id,
                                                 index.fields(),
                                             ),
                                         )

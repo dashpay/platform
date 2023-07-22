@@ -36,7 +36,8 @@
 pub mod decode;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod encode;
-mod identities;
+#[cfg(test)]
+pub mod identities;
 
 #[cfg(feature = "full")]
 use std::fs::File;
@@ -62,8 +63,10 @@ use dpp::data_contract::DataContract;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
+use dpp::version::PlatformVersion;
 
 #[cfg(feature = "full")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.
@@ -73,12 +76,24 @@ pub fn setup_contract(
     contract_id: Option<[u8; 32]>,
     transaction: TransactionArg,
 ) -> DataContract {
-    let contract =
-        json_document_to_contract_with_ids(path, contract_id.map(Identifier::from), None)
-            .expect("expected to get cbor contract");
+    let platform_version = PlatformVersion::latest();
+    let contract = json_document_to_contract_with_ids(
+        path,
+        contract_id.map(Identifier::from),
+        None,
+        platform_version,
+    )
+    .expect("expected to get cbor contract");
 
     drive
-        .apply_contract(&contract, BlockInfo::default(), true, None, transaction)
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            transaction,
+            platform_version,
+        )
         .expect("contract should be applied");
     contract
 }
@@ -90,9 +105,10 @@ pub fn setup_contract_from_cbor_hex(
     hex_string: String,
     transaction: TransactionArg,
 ) -> DataContract {
+    let platform_version = PlatformVersion::latest();
     let contract_cbor = cbor_from_hex(hex_string);
-    let contract =
-        DataContract::from_cbor(&contract_cbor).expect("contract should be deserialized");
+    let contract = DataContract::from_cbor(&contract_cbor, platform_version)
+        .expect("contract should be deserialized");
     drive
         .apply_contract_cbor(
             contract_cbor,
@@ -101,6 +117,7 @@ pub fn setup_contract_from_cbor_hex(
             true,
             None,
             transaction,
+            platform_version,
         )
         .expect("contract should be applied");
     contract

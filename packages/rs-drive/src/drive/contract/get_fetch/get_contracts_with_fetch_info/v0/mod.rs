@@ -2,6 +2,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -33,7 +34,7 @@ impl Drive {
         contract_ids: &[[u8; 32]],
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<Arc<DataContractFetchInfo>>>, Error> {
         contract_ids
             .iter()
@@ -44,7 +45,7 @@ impl Drive {
                         *contract_id,
                         add_to_cache_if_pulled,
                         transaction,
-                        drive_version,
+                        platform_version,
                     )?,
                 ))
             })

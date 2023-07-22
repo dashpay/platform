@@ -212,7 +212,7 @@ mod test {
          }
         ];
 
-        let (documents, data_contract) = get_masternode_reward_shares_documents_fixture();
+        let (documents, data_contract) = get_masternode_reward_shares_extended_documents_fixture(1);
         let sml_store = SMLStore {
             sml_list_by_height: SimplifiedMNList {
                 masternodes: sml_entries.clone(),

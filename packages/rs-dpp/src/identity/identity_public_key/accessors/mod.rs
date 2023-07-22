@@ -46,7 +46,7 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKey {
         }
     }
 
-    fn disabled_at(&self) -> Option<&TimestampMillis> {
+    fn disabled_at(&self) -> Option<TimestampMillis> {
         match self {
             IdentityPublicKey::V0(v0) => v0.disabled_at(),
         }
@@ -99,6 +99,12 @@ impl IdentityPublicKeySettersV0 for IdentityPublicKey {
     fn set_disabled_at(&mut self, timestamp_millis: u64) {
         if let IdentityPublicKey::V0(v0) = self {
             v0.set_disabled_at(timestamp_millis);
+        }
+    }
+
+    fn remove_disabled_at(&mut self) {
+        if let IdentityPublicKey::V0(v0) = self {
+            v0.remove_disabled_at();
         }
     }
 }

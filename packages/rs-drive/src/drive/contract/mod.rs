@@ -76,8 +76,10 @@ mod tests {
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::data_contract::DataContract;
+    use dpp::document::DocumentV0Getters;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
 
@@ -139,7 +141,7 @@ mod tests {
         (drive, contract)
     }
 
-    fn setup_reference_contract() -> (Drive, DataContract) {
+    pub(in crate::drive::contract) fn setup_reference_contract() -> (Drive, DataContract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
         let platform_version = PlatformVersion::latest();
@@ -187,6 +189,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -200,6 +203,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should update initial contract");
     }
@@ -213,9 +217,11 @@ mod tests {
             .document_type_for_name("nest")
             .expect("expected to get document type");
 
-        let document = document_type.random_document(Some(5));
+        let document = document_type
+            .random_document(Some(5), platform_version)
+            .expect("expected to get random document");
 
-        let nested_value = document.properties.get("abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0");
+        let nested_value = document.properties().get("abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0.abc0");
 
         assert!(nested_value.is_some());
 
@@ -230,7 +236,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -250,9 +256,11 @@ mod tests {
             .document_type_for_name("note")
             .expect("expected to get document type");
 
-        let document = document_type.random_document(Some(5));
+        let document = document_type
+            .random_document(Some(5), platform_version)
+            .expect("expected to get random document");
 
-        let ref_value = document.properties.get("abc17");
+        let ref_value = document.properties().get("abc17");
 
         assert!(ref_value.is_some());
 
@@ -267,7 +275,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),

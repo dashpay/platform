@@ -5,8 +5,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -21,8 +26,9 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let drive_version = &platform_version.drive;
         let mut drive_operations = vec![];
 
         let key_ids_len = key_ids.len();
@@ -34,11 +40,17 @@ impl Drive {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-            );
+                drive_version,
+            )?;
             key_ids
                 .into_iter()
-                .map(|key_id| (key_id, IdentityPublicKey::max_possible_size_key(key_id)))
-                .collect()
+                .map(|key_id| {
+                    Ok((
+                        key_id,
+                        IdentityPublicKey::max_possible_size_key(key_id, platform_version)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ProtocolError>>()?
         } else {
             let key_request = IdentityKeysRequest {
                 identity_id,
@@ -51,7 +63,7 @@ impl Drive {
                 key_request,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
         };
 
@@ -65,9 +77,9 @@ impl Drive {
         const RE_ENABLE_KEY_TIME_BYTE_COST: i32 = 9;
 
         for (_, mut key) in keys {
-            key.disabled_at = None;
+            key.remove_disabled_at();
 
-            let key_id_bytes = key.id.encode_var_vec();
+            let key_id_bytes = key.id().encode_var_vec();
 
             self.replace_key_in_storage_operations(
                 identity_id.as_slice(),

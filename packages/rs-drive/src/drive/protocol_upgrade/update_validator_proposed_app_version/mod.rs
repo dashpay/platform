@@ -1,3 +1,5 @@
+mod v0;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -42,7 +44,7 @@ impl Drive {
                 validator_pro_tx_hash,
                 version,
                 transaction,
-                &self.drive_version,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_validator_proposed_app_version".to_string(),
@@ -92,7 +94,7 @@ impl Drive {
                 version,
                 transaction,
                 drive_operations,
-                &self.drive_version,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_validator_proposed_app_version_operations".to_string(),

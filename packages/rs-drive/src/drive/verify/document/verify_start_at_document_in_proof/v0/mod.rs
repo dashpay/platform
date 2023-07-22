@@ -3,7 +3,9 @@ use crate::drive::verify::RootHash;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
+use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
 impl<'a> DriveQuery<'a> {
@@ -32,6 +34,7 @@ impl<'a> DriveQuery<'a> {
         proof: &[u8],
         is_proof_subset: bool,
         document_id: [u8; 32],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Document>), Error> {
         let (start_at_document_path, start_at_document_key) =
             self.start_at_document_path_and_key(&document_id);
@@ -60,8 +63,12 @@ impl<'a> DriveQuery<'a> {
                 let document = maybe_element
                     .map(|element| {
                         let document_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
-                        Document::from_bytes(document_bytes.as_slice(), self.document_type)
-                            .map_err(Error::Protocol)
+                        Document::from_bytes(
+                            document_bytes.as_slice(),
+                            self.document_type,
+                            platform_version,
+                        )
+                        .map_err(Error::Protocol)
                     })
                     .transpose()?;
                 Ok((root_hash, document))

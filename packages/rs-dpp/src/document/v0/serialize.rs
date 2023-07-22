@@ -32,7 +32,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_v0(&self, document_type: &DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
+    fn serialize_v0(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
         buffer.extend(self.id.as_slice());
         buffer.extend(self.owner_id.as_slice());
@@ -135,7 +135,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_consume_v0(
         mut self,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
         buffer.extend(self.id.into_buffer());
@@ -205,7 +205,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
     /// Reads a serialized document and creates a Document from it.
     fn from_bytes_v0(
         serialized_document: &[u8],
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
     ) -> Result<Self, ProtocolError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
@@ -328,7 +328,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize(
         &self,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
@@ -352,7 +352,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_consume(
         self,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
@@ -373,7 +373,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     /// Reads a serialized document and creates a DocumentV0 from it.
     fn from_bytes(
         mut serialized_document: &[u8],
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

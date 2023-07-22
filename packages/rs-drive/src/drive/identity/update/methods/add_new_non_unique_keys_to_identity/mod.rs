@@ -8,6 +8,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -34,9 +35,10 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .update
@@ -48,7 +50,7 @@ impl Drive {
                 block_info,
                 apply,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_new_non_unique_keys_to_identity".to_string(),

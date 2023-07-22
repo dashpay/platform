@@ -10,6 +10,7 @@ use crate::error::Error;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -28,22 +29,22 @@ impl Drive {
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
     pub fn add_estimation_costs_for_remove_document_to_primary_storage(
         primary_key_path: [&[u8]; 5],
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .delete
             .add_estimation_costs_for_remove_document_to_primary_storage
         {
-            0 => Ok(
-                Self::add_estimation_costs_for_remove_document_to_primary_storage_v0(
-                    primary_key_path,
-                    document_type,
-                    estimated_costs_only_with_layer_info,
-                ),
+            0 => Self::add_estimation_costs_for_remove_document_to_primary_storage_v0(
+                primary_key_path,
+                document_type,
+                estimated_costs_only_with_layer_info,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_remove_document_to_primary_storage".to_string(),

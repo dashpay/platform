@@ -43,7 +43,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for the top index level and calls for lower levels.
@@ -56,20 +60,21 @@ impl Drive {
         >,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let document_type = document_and_contract_info.document_type;
-        let index_level = &document_type.index_structure;
+        let index_level = document_type.index_structure();
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
-        let storage_flags = if document_type.documents_mutable || contract.config.can_be_deleted {
-            document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_storage_flags_ref()
-        } else {
-            None //there are no need for storage flags if documents are not mutable and contract can not be deleted
-        };
+        let storage_flags =
+            if document_type.documents_mutable() || contract.config().can_be_deleted() {
+                document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .get_storage_flags_ref()
+            } else {
+                None //there are no need for storage flags if documents are not mutable and contract can not be deleted
+            };
 
         // we need to construct the path for documents on the contract
         // the path is
@@ -78,7 +83,7 @@ impl Drive {
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id().as_bytes(),
-            document_and_contract_info.document_type.name.as_str(),
+            document_and_contract_info.document_type.name().as_str(),
         );
 
         let sub_level_index_count = index_level.sub_index_levels.len() as u32;
@@ -117,7 +122,7 @@ impl Drive {
                     document_type,
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
-                    drive_version,
+                    platform_version,
                 )?
                 .unwrap_or_default();
 
@@ -126,7 +131,7 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type, drive_version)?;
+                    .get_estimated_size_for_document_type(name, document_type)?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
@@ -177,7 +182,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(())

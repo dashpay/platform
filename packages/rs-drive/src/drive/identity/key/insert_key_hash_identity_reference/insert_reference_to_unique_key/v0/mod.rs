@@ -15,6 +15,8 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
 use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -44,7 +46,7 @@ impl Drive {
             Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
         })?;
 
-        let key_len = identity_key.data.len();
+        let key_len = identity_key.data().len();
         drive_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
             HashFunction::Sha256RipeMD160,
             key_len as u16,

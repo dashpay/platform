@@ -5,6 +5,7 @@ use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::Identity;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -25,9 +26,10 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -37,7 +39,7 @@ impl Drive {
             0 => self.fetch_full_identity_by_unique_public_key_hash_v0(
                 public_key_hash,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_full_identity_by_unique_public_key_hash".to_string(),
@@ -66,9 +68,10 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -79,7 +82,7 @@ impl Drive {
                 public_key_hash,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_full_identity_by_unique_public_key_hash_operations".to_string(),

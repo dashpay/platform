@@ -13,6 +13,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
@@ -40,16 +41,22 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.identity.update.revision {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .update
+            .update_identity_revision
+        {
             0 => self.update_identity_revision_v0(
                 identity_id,
                 revision,
                 block_info,
                 apply,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_identity_revision".to_string(),
@@ -77,9 +84,10 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<LowLevelDriveOperation, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .update
@@ -89,6 +97,7 @@ impl Drive {
                 identity_id,
                 revision,
                 estimated_costs_only_with_layer_info,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_identity_revision_operation".to_string(),

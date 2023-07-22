@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 
 use crate::common::decode;
 use crate::error::drive::DriveError;
+use dpp::serialization_traits::PlatformDeserializableFromVersionedStructure;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
 impl Drive {
@@ -39,6 +41,7 @@ impl Drive {
         contract_known_keeps_history: Option<bool>,
         is_proof_subset: bool,
         contract_id: [u8; 32],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<DataContract>), Error> {
         let path_query = if contract_known_keeps_history.unwrap_or_default() {
             Self::fetch_contract_with_history_latest_query(contract_id)
@@ -56,7 +59,13 @@ impl Drive {
             Err(e) => {
                 return if contract_known_keeps_history.is_none() {
                     // most likely we are trying to prove a historical contract
-                    Self::verify_contract(proof, Some(true), is_proof_subset, contract_id)
+                    Self::verify_contract(
+                        proof,
+                        Some(true),
+                        is_proof_subset,
+                        contract_id,
+                        platform_version,
+                    )
                 } else {
                     Err(e)
                 };
@@ -87,7 +96,8 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::GroveDB)
                         .and_then(|bytes| {
-                            DataContract::deserialize_no_limit(&bytes).map_err(Error::Protocol)
+                            DataContract::versioned_deserialize(&bytes, platform_version)
+                                .map_err(Error::Protocol)
                         })
                 })
                 .transpose()?;

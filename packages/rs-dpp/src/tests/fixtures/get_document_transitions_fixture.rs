@@ -1,10 +1,9 @@
+use crate::document::document_factory::DocumentFactory;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
 use crate::document::ExtendedDocument;
-use crate::document::{document_factory::DocumentFactory, document_transition::DocumentTransition};
-use crate::state_repository::MockStateRepositoryLike;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::version::LATEST_VERSION;
 

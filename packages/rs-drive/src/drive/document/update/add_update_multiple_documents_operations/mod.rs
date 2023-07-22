@@ -40,7 +40,7 @@ impl Drive {
         &self,
         documents: &'a [Document],
         data_contract: &'a DataContract,
-        document_type: &'a DocumentTypeRef<'a>,
+        document_type: DocumentTypeRef<'a>,
         drive_operation_types: &mut Vec<DriveOperation<'a>>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {

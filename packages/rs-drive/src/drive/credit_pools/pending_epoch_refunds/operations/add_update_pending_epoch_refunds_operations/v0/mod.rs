@@ -1,7 +1,9 @@
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
+use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::Element;
 

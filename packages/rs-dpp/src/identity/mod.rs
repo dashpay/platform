@@ -9,7 +9,7 @@ pub use identity_public_key::*;
 pub mod core_script;
 mod get_biggest_possible_identity;
 mod identity;
-pub(crate) mod identity_public_key;
+pub mod identity_public_key;
 
 pub mod state_transition;
 
@@ -18,14 +18,14 @@ pub mod errors;
 pub mod signer;
 
 pub mod accessors;
-mod conversion;
+pub(crate) mod conversion;
 mod fields;
 #[cfg(feature = "client")]
 mod identity_facade;
 #[cfg(feature = "factories")]
 mod identity_factory;
 mod methods;
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(feature = "random-identities")]
 pub mod random;
 mod v0;
 pub mod versions;

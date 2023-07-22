@@ -7,6 +7,10 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -66,7 +70,7 @@ impl Drive {
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
             block_info.epoch.index,
-            Some(contract.owner_id.to_buffer()),
+            Some(contract.owner_id().to_buffer()),
         ));
 
         let contract_element = Element::Item(
@@ -81,13 +85,13 @@ impl Drive {
                 true,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "contract should exist",
             )))?;
 
-        if original_contract_fetch_info.contract.config.readonly {
+        if original_contract_fetch_info.contract.config().readonly() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "original contract is readonly",
             )));
@@ -110,7 +114,7 @@ impl Drive {
                 Some(&block_info.epoch),
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "contract should exist",
@@ -128,7 +132,6 @@ impl Drive {
             &block_info.epoch,
             platform_version,
         )
-        .map_err(Error::Protocol)
     }
 
     /// Updates a contract.
@@ -206,28 +209,28 @@ impl Drive {
 
         let drive_version = &platform_version.drive;
 
-        if original_contract.config.readonly {
+        if original_contract.config().readonly() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.config.readonly {
+        if contract.config().readonly() {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));
         }
 
-        if contract.config.keeps_history ^ original_contract.config.keeps_history {
+        if contract.config().keeps_history() ^ original_contract.config().keeps_history() {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
             )));
         }
 
-        if contract.config.documents_keep_history_contract_default
+        if contract.config().documents_keep_history_contract_default()
             ^ original_contract
-                .config
-                .documents_keep_history_contract_default
+                .config()
+                .documents_keep_history_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(
@@ -236,8 +239,10 @@ impl Drive {
             ));
         }
 
-        if contract.config.documents_mutable_contract_default
-            ^ original_contract.config.documents_mutable_contract_default
+        if contract.config().documents_mutable_contract_default()
+            ^ original_contract
+                .config()
+                .documents_mutable_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(
@@ -262,17 +267,17 @@ impl Drive {
 
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
-        let contract_documents_path = contract_documents_path(contract.id().as_bytes());
-        for (type_key, document_type) in contract.document_types.iter() {
-            let original_document_type = &original_contract.document_types.get(type_key);
+        let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
+        for (type_key, document_type) in contract.document_types().iter() {
+            let original_document_type = &original_contract.document_types().get(type_key);
             if let Some(original_document_type) = original_document_type {
-                if original_document_type.documents_mutable ^ document_type.documents_mutable {
+                if original_document_type.documents_mutable() ^ document_type.documents_mutable() {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
                         "contract can not change whether a specific document type is mutable",
                     )));
                 }
-                if original_document_type.documents_keep_history
-                    ^ document_type.documents_keep_history
+                if original_document_type.documents_keep_history()
+                    ^ document_type.documents_keep_history()
                 {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
                         "contract can not change whether a specific document type keeps history",
@@ -301,7 +306,7 @@ impl Drive {
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
-                for index in document_type.top_level_indices() {
+                for index in document_type.as_ref().top_level_indices() {
                     // toDo: we can save a little by only inserting on new indexes
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {
@@ -345,7 +350,7 @@ impl Drive {
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
-                for index in document_type.top_level_indices() {
+                for index in document_type.as_ref().top_level_indices() {
                     // toDo: change this to be a reference by index
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {

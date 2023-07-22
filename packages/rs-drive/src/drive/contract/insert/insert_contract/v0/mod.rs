@@ -7,6 +7,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -28,10 +31,10 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
+        let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
-                Some(contract.owner_id.to_buffer()),
+                Some(contract.owner_id().to_buffer()),
             ))
         } else {
             None
@@ -58,7 +61,6 @@ impl Drive {
             &block_info.epoch,
             platform_version,
         )
-        .map_err(Error::Protocol)
     }
 
     /// Adds a contract to storage using `add_contract_to_storage`
@@ -137,7 +139,7 @@ impl Drive {
         let storage_flags = StorageFlags::map_some_element_flags_ref(contract_element.get_flags())?;
 
         self.batch_insert_empty_tree(
-            [Into::<&[u8; 1]>::into(RootTree::ContractDocuments).as_slice()],
+            [Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).as_slice()],
             KeyRef(contract.id().as_bytes()),
             storage_flags.as_ref(),
             &mut batch_operations,
@@ -156,7 +158,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = paths::contract_root_path(contract.id().as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id_ref().as_bytes());
         let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -169,9 +171,9 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract.id().as_bytes());
+        let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
 
-        for (type_key, document_type) in contract.document_types.iter() {
+        for (type_key, document_type) in contract.document_types().iter() {
             self.batch_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
@@ -199,7 +201,7 @@ impl Drive {
 
             let mut index_cache: HashSet<&[u8]> = HashSet::new();
             // for each type we should insert the indices that are top level
-            for index in document_type.top_level_indices() {
+            for index in document_type.as_ref().top_level_indices() {
                 // toDo: change this to be a reference by index
                 let index_bytes = index.name.as_bytes();
                 if !index_cache.contains(index_bytes) {

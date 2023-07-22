@@ -36,6 +36,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -43,6 +44,8 @@ impl Drive {
     pub fn get_genesis_time(&self, transaction: TransactionArg) -> Result<Option<u64>, Error> {
         // let's first check the cache
         let cache = self.cache.read().unwrap();
+
+        let platform_version = PlatformVersion::latest();
 
         if cache.genesis_time_ms.is_some() {
             return Ok(cache.genesis_time_ms);
@@ -52,7 +55,7 @@ impl Drive {
 
         let epoch = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
-        match self.get_epoch_start_time(&epoch, transaction) {
+        match self.get_epoch_start_time(&epoch, transaction, platform_version) {
             Ok(genesis_time_ms) => {
                 let mut cache = self.cache.write().unwrap();
 
@@ -83,6 +86,7 @@ mod tests {
 
     mod get_genesis_time {
         use super::*;
+        use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
         use crate::drive::batch::GroveDbOpBatch;
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
@@ -125,6 +129,8 @@ mod tests {
 
             let epoch = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
+            let platform_version = PlatformVersion::latest();
+
             let mut batch = GroveDbOpBatch::new();
             let mut drive_operations = Vec::new();
 
@@ -135,7 +141,13 @@ mod tests {
             epoch.add_init_current_operations(0.0, 1, 1, genesis_time_ms, &mut batch);
 
             drive
-                .apply_batch_grovedb_operations(None, None, batch, &mut drive_operations)
+                .apply_batch_grovedb_operations(
+                    None,
+                    None,
+                    batch,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
                 .expect("should apply batch");
 
             let result = drive

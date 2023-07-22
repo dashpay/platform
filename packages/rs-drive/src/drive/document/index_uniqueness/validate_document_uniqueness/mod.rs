@@ -14,6 +14,7 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -41,14 +42,15 @@ impl Drive {
     pub fn validate_document_uniqueness(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         document: &Document,
-        owner_id: &Identifier,
+        owner_id: Identifier,
         allow_original: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .index_uniqueness
@@ -61,7 +63,7 @@ impl Drive {
                 owner_id,
                 allow_original,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_document_uniqueness".to_string(),

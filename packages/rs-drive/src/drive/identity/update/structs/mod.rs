@@ -1,2 +1,2 @@
-mod add_to_previous_balance_outcome;
-mod apply_balance_change_outcome;
+pub mod add_to_previous_balance_outcome;
+pub mod apply_balance_change_outcome;

@@ -32,6 +32,7 @@ use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
+use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
@@ -97,6 +98,7 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         let metadata = ResponseMetadata {
@@ -338,7 +340,7 @@ impl<C> Platform<C> {
                 } else {
                     let keys: SerializedKeyVec = check_validation_result_with_data!(self
                         .drive
-                        .fetch_identity_keys(key_request, None));
+                        .fetch_identity_keys(key_request, None, platform_version));
                     GetIdentityKeysResponse {
                         result: Some(get_identity_keys_response::Result::Keys(
                             get_identity_keys_response::Keys { keys_bytes: keys },
@@ -410,7 +412,12 @@ impl<C> Platform<C> {
                 } else {
                     let contracts = check_validation_result_with_data!(self
                         .drive
-                        .get_contracts_with_fetch_info(contract_ids.as_slice(), false, None));
+                        .get_contracts_with_fetch_info(
+                            contract_ids.as_slice(),
+                            false,
+                            None,
+                            platform_version
+                        ));
 
                     let contracts = check_validation_result_with_data!(contracts
                         .into_iter()
@@ -483,7 +490,8 @@ impl<C> Platform<C> {
                             None,
                             start_at_seconds.unwrap_or_default(),
                             limit,
-                            offset
+                            offset,
+                            platform_version,
                         ));
                     GetDataContractHistoryResponse {
                         metadata: Some(metadata),
@@ -557,7 +565,7 @@ impl<C> Platform<C> {
                         None
                     ));
                 let contract = check_validation_result_with_data!(contract.ok_or(
-                    QueryError::Query(QuerySyntaxError::ContractNotFound(
+                    QueryError::Query(QuerySyntaxError::DataContractNotFound(
                         "contract not found when querying from value with contract info",
                     ))
                 ));

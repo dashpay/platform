@@ -9,6 +9,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
+use dpp::document::serialization_traits::DocumentCborMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
@@ -47,11 +48,11 @@ impl Drive {
                 &mut drive_operations,
                 platform_version,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+            .ok_or(Error::Document(DocumentError::DataContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -65,7 +66,7 @@ impl Drive {
                     owner_id,
                 },
                 contract,
-                document_type: &document_type,
+                document_type,
             },
             &block_info,
             estimated_costs_only_with_layer_info,

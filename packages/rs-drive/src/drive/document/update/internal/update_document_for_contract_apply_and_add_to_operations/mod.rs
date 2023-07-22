@@ -50,6 +50,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract_apply_and_add_to_operations".to_string(),

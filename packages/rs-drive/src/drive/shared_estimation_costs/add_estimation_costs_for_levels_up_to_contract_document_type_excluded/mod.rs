@@ -38,12 +38,10 @@ impl Drive {
             .estimated_costs
             .add_estimation_costs_for_levels_up_to_contract_document_type_excluded
         {
-            0 => Ok(
-                Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
-                    contract,
-                    estimated_costs_only_with_layer_info,
-                    drive_version,
-                ),
+            0 => Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
+                contract,
+                estimated_costs_only_with_layer_info,
+                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_levels_up_to_contract_document_type_excluded"

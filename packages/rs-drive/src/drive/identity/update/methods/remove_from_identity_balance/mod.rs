@@ -37,7 +37,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .update
@@ -83,7 +84,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .update

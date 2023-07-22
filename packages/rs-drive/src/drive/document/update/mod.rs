@@ -94,6 +94,10 @@ use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+use dpp::document::serialization_traits::{
+    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+};
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
@@ -116,13 +120,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let contract = DataContract::from_cbor(contract_cbor)?;
+        let contract = DataContract::from_cbor(contract_cbor, platform_version)?;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
 
         let document_type = contract.document_type_for_name(document_type_name)?;
 
-        let reserialized_document = document.serialize(document_type)?;
+        let reserialized_document = document.serialize(document_type, platform_version)?;
 
         self.update_document_with_serialization_for_contract(
             &document,
@@ -171,7 +175,10 @@ mod tests {
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_document;
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::serialization_traits::{
+        DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+    };
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
@@ -219,6 +226,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
+                platform_version,
             )
             .expect("should create alice profile");
 
@@ -254,8 +262,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract =
-            DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
+            .expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -272,8 +280,9 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
-            .expect("expected to get a document");
+        let alice_profile =
+            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get a document");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -289,7 +298,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -348,8 +357,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract =
-            DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
+            .expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -366,8 +375,9 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
-            .expect("expected to get a document");
+        let alice_profile =
+            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get a document");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -383,13 +393,13 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("should create alice profile");
 
@@ -462,8 +472,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract =
-            DataContract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
+        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
+            .expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -480,8 +490,9 @@ mod tests {
 
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
-        let alice_profile = Document::from_cbor(alice_profile_cbor.as_slice(), None, None)
-            .expect("expected to get a document");
+        let alice_profile =
+            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get a document");
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -497,7 +508,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -533,7 +544,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                alice_profile.id.to_buffer(),
+                alice_profile.id().to_buffer(),
                 &contract,
                 "profile",
                 BlockInfo::default(),
@@ -589,8 +600,7 @@ mod tests {
             .create_initial_state_structure(Some(&db_transaction), &platform_version)
             .expect("should create root tree");
 
-        let contract = json!({
-            "protocolVersion": 1,
+        let contract = platform_value!({
             "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
             "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
             "version": 1,
@@ -622,14 +632,9 @@ mod tests {
             },
         });
 
-        let contract_cbor = cbor_serializer::serializable_value_to_cbor(
-            &contract,
-            Some(defaults::PROTOCOL_VERSION),
-        )
-        .expect("expected to serialize to cbor");
-
         // first we need to deserialize the contract
-        let contract = DataContract::from_cbor_with_id(contract_cbor, None)?;
+        let contract =
+            DataContract::from_object(contract, platform_version).expect("expected data contract");
 
         drive
             .apply_contract(
@@ -644,8 +649,7 @@ mod tests {
 
         // Create document
 
-        let document = json!({
-           "$protocolVersion": 1,
+        let document_values = platform_value!({
            "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
            "$type": "indexedDocument",
            "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
@@ -657,30 +661,36 @@ mod tests {
            "$updatedAt":1647535750329_u64,
         });
 
-        let serialized_document = cbor_serializer::serializable_value_to_cbor(
-            &document,
-            Some(defaults::PROTOCOL_VERSION),
-        )
-        .expect("expected to serialize to cbor");
+        let document = Document::from_platform_value(document_values, platform_version)
+            .expect("expected to make document");
 
+        let document_type = contract
+            .document_type_for_name("indexedDocument")
+            .expect("expected to get a document type");
         drive
-            .add_cbor_serialized_document_for_serialized_contract(
-                serialized_document.as_slice(),
-                contract.as_slice(),
-                "indexedDocument",
-                None,
-                true,
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentOwnedInfo((
+                            document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
+                platform_version,
             )
             .expect("should add document");
 
         // Update document
 
-        let document = json!({
-           "$protocolVersion": 1,
+        let document_values = platform_value!({
            "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
            "$type": "indexedDocument",
            "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
@@ -692,17 +702,14 @@ mod tests {
            "$updatedAt":1647535754556_u64,
         });
 
-        let serialized_document = cbor_serializer::serializable_value_to_cbor(
-            &document,
-            Some(defaults::PROTOCOL_VERSION),
-        )
-        .expect("expected to serialize to cbor");
+        let document = Document::from_platform_value(document_values, platform_version)
+            .expect("expected to make document");
 
         drive
-            .update_document_for_contract_cbor(
-                serialized_document.as_slice(),
-                contract.as_slice(),
-                "indexedDocument",
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
                 None,
                 BlockInfo::default(),
                 true,
@@ -762,7 +769,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -778,7 +785,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -792,7 +799,7 @@ mod tests {
             .update_document_for_contract(
                 &dashpay_cr_document,
                 &contract,
-                &document_type,
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -813,7 +820,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 BlockInfo::default(),
@@ -852,7 +859,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -860,7 +867,7 @@ mod tests {
         let dashpay_profile_updated_public_message_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -876,7 +883,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -890,7 +897,7 @@ mod tests {
             .update_document_for_contract(
                 &dashpay_profile_updated_public_message_document,
                 &contract,
-                &document_type,
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -964,7 +971,7 @@ mod tests {
         let document: Document = platform_value::from_value(value).expect("value to document");
 
         let document_serialized = document
-            .serialize_consume(&document_type, platform_version)
+            .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
         assert_eq!(document_serialized.len(), 115);
@@ -1138,7 +1145,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1275,7 +1282,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1327,7 +1334,7 @@ mod tests {
 
         let removed_credits = update_fees
             .fee_refunds
-            .get(&owner_id)
+            .get(owner_id.as_bytes())
             .unwrap()
             .get(&0)
             .unwrap();
@@ -1684,7 +1691,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 true,
                 block_info,
@@ -1931,19 +1938,18 @@ mod tests {
 
         let document_type_name = "niceDocument".to_string();
 
-        let document_type = contract
+        let document_type = document_factory
+            .data_contract()
             .document_type_for_name(document_type_name.as_str())
             .expect("expected document type");
 
         let mut document = document_factory
-            .create_extended_document_for_state_transition(
-                contract.clone(),
+            .create_document(
                 owner_id,
                 document_type_name.clone(),
                 json!({ "name": "Ivan" }).into(),
             )
-            .expect("should create a document")
-            .document;
+            .expect("should create a document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
@@ -1959,8 +1965,8 @@ mod tests {
                         document_info,
                         owner_id: Some(owner_id.to_buffer()),
                     },
-                    contract: &contract,
-                    document_type: &document_type,
+                    contract: document_factory.data_contract(),
+                    document_type,
                 },
                 false,
                 block_info,
@@ -1981,7 +1987,7 @@ mod tests {
         let update_fees = drive
             .update_document_for_contract(
                 &document,
-                &contract,
+                document_factory.data_contract(),
                 document_type,
                 Some(owner_id.to_buffer()),
                 block_info,

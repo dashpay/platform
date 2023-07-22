@@ -35,16 +35,17 @@ impl Drive {
         &self,
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys
             .fetch
             .fetch_identity_keys
         {
-            0 => self.fetch_identity_keys_v0(key_request, transaction, drive_version),
+            0 => self.fetch_identity_keys_v0(key_request, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_keys".to_string(),
                 known_versions: vec![0],

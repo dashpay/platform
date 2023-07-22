@@ -33,8 +33,8 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV0 {
         &self.data
     }
 
-    fn disabled_at(&self) -> Option<&TimestampMillis> {
-        self.disabled_at.as_ref()
+    fn disabled_at(&self) -> Option<TimestampMillis> {
+        self.disabled_at
     }
 
     fn is_disabled(&self) -> bool {
@@ -69,5 +69,9 @@ impl IdentityPublicKeySettersV0 for IdentityPublicKeyV0 {
 
     fn set_disabled_at(&mut self, timestamp_millis: u64) {
         self.disabled_at = Some(timestamp_millis);
+    }
+
+    fn remove_disabled_at(&mut self) {
+        self.disabled_at = None;
     }
 }

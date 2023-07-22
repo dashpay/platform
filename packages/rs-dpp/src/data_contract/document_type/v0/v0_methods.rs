@@ -81,6 +81,16 @@ pub trait DocumentTypeV0Methods {
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
+
+    /// Creates a document at the current time based on document type information
+    /// Properties set here must be pre validated
+    fn create_document_with_prevalidated_properties(
+        &self,
+        id: Identifier,
+        owner_id: Identifier,
+        properties: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError>;
 }
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {
@@ -268,5 +278,32 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
 
     fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
         self.flattened_properties.get(property).cloned()
+    }
+
+    fn create_document_with_prevalidated_properties(
+        &self,
+        id: Identifier,
+        owner_id: Identifier,
+        properties: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .create_document_with_prevalidated_properties
+        {
+            0 => self.create_document_with_prevalidated_properties_v0(
+                id,
+                owner_id,
+                properties,
+                platform_version,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "create_document_with_prevalidated_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 }

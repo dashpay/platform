@@ -1,4 +1,4 @@
-pub(crate) mod accessors;
+pub mod accessors;
 pub mod array_field;
 mod document_field;
 pub use document_field::*;
@@ -40,10 +40,12 @@ pub(self) mod property_names {
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
 }
 
+#[derive(Debug)]
 pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
 }
@@ -200,6 +202,23 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.top_level_indices(),
+        }
+    }
+
+    fn create_document_with_prevalidated_properties(
+        &self,
+        id: Identifier,
+        owner_id: Identifier,
+        properties: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.create_document_with_prevalidated_properties(
+                id,
+                owner_id,
+                properties,
+                platform_version,
+            ),
         }
     }
 }

@@ -46,6 +46,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::error::drive::DriveError;
     use crate::error::Error;
@@ -55,17 +56,18 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use grovedb::Element;
 
     #[test]
     fn test_error_if_epoch_tree_is_not_initiated_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         let epoch = Epoch::new(7000).unwrap();
 
-        let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction), &drive_version);
+        let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction), platform_version);
 
         assert!(matches!(
             result,
@@ -76,7 +78,7 @@ mod tests {
     #[test]
     fn test_error_if_value_has_invalid_length_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         let epoch = Epoch::new(0).unwrap();
@@ -93,7 +95,7 @@ mod tests {
             .unwrap()
             .expect("should insert invalid data");
 
-        let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction), &drive_version);
+        let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction), platform_version);
 
         assert!(matches!(
             result,

@@ -14,6 +14,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 

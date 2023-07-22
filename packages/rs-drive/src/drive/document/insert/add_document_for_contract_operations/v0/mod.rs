@@ -6,6 +6,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -28,8 +30,8 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let primary_key_path = contract_documents_primary_key_path(
-            document_and_contract_info.contract.id().as_bytes(),
-            document_and_contract_info.document_type.name.as_str(),
+            document_and_contract_info.contract.id_ref().as_bytes(),
+            document_and_contract_info.document_type.name().as_str(),
         );
 
         // Apply means stateful query
@@ -39,7 +41,9 @@ impl Drive {
             StatelessDirectQuery {
                 in_tree_using_sums: false,
                 query_target: QueryTargetValue(
-                    document_and_contract_info.document_type.estimated_size() as u32,
+                    document_and_contract_info
+                        .document_type
+                        .estimated_size(platform_version)? as u32,
                 ),
             }
         };

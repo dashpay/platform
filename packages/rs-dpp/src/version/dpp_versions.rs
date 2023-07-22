@@ -70,6 +70,7 @@ pub struct DocumentTypeVersions {
     pub create_document_from_data: FeatureVersion,
     pub max_size: FeatureVersion,
     pub estimated_size: FeatureVersion,
+    pub create_document_with_prevalidated_properties: FeatureVersion,
     pub top_level_indices: FeatureVersion,
     pub document_field_for_property: FeatureVersion,
     pub document_field_type_for_property: FeatureVersion,
@@ -83,6 +84,13 @@ pub struct IdentityVersions {
     /// This is the structure of the Identity as it is defined for code paths
     pub identity_structure_version: FeatureVersion,
     pub identity_key_structure_version: FeatureVersion,
+    pub identity_key_type_method_versions: IdentityKeyTypeMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IdentityKeyTypeMethodVersions {
+    pub random_public_key_data: FeatureVersion,
+    pub random_public_and_private_key_data: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

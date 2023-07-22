@@ -74,15 +74,17 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn should_fetch_and_merge_pending_updates_v0() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         // Store initial set of pending refunds
@@ -92,11 +94,21 @@ mod tests {
 
         let mut batch = vec![];
 
-        add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
-            .expect("should update pending epoch updates");
+        Drive::add_update_pending_epoch_refunds_operations(
+            &mut batch,
+            initial_pending_refunds,
+            &platform_version.drive,
+        )
+        .expect("should update pending epoch updates");
 
         drive
-            .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+            .apply_drive_operations(
+                batch,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should apply batch");
 
         // Fetch and merge
@@ -108,6 +120,7 @@ mod tests {
             .fetch_and_add_pending_epoch_refunds_to_collection(
                 new_pending_refunds,
                 Some(&transaction),
+                &platform_version.drive,
             )
             .expect("should fetch and merge pending updates");
 

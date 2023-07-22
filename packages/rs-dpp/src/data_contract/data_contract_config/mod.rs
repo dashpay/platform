@@ -2,7 +2,7 @@ mod fields;
 pub mod v0;
 
 use crate::data_contract::data_contract_config::v0::{
-    DataContractConfigGettersV0, DataContractConfigV0,
+    DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0,
 };
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -127,6 +127,44 @@ impl DataContractConfigGettersV0 for DataContractConfig {
     fn documents_mutable_contract_default(&self) -> bool {
         match self {
             DataContractConfig::V0(v0) => v0.documents_mutable_contract_default,
+        }
+    }
+}
+
+impl DataContractConfigSettersV0 for DataContractConfig {
+    fn set_can_be_deleted(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.can_be_deleted = value,
+            // If there are other enum variants, you might want to handle them here
+            // _ => {} // For example, do nothing or panic
+        }
+    }
+
+    fn set_readonly(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.readonly = value,
+            // _ => {}
+        }
+    }
+
+    fn set_keeps_history(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.keeps_history = value,
+            // _ => {}
+        }
+    }
+
+    fn set_documents_keep_history_contract_default(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default = value,
+            // _ => {}
+        }
+    }
+
+    fn set_documents_mutable_contract_default(&mut self, value: bool) {
+        match self {
+            DataContractConfig::V0(v0) => v0.documents_mutable_contract_default = value,
+            // _ => {}
         }
     }
 }

@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -24,9 +25,10 @@ impl Drive {
         &self,
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .prove
@@ -35,7 +37,7 @@ impl Drive {
             0 => self.prove_full_identities_by_unique_public_key_hashes_v0(
                 public_key_hashes,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_full_identities_by_unique_public_key_hashes".to_string(),

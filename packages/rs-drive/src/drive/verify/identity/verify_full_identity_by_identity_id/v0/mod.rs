@@ -11,9 +11,11 @@ use dpp::fee::Credits;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
@@ -44,6 +46,7 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         identity_id: [u8; 32],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
         let path_query = Self::full_identity_query(&identity_id)?;
         let (root_hash, proved_key_values) = if is_proof_subset {
@@ -102,7 +105,7 @@ impl Drive {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
                     let key = IdentityPublicKey::deserialize(&item_bytes)?;
-                    keys.insert(key.id, key);
+                    keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "we received an absence proof for a key but didn't request one",
@@ -123,15 +126,15 @@ impl Drive {
                 "identity proof is incomplete",
             )))
         } else {
-            Ok(Some(Identity {
-                protocol_version: PROTOCOL_VERSION,
-                id: Identifier::from(identity_id),
-                public_keys: keys,
-                balance: balance.unwrap(),
-                revision: revision.unwrap(),
-                asset_lock_proof: None,
-                metadata: None,
-            }))
+            Ok(Some(
+                IdentityV0 {
+                    id: Identifier::from(identity_id),
+                    public_keys: keys,
+                    balance: balance.unwrap(),
+                    revision: revision.unwrap(),
+                }
+                .into(),
+            ))
         }?;
         Ok((root_hash, maybe_identity))
     }

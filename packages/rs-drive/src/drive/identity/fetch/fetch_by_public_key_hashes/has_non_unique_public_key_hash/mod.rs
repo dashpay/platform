@@ -70,7 +70,7 @@ impl Drive {
             .identity
             .fetch
             .public_key_hashes
-            .has_non_unique_public_key_hash_operations
+            .has_non_unique_public_key_hash
         {
             0 => self.has_non_unique_public_key_hash_operations_v0(
                 public_key_hash,

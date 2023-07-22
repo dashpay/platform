@@ -50,6 +50,24 @@ pub trait DataContractConfigGettersV0 {
     fn documents_mutable_contract_default(&self) -> bool;
 }
 
+/// Trait representing setters for `DataContractConfigV0`
+pub trait DataContractConfigSettersV0 {
+    /// Sets whether the contract can be deleted.
+    fn set_can_be_deleted(&mut self, value: bool);
+
+    /// Sets whether the contract is read-only.
+    fn set_readonly(&mut self, value: bool);
+
+    /// Sets whether the contract keeps history.
+    fn set_keeps_history(&mut self, value: bool);
+
+    /// Sets whether documents in the contract keep history by default.
+    fn set_documents_keep_history_contract_default(&mut self, value: bool);
+
+    /// Sets whether documents in the contract are mutable by default.
+    fn set_documents_mutable_contract_default(&mut self, value: bool);
+}
+
 impl std::default::Default for DataContractConfigV0 {
     fn default() -> Self {
         DataContractConfigV0 {

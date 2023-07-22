@@ -39,10 +39,13 @@ use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
 use crate::drive::flags::StorageFlags;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::{defaults, RootTree};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "full")]
 use dpp::document::Document;
+use dpp::document::DocumentV0Getters;
 #[cfg(feature = "full")]
 use grovedb::batch::key_info::KeyInfo;
 #[cfg(feature = "full")]
@@ -51,6 +54,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 #[cfg(feature = "full")]
 use grovedb::Element;
+
 #[cfg(feature = "full")]
 mod delete;
 #[cfg(feature = "full")]
@@ -69,7 +73,7 @@ pub(crate) fn contract_document_type_path<'a>(
     document_type_name: &'a str,
 ) -> [&'a [u8]; 4] {
     [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,
         &[1],
         document_type_name.as_bytes(),
@@ -83,7 +87,7 @@ pub(crate) fn contract_document_type_path_vec(
     document_type_name: &str,
 ) -> Vec<Vec<u8>> {
     vec![
-        vec![RootTree::ContractDocuments as u8],
+        vec![RootTree::DataContractDocuments as u8],
         contract_id.to_vec(),
         vec![1u8],
         document_type_name.as_bytes().to_vec(),
@@ -97,9 +101,9 @@ pub(crate) fn contract_documents_primary_key_path<'a>(
     document_type_name: &'a str,
 ) -> [&'a [u8]; 5] {
     [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments), // 1
-        contract_id,                                         // 32
-        &[1],                                                // 1
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments), // 1
+        contract_id,                                             // 32
+        &[1],                                                    // 1
         document_type_name.as_bytes(),
         &[0], // 1
     ]
@@ -113,7 +117,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     document_id: &'a [u8],
 ) -> [&'a [u8]; 6] {
     [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,
         &[1],
         document_type_name.as_bytes(),
@@ -126,11 +130,11 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
 /// Returns the path to a contract document when the document id isn't known.
 fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
     contract_id: &[u8],
-    document_type: &DocumentTypeRef,
+    document_type: DocumentTypeRef,
 ) -> KeyInfoPath {
     let mut key_info_path = KeyInfoPath::from_known_path(contract_documents_primary_key_path(
         contract_id,
-        document_type.name.as_str(),
+        document_type.name().as_str(),
     ));
     key_info_path.push(KeyInfo::MaxKeySize {
         unique_id: document_type.unique_id_for_storage().to_vec(),
@@ -161,7 +165,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
-    document_type: &DocumentTypeRef,
+    document_type: DocumentTypeRef,
     storage_flags: Option<&StorageFlags>,
 ) -> Element {
     // we need to construct the reference from the split height of the contract document
@@ -169,9 +173,9 @@ fn make_document_reference(
     // 0 represents document storage
     // Then we add document id
     // Then we add 0 if the document type keys history
-    let mut reference_path = vec![vec![0], document.id.to_vec()];
+    let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
-    if document_type.documents_keep_history {
+    if document_type.documents_keep_history() {
         reference_path.push(vec![0]);
         max_reference_hops += 1;
     }
@@ -194,7 +198,7 @@ fn make_document_reference(
 
 #[cfg(feature = "full")]
 /// size of a document reference.
-fn document_reference_size(document_type: &DocumentTypeRef) -> u32 {
+fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // we need to construct the reference from the split height of the contract document
     // type which is at 4
     // 0 represents document storage
@@ -203,7 +207,7 @@ fn document_reference_size(document_type: &DocumentTypeRef) -> u32 {
     // vec![vec![0], Vec::from(document.id)];
     // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
     let mut reference_path_size = 36;
-    if document_type.documents_keep_history {
+    if document_type.documents_keep_history() {
         reference_path_size += 2;
     }
 
@@ -246,7 +250,7 @@ pub(crate) mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let dashpay_path = if mutable_contact_requests {
@@ -256,8 +260,8 @@ pub(crate) mod tests {
         };
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay =
-            json_document_to_contract(dashpay_path).expect("expected to get cbor document");
+        let dashpay = json_document_to_contract(dashpay_path, platform_version)
+            .expect("expected to get cbor document");
         drive
             .apply_contract(
                 &dashpay,

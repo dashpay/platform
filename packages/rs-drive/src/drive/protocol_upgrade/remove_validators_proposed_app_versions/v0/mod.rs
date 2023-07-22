@@ -4,6 +4,7 @@ use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
 use std::collections::BTreeMap;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versions_counter_path};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
@@ -68,6 +69,7 @@ impl Drive {
                 transaction,
                 grove_db_operations,
                 &mut vec![],
+                drive_version,
             )?;
         }
         Ok(inserted)

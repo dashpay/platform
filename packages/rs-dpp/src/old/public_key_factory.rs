@@ -96,7 +96,7 @@ impl IdentityPublicKey {
         let security_level = SecurityLevel::try_from(security_level).unwrap();
         let key_type = KeyType::try_from(key_type).unwrap();
         let read_only = false;
-        let data = BinaryData::new(key_type.random_public_key_data(rng));
+        let data = BinaryData::new(key_type.random_public_key_data(rng, platform_version)?);
         Ok(IdentityPublicKey {
             id,
             key_type,

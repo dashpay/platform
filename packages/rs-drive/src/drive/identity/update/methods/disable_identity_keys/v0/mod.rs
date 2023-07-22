@@ -11,10 +11,14 @@ use crate::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
 };
 use dpp::fee::fee_result::FeeResult;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
@@ -43,7 +47,7 @@ impl Drive {
             disable_at,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            &platform_version.drive,
+            platform_version,
         )?;
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -75,9 +79,11 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations = vec![];
+
+        let drive_version = &platform_version.drive;
 
         let key_ids_len = key_ids.len();
 
@@ -88,11 +94,17 @@ impl Drive {
             Self::add_estimation_costs_for_keys_for_identity_id(
                 identity_id,
                 estimated_costs_only_with_layer_info,
-            );
+                drive_version,
+            )?;
             key_ids
                 .into_iter()
-                .map(|key_id| (key_id, IdentityPublicKey::max_possible_size_key(key_id)))
-                .collect()
+                .map(|key_id| {
+                    Ok((
+                        key_id,
+                        IdentityPublicKey::max_possible_size_key(key_id, platform_version)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ProtocolError>>()?
         } else {
             let key_request = IdentityKeysRequest {
                 identity_id,
@@ -105,7 +117,7 @@ impl Drive {
                 key_request,
                 transaction,
                 &mut drive_operations,
-                drive_version,
+                platform_version,
             )?
         };
 
@@ -121,7 +133,7 @@ impl Drive {
         for (_, mut key) in keys {
             key.set_disabled_at(disable_at);
 
-            let key_id_bytes = key.id.encode_var_vec();
+            let key_id_bytes = key.id().encode_var_vec();
 
             self.replace_key_in_storage_operations(
                 identity_id.as_slice(),

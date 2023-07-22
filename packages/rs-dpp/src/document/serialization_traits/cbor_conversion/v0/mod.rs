@@ -2,6 +2,7 @@ use crate::data_contract::errors::StructureError;
 use crate::document::v0::cbor_conversion::DocumentForCbor;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use std::collections::BTreeMap;
@@ -13,6 +14,7 @@ pub trait DocumentCborMethodsV0 {
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;

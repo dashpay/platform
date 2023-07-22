@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::identity::IdentityPublicKey;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let storage_flags = StorageFlags::SingleEpoch(epoch.index);
@@ -38,6 +40,7 @@ impl Drive {
             transaction,
             &mut None,
             &mut batch_operations,
+            &platform_version.drive,
         )?;
 
         let identity_contract_root_path =
@@ -54,6 +57,7 @@ impl Drive {
                 transaction,
                 &mut None,
                 &mut batch_operations,
+                &platform_version.drive,
             )?;
             match contract_info {
                 DataContractApplyInfo::Keys(keys) => {
@@ -64,6 +68,7 @@ impl Drive {
                         false,
                         estimated_costs_only_with_layer_info,
                         transaction,
+                        platform_version,
                     )?;
                 }
             }

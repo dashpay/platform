@@ -6,7 +6,7 @@ use grovedb::Element;
 
 impl Drive {
     /// We can set an identities negative credit balance
-    pub fn update_identity_negative_credit_operation_v0(
+    pub(in crate::drive::identity::update) fn update_identity_negative_credit_operation_v0(
         &self,
         identity_id: [u8; 32],
         negative_credit: Credits,

@@ -4,6 +4,7 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::document::Document;
+use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
 
 impl<'a> DriveQuery<'a> {
@@ -25,16 +26,17 @@ impl<'a> DriveQuery<'a> {
     pub(super) fn verify_proof_keep_serialized_v0(
         &self,
         proof: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
         let path_query = if let Some(start_at) = &self.start_at {
             let (_, start_document) =
-                self.verify_start_at_document_in_proof(proof, true, *start_at)?;
+                self.verify_start_at_document_in_proof(proof, true, *start_at, platform_version)?;
             let document = start_document.ok_or(Error::Proof(ProofError::IncompleteProof(
                 "expected start at document to be present in proof",
             )))?;
-            self.construct_path_query(Some(document))
+            self.construct_path_query(Some(document), platform_version)
         } else {
-            self.construct_path_query(None)
+            self.construct_path_query(None, platform_version)
         }?;
         let (root_hash, proved_key_values) = if self.start_at.is_some() {
             GroveDb::verify_subset_query(proof, &path_query)?

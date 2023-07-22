@@ -20,6 +20,9 @@ use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -48,15 +51,15 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
         let document_type = document_and_contract_info.document_type;
-        let storage_flags = if document_type.documents_mutable() || contract.config().can_be_deleted
-        {
-            document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_storage_flags_ref()
-        } else {
-            None //there are no need for storage flags if documents are not mutable and contract can not be deleted
-        };
+        let storage_flags =
+            if document_type.documents_mutable() || contract.config().can_be_deleted() {
+                document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .get_storage_flags_ref()
+            } else {
+                None //there are no need for storage flags if documents are not mutable and contract can not be deleted
+            };
 
         // dbg!(&estimated_costs_only_with_layer_info);
 
@@ -67,7 +70,7 @@ impl Drive {
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id().as_bytes(),
-            document_and_contract_info.document_type.name.as_str(),
+            document_and_contract_info.document_type.name().as_str(),
         );
 
         let sub_level_index_count = index_level.sub_index_levels.len() as u32;
@@ -118,6 +121,7 @@ impl Drive {
                     document_type,
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
+                    platform_version,
                 )?
                 .unwrap_or_default();
 
@@ -190,7 +194,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(())

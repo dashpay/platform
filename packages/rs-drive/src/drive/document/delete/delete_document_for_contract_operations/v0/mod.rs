@@ -41,6 +41,8 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
@@ -52,7 +54,7 @@ impl Drive {
         &self,
         document_id: [u8; 32],
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -62,13 +64,13 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        if !document_type.documents_mutable {
+        if !document_type.documents_mutable() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type is not mutable and can not be deleted",
             )));
         }
 
-        if document_type.documents_keep_history {
+        if document_type.documents_keep_history() {
             return Err(Error::Drive(
                 DriveError::InvalidDeletionOfDocumentThatKeepsHistory(
                     "this document type keeps history and therefore can not be deleted",
@@ -82,8 +84,8 @@ impl Drive {
         //  *DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
         let contract_documents_primary_key_path = contract_documents_primary_key_path(
-            contract.id().as_bytes(),
-            document_type.name.as_str(),
+            contract.id_ref().as_bytes(),
+            document_type.name().as_str(),
         );
 
         let direct_query_type = if let Some(estimated_costs_only_with_layer_info) =
@@ -96,7 +98,9 @@ impl Drive {
             )?;
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums: false,
-                query_target: QueryTargetValue(document_type.estimated_size() as u32),
+                query_target: QueryTargetValue(
+                    document_type.estimated_size(platform_version)? as u32
+                ),
             }
         } else {
             DirectQueryType::StatefulDirectQuery
@@ -141,7 +145,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
-            &platform_version.drive,
+            platform_version,
         )?;
 
         let document_and_contract_info = DocumentAndContractInfo {
@@ -159,7 +163,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             &mut batch_operations,
-            &platform_version.drive,
+            platform_version,
         )?;
         Ok(batch_operations)
     }

@@ -29,34 +29,36 @@ mod tests {
     use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::Identity;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     #[test]
     fn should_prove_a_single_identity_id() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::latest();
-        let identity = Identity::random_identity(
-            Some(
-                platform_version
-                    .dpp
-                    .identity_versions
-                    .identity_structure_version,
-            ),
-            3,
-            Some(14),
-        );
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
 
-        let identity_id = identity.id.to_buffer();
+        let identity_id = identity.id().to_buffer();
         drive
-            .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
             .expect("expected to add an identity");
 
         let first_key_hash = identity
-            .public_keys
+            .public_keys()
             .values()
-            .find(|public_key| public_key.key_type.is_unique_key_type())
+            .find(|public_key| public_key.key_type().is_unique_key_type())
             .expect("expected a unique key")
             .hash()
             .expect("expected to hash data")
@@ -64,12 +66,20 @@ mod tests {
             .expect("expected to be 20 bytes");
 
         let proof = drive
-            .prove_identity_id_by_unique_public_key_hash_v0(first_key_hash, None, &drive_version)
+            .prove_identity_id_by_unique_public_key_hash_v0(
+                first_key_hash,
+                None,
+                &platform_version.drive,
+            )
             .expect("should not error when proving an identity");
 
-        let (_, proved_identity_id) =
-            Drive::verify_identity_id_by_public_key_hash(proof.as_slice(), false, first_key_hash)
-                .expect("expect that this be verified");
+        let (_, proved_identity_id) = Drive::verify_identity_id_by_public_key_hash(
+            proof.as_slice(),
+            false,
+            first_key_hash,
+            platform_version,
+        )
+        .expect("expect that this be verified");
 
         assert_eq!(proved_identity_id, Some(identity_id));
     }

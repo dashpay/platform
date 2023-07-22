@@ -1,6 +1,8 @@
 mod accessors;
 mod conversion;
 mod methods;
+#[cfg(feature = "random-public-keys")]
+mod random;
 
 use std::convert::{TryFrom, TryInto};
 

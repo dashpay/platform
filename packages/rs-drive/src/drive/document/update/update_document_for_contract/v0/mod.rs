@@ -21,7 +21,7 @@ impl Drive {
         &self,
         document: &Document,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,

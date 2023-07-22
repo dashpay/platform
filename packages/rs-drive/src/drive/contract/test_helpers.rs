@@ -1,8 +1,10 @@
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::flags::StorageFlags;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;
@@ -13,7 +15,7 @@ use std::borrow::Cow;
 /// Adds operations to the op batch relevant to initializing the contract's structure.
 /// Namely it inserts an empty tree at the contract's root path.
 pub fn add_init_contracts_structure_operations(batch: &mut GroveDbOpBatch) {
-    batch.add_insert_empty_tree(vec![], vec![RootTree::ContractDocuments as u8]);
+    batch.add_insert_empty_tree(vec![], vec![RootTree::DataContractDocuments as u8]);
 }
 
 impl Drive {
@@ -30,8 +32,11 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
-        let contract =
-            DataContract::from_cbor_with_id(contract_cbor, contract_id.map(Identifier::from))?;
+        let contract = DataContract::from_cbor_with_id(
+            contract_cbor,
+            contract_id.map(Identifier::from),
+            platform_version,
+        )?;
 
         self.apply_contract(
             &contract,

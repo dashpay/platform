@@ -21,10 +21,10 @@ use std::convert::TryFrom;
 /// There are additional work and storage required to process refunds
 /// To protect system from the spam and unnecessary work
 /// a dust refund limit is used
-const MIN_REFUND_LIMIT_BYTES: u64 = 32;
+const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 
 /// Credits per Epoch by Identifier
-pub type CreditsPerEpochByIdentifier = BTreeMap<Identifier, CreditsPerEpoch>;
+pub type CreditsPerEpochByIdentifier = BTreeMap<[u8; 32], CreditsPerEpoch>;
 
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
@@ -32,10 +32,14 @@ pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
-    pub fn from_storage_removal(
-        storage_removal: CreditsPerEpochByIdentifier,
+    pub fn from_storage_removal<I, C>(
+        storage_removal: I,
         current_epoch_index: EpochIndex,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, ProtocolError>
+    where
+        I: IntoIterator<Item = ([u8; 32], C)>,
+        C: IntoIterator<Item = (u64, u32)>,
+    {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
             .map(|(identifier, bytes_per_epochs)| {
@@ -95,12 +99,12 @@ impl FeeRefunds {
     }
 
     /// Passthrough method for get
-    pub fn get(&self, key: &Identifier) -> Option<&CreditsPerEpoch> {
+    pub fn get(&self, key: &[u8; 32]) -> Option<&CreditsPerEpoch> {
         self.0.get(key)
     }
 
     /// Passthrough method for iteration
-    pub fn iter(&self) -> Iter<Identifier, CreditsPerEpoch> {
+    pub fn iter(&self) -> Iter<[u8; 32], CreditsPerEpoch> {
         self.0.iter()
     }
 
@@ -133,10 +137,10 @@ impl FeeRefunds {
                 }
 
                 let credits = self
-                    .calculate_refunds_amount_for_identity(identifier)
+                    .calculate_refunds_amount_for_identity(identifier.into())
                     .unwrap();
 
-                Some((identifier, credits))
+                Some((identifier.into(), credits))
             })
             .collect()
     }
@@ -146,7 +150,7 @@ impl FeeRefunds {
         &self,
         identity_id: Identifier,
     ) -> Option<Credits> {
-        let Some(credits_per_epoch) = self.get(&identity_id) else {
+        let Some(credits_per_epoch) = self.get(identity_id.as_bytes()) else {
             return None;
         };
 
@@ -160,8 +164,8 @@ impl FeeRefunds {
 }
 
 impl IntoIterator for FeeRefunds {
-    type Item = (Identifier, CreditsPerEpoch);
-    type IntoIter = std::collections::btree_map::IntoIter<Identifier, CreditsPerEpoch>;
+    type Item = ([u8; 32], CreditsPerEpoch);
+    type IntoIter = std::collections::btree_map::IntoIter<[u8; 32], CreditsPerEpoch>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

@@ -93,7 +93,7 @@ impl DocumentMethodsV0 for Document {
     fn get_raw_for_document_type<'a>(
         &'a self,
         key_path: &str,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
@@ -124,7 +124,7 @@ impl DocumentMethodsV0 for Document {
     fn hash(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {

@@ -10,5 +10,5 @@ pub struct DocumentAndContractInfo<'a> {
     ///DataContract
     pub contract: &'a DataContract,
     /// Document type
-    pub document_type: &'a DocumentTypeRef<'a>,
+    pub document_type: DocumentTypeRef<'a>,
 }

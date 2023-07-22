@@ -1,7 +1,7 @@
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::document_type::{DocumentTypeRef, Index, IndexProperty};
+    use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef, Index, IndexProperty};
     use dpp::platform_value::Identifier;
     use dpp::util::cbor_serializer;
     use serde_json::json;
@@ -9,10 +9,15 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::DataContract;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
 
-    fn construct_indexed_document_type() -> DocumentTypeRef {
-        DocumentTypeRef::new(
+    fn construct_indexed_document_type() -> DocumentType {
+        let platform_version = PlatformVersion::latest();
+        DocumentTypeV0::new(
             Identifier::default(),
             "a".to_string(),
             vec![
@@ -69,13 +74,21 @@ mod tests {
             Default::default(),
             false,
             false,
+            &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions,
         )
+        .expect("expected to create a document type V0")
+        .into()
     }
 
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = DataContract::default();
+        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+
+        let platform_version = PlatformVersion::latest();
 
         let query_value = json!({
             "where": [
@@ -88,12 +101,14 @@ mod tests {
         let query = DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            &document_type,
+            document_type.as_ref(),
             &DriveConfig::default(),
         )
         .expect("query should be valid");
-        let index = query.find_best_index().expect("expected to find index");
-        assert_eq!(index, document_type.indices.get(2).unwrap());
+        let index = query
+            .find_best_index(platform_version)
+            .expect("expected to find index");
+        assert_eq!(index, document_type.indices().get(2).unwrap());
 
         let query_value = json!({
             "where": [
@@ -105,18 +120,22 @@ mod tests {
         let query = DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            &document_type,
+            document_type.as_ref(),
             &DriveConfig::default(),
         )
         .expect("query should be valid");
-        let index = query.find_best_index().expect("expected to find index");
-        assert_eq!(index, document_type.indices.get(0).unwrap());
+        let index = query
+            .find_best_index(platform_version)
+            .expect("expected to find index");
+        assert_eq!(index, document_type.indices().get(0).unwrap());
     }
 
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = DataContract::default();
+        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+
+        let platform_version = PlatformVersion::latest();
 
         let query_value = json!({
             "where": [
@@ -128,12 +147,12 @@ mod tests {
         let query = DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            &document_type,
+            document_type.as_ref(),
             &DriveConfig::default(),
         )
         .expect("query should be valid");
         let error = query
-            .find_best_index()
+            .find_best_index(platform_version)
             .expect_err("expected to not find index");
         assert!(
             matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")

@@ -7,5 +7,4 @@ mod apply_balance_change_from_fee_to_identity;
 mod disable_identity_keys;
 mod re_enable_identity_keys;
 mod remove_from_identity_balance;
-mod update_identity_negative_credit;
 mod update_identity_revision;

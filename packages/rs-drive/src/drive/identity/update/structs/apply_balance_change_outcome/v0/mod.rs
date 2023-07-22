@@ -1,7 +1,8 @@
 use dpp::fee::fee_result::FeeResult;
 
 /// The outcome of paying for a fee
-pub(in crate::drive::identity::update) struct ApplyBalanceChangeOutcomeV0 {
+#[derive(Debug)]
+pub struct ApplyBalanceChangeOutcomeV0 {
     /// The actual fee paid by the identity
     pub actual_fee_paid: FeeResult,
 }

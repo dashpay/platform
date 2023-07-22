@@ -108,7 +108,7 @@ pub fn setup_document(
     drive: &Drive,
     document: &Document,
     data_contract: &DataContract,
-    document_type: &DocumentTypeRef,
+    document_type: DocumentTypeRef,
     transaction: TransactionArg,
 ) {
     let platform_version = PlatformVersion::latest();

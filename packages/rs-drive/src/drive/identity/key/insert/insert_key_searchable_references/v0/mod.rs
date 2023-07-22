@@ -9,6 +9,7 @@ use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -29,8 +30,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let purpose = identity_key.purpose;
-        let security_level = identity_key.security_level;
+        let purpose = identity_key.purpose();
+        let security_level = identity_key.security_level();
         let purpose_vec = vec![purpose as u8];
         let security_level_vec = vec![security_level as u8];
 

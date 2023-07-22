@@ -63,7 +63,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
         let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations, platform_version)? else {
-            return Err(Error::Document(DocumentError::ContractNotFound))
+            return Err(Error::Document(DocumentError::DataContractNotFound))
         };
 
         let contract = &contract_fetch_info.contract;
@@ -71,7 +71,7 @@ impl Drive {
         self.delete_document_for_contract_operations(
             document_id,
             contract,
-            &document_type,
+            document_type,
             previous_batch_operations,
             estimated_costs_only_with_layer_info,
             transaction,

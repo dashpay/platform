@@ -12,6 +12,7 @@ use grovedb::element::MaxReferenceHop;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::{batch::GroveDbOp, Element, ElementFlags};
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::fee::get_overflow_error;
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;

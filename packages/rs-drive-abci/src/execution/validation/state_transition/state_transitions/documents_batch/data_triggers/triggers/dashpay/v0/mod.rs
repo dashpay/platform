@@ -143,7 +143,7 @@ mod test {
     use dpp::platform_value;
     use dpp::platform_value::platform_value;
     use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, identity_fixture};
+    use dpp::tests::fixtures::{get_contact_request_extended_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, identity_fixture};
     use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -161,7 +161,8 @@ mod test {
             config: &platform.config,
         };
 
-        let mut contact_request_document = get_contact_request_document_fixture(None, None);
+        let mut contact_request_document =
+            get_contact_request_extended_document_fixture(None, None);
         contact_request_document
             .set(
                 super::property_names::CORE_HEIGHT_CREATED_AT,
@@ -232,7 +233,8 @@ mod test {
             config: &platform.config,
         };
 
-        let mut contact_request_document = get_contact_request_document_fixture(None, None);
+        let mut contact_request_document =
+            get_contact_request_extended_document_fixture(None, None);
         let owner_id = contact_request_document.owner_id();
         contact_request_document
             .set("toUserId", platform_value::to_value(owner_id).unwrap())
@@ -313,7 +315,7 @@ mod test {
             config: &platform.config,
         };
 
-        let contact_request_document = get_contact_request_document_fixture(None, None);
+        let contact_request_document = get_contact_request_extended_document_fixture(None, None);
         let data_contract = get_dashpay_contract_fixture(None);
         let owner_id = contact_request_document.owner_id();
         let contract_request_to_user_id = contact_request_document

@@ -1,7 +1,6 @@
-use crate::identity::identity_public_key::public_key_factory::KeyCount;
 use crate::identity::v0::IdentityV0;
-use crate::identity::{Identity, IdentityPublicKey};
-use crate::version::FeatureVersion;
+use crate::identity::{Identity, IdentityPublicKey, KeyCount};
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use rand::prelude::StdRng;
 use std::iter::FromIterator;
@@ -23,14 +22,21 @@ impl Identity {
     ///
     /// This function will panic if an unsupported version is provided.
     pub fn random_identity_with_rng(
-        version: Option<FeatureVersion>,
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> Self {
-        let version = version.unwrap_or(Self::latest_version());
-        match version {
-            0 => IdentityV0::random_identity_with_rng(key_count, rng).into(),
-            _ => panic!(),
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(IdentityV0::random_identity_with_rng(key_count, rng, platform_version)?.into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::random_identity_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -54,19 +60,31 @@ impl Identity {
     ///
     /// This function may return a `ProtocolError` if an error occurs during identity generation.
     pub fn random_identity_with_main_keys_with_private_key<I>(
-        version: Option<u16>,
         key_count: KeyCount,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> Result<(Self, I), ProtocolError>
     where
         I: Default
             + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {
-        let version = version.unwrap_or(Self::latest_version());
-        match version {
-            0 => IdentityV0::random_identity_with_main_keys_with_private_key(key_count, rng).into(),
-            _ => panic!(),
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => IdentityV0::random_identity_with_main_keys_with_private_key(
+                key_count,
+                rng,
+                platform_version,
+            )
+            .map(|(a, b)| (a.into(), b)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::random_identity_with_main_keys_with_private_key".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -85,11 +103,22 @@ impl Identity {
     /// # Panics
     ///
     /// This function will panic if an unsupported version is provided.
-    pub fn random_identity(version: Option<u16>, key_count: KeyCount, seed: Option<u64>) -> Self {
-        let version = version.unwrap_or(Self::latest_version());
-        match version {
-            0 => IdentityV0::random_identity(key_count, seed).into(),
-            _ => panic!(),
+    pub fn random_identity(
+        key_count: KeyCount,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(IdentityV0::random_identity(key_count, seed, platform_version)?.into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::random_identity".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -110,15 +139,27 @@ impl Identity {
     ///
     /// This function will panic if an unsupported version is provided.
     pub fn random_identities(
-        version: Option<u16>,
         count: u16,
         key_count: KeyCount,
         seed: Option<u64>,
-    ) -> Vec<Self> {
-        let version = version.unwrap_or(Self::latest_version());
-        match version {
-            0 => IdentityV0::random_identities(count, key_count, seed).into(),
-            _ => panic!(),
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Self>, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(
+                IdentityV0::random_identities(count, key_count, seed, platform_version)?
+                    .into_iter()
+                    .map(|identity| identity.into())
+                    .collect(),
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::random_identities".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -138,15 +179,30 @@ impl Identity {
     ///
     /// This function will panic if an unsupported version is provided.
     pub fn random_identities_with_rng(
-        version: Option<u16>,
         count: u16,
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> Vec<Self> {
-        let version = version.unwrap_or(Self::latest_version());
-        match version {
-            0 => IdentityV0::random_identities_with_rng(count, key_count, rng).into(),
-            _ => panic!(),
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Self>, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(IdentityV0::random_identities_with_rng(
+                count,
+                key_count,
+                rng,
+                platform_version,
+            )?
+            .into_iter()
+            .map(|identity| identity.into())
+            .collect()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::random_identities_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 
@@ -171,21 +227,41 @@ impl Identity {
     ///
     /// This function may return a `ProtocolError` if an error occurs during identity generation.
     pub fn random_identities_with_private_keys_with_rng<I>(
-        version: Option<u16>,
         count: u16,
         key_count: KeyCount,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> Result<(Vec<Self>, I), ProtocolError>
     where
         I: Default
             + FromIterator<(IdentityPublicKey, Vec<u8>)>
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {
-        let version = version.unwrap_or(Self::latest_version());
-        match version {
-            0 => IdentityV0::random_identities_with_private_keys_with_rng(count, key_count, rng)
-                .into(),
-            _ => panic!(),
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => IdentityV0::random_identities_with_private_keys_with_rng(
+                count,
+                key_count,
+                rng,
+                platform_version,
+            )
+            .map(|(identities, keys)| {
+                (
+                    identities
+                        .into_iter()
+                        .map(|identity| identity.into())
+                        .collect(),
+                    keys,
+                )
+            }),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::random_identities_with_private_keys_with_rng".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 }

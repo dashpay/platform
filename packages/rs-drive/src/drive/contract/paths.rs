@@ -23,23 +23,23 @@ pub trait DataContractPaths {
 impl DataContractPaths for DataContract {
     fn root_path(&self) -> [&[u8]; 2] {
         [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
+            Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+            self.id_ref().as_bytes(),
         ]
     }
 
     fn documents_path(&self) -> [&[u8]; 3] {
         [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
+            Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+            self.id_ref().as_bytes(),
             &[1],
         ]
     }
 
     fn document_type_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 4] {
         [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
+            Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+            self.id_ref().as_bytes(),
             &[1],
             document_type_name.as_bytes(),
         ]
@@ -47,8 +47,8 @@ impl DataContractPaths for DataContract {
 
     fn documents_primary_key_path<'a>(&'a self, document_type_name: &'a str) -> [&'a [u8]; 5] {
         [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
+            Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+            self.id_ref().as_bytes(),
             &[1],
             document_type_name.as_bytes(),
             &[0],
@@ -61,8 +61,8 @@ impl DataContractPaths for DataContract {
         id: &'a [u8],
     ) -> [&'a [u8]; 6] {
         [
-            Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
-            self.id.as_bytes(),
+            Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
+            self.id_ref().as_bytes(),
             &[1],
             document_type_name.as_bytes(),
             &[0],
@@ -73,13 +73,13 @@ impl DataContractPaths for DataContract {
 
 /// The global root path for all contracts
 pub(crate) fn all_contracts_global_root_path() -> [&'static [u8]; 1] {
-    [Into::<&[u8; 1]>::into(RootTree::ContractDocuments)]
+    [Into::<&[u8; 1]>::into(RootTree::DataContractDocuments)]
 }
 
 /// Takes a contract ID and returns the contract's root path.
 pub(crate) fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
     [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,
     ]
 }
@@ -87,7 +87,7 @@ pub(crate) fn contract_root_path(contract_id: &[u8]) -> [&[u8]; 2] {
 /// Takes a contract ID and returns the contract's root path.
 pub(crate) fn contract_root_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
         contract_id.to_vec(),
     ]
 }
@@ -95,7 +95,7 @@ pub(crate) fn contract_root_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
 /// Takes a contract ID and returns the contract's storage path (where it is stored).
 pub(crate) fn contract_storage_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
         contract_id.to_vec(),
         vec![0],
     ]
@@ -104,7 +104,7 @@ pub(crate) fn contract_storage_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
 /// Takes a contract ID and returns the contract's storage history path.
 pub(crate) fn contract_keeping_history_storage_path_vec(contract_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
         contract_id.to_vec(),
         vec![0],
     ]
@@ -113,7 +113,7 @@ pub(crate) fn contract_keeping_history_storage_path_vec(contract_id: &[u8]) -> V
 /// Takes a contract ID and returns the contract's storage history path.
 pub(crate) fn contract_keeping_history_storage_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,
         &[0],
     ]
@@ -126,7 +126,7 @@ pub(crate) fn contract_keeping_history_storage_time_reference_path(
     encoded_time: Vec<u8>,
 ) -> Vec<Vec<u8>> {
     vec![
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec(),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec(),
         contract_id.to_vec(),
         vec![0],
         encoded_time,

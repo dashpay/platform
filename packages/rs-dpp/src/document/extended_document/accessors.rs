@@ -42,7 +42,7 @@ impl ExtendedDocument {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if the document type is not found in the data contract.
-    pub fn document_type(&self) -> Result<&DocumentTypeRef, ProtocolError> {
+    pub fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.document_type(),
         }

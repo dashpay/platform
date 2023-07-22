@@ -14,6 +14,7 @@ use crate::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use crate::document::v0::DocumentV0;
+use crate::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
@@ -120,6 +121,7 @@ impl DocumentCborMethodsV0 for DocumentV0 {
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,

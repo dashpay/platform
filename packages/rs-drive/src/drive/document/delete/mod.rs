@@ -154,8 +154,10 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::Document;
+    use dpp::document::serialization_traits::{
+        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+    };
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::util::cbor_serializer;
@@ -187,7 +189,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -202,7 +204,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -282,7 +284,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get document");
@@ -297,7 +299,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -383,16 +385,16 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
 
         let serialized = person_document0
-            .serialize(&document_type, platform_version)
+            .serialize(document_type, platform_version)
             .expect("expected to serialize");
-        let _deserialized =
-            Document::from_bytes(&serialized, &document_type).expect("expected to deserialize");
+        let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
+            .expect("expected to deserialize");
     }
 
     #[test]
@@ -423,7 +425,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -438,7 +440,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -457,7 +459,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person1.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -472,7 +474,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -604,7 +606,7 @@ mod tests {
         let person_document0 = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -619,7 +621,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -634,7 +636,7 @@ mod tests {
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person2-no-middle-name.json",
             Some(random_owner_id0.into()),
-            &document_type,
+            document_type,
             &platform_version,
         )
         .expect("expected to get document");
@@ -649,7 +651,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -717,7 +719,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -799,7 +801,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -815,7 +817,7 @@ mod tests {
                         owner_id: Some(random_owner_id),
                     },
                     contract: &dashpay,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -873,7 +875,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -891,7 +893,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -973,7 +975,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            &document_type,
+            document_type,
             platform_version,
         )
         .expect("expected to get cbor document");
@@ -991,7 +993,7 @@ mod tests {
                         owner_id: None,
                     },
                     contract: &contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::default(),
@@ -1070,11 +1072,12 @@ mod tests {
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let mut document = Document::from_cbor(&serialized_document, None, None)
-                    .expect("expected to deserialize the document");
+                let mut document =
+                    Document::from_cbor(&serialized_document, None, None, platform_version)
+                        .expect("expected to deserialize the document");
 
                 // Not sure why original documents were missing created at
-                document.created_at = Some(5);
+                document.set_created_at(Some(5));
 
                 drive
                     .add_document_for_contract(
@@ -1084,7 +1087,7 @@ mod tests {
                                 owner_id: None,
                             },
                             contract: &contract,
-                            document_type: &document_type,
+                            document_type,
                         },
                         false,
                         BlockInfo::default(),
@@ -1118,7 +1121,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types.get("niceDocument").unwrap(),
+                contract.document_type_for_name("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 None,
@@ -1132,7 +1135,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                documents.get(0).unwrap().id.to_buffer(),
+                documents.get(0).unwrap().id().to_buffer(),
                 &contract,
                 "niceDocument",
                 BlockInfo::default(),
@@ -1154,7 +1157,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types.get("niceDocument").unwrap(),
+                contract.document_type_for_name("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 Some(&db_transaction),

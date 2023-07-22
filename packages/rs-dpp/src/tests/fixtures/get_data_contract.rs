@@ -5,13 +5,13 @@ use platform_value::platform_value;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::prelude::*;
 use crate::{
-    data_contract::DataContractFactory,
-    identifier,
-    tests::utils::generate_random_identifier_struct,
-    version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
+    data_contract::DataContractFactory, identifier, tests::utils::generate_random_identifier_struct,
 };
 
-pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
+pub fn get_data_contract_fixture(
+    owner_id: Option<Identifier>,
+    protocol_version: u32,
+) -> CreatedDataContract {
     let defs = platform_value!(
     {
         "lastName": {
@@ -279,9 +279,8 @@ pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataCon
         }
     });
 
-    let protocol_version_validator =
-        ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
-    let factory = DataContractFactory::new(1, 0, None);
+    let factory =
+        DataContractFactory::new(protocol_version, None).expect("expected to create a factory");
 
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 

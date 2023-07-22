@@ -1,5 +1,6 @@
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::{property_names, DocumentV0};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
@@ -66,7 +67,10 @@ impl DocumentPlatformValueMethodsV0 for DocumentV0 {
         Ok(self.to_map_value()?.into())
     }
 
-    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
+    fn from_platform_value(
+        document_value: Value,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;

@@ -112,10 +112,9 @@ impl Drive {
             )));
         }
 
-        drive_operations.push(self.update_identity_balance_operation(
+        drive_operations.push(self.update_identity_balance_operation_v0(
             identity_id,
             previous_balance - balance_to_remove,
-            &platform_version.drive,
         )?);
 
         Ok(drive_operations)

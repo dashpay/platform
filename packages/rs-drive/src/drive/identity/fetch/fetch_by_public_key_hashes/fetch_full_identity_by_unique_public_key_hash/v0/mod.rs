@@ -14,6 +14,7 @@ use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
 
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
@@ -25,14 +26,14 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_full_identity_by_unique_public_key_hash_operations_v0(
             public_key_hash,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -42,16 +43,16 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Identity>, Error> {
         let identity_id = self.fetch_identity_id_by_unique_public_key_hash_operations(
             public_key_hash,
             transaction,
             drive_operations,
-            drive_version,
+            platform_version,
         )?;
         if let Some(identity_id) = identity_id {
-            self.fetch_full_identity(identity_id, transaction, drive_version)
+            self.fetch_full_identity(identity_id, transaction, platform_version)
         } else {
             Ok(None)
         }

@@ -32,7 +32,9 @@ use crate::drive::grove_operations::BatchDeleteApplyType::{
 };
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, OwnedDocumentInfo, PathInfo,
+};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
@@ -43,6 +45,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes the terminal reference.
@@ -60,7 +63,7 @@ impl Drive {
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let mut key_info_path = index_path_info.convert_to_key_info_path();
 
@@ -98,6 +101,7 @@ impl Drive {
                 // we know we are not deleting a tree
                 Some((false, false)),
                 estimated_costs_only_with_layer_info,
+                platform_version,
             )?;
 
             // here we should return an error if the element already exists
@@ -113,7 +117,7 @@ impl Drive {
                 transaction,
                 previous_batch_operations,
                 batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         } else {
             let delete_apply_type = Self::stateless_delete_of_non_tree_for_costs(
@@ -126,6 +130,7 @@ impl Drive {
                 // we know we are not deleting a tree
                 Some((false, false)),
                 estimated_costs_only_with_layer_info,
+                platform_version,
             )?;
             // here we should return an error if the element already exists
             self.batch_delete_up_tree_while_empty(
@@ -136,7 +141,7 @@ impl Drive {
                 transaction,
                 previous_batch_operations,
                 batch_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
         Ok(())

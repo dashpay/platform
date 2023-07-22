@@ -16,6 +16,8 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document replace transition action would be unique in the state.
@@ -40,13 +42,14 @@ impl Drive {
     pub fn validate_document_replace_transition_action_uniqueness(
         &self,
         contract: &DataContract,
-        document_type: &DocumentTypeRef,
+        document_type: DocumentTypeRef,
         document_replace_transition: &DocumentReplaceTransitionAction,
-        owner_id: &Identifier,
+        owner_id: Identifier,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .document
             .index_uniqueness
@@ -58,7 +61,7 @@ impl Drive {
                 document_replace_transition,
                 owner_id,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_document_replace_transition_action_uniqueness".to_string(),

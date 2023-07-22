@@ -14,6 +14,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
+use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
@@ -49,13 +50,23 @@ impl Drive {
     pub(super) fn verify_full_identity_by_public_key_hash_v0(
         proof: &[u8],
         public_key_hash: [u8; 20],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
-        let (root_hash, identity_id) =
-            Self::verify_identity_id_by_public_key_hash(proof, true, public_key_hash)?;
+        let (root_hash, identity_id) = Self::verify_identity_id_by_public_key_hash(
+            proof,
+            true,
+            public_key_hash,
+            platform_version,
+        )?;
         let maybe_identity = identity_id
             .map(|identity_id| {
-                Self::verify_full_identity_by_identity_id(proof, true, identity_id)
-                    .map(|(_, maybe_identity)| maybe_identity)
+                Self::verify_full_identity_by_identity_id(
+                    proof,
+                    true,
+                    identity_id,
+                    platform_version,
+                )
+                .map(|(_, maybe_identity)| maybe_identity)
             })
             .transpose()?
             .flatten();

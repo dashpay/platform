@@ -4,6 +4,7 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -26,9 +27,10 @@ impl Drive {
         &self,
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -38,7 +40,7 @@ impl Drive {
             0 => self.fetch_identity_ids_by_unique_public_key_hashes_v0(
                 public_key_hashes,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_ids_by_unique_public_key_hashes".to_string(),
@@ -67,9 +69,10 @@ impl Drive {
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .fetch
@@ -80,7 +83,7 @@ impl Drive {
                 public_key_hashes,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_ids_by_unique_public_key_hashes_operations".to_string(),

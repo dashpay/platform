@@ -29,11 +29,11 @@ impl Drive {
                 next_version,
                 transaction,
             ),
-            version => Error::Drive(DriveError::UnknownVersionMismatch {
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "change_to_new_version_and_clear_version_information".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

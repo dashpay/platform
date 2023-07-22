@@ -13,7 +13,7 @@ use crate::{
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
-            get_documents_fixture_with_owner_id_from_contract,
+            get_extended_documents_fixture_with_owner_id_from_contract,
             get_protocol_version_validator_fixture,
         },
         utils::get_schema_error,
@@ -39,7 +39,7 @@ struct TestData {
 fn setup_test(action: Action) -> TestData {
     let data_contract = get_data_contract_fixture(None).data_contract;
     let documents =
-        get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+        get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
     let transitions = match action {
         Action::Create => get_document_transitions_fixture([(Action::Create, documents)]),
         Action::Replace => get_document_transitions_fixture([

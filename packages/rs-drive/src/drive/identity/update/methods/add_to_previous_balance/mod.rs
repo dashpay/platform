@@ -1,5 +1,6 @@
 mod v0;
 
+use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcome;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -7,6 +8,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -25,7 +27,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<AddToPreviousBalanceOutcome, Error>` - The outcome if successful, or an error.
-    pub fn add_to_previous_balance(
+    pub(in crate::drive::identity::update) fn add_to_previous_balance(
         &self,
         identity_id: [u8; 32],
         previous_balance: Credits,
@@ -33,9 +35,10 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<AddToPreviousBalanceOutcome, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .update
@@ -48,7 +51,7 @@ impl Drive {
                 apply,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_previous_balance".to_string(),

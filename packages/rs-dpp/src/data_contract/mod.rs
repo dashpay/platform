@@ -33,13 +33,13 @@ mod factory;
 pub use factory::*;
 mod data_contract_class_methods;
 pub use data_contract_class_methods::*;
-mod conversion;
+pub mod conversion;
 #[cfg(feature = "client")]
 mod data_contract_facade;
 mod data_contract_methods;
 mod serialized_version;
 pub use data_contract_methods::*;
-pub(crate) mod accessors;
+pub mod accessors;
 pub mod data_contract_config;
 
 pub use v0::*;
@@ -206,6 +206,12 @@ impl DataContract {
     pub fn id(&self) -> Identifier {
         match self {
             DataContract::V0(v0) => v0.id,
+        }
+    }
+
+    pub fn id_ref(&self) -> &Identifier {
+        match self {
+            DataContract::V0(v0) => &v0.id,
         }
     }
 

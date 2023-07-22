@@ -14,6 +14,7 @@ use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
 
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
@@ -25,14 +26,14 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<[u8; 32]>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_id_by_unique_public_key_hash_operations_v0(
             public_key_hash,
             transaction,
             &mut drive_operations,
-            drive_version,
+            platform_version,
         )
     }
 
@@ -42,7 +43,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<[u8; 32]>, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path();
         match self.grove_get_raw(
@@ -51,7 +52,7 @@ impl Drive {
             StatefulDirectQuery,
             transaction,
             drive_operations,
-            drive_version,
+            &platform_version.drive,
         ) {
             Ok(Some(Item(identity_id, _))) => identity_id
                 .as_slice()

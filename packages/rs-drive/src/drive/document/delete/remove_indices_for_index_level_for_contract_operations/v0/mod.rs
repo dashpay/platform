@@ -32,7 +32,9 @@ use crate::drive::grove_operations::BatchDeleteApplyType::{
 };
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
+use crate::drive::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, OwnedDocumentInfo, PathInfo,
+};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::drive::DriveError;
@@ -43,6 +45,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for an index level and recurses.
@@ -60,7 +63,7 @@ impl Drive {
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let sub_level_index_count = index_level.sub_index_levels.len() as u32;
 
@@ -92,7 +95,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
 
@@ -111,7 +114,7 @@ impl Drive {
                     document_type,
                     document_and_contract_info.owned_document_info.owner_id,
                     Some((sub_level, event_id)),
-                    drive_version,
+                    platform_version,
                 )?
                 .unwrap_or_default();
 
@@ -122,7 +125,7 @@ impl Drive {
                 let document_top_field_estimated_size = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type, drive_version)?;
+                    .get_estimated_size_for_document_type(name, document_type)?;
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
@@ -164,7 +167,7 @@ impl Drive {
                 event_id,
                 transaction,
                 batch_operations,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(())

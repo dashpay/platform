@@ -43,7 +43,6 @@ use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITI
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionExt};
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
@@ -102,6 +101,7 @@ pub(crate) fn validate_document_batch_transition_state(
                     document_transitions_by_document_type,
                     execution_context,
                     transaction,
+                    platform_version,
                 )
             },
         )
@@ -133,11 +133,12 @@ fn validate_document_transitions_within_contract(
     document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
     execution_context: &StateTransitionExecutionContext,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
     let drive = platform.drive;
     // Data Contract must exist
     let Some(contract_fetch_info) = drive
-            .get_contract_with_fetch_info_and_fee(data_contract_id.0 .0, None, false, transaction)?
+            .get_contract_with_fetch_info_and_fee(data_contract_id.0 .0, None, false, transaction, platform_version)?
             .1
         else {
             return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*data_contract_id)).into()));
@@ -192,7 +193,7 @@ fn validate_document_transitions_within_document_type(
         fetch_documents_for_transitions_knowing_contract_and_document_type(
             platform.drive,
             data_contract,
-            &document_type,
+            document_type,
             document_transitions,
             transaction,
         )?;
@@ -214,10 +215,10 @@ fn validate_document_transitions_within_document_type(
                     bypass_validation,
                     platform,
                     data_contract,
-                    &document_type,
+                    document_type,
                     transition,
                     &fetched_documents,
-                    &owner_id,
+                    owner_id,
                     transaction,
                 )
             })
@@ -250,10 +251,10 @@ fn validate_transition(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     contract: &DataContract,
-    document_type: &DocumentTypeRef,
+    document_type: DocumentTypeRef,
     transition: &DocumentTransition,
     fetched_documents: &[Document],
-    owner_id: &Identifier,
+    owner_id: Identifier,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
     let platform_version =
@@ -318,7 +319,7 @@ fn validate_transition(
                         &document_create_action,
                         owner_id,
                         transaction,
-                        &platform_version.drive,
+                        platform_version,
                     )?;
                 result.merge(validation_result);
             }

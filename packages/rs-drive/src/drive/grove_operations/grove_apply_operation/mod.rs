@@ -28,7 +28,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version.grove_methods.apply.grove_apply_operation {
-            0 => self.grove_apply_operation_v0(operation, validate, transaction),
+            0 => self.grove_apply_operation_v0(operation, validate, transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_apply_operation".to_string(),
                 known_versions: vec![0],

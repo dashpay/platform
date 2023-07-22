@@ -123,6 +123,7 @@ impl Drive {
 mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
     use grovedb::Element;
 
     use crate::{
@@ -133,6 +134,8 @@ mod tests {
     #[test]
     fn test_withdrawal_transaction_counter() {
         let drive = setup_drive_with_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -150,7 +153,13 @@ mod tests {
         drive.add_update_withdrawal_index_counter_operation(counter, &mut batch);
 
         drive
-            .apply_drive_operations(batch, true, &block_info, Some(&transaction))
+            .apply_drive_operations(
+                batch,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("to apply drive ops");
 
         let mut batch = vec![];
@@ -163,7 +172,13 @@ mod tests {
             .expect("to withdraw counter");
 
         drive
-            .apply_drive_operations(batch, true, &block_info, Some(&transaction))
+            .apply_drive_operations(
+                batch,
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("to apply drive ops");
 
         assert_eq!(stored_counter, counter);

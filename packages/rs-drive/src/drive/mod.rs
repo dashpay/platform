@@ -217,7 +217,7 @@ impl From<RootTree> for &'static [u8; 1] {
     fn from(root_tree: RootTree) -> Self {
         match root_tree {
             RootTree::Identities => &[32],
-            RootTree::ContractDocuments => &[64],
+            RootTree::DataContractDocuments => &[64],
             RootTree::UniquePublicKeyHashesToIdentities => &[24],
             RootTree::SpentAssetLockTransactions => &[72],
             RootTree::Pools => &[48],
@@ -289,7 +289,7 @@ pub(crate) fn non_unique_key_hashes_sub_tree_path_vec(public_key_hash: [u8; 20])
 #[cfg(feature = "full")]
 fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::ContractDocuments),
+        Into::<&[u8; 1]>::into(RootTree::DataContractDocuments),
         contract_id,
         &[1],
     ]

@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -30,7 +31,7 @@ impl Drive {
             drive_version,
         )?);
 
-        let key_id_bytes = identity_key.id.encode_var_vec();
+        let key_id_bytes = identity_key.id().encode_var_vec();
 
         self.insert_key_to_storage_operations(
             identity_id,
@@ -42,7 +43,7 @@ impl Drive {
 
         if with_references
             && matches!(
-                identity_key.purpose,
+                identity_key.purpose(),
                 Purpose::AUTHENTICATION | Purpose::WITHDRAW
             )
         {

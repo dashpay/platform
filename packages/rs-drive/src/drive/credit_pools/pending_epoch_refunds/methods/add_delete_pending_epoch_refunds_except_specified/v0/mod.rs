@@ -4,6 +4,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
@@ -55,8 +56,10 @@ impl Drive {
 #[cfg(test)]
 mod tests {
 
+    use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::drive::batch::GroveDbOpBatch;
     use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
+    use crate::drive::Drive;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;
@@ -78,8 +81,12 @@ mod tests {
 
         let mut batch = vec![];
 
-        add_update_pending_epoch_refunds_operations(&mut batch, initial_pending_refunds)
-            .expect("should update pending epoch updates");
+        Drive::add_update_pending_epoch_refunds_operations(
+            &mut batch,
+            initial_pending_refunds,
+            &platform_version.drive,
+        )
+        .expect("should update pending epoch updates");
 
         drive
             .apply_drive_operations(

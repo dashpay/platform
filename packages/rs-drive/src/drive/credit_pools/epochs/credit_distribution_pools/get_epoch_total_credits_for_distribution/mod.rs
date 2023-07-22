@@ -13,6 +13,7 @@ use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
 
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Gets the total credits to be distributed for the Epoch.
@@ -31,9 +32,10 @@ impl Drive {
         &self,
         epoch_tree: &Epoch,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .credit_pools
             .epochs
@@ -42,7 +44,7 @@ impl Drive {
             0 => self.get_epoch_total_credits_for_distribution_v0(
                 epoch_tree,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epoch_total_credits_for_distribution".to_string(),

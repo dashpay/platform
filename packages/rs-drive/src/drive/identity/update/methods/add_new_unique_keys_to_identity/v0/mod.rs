@@ -33,7 +33,7 @@ impl Drive {
             true,
             &mut estimated_costs_only_with_layer_info,
             transaction,
-            &platform_version.drive,
+            platform_version,
         )?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.apply_batch_low_level_drive_operations(

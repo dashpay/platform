@@ -542,7 +542,7 @@ mod update {
         data_contract.config.readonly = true;
         let first_revision_data_contract = data_contract.clone();
 
-        assert!(first_revision_data_contract.config.readonly);
+        assert!(first_revision_data_contract.config().readonly());
 
         state_repository_mock
             .expect_fetch_data_contract()
@@ -571,7 +571,7 @@ mod update {
             .set_document_schema("niceDocument".into(), updated_document)
             .expect("to be able to set document schema");
 
-        assert!(data_contract.config.readonly);
+        assert!(data_contract.config().readonly());
 
         let state_transition = DataContractUpdateTransition {
             protocol_version: LATEST_VERSION,
