@@ -136,10 +136,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 calculate_total_credits_balance: 0,
             },
             document: DriveDocumentMethodVersions {
-                query: DriveDocumentQueryMethodVersions {
-                    query_documents: 0,
-                    query_serialized_documents: 0,
-                },
+                query: DriveDocumentQueryMethodVersions { query_documents: 0 },
                 delete: DriveDocumentDeleteMethodVersions {
                     add_estimation_costs_for_remove_document_to_primary_storage: 0,
                     delete_document_for_contract: 0,
