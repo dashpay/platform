@@ -39,7 +39,7 @@ impl Drive {
             .for_purpose_in_key_reference_tree
         {
             0 => Ok(
-                Self.add_estimation_costs_for_purpose_in_key_reference_tree_v0(
+                Self::add_estimation_costs_for_purpose_in_key_reference_tree_v0(
                     identity_id,
                     estimated_costs_only_with_layer_info,
                     purpose,

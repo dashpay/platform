@@ -9,6 +9,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::fee::SignedCredits;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Fetches the Identity's balance from the backing store.
@@ -27,11 +28,11 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<SignedCredits>, Error> {
-        match drive_version.methods.identity.fetch.attributes.balance {
+        match platform_version.drive.methods.identity.fetch.attributes.balance {
             0 => {
-                self.fetch_identity_balance_include_debt_v0(identity_id, transaction, drive_version)
+                self.fetch_identity_balance_include_debt_v0(identity_id, transaction, platform_version)
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_include_debt".to_string(),
@@ -61,15 +62,15 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(Option<SignedCredits>, FeeResult), Error> {
-        match drive_version.methods.identity.fetch.attributes.balance {
+        match platform_version.drive.methods.identity.fetch.attributes.balance {
             0 => self.fetch_identity_balance_include_debt_with_costs_v0(
                 identity_id,
                 block_info,
                 apply,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_include_debt_with_costs".to_string(),
@@ -100,15 +101,15 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<SignedCredits>, Error> {
-        match drive_version.methods.identity.fetch.attributes.balance {
+        match platform_version.drive.methods.identity.fetch.attributes.balance {
             0 => self.fetch_identity_balance_include_debt_operations_v0(
                 identity_id,
                 apply,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_include_debt_operations".to_string(),

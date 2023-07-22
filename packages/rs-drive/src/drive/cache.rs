@@ -89,13 +89,16 @@ mod tests {
     mod get {
         use super::*;
         use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_get_from_global_cache_when_block_cache_is_not_requested() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
+            let protocol_version = PlatformVersion::latest().protocol_version;
+
             // Create global contract
-            let fetch_info_global = Arc::new(DataContractFetchInfo::default());
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
 
             let contract_id = fetch_info_global.contract.id().to_buffer();
 
@@ -104,7 +107,7 @@ mod tests {
                 .insert(contract_id, Arc::clone(&fetch_info_global));
 
             // Create transactional contract with a new version
-            let mut fetch_info_block = DataContractFetchInfo::default();
+            let mut fetch_info_block = DataContractFetchInfo::dpns_contract_fixture(protocol_version);
 
             fetch_info_block.contract.increment_version();
 
@@ -125,7 +128,9 @@ mod tests {
         fn test_get_from_global_cache_when_block_cache_does_not_have_contract() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            let fetch_info_global = Arc::new(DataContractFetchInfo::default());
+            let protocol_version = PlatformVersion::latest().protocol_version;
+
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
 
             let contract_id = fetch_info_global.contract.id().to_buffer();
 
@@ -144,7 +149,9 @@ mod tests {
         fn test_get_from_block_cache() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            let fetch_info_block = Arc::new(DataContractFetchInfo::default());
+            let protocol_version = PlatformVersion::latest().protocol_version;
+
+            let fetch_info_block = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
 
             let contract_id = fetch_info_block.contract.id().to_buffer();
 

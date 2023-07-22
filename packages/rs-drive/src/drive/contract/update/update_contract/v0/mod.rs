@@ -17,6 +17,8 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::{HashMap, HashSet};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 
 impl Drive {
     /// Updates a data contract.
@@ -68,7 +70,7 @@ impl Drive {
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
             block_info.epoch.index,
-            Some(contract.owner_id.to_buffer()),
+            Some(contract.owner_id().to_buffer()),
         ));
 
         let contract_element = Element::Item(
@@ -130,7 +132,6 @@ impl Drive {
             &block_info.epoch,
             platform_version,
         )
-        .map_err(Error::Protocol)
     }
 
     /// Updates a contract.
@@ -305,7 +306,7 @@ impl Drive {
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
-                for index in document_type.top_level_indices() {
+                for index in document_type.as_ref().top_level_indices() {
                     // toDo: we can save a little by only inserting on new indexes
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {
@@ -349,7 +350,7 @@ impl Drive {
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
-                for index in document_type.top_level_indices() {
+                for index in document_type.as_ref().top_level_indices() {
                     // toDo: change this to be a reference by index
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {

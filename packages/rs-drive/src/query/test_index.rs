@@ -12,6 +12,7 @@ mod tests {
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::v0::DocumentTypeV0;
     use dpp::data_contract::DataContract;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
 
     fn construct_indexed_document_type() -> DocumentType {
@@ -85,7 +86,7 @@ mod tests {
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = DataContract::default();
+        let contract = get_dpns_data_contract_fixture(None,1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 
@@ -132,7 +133,7 @@ mod tests {
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = DataContract::default();
+        let contract = get_dpns_data_contract_fixture(None,1).data_contract_owned();
 
         let platform_version = PlatformVersion::latest();
 

@@ -1,5 +1,6 @@
 use grovedb::{Element, TransactionArg};
 use std::ops::Range;
+use dpp::balances::credits::Creditable;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

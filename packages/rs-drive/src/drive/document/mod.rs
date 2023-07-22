@@ -53,6 +53,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 #[cfg(feature = "full")]
 use grovedb::Element;
+use dpp::document::DocumentV0Getters;
 
 #[cfg(feature = "full")]
 mod delete;
@@ -133,7 +134,7 @@ fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
 ) -> KeyInfoPath {
     let mut key_info_path = KeyInfoPath::from_known_path(contract_documents_primary_key_path(
         contract_id,
-        document_type.name.as_str(),
+        document_type.name().as_str(),
     ));
     key_info_path.push(KeyInfo::MaxKeySize {
         unique_id: document_type.unique_id_for_storage().to_vec(),
@@ -172,7 +173,7 @@ fn make_document_reference(
     // 0 represents document storage
     // Then we add document id
     // Then we add 0 if the document type keys history
-    let mut reference_path = vec![vec![0], document.id.to_vec()];
+    let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
     if document_type.documents_keep_history() {
         reference_path.push(vec![0]);

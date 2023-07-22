@@ -15,7 +15,7 @@ impl Drive {
         primary_key_path: [&[u8]; 5],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         platform_version: &PlatformVersion,
-    ) {
+    ) -> Result<(), Error> {
         match platform_version
             .drive
             .methods
@@ -27,6 +27,7 @@ impl Drive {
                 document_and_contract_info,
                 primary_key_path,
                 estimated_costs_only_with_layer_info,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "Drive::add_estimation_costs_for_add_document_to_primary_storage_v0"

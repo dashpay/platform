@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 use std::io::{BufReader, Read};
+use crate::version::PlatformVersion;
 
 #[cfg(feature = "cbor")]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -120,6 +121,7 @@ impl DocumentCborMethodsV0 for DocumentV0 {
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             main_message_bytes: read_document_cbor,

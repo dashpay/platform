@@ -20,13 +20,20 @@ use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
 use intmap::IntMap;
 use itertools::Itertools;
 use std::collections::HashMap;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::document::DocumentV0Getters;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     pub(super) fn add_estimation_costs_for_add_document_to_primary_storage_v0(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
-    ) {
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         let document = if let Some(document) = document_and_contract_info
             .owned_document_info
             .document_info
@@ -34,15 +41,15 @@ impl Drive {
         {
             document
         } else {
-            return;
+            return Ok(());
         };
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         // at this level we have all the documents for the contract
-        if document_type.documents_keep_history {
+        if document_type.documents_keep_history() {
             // if we keep history this level has trees
             // we only keep flags if the contract can be deleted
-            let average_flags_size = if contract.config.can_be_deleted {
+            let average_flags_size = if contract.config().can_be_deleted() {
                 // the trees flags will never change
                 let flags_size = StorageFlags::approximate_size(true, None);
                 Some(flags_size)
@@ -64,7 +71,7 @@ impl Drive {
             let document_id_in_primary_path =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
                     contract.id().as_bytes(),
-                    document_type.name.as_str(),
+                    document_type.name().as_str(),
                     document.id().as_slice(),
                 );
             // we are dealing with a sibling reference
@@ -82,7 +89,7 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
-                            document_type.estimated_size() as u32,
+                            document_type.estimated_size(platform_version)? as u32,
                             average_flags_size,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),
@@ -92,7 +99,7 @@ impl Drive {
             );
         } else {
             // we just have the elements
-            let approximate_size = if document_type.documents_mutable {
+            let approximate_size = if document_type.documents_mutable() {
                 //todo: have the contract say how often we expect documents to mutate
                 Some((
                     AVERAGE_NUMBER_OF_UPDATES as u16,
@@ -109,11 +116,12 @@ impl Drive {
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,
-                        document_type.estimated_size() as u32,
+                        document_type.estimated_size(platform_version)? as u32,
                         Some(flags_size),
                     ),
                 },
             );
         }
+        Ok(())
     }
 }

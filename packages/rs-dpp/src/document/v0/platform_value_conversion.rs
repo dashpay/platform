@@ -4,6 +4,7 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use std::collections::BTreeMap;
+use crate::version::PlatformVersion;
 
 impl DocumentPlatformValueMethodsV0 for DocumentV0 {
     fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
@@ -66,7 +67,7 @@ impl DocumentPlatformValueMethodsV0 for DocumentV0 {
         Ok(self.to_map_value()?.into())
     }
 
-    fn from_platform_value(document_value: Value) -> Result<Self, ProtocolError> {
+    fn from_platform_value(document_value: Value, _platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;

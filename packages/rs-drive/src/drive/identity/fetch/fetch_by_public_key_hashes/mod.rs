@@ -19,6 +19,7 @@ mod tests {
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
     use std::hash::Hash;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
     #[test]
     fn test_fetch_all_keys_on_identity() {
@@ -62,7 +63,7 @@ mod tests {
                 .expect("expected to get hash")
                 .try_into()
                 .expect("expected 20 bytes");
-            if key.key_type.is_unique_key_type() {
+            if key.key_type().is_unique_key_type() {
                 let identity_id = drive
                     .fetch_identity_id_by_unique_public_key_hash(
                         hash,

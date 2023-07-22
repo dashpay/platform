@@ -16,6 +16,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use dpp::document::serialization_traits::DocumentCborMethodsV0;
 
 impl Drive {
     /// Updates a serialized document given a contract id and returns the associated fee.
@@ -51,7 +52,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document = Document::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));

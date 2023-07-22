@@ -1,3 +1,5 @@
+use dpp::block::epoch::EpochIndex;
+use dpp::fee::epoch::SignedCreditsPerEpoch;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
@@ -77,12 +79,14 @@ mod tests {
     use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
 
     mod add_distribute_storage_fee_to_epochs_operations {
+        use dpp::balances::credits::Creditable;
         use dpp::block::epoch::Epoch;
         use dpp::block::extended_block_info::BlockInfo;
+        use dpp::fee::Credits;
+        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS, SignedCreditsPerEpoch};
+        use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
         use drive::drive::batch::DriveOperation;
         use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
-        use drive::fee::credits::{Creditable, Credits};
-        use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 
@@ -96,6 +100,8 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
+            
+            let platform_version = PlatformVersion::latest();
 
             /*
             Initial distribution
@@ -124,6 +130,7 @@ mod tests {
                     current_epoch_index,
                     Some(&transaction),
                     &mut batch,
+                    platform_version,
                 )
                 .expect("should distribute storage fee pool");
 
@@ -168,7 +175,7 @@ mod tests {
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction), platform_version)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -178,6 +185,7 @@ mod tests {
                     current_epoch_index,
                     Some(&transaction),
                     &mut batch,
+                    platform_version,
                 )
                 .expect("should distribute storage fee pool");
 
@@ -195,6 +203,7 @@ mod tests {
                 &platform.drive,
                 GENESIS_EPOCH_INDEX..current_epoch_index + PERPETUAL_STORAGE_EPOCHS,
                 Some(&transaction),
+                platform_version
             );
 
             // Assert total distributed fees

@@ -18,6 +18,7 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document create transition action would be unique in the state
@@ -26,20 +27,20 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         document_create_transition: &DocumentCreateTransitionAction,
-        owner_id: &Identifier,
+        owner_id: Identifier,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let request = UniquenessOfDataRequest {
             contract,
             document_type,
             owner_id,
-            document_id: &document_create_transition.base().id(),
+            document_id: document_create_transition.base().id(),
             allow_original: false,
-            created_at: &document_create_transition.created_at(),
-            updated_at: &document_create_transition.updated_at(),
-            data: &document_create_transition.data(),
+            created_at: document_create_transition.created_at(),
+            updated_at: document_create_transition.updated_at(),
+            data: document_create_transition.data(),
         };
-        self.validate_uniqueness_of_data(request, transaction, drive_version)
+        self.validate_uniqueness_of_data(request, transaction, platform_version)
     }
 }

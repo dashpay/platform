@@ -16,7 +16,9 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document replace transition action would be unique in the state
@@ -25,20 +27,20 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         document_replace_transition: &DocumentReplaceTransitionAction,
-        owner_id: &Identifier,
+        owner_id: Identifier,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let request = UniquenessOfDataRequest {
             contract,
             document_type,
             owner_id,
-            document_id: &document_replace_transition.base.id,
+            document_id: document_replace_transition.base().id(),
             allow_original: true,
-            created_at: &document_replace_transition.created_at,
-            updated_at: &document_replace_transition.updated_at,
-            data: &document_replace_transition.data,
+            created_at: document_replace_transition.created_at(),
+            updated_at: document_replace_transition.updated_at(),
+            data: document_replace_transition.data(),
         };
-        self.validate_uniqueness_of_data(request, transaction, drive_version)
+        self.validate_uniqueness_of_data(request, transaction, platform_version)
     }
 }

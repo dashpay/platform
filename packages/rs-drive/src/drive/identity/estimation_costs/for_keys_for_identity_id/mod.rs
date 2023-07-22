@@ -35,7 +35,7 @@ impl Drive {
             .cost_estimation
             .for_keys_for_identity_id
         {
-            0 => Ok(Self.add_estimation_costs_for_keys_for_identity_id_v0(
+            0 => Ok(Self::add_estimation_costs_for_keys_for_identity_id_v0(
                 identity_id,
                 estimated_costs_only_with_layer_info,
             )),

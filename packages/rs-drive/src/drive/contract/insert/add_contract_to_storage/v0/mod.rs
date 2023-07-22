@@ -19,6 +19,8 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 
 impl Drive {
     /// Adds a contract to storage.
@@ -36,7 +38,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let contract_root_path = paths::contract_root_path(contract.id().as_bytes());
-        if contract.config.keeps_history {
+        if contract.config().keeps_history() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
                 StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;

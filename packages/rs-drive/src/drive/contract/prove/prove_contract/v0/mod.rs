@@ -63,6 +63,7 @@ impl Drive {
                     Some(true),
                     false,
                     contract_id,
+                    platform_version,
                 )
                 .expect("expected to get contract from proof");
                 // Only return the historical proof if an element was found

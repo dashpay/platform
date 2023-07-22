@@ -41,8 +41,10 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes the document from primary storage.
@@ -56,12 +58,12 @@ impl Drive {
         >,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let apply_type = if estimated_costs_only_with_layer_info.is_some() {
             StatelessBatchDelete {
                 is_sum_tree: false,
-                estimated_value_size: document_type.estimated_size() as u32,
+                estimated_value_size: document_type.estimated_size(platform_version)? as u32,
             }
         } else {
             // we know we are not deleting a subtree
@@ -75,7 +77,7 @@ impl Drive {
             apply_type,
             transaction,
             batch_operations,
-            drive_version,
+            &platform_version.drive,
         )?;
 
         // if we are trying to get estimated costs we should add this level
@@ -84,7 +86,7 @@ impl Drive {
                 contract_documents_primary_key_path,
                 document_type,
                 estimated_costs_only_with_layer_info,
-                drive_version,
+                platform_version,
             )?;
         }
         Ok(())

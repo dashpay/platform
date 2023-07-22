@@ -7,6 +7,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, TransactionArg};
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Retrieves the raw results of a path query from GroveDB.
@@ -28,9 +29,9 @@ impl Drive {
         transaction: TransactionArg,
         result_type: QueryResultType,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(QueryResultElements, u16), Error> {
-        match drive_version.grove_methods.basic.grove_get_raw_path_query {
+        match platform_version.drive.grove_methods.basic.grove_get_raw_path_query {
             0 => self.grove_get_raw_path_query_v0(
                 path_query,
                 transaction,

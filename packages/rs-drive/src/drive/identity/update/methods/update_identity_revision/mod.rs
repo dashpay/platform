@@ -42,7 +42,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<FeeResult, Error> {
-        match drive_version.methods.identity.update.revision {
+        match drive_version.methods.identity.update.update_identity_revision {
             0 => self.update_identity_revision_v0(
                 identity_id,
                 revision,

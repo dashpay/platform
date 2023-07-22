@@ -136,7 +136,7 @@ mod tests {
             let identity_ids = identities.keys().copied().collect::<Vec<[u8; 32]>>();
             let identity_balances = identities
                 .into_iter()
-                .map(|(id, identity)| (id, Some(identity.balance)))
+                .map(|(id, identity)| (id, Some(identity.balance())))
                 .collect::<BTreeMap<[u8; 32], Option<Credits>>>();
             let proof = drive
                 .prove_many_identity_balances(

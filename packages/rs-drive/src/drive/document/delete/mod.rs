@@ -154,8 +154,8 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::Document;
+    use dpp::document::serialization_traits::{DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0};
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::util::cbor_serializer;
@@ -392,7 +392,7 @@ mod tests {
             .serialize(document_type, platform_version)
             .expect("expected to serialize");
         let _deserialized =
-            Document::from_bytes(&serialized, &document_type).expect("expected to deserialize");
+            Document::from_bytes(&serialized, document_type, platform_version).expect("expected to deserialize");
     }
 
     #[test]
@@ -1070,11 +1070,11 @@ mod tests {
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let mut document = Document::from_cbor(&serialized_document, None, None)
+                let mut document = Document::from_cbor(&serialized_document, None, None, platform_version)
                     .expect("expected to deserialize the document");
 
                 // Not sure why original documents were missing created at
-                document.created_at = Some(5);
+                document.set_created_at(Some(5));
 
                 drive
                     .add_document_for_contract(
@@ -1118,7 +1118,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types().get("niceDocument").unwrap(),
+                contract.document_type_for_name("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 None,
@@ -1132,7 +1132,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                documents.get(0).unwrap().id.to_buffer(),
+                documents.get(0).unwrap().id().to_buffer(),
                 &contract,
                 "niceDocument",
                 BlockInfo::default(),
@@ -1154,7 +1154,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types().get("niceDocument").unwrap(),
+                contract.document_type_for_name("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 Some(&db_transaction),

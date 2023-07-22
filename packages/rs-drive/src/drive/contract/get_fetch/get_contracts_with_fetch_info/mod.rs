@@ -8,6 +8,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Retrieves the specified contracts and their associated fetch information.
@@ -43,28 +44,20 @@ impl Drive {
         contract_ids: &[[u8; 32]],
         add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<[u8; 32], Option<Arc<DataContractFetchInfo>>>, Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .contract
             .get
             .get_contracts_with_fetch_info
         {
-            0 => contract_ids
-                .iter()
-                .map(|contract_id| {
-                    Ok((
-                        *contract_id,
-                        self.get_contracts_with_fetch_info_v0(
-                            contract_ids,
-                            add_to_cache_if_pulled,
-                            transaction,
-                            drive_version,
-                        )?,
-                    ))
-                })
-                .collect(),
+            0 => self.get_contracts_with_fetch_info_v0(
+                contract_ids,
+                add_to_cache_if_pulled,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_contracts_with_fetch_info".to_string(),
                 known_versions: vec![0],

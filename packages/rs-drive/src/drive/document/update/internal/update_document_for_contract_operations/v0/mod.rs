@@ -25,7 +25,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
@@ -35,6 +35,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 impl Drive {
     /// Gathers operations for updating a document.
@@ -51,7 +52,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if !document_and_contract_info.document_type.documents_mutable {
+        if !document_and_contract_info.document_type.documents_mutable() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
             )));
@@ -87,11 +88,11 @@ impl Drive {
         //  *DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path =
-            contract_document_type_path(contract.id().as_bytes(), document_type.name.as_str());
+            contract_document_type_path(contract.id().as_bytes(), document_type.name().as_str());
 
         let contract_documents_primary_key_path = contract_documents_primary_key_path(
             contract.id().as_bytes(),
-            document_type.name.as_str(),
+            document_type.name().as_str(),
         );
 
         let document_reference = make_document_reference(
@@ -101,11 +102,11 @@ impl Drive {
         );
 
         // next we need to get the old document from storage
-        let old_document_element = if document_type.documents_keep_history {
+        let old_document_element = if document_type.documents_keep_history() {
             let contract_documents_keeping_history_primary_key_path_for_document_id =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
                     contract.id().as_bytes(),
-                    document_type.name.as_str(),
+                    document_type.name().as_str(),
                     document.id().as_slice(),
                 );
             // When keeping document history the 0 is a reference that points to the current value
@@ -163,7 +164,7 @@ impl Drive {
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // fourth we need to store a reference to the document for each index
-        for index in &document_type.indices {
+        for index in document_type.indices() {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -447,7 +448,7 @@ impl Drive {
                     // here we should return an error if the element already exists
                     self.batch_refresh_reference(
                         index_path,
-                        document.id.to_vec(),
+                        document.id().to_vec(),
                         document_reference.clone(),
                         trust_refresh_reference,
                         &mut batch_operations,

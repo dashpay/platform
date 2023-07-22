@@ -68,11 +68,12 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::version::drive_versions::DriveVersion;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_value() {
         let drive = setup_drive_with_initial_state_structure();
-        let drive_version = DriveVersion::default();
+        let platform_version = PlatformVersion::latest();
         let transaction = drive.grove.start_transaction();
 
         let pro_tx_hash: [u8; 32] = rand::random();
@@ -87,11 +88,11 @@ mod tests {
         batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, block_count));
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction), &drive_version)
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let result = drive
-            .get_epoch_proposers(&epoch, Some(100), Some(&transaction), &drive_version)
+            .get_epoch_proposers(&epoch, Some(100), Some(&transaction), platform_version)
             .expect("should get proposers");
 
         assert_eq!(result, vec!((pro_tx_hash.to_vec(), block_count)));

@@ -1818,7 +1818,9 @@ mod tests {
 
     use crate::drive::config::DriveConfig;
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
 
@@ -1898,8 +1900,9 @@ mod tests {
                 ["lastName", "asc"],
             ]
         });
-        let contract = DataContract::default();
-        let document_type = DocumentTypeRef::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1925,8 +1928,8 @@ mod tests {
             ],
             "invalid": 0,
         });
-        let contract = DataContract::default();
-        let document_type = DocumentTypeRef::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1953,8 +1956,8 @@ mod tests {
             ],
         });
 
-        let contract = DataContract::default();
-        let document_type = DocumentTypeRef::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -1981,8 +1984,9 @@ mod tests {
             ],
         });
 
-        let contract = DataContract::default();
-        let document_type = DocumentTypeRef::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2008,8 +2012,9 @@ mod tests {
                 ["lastName", "asc"],
             ],
         });
-        let contract = DataContract::default();
-        let document_type = DocumentTypeRef::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2272,15 +2277,16 @@ mod tests {
             ],
         });
 
-        let contract = DataContract::default();
-        let document_type = DocumentType::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            document_type.as_ref(),
+            document_type,
             &DriveConfig::default(),
         )
         .expect_err("starts with can not start with an empty string");
@@ -2298,15 +2304,16 @@ mod tests {
             ],
         });
 
-        let contract = DataContract::default();
-        let document_type = DocumentType::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            document_type.as_ref(),
+            document_type,
             &DriveConfig::default(),
         )
         .expect_err("starts with can not start with an empty string");
@@ -2324,15 +2331,16 @@ mod tests {
             ],
         });
 
-        let contract = DataContract::default();
-        let document_type = DocumentType::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            document_type.as_ref(),
+            document_type,
             &DriveConfig::default(),
         )
         .expect_err("starts with can not start with an empty string");
@@ -2350,15 +2358,16 @@ mod tests {
             ],
         });
 
-        let contract = DataContract::default();
-        let document_type = DocumentType::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract.document_type_for_name("niceDocument").expect("expected to get nice document");
+
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            document_type.as_ref(),
+            document_type,
             &DriveConfig::default(),
         )
         .expect_err("starts with can not start with an empty string");

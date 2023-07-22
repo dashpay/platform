@@ -50,7 +50,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     purpose,
                     drive_version,
-                )
+                )?;
             }
         }
         // There are 4 Security Levels: Master, Critical, High, Medium

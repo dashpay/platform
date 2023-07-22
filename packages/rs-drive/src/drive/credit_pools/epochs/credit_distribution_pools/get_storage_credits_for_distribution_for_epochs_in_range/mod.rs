@@ -14,6 +14,7 @@ use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
 
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Returns a list of storage credits to be distributed to proposers from a range of epochs.
@@ -31,9 +32,9 @@ impl Drive {
         &self,
         epoch_range: Range<u16>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u64>, Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .credit_pools
             .epochs
@@ -43,6 +44,7 @@ impl Drive {
                 self.get_storage_credits_for_distribution_for_epochs_in_range_v0(
                     epoch_range,
                     transaction,
+                    platform_version,
                 ),
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

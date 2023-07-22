@@ -5,6 +5,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use std::collections::BTreeMap;
+use crate::version::PlatformVersion;
 
 pub trait DocumentCborMethodsV0 {
     /// Reads a CBOR-serialized document and creates a Document from it.
@@ -13,6 +14,7 @@ pub trait DocumentCborMethodsV0 {
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
         owner_id: Option<[u8; 32]>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;

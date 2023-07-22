@@ -216,8 +216,6 @@ pub struct DriveDocumentInsertMethodVersions {
     pub add_indices_for_index_level_for_contract_operations: FeatureVersion,
     pub add_indices_for_top_index_level_for_contract_operations: FeatureVersion,
     pub add_reference_for_index_level_for_contract_operations: FeatureVersion,
-    pub add_serialized_document_for_contract: FeatureVersion,
-    pub add_serialized_document_for_contract_id: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -312,6 +310,7 @@ pub struct DriveInitializationMethodVersions {
 pub struct DriveCreditPoolMethodVersions {
     pub epochs: DriveCreditPoolEpochsMethodVersions,
     pub pending_epoch_refunds: DriveCreditPoolPendingEpochRefundsMethodVersions,
+    pub storage_fee_distribution_pool: DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -338,6 +337,12 @@ pub struct DriveCreditPoolPendingEpochRefundsMethodVersions {
     pub fetch_pending_epoch_refunds: FeatureVersion,
     pub add_update_pending_epoch_refunds_operations: FeatureVersion,
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
+    pub get_storage_fees_from_distribution_pool: FeatureVersion,
+}
+
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveProtocolUpgradeVersions {
@@ -380,6 +385,7 @@ pub struct DriveIdentityCostEstimationMethodVersions {
 pub struct DriveIdentityFetchMethodVersions {
     pub public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions,
     pub attributes: DriveIdentityFetchAttributesMethodVersions,
+    pub partial_identity: DriveIdentityFetchPartialIdentityMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -402,6 +408,13 @@ pub struct DriveIdentityFetchAttributesMethodVersions {
     pub balance: FeatureVersion,
     pub balance_include_debt: FeatureVersion,
     pub negative_balance: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityFetchPartialIdentityMethodVersions {
+    pub fetch_identity_balance_with_keys: FeatureVersion,
+    pub fetch_identity_balance_with_keys_and_revision: FeatureVersion,
+    pub fetch_identity_with_balance: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

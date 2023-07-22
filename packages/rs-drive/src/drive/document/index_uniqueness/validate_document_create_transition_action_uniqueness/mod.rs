@@ -17,6 +17,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document create transition action would be unique in the state.
@@ -43,11 +44,11 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         document_create_transition: &DocumentCreateTransitionAction,
-        owner_id: &Identifier,
+        owner_id: Identifier,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .document
             .index_uniqueness
@@ -59,7 +60,7 @@ impl Drive {
                 document_create_transition,
                 owner_id,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_document_create_transition_action_uniqueness".to_string(),

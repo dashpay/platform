@@ -16,6 +16,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Validate that a document would be unique in the state.
@@ -43,12 +44,12 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         document: &Document,
-        owner_id: &Identifier,
+        owner_id: Identifier,
         allow_original: bool,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .document
             .index_uniqueness
@@ -61,7 +62,7 @@ impl Drive {
                 owner_id,
                 allow_original,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_document_uniqueness".to_string(),

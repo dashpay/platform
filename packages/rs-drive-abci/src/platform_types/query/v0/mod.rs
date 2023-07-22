@@ -40,6 +40,7 @@ use drive::error::contract::ContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
+use dpp::version::PlatformVersion;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     match value {
@@ -97,6 +98,7 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
+        platform_version: &PlatformVersion
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         let metadata = ResponseMetadata {
@@ -410,7 +412,7 @@ impl<C> Platform<C> {
                 } else {
                     let contracts = check_validation_result_with_data!(self
                         .drive
-                        .get_contracts_with_fetch_info(contract_ids.as_slice(), false, None));
+                        .get_contracts_with_fetch_info(contract_ids.as_slice(), false, None, platform_version));
 
                     let contracts = check_validation_result_with_data!(contracts
                         .into_iter()
@@ -483,7 +485,8 @@ impl<C> Platform<C> {
                             None,
                             start_at_seconds.unwrap_or_default(),
                             limit,
-                            offset
+                            offset,
+                            platform_version,
                         ));
                     GetDataContractHistoryResponse {
                         metadata: Some(metadata),
