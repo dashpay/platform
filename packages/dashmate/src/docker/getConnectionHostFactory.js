@@ -9,7 +9,13 @@ function getConnectionHostFactory(dockerCompose, isHelper, configFile) {
    */
   async function getConnectionHost(config, serviceName) {
     if (isHelper) {
-      return dockerCompose.getContainerIp(generateEnvs(configFile, config), serviceName);
+      const envs = generateEnvs(configFile, config);
+      const containerInfo = await dockerCompose.inspectService(envs, serviceName);
+
+      const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks);
+      const { IPAddress: containerIP } = containerInfo.NetworkSettings.Networks[firstNetwork];
+
+      return containerIP;
     }
 
     return '127.0.0.1';

@@ -10,7 +10,6 @@ class ReindexCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {isSystemConfig} isSystemConfig
    * @param {Config} config
    * @param {reindexNodeTask} reindexNodeTask
    *
@@ -20,8 +19,9 @@ class ReindexCommand extends ConfigBaseCommand {
     args,
     {
       verbose: isVerbose,
+      force: isForce,
+      detach: isDetached,
     },
-    isSystemConfig,
     config,
     reindexNodeTask,
   ) {
@@ -43,7 +43,8 @@ class ReindexCommand extends ConfigBaseCommand {
 
     try {
       await tasks.run({
-        isVerbose,
+        isDetached,
+        isForce,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
@@ -56,6 +57,16 @@ ReindexCommand.description = 'Reindex Core data';
 ReindexCommand.flags = {
   ...ConfigBaseCommand.flags,
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+  detach: Flags.boolean({
+    char: 'd',
+    description: 'run the reindex process in the background',
+    default: false,
+  }),
+  force: Flags.boolean({
+    char: 'f',
+    description: 'reindex already running node without confirmation',
+    default: false,
+  }),
 };
 
 module.exports = ReindexCommand;

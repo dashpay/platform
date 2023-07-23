@@ -16,6 +16,7 @@ const createSystemConfigsFactory = require('./config/system/createSystemConfigsF
 const migrateConfigFileFactory = require('./config/configFile/migrations/migrateConfigFileFactory');
 const SystemConfigs = require('./config/system/SystemConfigs');
 
+const renderTemplateFactory = require('./templates/renderTemplateFactory');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
 const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
 
@@ -78,7 +79,7 @@ const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
-const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
+const saveCertificateTaskFactory = require('./listr/tasks/ssl/saveCertificateTask');
 
 const createZeroSSLCertificate = require('./ssl/zerossl/createZeroSSLCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
@@ -95,14 +96,14 @@ const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureN
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
 const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
-const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
-const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const HomeDir = require('./config/HomeDir');
 const getBaseConfigFactory = require('./config/system/configs/getBaseConfigFactory');
 const getLocalConfigFactory = require('./config/system/configs/getLocalConfigFactory');
 const getTestnetConfigFactory = require('./config/system/configs/getTestnetConfigFactory');
 const getMainnetConfigFactory = require('./config/system/configs/getMainnetConfigFactory');
 const getConfigFileMigrationsFactory = require('./config/configFile/migrations/getConfigFileMigrationsFactory');
+const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
+const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 
 /**
  * @param [options]
@@ -118,6 +119,7 @@ async function createDIContainer(options = {}) {
    * Config
    */
   container.register({
+    // TODO: It creates a directory on the disk when we create DI container. Doesn't smell good
     homeDir: asFunction(() => (
       HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
     )).singleton(),
@@ -165,6 +167,7 @@ async function createDIContainer(options = {}) {
    * Templates
    */
   container.register({
+    renderTemplate: asFunction(renderTemplateFactory).singleton(),
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
   });
@@ -268,7 +271,7 @@ async function createDIContainer(options = {}) {
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
-    saveCertificateTask: asValue(saveCertificateTask),
+    saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),

@@ -16,17 +16,50 @@ const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError'
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
-const { HOME_DIR_PATH, PACKAGE_ROOT_DIR } = require('../constants');
+const { PACKAGE_ROOT_DIR } = require('../constants');
 
 class DockerCompose {
   /**
+   * Minimal
+   *
+   * @type {string}
+   */
+  static DOCKER_COMPOSE_MIN_VERSION = '2.0.0';
+
+  /**
+   * @type {string}
+   */
+  static DOCKER_MIN_VERSION = '20.10.0';
+
+  /**
+   * @type {Docker}
+   */
+  #docker;
+
+  /**
+   * @type {StartedContainers}
+   */
+  #startedContainers;
+
+  /**
+   * @type {boolean}
+   */
+  #isDockerSetupVerified = false;
+
+  /**
+   * @type {HomeDir}
+   */
+  #homeDir;
+
+  /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
+   * @param {HomeDir} homeDir
    */
-  constructor(docker, startedContainers) {
-    this.docker = docker;
-    this.startedContainers = startedContainers;
-    this.isDockerSetupVerified = false;
+  constructor(docker, startedContainers, homeDir) {
+    this.#docker = docker;
+    this.#startedContainers = startedContainers;
+    this.#homeDir = homeDir;
   }
 
   /**
@@ -52,7 +85,7 @@ class DockerCompose {
         serviceName,
         command,
         {
-          ...this.getOptions(envs),
+          ...this.#getOptions(envs),
           commandOptions: options,
         },
       ));
@@ -62,9 +95,9 @@ class DockerCompose {
 
     containerName = containerName.trim().split(/\r?\n/).pop();
 
-    this.startedContainers.addContainer(containerName);
+    this.#startedContainers.addContainer(containerName);
 
-    return this.docker.getContainer(containerName);
+    return this.#docker.getContainer(containerName);
   }
 
   /**
@@ -128,7 +161,7 @@ class DockerCompose {
 
     try {
       await dockerCompose.upAll({
-        ...this.getOptions(envs),
+        ...this.#getOptions(envs),
         commandOptions: ['--no-build'],
       });
     } catch (e) {
@@ -156,13 +189,13 @@ class DockerCompose {
 
         if (serviceName) {
           await dockerCompose.buildOne(serviceName, {
-            ...this.getOptions(envs),
+            ...this.#getOptions(envs),
             callback,
             commandOptions: options,
           });
         } else {
           await dockerCompose.buildAll({
-            ...this.getOptions(envs),
+            ...this.#getOptions(envs),
             callback,
             commandOptions: options,
           });
@@ -185,7 +218,7 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     try {
-      await dockerCompose.stop(this.getOptions(envs));
+      await dockerCompose.stop(this.#getOptions(envs));
     } catch (e) {
       throw new DockerComposeError(e);
     }
@@ -203,7 +236,7 @@ class DockerCompose {
 
     const containerIds = await this.getContainersList(envs, {
       filterServiceNames:
-      serviceName,
+        serviceName,
       quiet: true,
     });
 
@@ -211,7 +244,7 @@ class DockerCompose {
       throw new ContainerIsNotPresentError(serviceName);
     }
 
-    const container = this.docker.getContainer(containerIds[0]);
+    const container = this.#docker.getContainer(containerIds[0]);
 
     return container.inspect();
   }
@@ -235,7 +268,7 @@ class DockerCompose {
     let commandOutput;
 
     const options = {
-      ...this.getOptions(envs),
+      ...this.#getOptions(envs),
       commandOptions,
     };
 
@@ -261,6 +294,7 @@ class DockerCompose {
    * @param {boolean} [options.returnServiceNames] - Return only service names
    * @param {boolean} [options.quiet=false] - Return only container ids
    * @param {boolean} [options.formatJson=false] - Return as json with details
+   * @param {boolean} [options.all=false] - Return stopped containers as well
    * @return {Promise<string[]|object[]>}
    */
   async getContainersList(
@@ -270,6 +304,7 @@ class DockerCompose {
       returnServiceNames = false,
       quiet = false,
       formatJson = false,
+      all = false,
     } = {},
   ) {
     let psOutput;
@@ -287,11 +322,15 @@ class DockerCompose {
       commandOptions.push('--format', 'json');
     }
 
+    if (all) {
+      commandOptions.push('--all');
+    }
+
     commandOptions.push(filterServiceNames);
 
     try {
       ({ out: psOutput } = await dockerCompose.ps({
-        ...this.getOptions(envs),
+        ...this.#getOptions(envs),
         commandOptions,
       }));
     } catch (e) {
@@ -323,7 +362,7 @@ class DockerCompose {
     let volumeOutput;
     try {
       ({ out: volumeOutput } = await dockerCompose.configVolumes({
-        ...this.getOptions(envs),
+        ...this.#getOptions(envs),
       }));
     } catch (e) {
       throw new DockerComposeError(e);
@@ -345,7 +384,7 @@ class DockerCompose {
 
     try {
       await dockerCompose.down({
-        ...this.getOptions(envs),
+        ...this.#getOptions(envs),
         commandOptions: ['-v', '--remove-orphans'],
       });
     } catch (e) {
@@ -365,7 +404,7 @@ class DockerCompose {
 
     try {
       await dockerCompose.rm({
-        ...this.getOptions(envs),
+        ...this.#getOptions(envs),
         commandOptions: ['--stop'],
       }, ...serviceNames);
     } catch (e) {
@@ -384,7 +423,7 @@ class DockerCompose {
 
     try {
       await dockerCompose.pullAll({
-        ...this.getOptions(envs),
+        ...this.#getOptions(envs),
         commandOptions: ['-q'],
       });
     } catch (e) {
@@ -396,11 +435,11 @@ class DockerCompose {
    * @return {Promise<void>}
    */
   async throwErrorIfNotInstalled() {
-    if (this.isDockerSetupVerified) {
+    if (this.#isDockerSetupVerified) {
       return;
     }
 
-    this.isDockerSetupVerified = true;
+    this.#isDockerSetupVerified = true;
 
     const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
     const dockerInstallLink = 'https://docs.docker.com/engine/install/';
@@ -415,7 +454,7 @@ class DockerCompose {
     let dockerVersion;
     try {
       dockerVersion = await new Promise((resolve, reject) => {
-        this.docker.version((err, data) => {
+        this.#docker.version((err, data) => {
           if (err) {
             return reject(err);
           }
@@ -450,13 +489,13 @@ class DockerCompose {
    * @param {Object} envs
    * @return {{cwd: string, env: Object}}
    */
-  getOptions(envs) {
+  #getOptions(envs) {
     const { uid, gid } = os.userInfo();
 
     const env = {
       ...process.env,
       ...envs,
-      DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      DASHMATE_HOME_DIR: this.#homeDir.getPath(),
       LOCAL_UID: uid,
       LOCAL_GID: gid,
     };
@@ -465,33 +504,14 @@ class DockerCompose {
       // Solving issue under WSL when after restart container volume is not being mounted properly
       // https://github.com/docker/for-win/issues/4812
       // Following fix forces container recreation
-      env.WSL2_FIX = (new Date()).getTime();
+      env.WSL2_FIX = Date.now();
     }
 
     return {
-      cwd: path.join(__dirname, '..', '..'),
+      cwd: PACKAGE_ROOT_DIR,
       env,
     };
   }
-
-  /**
-   * Resolve container internal IP
-   *
-   * @param {Object} envs
-   * @param {string} serviceName
-   * @return {Promise<string>}
-   */
-  async getContainerIp(envs, serviceName) {
-    const containerInfo = await this.inspectService(envs, serviceName);
-
-    const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks);
-    const { IPAddress: containerIP } = containerInfo.NetworkSettings.Networks[firstNetwork];
-
-    return containerIP;
-  }
 }
-
-DockerCompose.DOCKER_COMPOSE_MIN_VERSION = '2.0.0';
-DockerCompose.DOCKER_MIN_VERSION = '20.10.0';
 
 module.exports = DockerCompose;
