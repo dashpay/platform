@@ -55,7 +55,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Enable corepack
         run: corepack enable
@@ -150,7 +150,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Enable corepack
         run: corepack enable
@@ -289,7 +289,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Enable corepack
         run: corepack enable
@@ -435,7 +435,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Enable corepack
         run: corepack enable
@@ -581,7 +581,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
       - name: Enable corepack
         run: corepack enable
@@ -742,7 +742,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
 
       - uses: dtolnay/rust-toolchain@master
         with:
