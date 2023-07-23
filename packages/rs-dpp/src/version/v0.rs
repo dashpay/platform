@@ -49,7 +49,7 @@ use crate::version::{
 };
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
-    protocol_version: 0,
+    protocol_version: 1,
     identity: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,

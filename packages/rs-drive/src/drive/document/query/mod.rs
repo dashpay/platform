@@ -35,32 +35,32 @@
 mod query_documents;
 pub use query_documents::*;
 
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::block_info::BlockInfo;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::epoch::Epoch;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use grovedb::TransactionArg;
 
 use crate::drive::Drive;
 
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::error::query::QuerySyntaxError;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::error::Error;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::fee::op::LowLevelDriveOperation;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use crate::query::DriveQuery;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::document_type::DocumentTypeRef;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::DataContract;
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
 
 // TODO: Not using
@@ -73,6 +73,16 @@ use dpp::version::PlatformVersion;
 //     /// the processing cost
 //     pub cost: u64,
 // }
+
+#[cfg(feature = "fixtures-and-mocks")]
+pub struct QuerySerializedDocumentsOutcome {
+    /// returned items
+    pub items: Vec<Vec<u8>>,
+    /// skipped item count
+    pub skipped: u16,
+    /// the processing cost
+    pub cost: u64,
+}
 
 impl Drive {
     // TODO: Not using
@@ -115,7 +125,7 @@ impl Drive {
     //     })
     // }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,
@@ -154,7 +164,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
     pub fn query_proof_of_documents_using_contract_id_using_cbor_encoded_query_with_cost(
@@ -206,7 +216,7 @@ impl Drive {
         Ok((items, cost))
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified query along with the fee.
     /// Proof is generated.
     pub fn query_proof_of_documents_using_cbor_encoded_query_with_cost(
@@ -243,7 +253,7 @@ impl Drive {
         Ok((items, cost))
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified internal query.
     /// Proof is generated.
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query(
@@ -261,7 +271,7 @@ impl Drive {
         query.execute_with_proof_internal(self, transaction, drive_operations, platform_version)
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs the specified internal query and returns the root hash, values, and fee.
     pub fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements(
         &self,
@@ -299,7 +309,7 @@ impl Drive {
     }
 
     /// Performs the specified internal query and returns the root hash and values.
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     pub(crate) fn query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
         &self,
         contract: &DataContract,
@@ -321,7 +331,7 @@ impl Drive {
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     pub fn query_documents_cbor_from_contract(
         &self,
         contract: &DataContract,
@@ -355,7 +365,7 @@ impl Drive {
         Ok((items, skipped, cost))
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified query along with skipped items and the cost.
     pub fn query_documents_cbor_with_document_type_lookup(
         &self,
@@ -387,10 +397,10 @@ impl Drive {
         let query =
             DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;
 
-        self.query_serialized_documents(query, epoch, transaction, protocol_version)
+        self.query_serialized_documents(query, epoch, transaction, platform_version)
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified query along with skipped items.
     pub fn query_documents_for_cbor_query_internal(
         &self,
@@ -412,7 +422,7 @@ impl Drive {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "fixtures-and-mocks")]
     /// Performs and returns the result of the specified query along with skipped items
     /// and the cost.
     pub fn query_serialized_documents(
@@ -421,7 +431,7 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<crate::drive::document::query::query_serialized_documents::v0::QuerySerializedDocumentsOutcomeV0, Error>{
+    ) -> Result<QuerySerializedDocumentsOutcome, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = query.execute_raw_results_no_proof_internal(
             self,
@@ -437,7 +447,7 @@ impl Drive {
             0
         };
 
-        Ok(crate::drive::document::query::query_serialized_documents::v0::QuerySerializedDocumentsOutcomeV0 {
+        Ok(QuerySerializedDocumentsOutcome {
             items,
             skipped,
             cost,

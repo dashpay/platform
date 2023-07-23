@@ -44,8 +44,6 @@ use dpp::util::cbor_serializer;
 use drive::common;
 
 #[cfg(feature = "full")]
-use drive::contract::Contract;
-#[cfg(feature = "full")]
 use grovedb::{Element, Transaction, TransactionArg};
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
@@ -68,6 +66,10 @@ use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
+use dpp::document::serialization_traits::DocumentCborMethodsV0;
+use dpp::version::PlatformVersion;
 
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
@@ -139,6 +141,7 @@ pub fn add_domains_to_contract(
     count: u32,
     seed: u64,
 ) {
+    let platform_version = PlatformVersion::latest();
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
         let value = serde_json::to_value(domain).expect("serialized domain");
@@ -147,7 +150,7 @@ pub fn add_domains_to_contract(
             Some(drive::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to serialize to cbor");
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("domain")
@@ -169,6 +172,7 @@ pub fn add_domains_to_contract(
                 BlockInfo::genesis(),
                 true,
                 transaction,
+                platform_version,
             )
             .expect("document should be inserted");
     }
@@ -178,6 +182,8 @@ pub fn add_domains_to_contract(
 /// Tests that the root hash is being calculated correctly after inserting empty subtrees into
 /// the root tree and the DPNS contract.
 fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
+    let platform_version = PlatformVersion::latest();
+
     // [1644293142180] INFO (35 on bf3bb2a2796a): createTree
     //     path: []
     //     pathHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -435,6 +441,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
             true,
             StorageFlags::optional_default_as_cow(),
             Some(db_transaction),
+            platform_version,
         )
         .expect("apply contract");
 

@@ -22,7 +22,7 @@ use crate::serialization_traits::{
 };
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };

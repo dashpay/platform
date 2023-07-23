@@ -23,7 +23,7 @@ sqlparser = { version = "0.13.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.10.1", features = ["future", "futures-util"] }
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["drive"]}
+dpp = { path = "../rs-dpp", features = ["drive", "cbor"]}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 derive_more = "0.99.17"
 

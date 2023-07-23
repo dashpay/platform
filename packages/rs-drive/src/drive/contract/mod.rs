@@ -49,8 +49,9 @@ pub(crate) mod paths;
 pub(crate) mod prove;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) mod queries;
-#[cfg(test)]
-mod test_helpers;
+#[cfg(feature = "fixtures-and-mocks")]
+/// Test helpers and utility methods
+pub mod test_helpers;
 #[cfg(feature = "full")]
 mod update;
 #[cfg(any(feature = "full", feature = "verify"))]
