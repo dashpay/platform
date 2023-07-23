@@ -14,10 +14,6 @@ const {
   PRESETS,
 } = require('../constants');
 
-const systemConfigs = require('../../configs/system');
-
-const Config = require('../config/Config');
-
 class SetupCommand extends BaseCommand {
   /**
    * @param {Object} args
@@ -26,6 +22,7 @@ class SetupCommand extends BaseCommand {
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
    * @param {DockerCompose} dockerCompose
+   * @param {SystemConfigs} systemConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -42,6 +39,7 @@ class SetupCommand extends BaseCommand {
     setupLocalPresetTask,
     setupRegularPresetTask,
     dockerCompose,
+    systemConfigs,
   ) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
@@ -75,7 +73,7 @@ class SetupCommand extends BaseCommand {
           if (ctx.preset === PRESET_LOCAL) {
             isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
           } else {
-            const systemConfig = new Config(ctx.preset, systemConfigs[ctx.preset]);
+            const systemConfig = systemConfigs.get(ctx.preset);
 
             isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(systemConfig);
           }

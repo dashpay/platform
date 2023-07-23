@@ -1,12 +1,10 @@
 const { Listr } = require('listr2');
 
-const path = require('path');
-
 const {
   PRESET_LOCAL,
-  HOME_DIR_PATH,
   SSL_PROVIDERS,
 } = require('../../../constants');
+
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
 const generateRandomString = require('../../../util/generateRandomString');
@@ -19,6 +17,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
+ * @param {HomeDir} homeDir
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -28,6 +27,7 @@ function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   configFileRepository,
   generateHDPrivateKeys,
+  homeDir,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -182,7 +182,7 @@ function setupLocalPresetTaskFactory(
                 config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
 
                 // Setup Core debug logs
-                const coreLogFilePath = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'core.log');
+                const coreLogFilePath = homeDir.joinPath('logs', config.getName(), 'core.log');
                 config.set('core.log.file.path', coreLogFilePath);
 
                 if (ctx.debugLogs) {
@@ -230,12 +230,12 @@ function setupLocalPresetTaskFactory(
                   }
 
                   if (!config.get('platform.drive.abci.log.prettyFile.path')) {
-                    const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
+                    const drivePrettyLogFile = homeDir.joinPath('logs', config.getName(), 'drive_pretty.log');
                     config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   }
 
                   if (!config.get('platform.drive.abci.log.jsonFile.path')) {
-                    const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
+                    const driveJsonLogFile = homeDir.joinPath('logs', config.getName(), 'drive_json.log');
                     config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
                   }
 
