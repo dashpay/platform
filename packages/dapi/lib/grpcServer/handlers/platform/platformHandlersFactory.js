@@ -18,6 +18,7 @@ const {
     BroadcastStateTransitionRequest,
     GetIdentityRequest,
     GetIdentityBalanceRequest,
+    GetIdentityBalanceAndRevisionRequest,
     GetDataContractRequest,
     GetDataContractsRequest,
     GetDataContractHistoryRequest,
@@ -35,6 +36,8 @@ const {
       GetIdentitiesResponse: PBJSGetIdentitiesResponse,
       GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
       GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
+      GetIdentityBalanceAndRevisionRequest: PBJSGetIdentityBalanceAndRevisionRequest,
+      GetIdentityBalanceAndRevisionResponse: PBJSGetIdentityBalanceAndRevisionResponse,
       GetDataContractRequest: PBJSGetDataContractRequest,
       GetDataContractResponse: PBJSGetDataContractResponse,
       GetDataContractsRequest: PBJSGetDataContractsRequest,
@@ -65,6 +68,9 @@ const getIdentitiesHandlerFactory = require(
 );
 const getIdentityBalanceHandlerFactory = require(
   './getIdentityBalanceHandlerFactory',
+);
+const getIdentityBalanceAndRevisionHandlerFactory = require(
+  './getIdentityBalanceAndRevisionHandlerFactory',
 );
 const broadcastStateTransitionHandlerFactory = require(
   './broadcastStateTransitionHandlerFactory',
@@ -177,6 +183,22 @@ function platformHandlersFactory(
       PBJSGetIdentityBalanceResponse,
     ),
     wrapInErrorHandler(getIdentityBalanceHandler),
+  );
+
+  // getIdentityBalanceAndRevision
+  const getIdentityBalanceAndRevisionHandler = getIdentityBalanceAndRevisionHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetIdentityBalanceAndRevision = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityBalanceAndRevisionRequest,
+      PBJSGetIdentityBalanceAndRevisionRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityBalanceAndRevisionResponse,
+    ),
+    wrapInErrorHandler(getIdentityBalanceAndRevisionHandler),
   );
 
   // getDocuments
@@ -310,6 +332,7 @@ function platformHandlersFactory(
     getIdentity: wrappedGetIdentity,
     getIdentities: wrappedGetIdentities,
     getIdentityBalance: wrappedGetIdentityBalance,
+    getIdentityBalanceAndRevision: wrappedGetIdentityBalanceAndRevision,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
     getDataContracts: wrappedGetDataContracts,

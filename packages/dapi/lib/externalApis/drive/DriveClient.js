@@ -149,6 +149,20 @@ class DriveClient {
   }
 
   /**
+   * Fetch serialized identity balance and revision
+   *
+   * @param {GetIdentityBalanceAndRevisionRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityBalanceAndRevision(request) {
+    return this.request(
+      '/identity/balanceAndRevision',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
    * Fetch serialized identities by its public key hashes
    *
    * @param {GetIdentitiesByPublicKeyHashesRequest} request
