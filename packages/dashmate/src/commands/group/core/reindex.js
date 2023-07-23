@@ -10,7 +10,6 @@ class GroupReindexCommand extends GroupBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {isSystemConfig} isSystemConfig
    * @param {reindexNodeTask} reindexNodeTask
    * @param {createRpcClient} createRpcClient
    * @param {dockerCompose} dockerCompose
@@ -25,7 +24,6 @@ class GroupReindexCommand extends GroupBaseCommand {
       detach: isDetach,
       force: isForce,
     },
-    isSystemConfig,
     reindexNodeTask,
     createRpcClient,
     dockerCompose,
