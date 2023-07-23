@@ -17,6 +17,7 @@ const {
   v0: {
     BroadcastStateTransitionRequest,
     GetIdentityRequest,
+    GetIdentityBalanceRequest,
     GetDataContractRequest,
     GetDataContractsRequest,
     GetDataContractHistoryRequest,
@@ -32,6 +33,8 @@ const {
       GetIdentityResponse: PBJSGetIdentityResponse,
       GetIdentitiesRequest: PBJSGetIdentitiesRequest,
       GetIdentitiesResponse: PBJSGetIdentitiesResponse,
+      GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
+      GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
       GetDataContractRequest: PBJSGetDataContractRequest,
       GetDataContractResponse: PBJSGetDataContractResponse,
       GetDataContractsRequest: PBJSGetDataContractsRequest,
@@ -59,6 +62,9 @@ const getIdentityHandlerFactory = require(
 );
 const getIdentitiesHandlerFactory = require(
   './getIdentitiesHandlerFactory',
+);
+const getIdentityBalanceHandlerFactory = require(
+  './getIdentityBalanceHandlerFactory',
 );
 const broadcastStateTransitionHandlerFactory = require(
   './broadcastStateTransitionHandlerFactory',
@@ -155,6 +161,22 @@ function platformHandlersFactory(
       PBJSGetIdentitiesResponse,
     ),
     wrapInErrorHandler(getIdentitiesHandler),
+  );
+
+  // getIdentityBalance
+  const getIdentityBalanceHandler = getIdentityBalanceHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetIdentityBalance = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityBalanceRequest,
+      PBJSGetIdentityBalanceRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityBalanceResponse,
+    ),
+    wrapInErrorHandler(getIdentityBalanceHandler),
   );
 
   // getDocuments
@@ -287,6 +309,7 @@ function platformHandlersFactory(
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
     getIdentities: wrappedGetIdentities,
+    getIdentityBalance: wrappedGetIdentityBalance,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
     getDataContracts: wrappedGetDataContracts,
