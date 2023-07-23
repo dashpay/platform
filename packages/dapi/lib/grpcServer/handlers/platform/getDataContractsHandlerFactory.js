@@ -1,3 +1,17 @@
+const {
+  server: {
+    error: {
+      InvalidArgumentGrpcError,
+    },
+  },
+} = require('@dashevo/grpc-common');
+
+const {
+  v0: {
+    GetDataContractsResponse,
+  },
+} = require('@dashevo/dapi-grpc');
+
 /**
  * @param {DriveClient} driveClient
  *
