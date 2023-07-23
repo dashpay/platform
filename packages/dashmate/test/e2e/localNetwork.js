@@ -48,21 +48,22 @@ describe.only('Local Network', function main() {
     assertLocalServicesRunning = container.resolve('assertLocalServicesRunning');
   });
 
-  after(async () => {
-    const resetNodeTask = await container.resolve('resetNodeTask');
-
-    for (const config of configFile.getGroupConfigs(groupName)) {
-      const resetTask = resetNodeTask(config);
-
-      await resetTask.run({
-        isVerbose: true,
-        isHardReset: false,
-        isForce: true,
-      });
-    }
-
-    homeDir.remove();
-  });
+  // TODO: Uncomment
+  // after(async () => {
+  //   const resetNodeTask = await container.resolve('resetNodeTask');
+  //
+  //   for (const config of configFile.getGroupConfigs(groupName)) {
+  //     const resetTask = resetNodeTask(config);
+  //
+  //     await resetTask.run({
+  //       isVerbose: true,
+  //       isHardReset: false,
+  //       isForce: true,
+  //     });
+  //   }
+  //
+  //   homeDir.remove();
+  // });
 
   describe('setup', () => {
     it('should setup local network', async () => {
