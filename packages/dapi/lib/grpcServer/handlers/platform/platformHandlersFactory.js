@@ -18,6 +18,7 @@ const {
     BroadcastStateTransitionRequest,
     GetIdentityRequest,
     GetDataContractRequest,
+    GetDataContractsRequest,
     GetDataContractHistoryRequest,
     GetDocumentsRequest,
     GetIdentitiesByPublicKeyHashesRequest,
@@ -30,6 +31,8 @@ const {
       GetIdentityResponse: PBJSGetIdentityResponse,
       GetDataContractRequest: PBJSGetDataContractRequest,
       GetDataContractResponse: PBJSGetDataContractResponse,
+      GetDataContractsRequest: PBJSGetDataContractsRequest,
+      GetDataContractsResponse: PBJSGetDataContractsResponse,
       GetDocumentsRequest: PBJSGetDocumentsRequest,
       GetDocumentsResponse: PBJSGetDocumentsResponse,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
@@ -59,6 +62,9 @@ const getDocumentsHandlerFactory = require(
 );
 const getDataContractHandlerFactory = require(
   './getDataContractHandlerFactory',
+);
+const getDataContractsHandlerFactory = require(
+  './getDataContractsHandlerFactory',
 );
 const getDataContractHistoryHandlerFactory = require(
   './getDataContractHistoryHandlerFactory',
@@ -159,6 +165,22 @@ function platformHandlersFactory(
       PBJSGetDataContractResponse,
     ),
     wrapInErrorHandler(getDataContractHandler),
+  );
+
+  // getDataContracts
+  const getDataContractsHandler = getDataContractsHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetDataContracts = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetDataContractsRequest,
+      PBJSGetDataContractsRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetDataContractsResponse,
+    ),
+    wrapInErrorHandler(getDataContractsHandler),
   );
 
   // getDataContractHistory
