@@ -266,6 +266,7 @@ function platformHandlersFactory(
     getIdentity: wrappedGetIdentity,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
+    getDataContracts: wrappedGetDataContracts,
     getDataContractHistory: wrappedGetDataContractHistory,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
