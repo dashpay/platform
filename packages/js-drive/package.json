@@ -4,7 +4,7 @@
   "version": "0.24.15",
   "description": "Replicated state machine for Dash Platform",
   "engines": {
-    "node": ">=12"
+    "node": ">=18"
   },
   "contributors": [
     {
