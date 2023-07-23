@@ -28,7 +28,7 @@ function getDataContractsHandlerFactory(driveClient) {
   async function getDataContractsHandler(call) {
     const { request } = call;
 
-    const dataContractIds = request.getIds();
+    const dataContractIds = request.getIdsList();
 
     if (dataContractIds === null) {
       throw new InvalidArgumentGrpcError('data contract ids are not specified');

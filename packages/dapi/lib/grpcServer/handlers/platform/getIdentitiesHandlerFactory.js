@@ -28,7 +28,7 @@ function getIdentitiesHandlerFactory(driveClient) {
   async function getIdentitiesHandler(call) {
     const { request } = call;
 
-    const identitiIds = request.getIds();
+    const identitiIds = request.getIdsList();
 
     if (identitiIds === null) {
       throw new InvalidArgumentGrpcError('identity ids are not specified');
