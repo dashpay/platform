@@ -179,7 +179,10 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
 
-                config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
+                const subnet = config.get('docker.network.subnet').split('.');
+                subnet[2] = nodeIndex;
+
+                config.set('docker.network.subnet', subnet.join('.'));
 
                 // Setup Core debug logs
                 const coreLogFilePath = homeDir.joinPath('logs', config.getName(), 'core.log');

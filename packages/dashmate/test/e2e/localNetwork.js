@@ -3,7 +3,7 @@ const { asValue } = require('awilix');
 const createDIContainer = require('../../src/createDIContainer');
 const HomeDir = require('../../src/config/HomeDir');
 
-describe('Local Network', function main() {
+describe.only('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
@@ -29,14 +29,17 @@ describe('Local Network', function main() {
 
     configFile = createSystemConfigs();
 
-    // Enable dashmate helper docker build for local group
+    // Update local config template that will be used to setup nodes
     const localConfig = configFile.getConfig(groupName);
     localConfig.set('dashmate.helper.docker.build.enabled', true);
-    // DASHMATE_HELPER_API_PORT
-    // CORE_P2P_PORT
-    // PLATFORM_DRIVE_TENDERDASH_P2P_PORT
-    // PLATFORM_DRIVE_TENDERDASH_RPC_PORT
-    // PLATFORM_DRIVE_TENDERDASH_PPROF_PORT
+    localConfig.set('docker.network.subnet', '172.30.0.0/24');
+    localConfig.set('dashmate.helper.api.port', 40000);
+    localConfig.set('core.p2p.port', 40001);
+    localConfig.set('core.rpc.port', 40002);
+    localConfig.set('platform.dapi.envoy.http.port', 40003);
+    localConfig.set('platform.drive.tenderdash.p2p.port', 40004);
+    localConfig.set('platform.drive.tenderdash.rpc.port', 40005);
+    localConfig.set('platform.drive.tenderdash.pprof.port', 40006);
 
     container.register({
       configFile: asValue(configFile),
@@ -86,15 +89,13 @@ describe('Local Network', function main() {
         configGroup: asValue(configGroup),
       });
 
+      // Write configs
       await configFileRepository.write(configFile);
 
-      // Write service configs
       const renderServiceTemplates = container.resolve('renderServiceTemplates');
+
       const writeServiceConfigs = container.resolve('writeServiceConfigs');
-
       for (const config of configGroup) {
-        config.set('dashmate.helper.docker.build.enabled', true);
-
         const serviceConfigFiles = renderServiceTemplates(config);
         writeServiceConfigs(config.getName(), serviceConfigFiles);
       }

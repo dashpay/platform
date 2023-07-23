@@ -96,10 +96,18 @@ describe('Testnet HP Fullnode', function main() {
       config = configFile.getConfig(preset);
 
       config.set('dashmate.helper.docker.build.enabled', true);
+      config.set('docker.network.subnet', '172.27.24.0/24');
+      config.set('dashmate.helper.api.port', 40000);
+      config.set('core.p2p.port', 40001);
+      config.set('core.rpc.port', 40002);
+      config.set('platform.dapi.envoy.http.port', 40003);
+      config.set('platform.drive.tenderdash.p2p.port', 40004);
+      config.set('platform.drive.tenderdash.rpc.port', 40005);
+      config.set('platform.drive.tenderdash.pprof.port', 40006);
 
+      // Write configs
       await configFileRepository.write(configFile);
 
-      // Write service configs
       const renderServiceTemplates = container.resolve('renderServiceTemplates');
       const writeServiceConfigs = container.resolve('writeServiceConfigs');
 
