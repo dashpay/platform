@@ -11,6 +11,7 @@ describe('Local Network', function main() {
   let container;
   let configGroup;
   let configFile;
+  let configFileRepository;
   let assertLocalServicesRunning;
 
   const groupName = 'local';
@@ -22,6 +23,8 @@ describe('Local Network', function main() {
     homeDir.change(HomeDir.createTemp());
 
     // Create config file
+    configFileRepository = container.resolve('configFileRepository');
+
     const createSystemConfigs = container.resolve('createSystemConfigs');
 
     configFile = createSystemConfigs();
@@ -29,6 +32,11 @@ describe('Local Network', function main() {
     // Enable dashmate helper docker build for local group
     const localConfig = configFile.getConfig(groupName);
     localConfig.set('dashmate.helper.docker.build.enabled', true);
+    // DASHMATE_HELPER_API_PORT
+    // CORE_P2P_PORT
+    // PLATFORM_DRIVE_TENDERDASH_P2P_PORT
+    // PLATFORM_DRIVE_TENDERDASH_RPC_PORT
+    // PLATFORM_DRIVE_TENDERDASH_PPROF_PORT
 
     container.register({
       configFile: asValue(configFile),
@@ -77,6 +85,8 @@ describe('Local Network', function main() {
       container.register({
         configGroup: asValue(configGroup),
       });
+
+      await configFileRepository.write(configFile);
 
       // Write service configs
       const renderServiceTemplates = container.resolve('renderServiceTemplates');

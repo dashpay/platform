@@ -17,6 +17,7 @@ describe('Testnet Fullnode', function main() {
   let container;
   let config;
   let configFile;
+  let configFileRepository;
   let assertServiceRunning;
   let lastBlockHeight;
   let waitForCoreData;
@@ -28,6 +29,9 @@ describe('Testnet Fullnode', function main() {
 
     homeDir = container.resolve('homeDir');
     homeDir.change(HomeDir.createTemp());
+
+    // Create config file
+    configFileRepository = container.resolve('configFileRepository');
 
     const createSystemConfigs = container.resolve('createSystemConfigs');
 
@@ -93,6 +97,9 @@ describe('Testnet Fullnode', function main() {
 
       config.set('dashmate.helper.docker.build.enabled', true);
 
+      await configFileRepository.write(configFile);
+
+      // Write service configs
       const renderServiceTemplates = container.resolve('renderServiceTemplates');
       const writeServiceConfigs = container.resolve('writeServiceConfigs');
 
