@@ -163,6 +163,20 @@ class DriveClient {
   }
 
   /**
+   * Fetch serialized identity keys
+   *
+   * @param {GetIdentityKeysRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityKeys(request) {
+    return this.request(
+      '/identity/keys',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
    * Fetch serialized identity by its public key hashes
    *
    * @param {GetIdentityByPublicKeyHashesRequest} request

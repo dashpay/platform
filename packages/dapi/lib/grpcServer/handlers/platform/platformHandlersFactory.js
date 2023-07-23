@@ -19,6 +19,7 @@ const {
     GetIdentityRequest,
     GetIdentityBalanceRequest,
     GetIdentityBalanceAndRevisionRequest,
+    GetIdentityKeysRequest,
     GetDataContractRequest,
     GetDataContractsRequest,
     GetDataContractHistoryRequest,
@@ -39,6 +40,8 @@ const {
       GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
       GetIdentityBalanceAndRevisionRequest: PBJSGetIdentityBalanceAndRevisionRequest,
       GetIdentityBalanceAndRevisionResponse: PBJSGetIdentityBalanceAndRevisionResponse,
+      GetIdentityKeysRequest: PBJSGetIdentityKeysRequest,
+      GetIdentityKeysResponse: PBJSGetIdentityKeysResponse,
       GetDataContractRequest: PBJSGetDataContractRequest,
       GetDataContractResponse: PBJSGetDataContractResponse,
       GetDataContractsRequest: PBJSGetDataContractsRequest,
@@ -71,6 +74,9 @@ const getIdentitiesHandlerFactory = require(
 );
 const getIdentityBalanceHandlerFactory = require(
   './getIdentityBalanceHandlerFactory',
+);
+const getIdentityKeysHandlerFactory = require(
+  './getIdentityKeysHandlerFactory',
 );
 const getIdentityBalanceAndRevisionHandlerFactory = require(
   './getIdentityBalanceAndRevisionHandlerFactory',
@@ -205,6 +211,22 @@ function platformHandlersFactory(
       PBJSGetIdentityBalanceAndRevisionResponse,
     ),
     wrapInErrorHandler(getIdentityBalanceAndRevisionHandler),
+  );
+
+  // getIdentityKeys
+  const getIdentityKeysHandler = getIdentityKeysHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetIdentityKeys = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityKeysRequest,
+      PBJSGetIdentityKeysRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityKeysResponse,
+    ),
+    wrapInErrorHandler(getIdentityKeysHandler),
   );
 
   // getDocuments
@@ -355,6 +377,7 @@ function platformHandlersFactory(
     getIdentities: wrappedGetIdentities,
     getIdentityBalance: wrappedGetIdentityBalance,
     getIdentityBalanceAndRevision: wrappedGetIdentityBalanceAndRevision,
+    getIdentityKeys: wrappedGetIdentityKeys,
     getDocuments: wrappedGetDocuments,
     getDataContract: wrappedGetDataContract,
     getDataContracts: wrappedGetDataContracts,
