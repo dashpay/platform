@@ -29,6 +29,7 @@ const {
     GetIdentityByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
+    GetProofsRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -58,6 +59,8 @@ const {
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
       GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
       GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
+      GetProofsRequest: PBJSGetProofsRequest,
+      GetProofsResponse: PBJSGetProofsResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -107,6 +110,9 @@ const waitForStateTransitionResultHandlerFactory = require(
 );
 const getConsensusParamsHandlerFactory = require(
   './getConsensusParamsHandlerFactory',
+);
+const getProofsHandlerFactory = require(
+  './getProofsHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -325,6 +331,22 @@ function platformHandlersFactory(
     wrapInErrorHandler(getIdentitiesByPublicKeyHashesHandler),
   );
 
+  // getProofs
+  const getProofsHandler = getProofsHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetProofs = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetProofsRequest,
+      PBJSGetProofsRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetProofsResponse,
+    ),
+    wrapInErrorHandler(getProofsHandler),
+  );
+
   // waitForStateTransitionResult
   const fetchProofForStateTransition = fetchProofForStateTransitionFactory(driveClient);
 
@@ -386,6 +408,7 @@ function platformHandlersFactory(
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
+    getProofs: wrappedGetProofs,
   };
 }
 
