@@ -25,6 +25,7 @@ const {
     GetDocumentsRequest,
     GetIdentitiesRequest,
     GetIdentitiesByPublicKeyHashesRequest,
+    GetIdentityByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     pbjs: {
@@ -46,6 +47,8 @@ const {
       GetDocumentsResponse: PBJSGetDocumentsResponse,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
+      GetIdentityByPublicKeyHashesResponse: PBJSGetIdentityByPublicKeyHashesResponse,
+      GetIdentityByPublicKeyHashesRequest: PBJSGetIdentityByPublicKeyHashesRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -86,6 +89,9 @@ const getDataContractsHandlerFactory = require(
 );
 const getDataContractHistoryHandlerFactory = require(
   './getDataContractHistoryHandlerFactory',
+);
+const getIdentityByPublicKeyHashesHandlerFactory = require(
+  './getIdentityByPublicKeyHashesHandlerFactory',
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',
@@ -265,6 +271,22 @@ function platformHandlersFactory(
     wrapInErrorHandler(getDataContractHistoryHandler),
   );
 
+  // getIdentityByPublicKeyHashes
+  const getIdentityByPublicKeyHashesHandler = getIdentityByPublicKeyHashesHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetIdentityByPublicKeyHashes = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetIdentityByPublicKeyHashesRequest,
+      PBJSGetIdentityByPublicKeyHashesRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetIdentityByPublicKeyHashesResponse,
+    ),
+    wrapInErrorHandler(getIdentityByPublicKeyHashesHandler),
+  );
+
   // getIdentitiesByPublicKeyHashes
   const getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
     driveClient,
@@ -337,6 +359,7 @@ function platformHandlersFactory(
     getDataContract: wrappedGetDataContract,
     getDataContracts: wrappedGetDataContracts,
     getDataContractHistory: wrappedGetDataContractHistory,
+    getIdentityByPublicKeyHashes: wrappedGetIdentityByPublicKeyHashes,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
