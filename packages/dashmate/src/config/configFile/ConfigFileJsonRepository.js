@@ -3,24 +3,24 @@ const fs = require('fs');
 const Ajv = require('ajv');
 
 const Config = require('../Config');
+
 const ConfigFile = require('./ConfigFile');
 
-const { CONFIG_FILE_PATH } = require('../../constants');
-
-const configFileJsonSchema = require('../../../configs/schema/configFileJsonSchema');
-
+const configFileJsonSchema = require('./configFileJsonSchema');
 const ConfigFileNotFoundError = require('../errors/ConfigFileNotFoundError');
-const InvalidConfigFileFormatError = require('../errors/InvalidConfigFileFormatError');
 
+const InvalidConfigFileFormatError = require('../errors/InvalidConfigFileFormatError');
 const packageJson = require('../../../package.json');
 
 class ConfigFileJsonRepository {
   /**
    * @param {migrateConfigFile} migrateConfigFile
+   * @param {HomeDir} homeDir
    */
-  constructor(migrateConfigFile) {
+  constructor(migrateConfigFile, homeDir) {
     this.migrateConfigFile = migrateConfigFile;
     this.ajv = new Ajv();
+    this.configFilePath = homeDir.joinPath('config.json');
   }
 
   /**
@@ -29,17 +29,17 @@ class ConfigFileJsonRepository {
    * @returns {Promise<ConfigFile>}
    */
   async read() {
-    if (!fs.existsSync(CONFIG_FILE_PATH)) {
-      throw new ConfigFileNotFoundError(CONFIG_FILE_PATH);
+    if (!fs.existsSync(this.configFilePath)) {
+      throw new ConfigFileNotFoundError(this.configFilePath);
     }
 
-    const configFileJSON = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
+    const configFileJSON = fs.readFileSync(this.configFilePath, 'utf8');
 
     let configFileData;
     try {
       configFileData = JSON.parse(configFileJSON);
     } catch (e) {
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
+      throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
     const migratedConfigFileData = this.migrateConfigFile(
@@ -53,7 +53,7 @@ class ConfigFileJsonRepository {
     if (!isValid) {
       const error = new Error(this.ajv.errorsText(undefined, { dataVar: 'configFile' }));
 
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, error);
+      throw new InvalidConfigFileFormatError(this.configFilePath, error);
     }
 
     let configs;
@@ -61,7 +61,7 @@ class ConfigFileJsonRepository {
       configs = Object.entries(migratedConfigFileData.configs)
         .map(([name, options]) => new Config(name, options));
     } catch (e) {
-      throw new InvalidConfigFileFormatError(CONFIG_FILE_PATH, e);
+      throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
     return new ConfigFile(
@@ -82,7 +82,7 @@ class ConfigFileJsonRepository {
   write(configFile) {
     const configFileJSON = JSON.stringify(configFile.toObject(), undefined, 2);
 
-    fs.writeFileSync(CONFIG_FILE_PATH, configFileJSON, 'utf8');
+    fs.writeFileSync(this.configFilePath, configFileJSON, 'utf8');
   }
 }
 

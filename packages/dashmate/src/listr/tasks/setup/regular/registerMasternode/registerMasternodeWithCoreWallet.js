@@ -2,30 +2,30 @@ const wrapAnsi = require('wrap-ansi');
 const chalk = require('chalk');
 const BlsSignatures = require('@dashevo/bls');
 
-const generateBlsKeys = require('../../../core/generateBlsKeys');
-const validateAddress = require('../validators/validateAddress');
+const generateBlsKeys = require('../../../../../core/generateBlsKeys');
+const validateAddress = require('../../../../prompts/validators/validateAddress');
 const {
   HPMN_COLLATERAL_AMOUNT,
   MASTERNODE_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
-} = require('../../../constants');
+} = require('../../../../../constants');
 
-const validateTxHex = require('../validators/validateTxHex');
-const validatePositiveInteger = require('../validators/validatePositiveInteger');
-const validatePercentage = require('../validators/validatePercentage');
-const formatPercentage = require('../formatters/formatPercentage');
-const createPlatformNodeKeyInput = require('../createPlatformNodeKeyInput');
-const createIpAndPortsForm = require('../createIpAndPortsForm');
-const getBLSPublicKeyFromPrivateKeyHex = require('../../../core/getBLSPublicKeyFromPrivateKeyHex');
-const systemConfigs = require('../../../../configs/system');
-const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
-const validateBLSPrivateKeyFactory = require('../validators/validateBLSPrivateKeyFactory');
+const validateTxHex = require('../../../../prompts/validators/validateTxHex');
+const validatePositiveInteger = require('../../../../prompts/validators/validatePositiveInteger');
+const validatePercentage = require('../../../../prompts/validators/validatePercentage');
+const formatPercentage = require('../../../../prompts/formatters/formatPercentage');
+const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNodeKeyInput');
+const createIpAndPortsForm = require('../../../../prompts/createIpAndPortsForm');
+const getBLSPublicKeyFromPrivateKeyHex = require('../../../../../core/getBLSPublicKeyFromPrivateKeyHex');
+const deriveTenderdashNodeId = require('../../../../../tenderdash/deriveTenderdashNodeId');
+const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
 
 /**
  * Print prompts to collect masternode registration data with Core
  *
  * @param {Context} ctx
  * @param {TaskWrapper} task
+ * @param {SystemConfigs} systemConfigs
  * @returns {Promise<{
  *   keys: {},
  *   ipAndPorts: {
@@ -41,7 +41,7 @@ const validateBLSPrivateKeyFactory = require('../validators/validateBLSPrivateKe
  *   platformNodeKey: null
  * }>}
  */
-async function registerMasternodeWithCoreWallet(ctx, task) {
+async function registerMasternodeWithCoreWallet(ctx, task, systemConfigs) {
   const blsSignatures = await BlsSignatures();
   const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
 
@@ -198,10 +198,10 @@ async function registerMasternodeWithCoreWallet(ctx, task) {
     );
 
     const platformP2PPort = state.ipAndPorts.platformP2PPort
-      || systemConfigs[ctx.preset].platform.drive.tenderdash.p2p.port;
+      || systemConfigs.get(ctx.preset).get('platform.drive.tenderdash.p2p.port');
 
     const platformHTTPPort = state.ipAndPorts.platformHTTPPort
-      || systemConfigs[ctx.preset].platform.dapi.envoy.http.port;
+      || systemConfigs.get(ctx.preset).get('platform.dapi.envoy.http.port');
 
     let command;
     if (ctx.isHP) {

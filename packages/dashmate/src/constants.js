@@ -1,5 +1,4 @@
 const path = require('path');
-const os = require('os');
 
 const networks = {
   NETWORK_LOCAL: 'local',
@@ -30,10 +29,6 @@ const quorumTypes = {
 const MASTERNODE_COLLATERAL_AMOUNT = 1000;
 const HPMN_COLLATERAL_AMOUNT = 4000;
 
-const HOME_DIR_PATH = process.env.DASHMATE_HOME_DIR
-  ? process.env.DASHMATE_HOME_DIR
-  : path.resolve(os.homedir(), '.dashmate');
-const CONFIG_FILE_PATH = path.join(HOME_DIR_PATH, 'config.json');
 const PACKAGE_ROOT_DIR = path.join(__dirname, '..');
 const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
@@ -60,10 +55,8 @@ module.exports = {
   QUORUM_TYPES: quorumTypes,
   MASTERNODE_COLLATERAL_AMOUNT,
   HPMN_COLLATERAL_AMOUNT,
-  HOME_DIR_PATH,
   PACKAGE_ROOT_DIR,
   TEMPLATES_DIR,
-  CONFIG_FILE_PATH,
   OUTPUT_FORMATS,
   SSL_PROVIDERS,
   SSL_PROVIDERS_LIST: Object.values(SSL_PROVIDERS),

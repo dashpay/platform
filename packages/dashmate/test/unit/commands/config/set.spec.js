@@ -1,13 +1,15 @@
 const ConfigSetCommand = require('../../../../src/commands/config/set');
-const Config = require('../../../../src/config/Config');
-const baseConfig = require('../../../../configs/system/base');
+const getBaseConfigFactory = require('../../../../src/config/system/configs/getBaseConfigFactory');
+const HomeDir = require('../../../../src/config/HomeDir');
 
 describe('Config set command', () => {
   const flags = {};
   let config;
 
   beforeEach(async () => {
-    config = new Config('config', baseConfig);
+    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+
+    config = getBaseConfig();
   });
 
   describe('#platform', () => {

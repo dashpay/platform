@@ -6,7 +6,7 @@ const lodashCloneDeep = require('lodash/cloneDeep');
 const lodashIsEqual = require('lodash/isEqual');
 
 const addFormats = require('ajv-formats');
-const configJsonSchema = require('../../configs/schema/configJsonSchema');
+const configJsonSchema = require('./configJsonSchema');
 
 const InvalidOptionPathError = require('./errors/InvalidOptionPathError');
 const InvalidOptionError = require('./errors/InvalidOptionError');

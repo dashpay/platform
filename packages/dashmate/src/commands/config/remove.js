@@ -1,12 +1,11 @@
 const BaseCommand = require('../../oclif/command/BaseCommand');
 
-const systemConfigs = require('../../../configs/system');
-
 class ConfigRemoveCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {ConfigFile} configFile
+   * @param {SystemConfigs} systemConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -15,8 +14,9 @@ class ConfigRemoveCommand extends BaseCommand {
     },
     flags,
     configFile,
+    systemConfigs,
   ) {
-    if (Object.keys(systemConfigs).includes(configName)) {
+    if (systemConfigs.has(configName)) {
       throw new Error(`system config ${configName} can't be removed`);
     }
 

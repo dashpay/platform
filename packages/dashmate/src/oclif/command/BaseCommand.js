@@ -27,14 +27,6 @@ class BaseCommand extends Command {
 
     this.container = await createDIContainer();
 
-    // Set up home dir
-    /**
-     * @type {ensureHomeDir}
-     */
-    const ensureHomeDir = this.container.resolve('ensureHomeDir');
-
-    ensureHomeDir();
-
     // Load configs
     /**
      * @type {ConfigFileJsonRepository}
