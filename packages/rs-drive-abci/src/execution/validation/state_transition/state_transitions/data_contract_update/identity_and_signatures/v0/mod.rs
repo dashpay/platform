@@ -3,6 +3,7 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 

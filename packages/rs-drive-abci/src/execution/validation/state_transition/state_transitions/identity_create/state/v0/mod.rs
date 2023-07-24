@@ -21,6 +21,9 @@ use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
@@ -31,11 +34,13 @@ pub(crate) trait StateTransitionStateValidationV0 {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -44,12 +49,17 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let identity_id = self.get_identity_id();
-        let balance = drive.fetch_identity_balance(self.identity_id.to_buffer(), tx)?;
+        let balance = drive.fetch_identity_balance(
+            self.identity_id.to_buffer(),
+            tx,
+            platform_version,
+        )?;
 
         // Balance is here to check if the identity does already exist
         if balance.is_some() {
@@ -73,7 +83,11 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         };
 
         // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found = drive.has_asset_lock_outpoint(&Bytes36(outpoint), tx)?;
+        let asset_lock_already_found = drive.has_asset_lock_outpoint(
+            &Bytes36(outpoint),
+            tx,
+            &platform_version.drive,
+        )?;
 
         if asset_lock_already_found {
             let outpoint = OutPoint::from(outpoint);
@@ -95,6 +109,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
                 self.public_keys.as_slice(),
                 drive,
                 tx,
+                platform_version,
             )?
             .errors,
         );
@@ -109,6 +124,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 

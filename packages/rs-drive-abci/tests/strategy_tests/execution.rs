@@ -32,6 +32,8 @@ use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::Application;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::identity::accessors::IdentityGettersV0;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,

@@ -5,6 +5,7 @@ use dpp::data_contract::DataContract as Contract;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
 use std::ops::Range;
+use dpp::data_contract::document_type::v0::random_document_type::RandomDocumentTypeParameters;
 
 #[derive(Clone, Debug)]
 pub enum DocumentAction {

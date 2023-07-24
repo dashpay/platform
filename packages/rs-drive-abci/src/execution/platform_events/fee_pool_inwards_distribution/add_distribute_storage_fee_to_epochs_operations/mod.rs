@@ -1,5 +1,6 @@
 mod v0;
 
+use dpp::block::epoch::EpochIndex;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;

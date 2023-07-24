@@ -37,6 +37,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use dpp::version::PlatformVersion;
 
 /// Creates static init chain request fixture
 pub fn static_init_chain_request() -> RequestInitChain {
@@ -112,6 +113,7 @@ pub fn static_system_identity_public_keys_v0() -> SystemIdentityPublicKeysV0 {
 
 /// Creates random system identity public keys fixture
 pub fn random_system_identity_public_keys(seed: Option<u64>) -> SystemIdentityPublicKeysV0 {
+    let platform_version = PlatformVersion::latest();
     let mut rng = match seed {
         None => StdRng::from_entropy(),
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
@@ -119,24 +121,24 @@ pub fn random_system_identity_public_keys(seed: Option<u64>) -> SystemIdentityPu
 
     SystemIdentityPublicKeysV0 {
         masternode_reward_shares_contract_owner: RequiredIdentityPublicKeysSet {
-            master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            master: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
+            high: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
         },
         feature_flags_contract_owner: RequiredIdentityPublicKeysSet {
-            master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            master: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
+            high: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
         },
         dpns_contract_owner: RequiredIdentityPublicKeysSet {
-            master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            master: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
+            high: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
         },
         withdrawals_contract_owner: RequiredIdentityPublicKeysSet {
-            master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            master: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
+            high: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
         },
         dashpay_contract_owner: RequiredIdentityPublicKeysSet {
-            master: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            high: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            master: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
+            high: ECDSA_SECP256K1.random_public_key_data(&mut rng, platform_version).unwrap(),
         },
     }
 }

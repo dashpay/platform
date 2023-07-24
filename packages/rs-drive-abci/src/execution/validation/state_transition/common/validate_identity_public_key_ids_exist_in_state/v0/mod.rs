@@ -32,7 +32,7 @@ pub(crate) fn validate_identity_public_key_ids_exist_in_state_v0(
     let keys = drive.fetch_identity_keys::<KeyIDVec>(
         identity_key_request,
         transaction,
-        &platform_version.drive,
+        platform_version,
     )?;
     if keys.len() != key_ids.len() {
         let to_remove = BTreeSet::from_iter(keys);

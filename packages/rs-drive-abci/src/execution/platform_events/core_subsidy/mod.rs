@@ -1,5 +1,6 @@
 mod epoch_core_reward_credits_for_distribution;
 
+use dpp::fee::Credits;
 use drive::fee::credits::Credits;
 
 /// Actual number of core blocks per calendar year with DGW v3 is ~200700 (for example 449750 - 249050)

@@ -5,6 +5,8 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::DocumentTypeRef;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -12,7 +14,10 @@ use dpp::document::Document;
 use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DocumentTransition;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition,
+    DocumentTransitionMethodsV0,
+};
 use dpp::validation::ConsensusValidationResult;
 use drive::contract::Contract;
 use drive::drive::Drive;
@@ -133,7 +138,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
 
     //todo: deal with cost of this operation
     let documents = drive
-        .query_documents(drive_query, None, false, transaction)?
+        .query_documents(drive_query, None, false, transaction, platform_version)?
         .documents;
 
     Ok(ConsensusValidationResult::new_with_data(documents))
