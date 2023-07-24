@@ -12,8 +12,6 @@ function generateEnvsFactory(configFile, homeDir) {
   /**
    * @typedef {function} generateEnvs
    * @param {Config} config
-   * @param {Object} [options={}]
-   * @param {boolean} [options.platformOnly=false]
    * @returns {{
    * COMPOSE_DOCKER_CLI_BUILD: number,
    * CONFIG_NAME: string,
@@ -24,16 +22,14 @@ function generateEnvsFactory(configFile, homeDir) {
    * CORE_LOG_DIRECTORY_PATH: string
    * }}
    */
-  function generateEnvs(config, options = {}) {
+  function generateEnvs(config) {
     const dockerComposeFiles = ['docker-compose.yml'];
     const profiles = [];
 
-    if (!options.platformOnly) {
-      profiles.push('core');
+    profiles.push('core');
 
-      if (config.get('core.masternode.enable')) {
-        profiles.push('masternode');
-      }
+    if (config.get('core.masternode.enable')) {
+      profiles.push('masternode');
     }
 
     if (config.get('dashmate.helper.docker.build.enabled')) {
