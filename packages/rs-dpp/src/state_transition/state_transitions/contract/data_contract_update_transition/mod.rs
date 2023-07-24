@@ -24,6 +24,7 @@ mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 pub use fields::*;
 
@@ -81,7 +82,7 @@ mod test {
     use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use crate::data_contract::DataContract;
     use crate::state_transition::{
-        JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
+        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::LATEST_PLATFORM_VERSION;
@@ -163,7 +164,7 @@ mod test {
         let data = get_test_data();
         let mut json_object = data
             .state_transition
-            .to_json(JsonSerializationOptions {
+            .to_json(JsonStateTransitionSerializationOptions {
                 skip_signature: false,
                 into_validating_json: false,
             })

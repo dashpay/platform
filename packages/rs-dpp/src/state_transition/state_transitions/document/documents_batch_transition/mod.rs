@@ -47,6 +47,7 @@ mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use crate::state_transition::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,

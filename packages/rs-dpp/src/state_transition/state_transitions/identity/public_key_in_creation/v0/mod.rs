@@ -1,3 +1,9 @@
+mod json_conversion;
+mod value_conversion;
+mod cbor_conversion;
+mod version;
+mod types;
+
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "state-transition-cbor-conversion")]
 use ciborium::value::Value as CborValue;
@@ -46,38 +52,6 @@ pub struct IdentityPublicKeyInCreationV0 {
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Convertible for IdentityPublicKeyInCreationV0 {
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
-    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
-            .try_into_validating_json()
-            .map_err(ProtocolError::ValueError)
-    }
-
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
-            .try_into()
-            .map_err(ProtocolError::ValueError)
-    }
-    #[cfg(feature = "state-transition-cbor-conversion")]
-    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let object = self.to_object()?;
-
-        cbor_serializer::serializable_value_to_cbor(&object, None)
-    }
 }
 
 impl IdentityPublicKeyInCreationV0 {

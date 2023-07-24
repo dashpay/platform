@@ -6,6 +6,7 @@ mod types;
 pub(super) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use crate::platform_serialization::PlatformSignable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};

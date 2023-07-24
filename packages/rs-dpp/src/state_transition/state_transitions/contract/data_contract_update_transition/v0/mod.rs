@@ -6,6 +6,7 @@ mod types;
 pub(super) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};

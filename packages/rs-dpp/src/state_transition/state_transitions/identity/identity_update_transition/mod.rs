@@ -7,6 +7,7 @@ pub mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use fields::*;
 

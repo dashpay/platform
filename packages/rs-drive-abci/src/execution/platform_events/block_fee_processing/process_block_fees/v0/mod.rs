@@ -149,6 +149,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 .map(|outcome| outcome.leftovers),
             Some(transaction),
             &mut batch,
+            platform_version,
         )?;
 
         let pending_epoch_refunds = if !epoch_info.is_epoch_change() {
@@ -173,7 +174,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             true,
             &block_info.to_block_info(epoch_info.try_into()?),
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {

@@ -6,6 +6,7 @@ mod types;
 pub(super) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{KeyID, SecurityLevel};

@@ -9,6 +9,7 @@ pub(crate) mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
 use crate::serialization_traits::Signable;

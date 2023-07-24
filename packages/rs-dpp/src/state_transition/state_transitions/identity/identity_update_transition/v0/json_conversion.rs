@@ -8,7 +8,7 @@ mod test {
     use crate::state_transition::identity_update_transition::fields::property_names::*;
     use crate::state_transition::identity_update_transition::fields::*;
     use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use crate::state_transition::{JsonSerializationOptions, StateTransitionJsonConvert};
+    use crate::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
     use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
     use getrandom::getrandom;
     use platform_value::BinaryData;
@@ -27,7 +27,7 @@ mod test {
         };
 
         let result = transition
-            .to_json(JsonSerializationOptions {
+            .to_json(JsonStateTransitionSerializationOptions {
                 skip_signature: false,
                 into_validating_json: false,
             })

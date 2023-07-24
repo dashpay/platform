@@ -37,8 +37,10 @@ use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
 use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
+use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use dpp::version::PlatformVersion;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
+use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use drive::grovedb::Transaction;
 
 use crate::error::Error;
@@ -152,7 +154,7 @@ mod tests {
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
         use dpp::block::block_info::BlockInfo;
-        use drive::fee::epoch::CreditsPerEpoch;
+        use dpp::fee::epoch::CreditsPerEpoch;
 
         /// Process and validate an epoch change
         pub fn process_and_validate_epoch_change<C>(
@@ -163,6 +165,7 @@ mod tests {
             previous_block_time_ms: Option<u64>,
             should_distribute: bool,
             transaction: &Transaction,
+            platform_version: &PlatformVersion,
         ) -> BlockStateInfoV0 {
             let current_epoch = Epoch::new(epoch_index).expect("expected valid epoch index");
 
@@ -179,12 +182,13 @@ mod tests {
                         None,
                         Some(transaction),
                         &mut batch,
+                        platform_version,
                     )
                     .expect("should add distribute block fees into pools operations");
 
                 platform
                     .drive
-                    .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction))
+                    .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction), platform_version)
                     .expect("should apply batch");
             }
 
@@ -227,12 +231,13 @@ mod tests {
                     &block_fees,
                     transaction,
                     &mut batch,
+                    platform_version,
                 )
                 .expect("should process epoch");
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction))
+                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction), platform_version)
                 .expect("should apply batch");
 
             // Next thousandth epoch should be created
@@ -248,7 +253,7 @@ mod tests {
             // epoch should be initialized as current
             let epoch_start_block_height = platform
                 .drive
-                .get_epoch_start_block_height(&current_epoch, Some(transaction))
+                .get_epoch_start_block_height(&current_epoch, Some(transaction), platform_version)
                 .expect("should get start block time from start epoch");
 
             assert_eq!(epoch_start_block_height, block_height);
@@ -263,7 +268,7 @@ mod tests {
 
             let aggregate_storage_fees = platform
                 .drive
-                .get_epoch_storage_credits_for_distribution(&thousandth_epoch, Some(transaction))
+                .get_epoch_storage_credits_for_distribution(&thousandth_epoch, Some(transaction), platform_version)
                 .expect("should get epoch storage fees");
 
             if should_distribute {
@@ -278,6 +283,9 @@ mod tests {
 
     #[test]
     fn test_processing_epoch_change_for_epoch_0_1_and_4() {
+
+        let platform_version = PlatformVersion::first();
+
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -305,6 +313,7 @@ mod tests {
             None,
             false,
             &transaction,
+            platform_version,
         );
 
         /*
@@ -324,6 +333,7 @@ mod tests {
             Some(block_info.block_time_ms),
             true,
             &transaction,
+            platform_version,
         );
 
         /*
@@ -343,6 +353,7 @@ mod tests {
             Some(block_info.block_time_ms),
             true,
             &transaction,
+            platform_version,
         );
     }
 }
