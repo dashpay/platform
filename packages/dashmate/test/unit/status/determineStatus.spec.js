@@ -8,11 +8,9 @@ describe('determineStatus', () => {
   describe('#docker', () => {
     let dockerComposeMock;
     let config;
-    let configFile;
 
     beforeEach(async function it() {
       config = getConfigMock(this.sinon);
-      configFile = { getProjectId: this.sinon.stub() };
       dockerComposeMock = { inspectService: this.sinon.stub() };
     });
 
