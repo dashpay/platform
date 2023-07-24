@@ -21,7 +21,7 @@ jobs:
       - name: Extract running workflow ids
         id: extract_workflow_ids
         run: |
-          current_branch=${GITHUB_REF##*/}
+          current_branch=${GITHUB_HEAD_REF}
 
           # loop thru the workflows found & filter out ones that are not on PRs pointing to this branch
           workflow_ids=$(echo '${{ steps.get_active_workflows.outputs.data }}' | \
