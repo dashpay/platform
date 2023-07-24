@@ -225,7 +225,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let db_transaction = drive.grove.start_transaction();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
@@ -565,7 +565,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("should create root tree");
 
         let contract = platform_value!({
@@ -936,13 +936,14 @@ mod tests {
 
         let value = platform_value::to_value(&person_0_original).expect("person into value");
 
-        let document: Document = platform_value::from_value(value).expect("value to document");
+        let document =
+            Document::from_platform_value(value, platform_version).expect("value to document");
 
         let document_serialized = document
             .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
-        assert_eq!(document_serialized.len(), 115);
+        assert_eq!(document_serialized.len(), 116);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -957,10 +958,10 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1235
+            //Explanation for 1236
 
             //todo
-            1235
+            1236
         } else {
             //Explanation for 959
 
@@ -976,13 +977,13 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 221
+            // Value -> 222
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   117 for item serialized bytes (verified above)
+            //   118 for item serialized bytes (verified above)
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -995,7 +996,7 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 221 + 68 = 354
+            // Total 65 + 222 + 68 = 355
 
             //// Tree 1 / <PersonDataContract> / 1 / person / message
             // Key: My apples are safe
@@ -1093,9 +1094,9 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            //// 356 + 179 + 145 + 278
+            //// 357 + 179 + 145 + 278
 
-            959
+            960
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1118,14 +1119,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25827688);
+            assert_eq!(*removed_credits, 25855200);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 956); // we refunded 956 instead of 959
+            assert_eq!(refund_equivalent_bytes, 957); // we refunded 956 instead of 959
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1163,7 +1164,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 310 } else { 1 };
+        let expected_added_bytes = if using_history { 311 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1235,7 +1236,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1235 } else { 959 };
+        let expected_added_bytes = if using_history { 1236 } else { 960 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1255,14 +1256,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25827688);
+            assert_eq!(*removed_credits, 25855200);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 956); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 957); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1432,32 +1433,32 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1235
+            //Explanation for 1236
 
             //todo
-            1235
+            1236
         } else {
             //Explanation for 959
 
             // Document Storage
 
             //// Item
-            // = 355 Bytes
+            // = 356 Bytes
 
-            // Explanation for 355 storage_written_bytes
+            // Explanation for 356 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 222
+            // Value -> 223
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   116 for item serialized bytes
+            //   117 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1470,7 +1471,7 @@ mod tests {
             // Child Heights 2
             // Feature Type Basic 1
 
-            // Total 65 + 222 + 68 = 355
+            // Total 65 + 223 + 68 = 356
 
             //// Tree 1 / <PersonDataContract> / 1 / person / message
             // Key: My apples are safe
@@ -1568,9 +1569,9 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            // 357 + 179 + 145 + 278 = 959
+            // 358 + 179 + 145 + 278 = 960
 
-            959
+            960
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1591,7 +1592,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1236 } else { 960 };
+        let expected_added_bytes = if using_history { 1237 } else { 961 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1644,7 +1645,8 @@ mod tests {
 
         let value = platform_value::to_value(person).expect("person into value");
 
-        let document = platform_value::from_value(value).expect("value to document");
+        let document =
+            Document::from_platform_value(value, platform_version).expect("value to document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
