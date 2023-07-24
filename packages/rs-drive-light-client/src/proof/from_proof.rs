@@ -76,7 +76,7 @@ pub trait FromProof<Req, Resp> {
 /// Developers should implement this trait to provide required quorum details to [FromProof] implementations.
 ///
 /// It defines a single method `get_quorum_public_key` which retrieves the public key of a given quorum.
-#[uniffi::export(callback_interface)]
+#[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
 #[cfg_attr(feature = "mock", mockall::automock)]
 pub trait QuorumInfoProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.

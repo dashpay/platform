@@ -1,11 +1,3 @@
-use std::{fmt::Display, marker::PhantomData, str::FromStr};
-
-use base64::Engine;
-use serde::{
-    de::{Deserialize, SeqAccess, Visitor},
-    Serializer,
-};
-
 pub use tenderdash_proto::serializers::bytes::{
     base64string, hexstring, option_base64string, vec_base64string,
 };

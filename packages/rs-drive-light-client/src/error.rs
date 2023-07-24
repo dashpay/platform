@@ -1,5 +1,6 @@
 /// Errors
-#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Error))]
 pub enum Error {
     /// Not initialized
     #[error("not initialized: call initialize() first")]
@@ -72,6 +73,7 @@ pub enum Error {
     UnexpectedCallbackError { error: String, reason: String },
 }
 
+#[cfg(feature = "uniffi")]
 impl From<uniffi::UnexpectedUniFFICallbackError> for Error {
     fn from(value: uniffi::UnexpectedUniFFICallbackError) -> Self {
         Self::UnexpectedCallbackError {

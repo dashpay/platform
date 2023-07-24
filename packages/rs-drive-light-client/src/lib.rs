@@ -9,4 +9,5 @@ pub mod proof;
 
 pub use error::Error;
 
+#[cfg(feature = "uniffi")]
 uniffi::include_scaffolding!("dash_drive_v0");
