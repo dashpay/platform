@@ -2,7 +2,6 @@ const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
 const { NETWORK_LOCAL } = require('../../constants');
-const generateEnvs = require('../../util/generateEnvs');
 const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
 
 /**
@@ -14,7 +13,6 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
- * @param {ConfigFile} configFile
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -25,7 +23,6 @@ function startNodeTaskFactory(
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
-  configFile,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -61,9 +58,12 @@ function startNodeTaskFactory(
         title: 'Check node is not started',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          if (await dockerCompose.isNodeRunning(
-            generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
-          )) {
+          const profiles = [];
+          if (ctx.platformOnly) {
+            profiles.push('platform');
+          }
+
+          if (await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -72,7 +72,7 @@ function startNodeTaskFactory(
         title: 'Check core is started',
         enabled: (ctx) => ctx.platformOnly === true,
         task: async () => {
-          if (!await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'core')) {
+          if (!await dockerCompose.isServiceRunning(config, 'core')) {
             throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
@@ -91,9 +91,12 @@ function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = generateEnvs(configFile, config, { platformOnly: ctx.platformOnly });
+          const profiles = [];
+          if (ctx.platformOnly) {
+            profiles.push('platform');
+          }
 
-          await dockerCompose.up(envs);
+          await dockerCompose.up(config, { profiles });
         },
       },
       {

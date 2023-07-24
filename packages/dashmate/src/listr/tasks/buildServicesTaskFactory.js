@@ -1,15 +1,12 @@
 const { Listr } = require('listr2');
-const generateEnvs = require('../../util/generateEnvs');
 
 /**
  *
  * @param {DockerCompose} dockerCompose
- * @param {ConfigFile} configFile
  * @return {buildServicesTask}
  */
 function buildServicesTaskFactory(
   dockerCompose,
-  configFile,
 ) {
   /**
    * @typedef {buildServicesTask}
@@ -20,8 +17,6 @@ function buildServicesTaskFactory(
     return new Listr({
       title: 'Build services',
       task: async (ctx, task) => {
-        const envs = generateEnvs(configFile, config);
-
         let buildArgs = [];
         if (process.env.SCCACHE_GHA_ENABLED === 'true') {
           buildArgs = buildArgs.concat([
@@ -34,7 +29,7 @@ function buildServicesTaskFactory(
           ]);
         }
 
-        const obs = await dockerCompose.build(envs, undefined, buildArgs);
+        const obs = await dockerCompose.build(config, undefined, buildArgs);
 
         await new Promise((res, rej) => {
           obs

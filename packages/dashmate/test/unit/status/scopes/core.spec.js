@@ -23,7 +23,6 @@ describe('getCoreScopeFactory', () => {
     let rpcService;
 
     let config;
-    let configFile;
     let getCoreScope;
 
     beforeEach(async function it() {
@@ -40,8 +39,6 @@ describe('getCoreScopeFactory', () => {
       mockInsightProvider = this.sinon.stub(providers, 'insight');
       mockGetConnectionHost = this.sinon.stub();
 
-      configFile = { getProjectId: this.sinon.stub() };
-
       config = getConfigMock(this.sinon);
 
       config.get.withArgs('network').returns('testnet');
@@ -57,7 +54,6 @@ describe('getCoreScopeFactory', () => {
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-        configFile,
       );
     });
 

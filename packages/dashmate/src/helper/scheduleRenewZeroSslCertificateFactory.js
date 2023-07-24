@@ -1,5 +1,4 @@
 const { CronJob } = require('cron');
-const generateEnvs = require('../util/generateEnvs');
 const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
 
 /**
@@ -7,14 +6,12 @@ const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
  * @param {getCertificate} getCertificate
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {DockerCompose} dockerCompose
- * @param {ConfigFile} configFile
  * @return {scheduleRenewZeroSslCertificate}
  */
 function scheduleRenewZeroSslCertificateFactory(
   getCertificate,
   obtainZeroSSLCertificateTask,
   dockerCompose,
-  configFile,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -44,10 +41,11 @@ function scheduleRenewZeroSslCertificateFactory(
     const job = new CronJob(
       expiresAt, async () => {
         await obtainZeroSSLCertificateTask(config);
-        // restart envoy
-        const serviceInfo = await dockerCompose.inspectService(generateEnvs(configFile, config), 'dapi_envoy');
 
-        await dockerCompose.execCommand(generateEnvs(configFile, config), serviceInfo.Id, 'kill -SIGHUP 1');
+        // restart envoy
+        const serviceInfo = await dockerCompose.inspectService(config, 'dapi_envoy');
+
+        await dockerCompose.execCommand(config, serviceInfo.Id, 'kill -SIGHUP 1');
 
         return job.stop();
       }, async () => {
