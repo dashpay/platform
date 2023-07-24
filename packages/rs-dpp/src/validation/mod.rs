@@ -24,7 +24,7 @@ pub mod block_time_window;
 #[cfg(feature = "validation")]
 pub mod byte_array_meta;
 #[cfg(feature = "validation")]
-mod json_schema_validator;
+pub mod json_schema_validator;
 #[cfg(feature = "validation")]
 mod meta_validators;
 mod validation_result;

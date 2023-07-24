@@ -215,12 +215,15 @@ mod tests {
 
     use chrono::Utc;
     use rust_decimal::prelude::ToPrimitive;
+    use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
     use drive::common::helpers::identities::create_test_masternode_identities;
+    use drive::common::identities::create_test_masternode_identities;
     use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 
     mod helpers {
+        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use super::*;
         use crate::execution::types::block_fees::v0::BlockFeesV0;
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
@@ -238,6 +241,7 @@ mod tests {
             transaction: &Transaction,
         ) -> BlockStateInfoV0 {
             let current_epoch = Epoch::new(epoch_index).unwrap();
+            let platform_version = PlatformVersion::latest();
 
             let block_time_ms =
                 genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0 + block_height;
@@ -271,6 +275,7 @@ mod tests {
                     &epoch_info,
                     block_fees.clone(),
                     transaction,
+                    platform_version,
                 )
                 .expect("should process block fees");
 
@@ -279,7 +284,7 @@ mod tests {
 
             let aggregated_storage_fees = platform
                 .drive
-                .get_storage_fees_from_distribution_pool(Some(transaction))
+                .get_storage_fees_from_distribution_pool(Some(transaction), platform_version)
                 .expect("should get storage fees from distribution pool");
 
             if epoch_info.is_epoch_change() {
@@ -304,6 +309,7 @@ mod tests {
                     &current_epoch,
                     &proposer_pro_tx_hash,
                     Some(transaction),
+                    platform_version,
                 )
                 .expect("should get proposers");
 
@@ -321,7 +327,11 @@ mod tests {
 
             let processing_fees = platform
                 .drive
-                .get_epoch_processing_credits_for_distribution(&current_epoch, Some(transaction))
+                .get_epoch_processing_credits_for_distribution(
+                    &current_epoch,
+                    Some(transaction),
+                    platform_version,
+                )
                 .expect("should get processing credits");
 
             assert_ne!(processing_fees, 0);
@@ -332,6 +342,7 @@ mod tests {
 
     #[test]
     fn test_process_3_block_fees_from_different_epochs() {
+        let platform_version = PlatformVersion::latest();
         // We are not adding to the overall platform credits so we can't verify
         // the sum trees
         let platform = TestPlatformBuilder::new()
@@ -347,7 +358,13 @@ mod tests {
         platform.create_mn_shares_contract(Some(&transaction));
 
         let proposers =
-            create_test_masternode_identities(&platform.drive, 6, Some(56), Some(&transaction));
+            create_test_masternode_identities(
+                &platform.drive,
+                6,
+                Some(56),
+                Some(&transaction),
+                platform_version,
+            );
 
         let genesis_time_ms = Utc::now()
             .timestamp_millis()

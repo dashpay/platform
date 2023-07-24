@@ -2,6 +2,10 @@ use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
+use dpp::fee::epoch::distribution::{
+    distribute_storage_fee_to_epochs_collection,
+    subtract_refunds_from_epoch_credits_collection,
+};
 use dpp::fee::epoch::SignedCreditsPerEpoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::GroveDbOpBatch;
@@ -24,7 +28,7 @@ impl<C> Platform<C> {
     ) -> Result<storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome, Error> {
         let storage_distribution_fees = self
             .drive
-            .get_storage_fees_from_distribution_pool(transaction, &platform_version.drive)?;
+            .get_storage_fees_from_distribution_pool(transaction, platform_version)?;
 
         let mut credits_per_epochs = SignedCreditsPerEpoch::default();
 
@@ -33,7 +37,6 @@ impl<C> Platform<C> {
             &mut credits_per_epochs,
             storage_distribution_fees,
             current_epoch_index,
-            platform_version,
         )?;
 
         // Deduct pending refunds since epoch where data was removed skipping previous
@@ -51,7 +54,6 @@ impl<C> Platform<C> {
                 credits,
                 epoch_index,
                 current_epoch_index,
-                platform_version,
             )?;
         }
 
@@ -60,7 +62,6 @@ impl<C> Platform<C> {
                 batch,
                 credits_per_epochs,
                 transaction,
-                &platform_version.drive,
             )?;
 
         Ok(
@@ -88,6 +89,7 @@ mod tests {
         };
         use dpp::fee::Credits;
         use drive::drive::batch::DriveOperation;
+        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;

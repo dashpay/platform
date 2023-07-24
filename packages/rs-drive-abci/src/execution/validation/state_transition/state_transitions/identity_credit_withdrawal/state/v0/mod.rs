@@ -16,6 +16,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction,
 };
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {

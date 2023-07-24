@@ -42,6 +42,7 @@ use dpp::ProtocolError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 
 /// Lifetime of an epoch in milliseconds.
 pub const EPOCH_CHANGE_TIME_MS_V0: u64 = 1576800000;

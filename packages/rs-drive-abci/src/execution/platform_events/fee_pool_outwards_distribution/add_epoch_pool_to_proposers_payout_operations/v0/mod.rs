@@ -58,7 +58,7 @@ impl<C> Platform<C> {
                 &unpaid_epoch_tree,
                 None,
                 Some(transaction),
-                &platform_version.drive,
+                platform_version,
             )
             .map_err(Error::Drive)?;
 
@@ -177,6 +177,9 @@ mod tests {
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
+        use dpp::block::block_info::BlockInfo;
+        use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
         #[test]
         fn test_payout_to_proposers() {
@@ -231,6 +234,7 @@ mod tests {
                     proposers_count,
                     Some(68), //random number
                     Some(&transaction),
+                    platform_version,
                 );
 
             let share_identities_and_documents =
@@ -259,12 +263,19 @@ mod tests {
                     0,
                     &transaction,
                     &mut batch,
+                    platform_version,
                 )
                 .expect("should distribute fees");
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should apply batch");
 
             assert_eq!(proposers_paid_count, 10);

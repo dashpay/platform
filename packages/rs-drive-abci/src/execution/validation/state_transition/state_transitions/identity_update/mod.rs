@@ -10,6 +10,8 @@ use dpp::{
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition_action::StateTransitionAction;
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;

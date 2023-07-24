@@ -1,6 +1,8 @@
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
-use dpp::document::Document;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::document::{Document, DocumentV0Setters};
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::dpp::contracts::withdrawals_contract;
@@ -48,7 +50,7 @@ where
             None,
             true,
             Some(transaction),
-            &platform_version.drive
+            platform_version,
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -66,7 +68,7 @@ where
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -162,7 +164,7 @@ where
             true,
             &block_info,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         Ok(())
@@ -194,10 +196,14 @@ mod tests {
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+    use dpp::version::PlatformVersion;
     use drive::tests::helpers::setup::setup_system_data_contract;
 
     #[test]
     fn test_statuses_are_updated() {
+        let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -289,8 +295,11 @@ mod tests {
             proposer_results: None,
         };
 
-        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-            .expect("to load system data contract");
+        let data_contract = load_system_data_contract(
+            SystemDataContract::Withdrawals,
+            platform_version.protocol_version,
+        )
+        .expect("to load system data contract");
 
         // TODO: figure out the bug in data contract factory
         let data_contract = DataContract::from_cbor(
@@ -318,6 +327,7 @@ mod tests {
                     "transactionId": Identifier::new([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
                 None,
+                platform_version.protocol_version,
             ).expect("expected withdrawal document");
 
         let document_type = data_contract
@@ -333,9 +343,9 @@ mod tests {
         );
 
         let document_2 = get_withdrawal_document_fixture(
-                &data_contract,
-                owner_id,
-                platform_value!({
+            &data_contract,
+            owner_id,
+            platform_value!({
                     "amount": 1000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
@@ -345,8 +355,10 @@ mod tests {
                     "transactionSignHeight": 10u64,
                     "transactionId": Identifier::new([3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
-                None,
-            ).expect("expected withdrawal document");
+            None,
+            platform_version.protocol_version,
+        )
+        .expect("expected withdrawal document");
 
         setup_document(
             &platform.drive,
@@ -361,6 +373,7 @@ mod tests {
                 95,
                 &block_execution_context.into(),
                 &transaction,
+                platform_version,
             )
             .expect("to update withdrawal statuses");
 
@@ -369,6 +382,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
+                platform_version,
             )
             .expect("to fetch documents by status");
 
@@ -383,6 +397,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
                 Some(&transaction),
+                platform_version,
             )
             .expect("to fetch documents by status");
 

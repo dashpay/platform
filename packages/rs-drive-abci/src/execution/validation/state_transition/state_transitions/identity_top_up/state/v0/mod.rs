@@ -21,6 +21,9 @@ use dpp::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionAction,
 };
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
 use drive::grovedb::TransactionArg;
@@ -30,6 +33,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0<C: CoreRPCLike>(
@@ -43,6 +47,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let outpoint = match self.asset_lock_proof.out_point() {
             None => {
@@ -62,7 +67,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         // Now we should check that we aren't using an asset lock again
         let asset_lock_already_found = platform
             .drive
-            .has_asset_lock_outpoint(&Bytes36(outpoint), tx)?;
+            .has_asset_lock_outpoint(&Bytes36(outpoint), tx, &platform_version.drive)?;
 
         if asset_lock_already_found {
             let outpoint = OutPoint::from(outpoint);

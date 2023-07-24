@@ -31,6 +31,11 @@ use dpp::{
     state_transition::StateTransitionAction,
     Convertible, ProtocolError,
 };
+use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -38,6 +43,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0(
@@ -50,6 +56,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
@@ -59,7 +66,13 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-                .get_contract_with_fetch_info_and_fee(self.data_contract.id.0 .0, None, add_to_cache_if_pulled, tx)?
+                .get_contract_with_fetch_info_and_fee(
+                    self.data_contract.id.0.0,
+                    None,
+                    add_to_cache_if_pulled,
+                    tx,
+                    platform_version,
+                )?
                 .1
             else {
                 validation_result

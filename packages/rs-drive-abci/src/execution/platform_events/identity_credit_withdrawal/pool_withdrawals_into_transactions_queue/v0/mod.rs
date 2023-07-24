@@ -2,6 +2,9 @@ use std::ops::Deref;
 
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::DocumentV0Setters;
 use dpp::version::PlatformVersion;
 
 use drive::dpp::contracts::withdrawals_contract;
@@ -47,7 +50,7 @@ where
             None,
             true,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -57,7 +60,7 @@ where
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         if documents.is_empty() {
@@ -127,7 +130,6 @@ where
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
             &mut drive_operations,
-            &platform_version.drive,
         );
 
         self.drive.apply_drive_operations(
@@ -135,7 +137,7 @@ where
             true,
             &block_info,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         Ok(())
@@ -149,6 +151,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
@@ -160,9 +163,11 @@ mod tests {
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn test_pooling() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -211,8 +216,11 @@ mod tests {
             .into(),
         );
 
-        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-            .expect("to load system data contract");
+        let data_contract = load_system_data_contract(
+            SystemDataContract::Withdrawals,
+            platform_version.protocol_version,
+        )
+        .expect("to load system data contract");
 
         setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
@@ -230,6 +238,7 @@ mod tests {
                 "transactionIndex": 1u64,
             }),
             None,
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
@@ -257,6 +266,7 @@ mod tests {
                 "transactionIndex": 2u64,
             }),
             None,
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
@@ -271,7 +281,11 @@ mod tests {
         let guarded_block_execution_context = platform.block_execution_context.write().unwrap();
         let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
         platform
-            .pool_withdrawals_into_transactions_queue_v0(block_execution_context, &transaction)
+            .pool_withdrawals_into_transactions_queue_v0(
+                block_execution_context,
+                &transaction,
+                platform_version,
+            )
             .expect("to pool withdrawal documents into transactions");
 
         let updated_documents = platform
@@ -279,6 +293,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
                 Some(&transaction),
+                &platform_version,
             )
             .expect("to fetch withdrawal documents");
 

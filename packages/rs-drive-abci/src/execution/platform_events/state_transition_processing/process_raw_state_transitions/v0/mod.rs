@@ -67,7 +67,6 @@ where
                     &platform_ref,
                     state_transition,
                     Some(transaction),
-                    platform_version,
                 )?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {

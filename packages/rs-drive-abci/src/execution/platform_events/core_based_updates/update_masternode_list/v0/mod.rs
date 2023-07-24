@@ -84,6 +84,7 @@ where
                         .into_keys()
                         .map(|pro_tx_hash| pro_tx_hash.into_inner()),
                     Some(transaction),
+                    &platform_version.drive,
                 )?;
             }
         }

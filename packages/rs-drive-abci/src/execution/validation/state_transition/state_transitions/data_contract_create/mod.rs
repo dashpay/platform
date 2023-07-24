@@ -9,6 +9,7 @@ use dpp::state_transition::StateTransitionAction;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{FeatureVersion, PlatformVersion};
 use drive::drive::Drive;

@@ -44,7 +44,12 @@ use rand::{Rng, SeedableRng};
 
 use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
+use dpp::document::INITIAL_REVISION;
+use dpp::version::PlatformVersion;
 use drive::common::helpers::identities::create_test_identity_with_rng;
+use drive::common::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
 use drive::dpp::document::Document;
 use drive::drive::flags::StorageFlags;
@@ -61,6 +66,7 @@ fn create_test_mn_share_document(
     pay_to_identity: &Identity,
     percentage: u16,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Document {
     let id = Identifier::random();
 
@@ -101,6 +107,7 @@ fn create_test_mn_share_document(
             BlockInfo::genesis(),
             true,
             transaction,
+            platform_version,
         )
         .expect("expected to insert a document successfully");
 
@@ -115,6 +122,7 @@ pub fn create_test_masternode_share_identities_and_documents(
     pro_tx_hashes: &Vec<[u8; 32]>,
     seed: Option<u64>,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Vec<(Identity, Document)> {
     let mut rng = match seed {
         None => StdRng::from_entropy(),
@@ -128,7 +136,14 @@ pub fn create_test_masternode_share_identities_and_documents(
             .iter()
             .map(|mn_identity| {
                 let id = rng.gen::<[u8; 32]>();
-                let identity = create_test_identity_with_rng(drive, id, &mut rng, transaction);
+                let identity = create_test_identity_with_rng(
+                    drive,
+                    id,
+                    &mut rng,
+                    transaction,
+                    platform_version,
+                )
+                .expect("expected to create a test identity");
                 let document = create_test_mn_share_document(
                     drive,
                     contract,
@@ -136,6 +151,7 @@ pub fn create_test_masternode_share_identities_and_documents(
                     &identity,
                     5000,
                     transaction,
+                    platform_version,
                 );
                 (identity, document)
             })
