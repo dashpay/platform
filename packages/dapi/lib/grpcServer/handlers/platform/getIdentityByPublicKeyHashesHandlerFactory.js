@@ -28,7 +28,7 @@ function getIdentityByPublicKeyHashesHandlerFactory(
   async function getIdentityByPublicKeyHashesHandler(call) {
     const { request } = call;
 
-    if (request.getPublicKeyHashesList().length === 0) {
+    if (request.getPublicKeyHashList().length === 0) {
       throw new InvalidArgumentGrpcError('No public key hashes were provided');
     }
 
