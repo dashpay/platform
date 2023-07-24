@@ -1,38 +1,124 @@
-use dapi_grpc::platform::v0::{
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
-    GetIdentityRequest, GetIdentityResponse,
-};
+use dapi_grpc::platform::v0 as grpc;
 use dpp::prelude::Identity;
-use drive_light_client::proof::from_proof::{FromProof, MockQuorumInfoProvider};
+use drive_light_client::{
+    proof::from_proof::{FromProof, IdentitiesByPublicKeyHashes},
+    Error,
+};
 
 include!("utils.rs");
 
-#[test]
-fn get_identities_by_hashes_not_found() {
-    let (req, resp, provider): (
-        GetIdentitiesByPublicKeyHashesRequest,
-        GetIdentitiesByPublicKeyHashesResponse,
-        MockQuorumInfoProvider,
-    ) = load("vectors/get_identities_by_hashes_not_found.json");
+/// `test_maybe_from_proof` is a macro that generates test functions for different types of proofs.
+///
+/// # Parameters
+///
+/// * `$name`: The name of the test function to be generated.
+/// * `$req`: The type of the request object.
+/// * `$resp`: The type of the response object.
+/// * `$object`: The type of object from which the proof may be derived.
+/// * `$vector`: File containing request and response data, relative to `$CARGO_MANIFEST_DIR/tests`
+/// * `$result`: The expected result pattern of the test.
+///
+/// # Usage
+///
+/// This macro is used in the following way:
+///
+/// ```rust
+/// test_maybe_from_proof!(
+///     test_name,
+///     GetIdentityRequest,
+///     GetIdentityResponse,
+///     Identity,
+///     "vectors/identity_not_found.json",
+///     Ok(Some(Identity)),
+/// );
+/// ```
+///
+/// In the example above, `test_name` is the name of the generated test function,
+/// `"vectors/identity_not_found.json"` is the file containing request and response data,
+/// `GetIdentityRequest`, `GetIdentityResponse`, and `Identity` are the types of the request, response, and object respectively,
+/// `Ok(Some(Identity))` is the expected result pattern of the test.
+///
+/// # Generated Function
+///
+/// The generated function will load the specified request and response data from the vector,
+/// attempt to derive an instance of the specified object type from the loaded proofs,
+/// and finally assert that the result matches the expected result pattern.
+///
+/// # Vector file format
+///
+/// Vector file should contain sequence of 3 objects:
+///
+/// * request
+/// * response
+/// * quorum public key
+///
+/// ## Request
+///
+/// Request should contain JSON-encoded request data structure
+///
+/// ## Response
+///
+/// Response should contain two elements: `result` and `metadata`.
+/// `result` should contain `proof` structure.
+/// `metadata` should directly contain returned metadata.
+///
+/// Note that, when retrieveing response using a tool like grpcui, the `result` element is missing
+/// and must be added manually.
+///
+/// ## Quorum public key
+///
+/// Quorum public key should be **hex-encoded** value of `"quorum_public_key"` field.
+///
+/// /// ## Example
+/// ```json
+/// {
+///    "id": "base64-encoded",
+///    "prove": true
+/// },
+/// {
+///    "result": {
+///       "proof": {
+///          "grovedb_proof": "base64-encoded",
+///          ...
+///       }
+///    },
+///    "metadata": {
+///        "height": "365",
+///        ...
+///    }
+/// },
+/// {
+///    "quorum_public_key": "hex-encoded"
+/// }
+/// ```
+macro_rules! test_maybe_from_proof {
+    ($name:ident,$req:ty,$resp:ty,$object:ty,$vector:expr,$result:pat) => {
+        #[test]
+        fn $name() {
+            let (request, response, quorum_info_callback) = load::<$req, $resp>($vector);
 
-    let ids = drive_light_client::proof::from_proof::IdentitiesByPublicKeyHashes::maybe_from_proof(
-        &req,
-        &resp,
-        Box::new(provider),
-    )
-    .unwrap();
-    assert!(ids.is_none())
-    // Vec<Identity>::from_proof(req, resp, provider)
+            let ret =
+                <$object>::maybe_from_proof(&request, &response, Box::new(quorum_info_callback));
+            println!("Result: {:?}", ret);
+            assert!(matches!(ret, $result));
+        }
+    };
 }
 
-/// Given some test vectors dumped from a devnet, prove non-existence of identity with some hardcoded identifier
-#[test]
-fn identity_not_found() {
-    enable_logs();
+test_maybe_from_proof! {
+    identity_not_found,
+    grpc::GetIdentityRequest,
+    grpc::GetIdentityResponse,
+    Identity,
+    "vectors/identity_not_found.json",
+    Ok(None)
+}
 
-    let (request, response, provider) =
-        load::<GetIdentityRequest, GetIdentityResponse>("vectors/identity_not_found.json");
-
-    let identity = Identity::maybe_from_proof(&request, &response, Box::new(provider)).unwrap();
-    assert!(identity.is_none())
+test_maybe_from_proof! {
+    get_identities_by_hashes_not_found,
+    grpc::GetIdentitiesByPublicKeyHashesRequest,
+    grpc::GetIdentitiesByPublicKeyHashesResponse,
+    IdentitiesByPublicKeyHashes,
+    "vectors/identities_by_hashes_not_found.json",
+    Ok(None)
 }
