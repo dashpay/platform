@@ -29,8 +29,6 @@ jobs:
             jq 'map(select(.head_branch == "'$current_branch'")) | map(.id)' | \
             jq 'join(",")')
 
-          echo workflow_ids is $workflow_ids
-
           # strip the wrapping quote marks before passing to next step
           echo 'WORKFLOW_IDS='$(echo $workflow_ids | tr -d '"') >> $GITHUB_ENV
 
