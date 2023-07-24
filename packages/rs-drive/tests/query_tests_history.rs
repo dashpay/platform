@@ -59,13 +59,11 @@ use drive::common;
 use drive::tests::helpers::setup::setup_drive;
 
 #[cfg(feature = "full")]
-use drive::contract::Contract;
-#[cfg(feature = "full")]
 use drive::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "full")]
 use drive::drive::config::DriveConfig;
 #[cfg(feature = "full")]
-use drive::drive::contract::add_init_contracts_structure_operations;
+use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
 #[cfg(feature = "full")]
@@ -79,6 +77,14 @@ use drive::query::DriveQuery;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
+use dpp::document::serialization_traits::{
+    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+};
+use dpp::document::DocumentV0Getters;
+use dpp::version::PlatformVersion;
+use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "full")]
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
@@ -182,6 +188,8 @@ pub fn setup(
 ) -> (Drive, DataContract) {
     let drive_config = DriveConfig::default();
 
+    let platform_version = PlatformVersion::latest();
+
     let drive = setup_drive(Some(drive_config));
 
     let db_transaction = drive.grove.start_transaction();
@@ -192,7 +200,7 @@ pub fn setup(
     add_init_contracts_structure_operations(&mut batch);
 
     drive
-        .grove_apply_batch(batch, false, Some(&db_transaction))
+        .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
         .expect("expected to create contracts tree successfully");
 
     // setup code
@@ -220,8 +228,9 @@ pub fn setup(
                 Some(drive::drive::defaults::PROTOCOL_VERSION),
             )
             .expect("expected to serialize to cbor");
-            let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-                .expect("document should be properly deserialized");
+            let document =
+                Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
+                    .expect("document should be properly deserialized");
             let document_type = contract
                 .document_type_for_name("person")
                 .expect("expected to get document type");
@@ -246,6 +255,7 @@ pub fn setup(
                     BlockInfo::default_with_time(block_time),
                     true,
                     Some(&db_transaction),
+                    platform_version,
                 )
                 .expect("expected to add document");
         }
@@ -270,6 +280,8 @@ fn test_setup() {
 #[test]
 fn test_query_historical() {
     let (drive, contract) = setup(10, None, 73509);
+
+    let platform_version = PlatformVersion::latest();
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -312,8 +324,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -323,15 +334,15 @@ fn test_query_historical() {
     )
     .expect("query should be built");
     let (results, _, _) = query
-        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -355,8 +366,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -366,6 +376,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             None,
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -384,8 +395,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -395,15 +405,19 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             None,
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
 
-    let document = Document::from_bytes(results.first().unwrap().as_slice(), person_document_type)
-        .expect("we should be able to deserialize the cbor");
+    let document = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the cbor");
     let last_name = document
-        .properties
         .get("lastName")
         .expect("we should be able to get the last name")
         .as_text()
@@ -428,8 +442,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -439,6 +452,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             None,
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -459,8 +473,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -470,15 +483,19 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             None,
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 1);
 
-    let document = Document::from_bytes(results.first().unwrap().as_slice(), person_document_type)
-        .expect("we should be able to deserialize the cbor");
+    let document = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the cbor");
     let last_name = document
-        .properties
         .get("lastName")
         .expect("we should be able to get the last name")
         .as_text()
@@ -498,8 +515,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -509,6 +525,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             None,
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -526,8 +543,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -537,6 +553,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             None,
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -556,8 +573,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -572,10 +588,10 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -607,8 +623,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -623,10 +638,10 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -654,8 +669,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -672,10 +686,10 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -702,17 +716,17 @@ fn test_query_historical() {
     let ids: HashMap<String, Vec<u8>> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let name = name_value
                 .as_text()
                 .expect("the first name should be a string")
                 .to_string();
-            (name, document.id.to_vec())
+            (name, document.id().to_vec())
         })
         .collect();
 
@@ -735,8 +749,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -753,10 +766,10 @@ fn test_query_historical() {
     let reduced_names_after: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -790,8 +803,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -808,10 +820,10 @@ fn test_query_historical() {
     let reduced_names_after: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -839,8 +851,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -855,10 +866,10 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -882,8 +893,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -899,10 +909,10 @@ fn test_query_historical() {
         .clone()
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -915,10 +925,10 @@ fn test_query_historical() {
     let ages: Vec<u64> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let age_value = document
-                .properties
                 .get("age")
                 .expect("we should be able to get the age");
             let age: u64 = age_value
@@ -958,8 +968,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -974,10 +983,10 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -1013,8 +1022,7 @@ fn test_query_historical() {
     let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(
         where_cbor.as_slice(),
@@ -1029,10 +1037,10 @@ fn test_query_historical() {
     let names: Vec<String> = results
         .iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let first_name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let first_name = first_name_value
@@ -1055,10 +1063,10 @@ fn test_query_historical() {
     let ages: HashMap<String, u8> = results
         .into_iter()
         .map(|result| {
-            let document = Document::from_bytes(result.as_slice(), person_document_type)
-                .expect("we should be able to deserialize the cbor");
+            let document =
+                Document::from_bytes(result.as_slice(), person_document_type, platform_version)
+                    .expect("we should be able to deserialize the cbor");
             let name_value = document
-                .properties
                 .get("firstName")
                 .expect("we should be able to get the first name");
             let name = name_value
@@ -1066,7 +1074,6 @@ fn test_query_historical() {
                 .expect("the first name should be a string")
                 .to_string();
             let age_value = document
-                .properties
                 .get("age")
                 .expect("we should be able to get the age");
             let age: u8 = age_value.to_integer().expect("age should be an integer");
@@ -1105,7 +1112,7 @@ fn test_query_historical() {
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
-    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1128,6 +1135,7 @@ fn test_query_historical() {
             BlockInfo::genesis(),
             true,
             Some(&db_transaction),
+            platform_version,
         )
         .expect("document should be inserted");
 
@@ -1152,7 +1160,7 @@ fn test_query_historical() {
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
     .expect("expected to serialize to cbor");
-    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
         .expect("document should be properly deserialized");
 
     let document_type = contract
@@ -1175,6 +1183,7 @@ fn test_query_historical() {
             BlockInfo::genesis(),
             true,
             Some(&db_transaction),
+            platform_version,
         )
         .expect("document should be inserted");
 
@@ -1188,8 +1197,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1199,6 +1207,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1214,8 +1223,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1225,6 +1233,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1241,8 +1250,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1252,6 +1260,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1270,8 +1279,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1281,17 +1289,21 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 2);
 
-    let last_person =
-        Document::from_bytes(results.first().unwrap().as_slice(), person_document_type)
-            .expect("we should be able to deserialize the cbor");
+    let last_person = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id.to_vec(),
+        last_person.id().to_vec(),
         vec![
             76, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198, 189,
             116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
@@ -1312,8 +1324,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1323,17 +1334,21 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 2);
 
-    let last_person =
-        Document::from_bytes(results.first().unwrap().as_slice(), person_document_type)
-            .expect("we should be able to deserialize the cbor");
+    let last_person = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id.to_vec(),
+        last_person.id().to_vec(),
         vec![
             140, 161, 17, 201, 152, 232, 129, 48, 168, 13, 49, 10, 218, 53, 118, 136, 165, 198,
             189, 116, 116, 22, 133, 92, 104, 165, 186, 249, 94, 81, 45, 20
@@ -1350,8 +1365,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1361,6 +1375,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1377,8 +1392,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1388,17 +1402,21 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
     assert_eq!(results.len(), 12);
 
-    let last_person =
-        Document::from_bytes(results.first().unwrap().as_slice(), person_document_type)
-            .expect("we should be able to deserialize the cbor");
+    let last_person = Document::from_bytes(
+        results.first().unwrap().as_slice(),
+        person_document_type,
+        platform_version,
+    )
+    .expect("we should be able to deserialize the cbor");
 
     assert_eq!(
-        last_person.id.to_vec(),
+        last_person.id().to_vec(),
         vec![
             249, 170, 70, 122, 181, 31, 35, 176, 175, 131, 70, 150, 250, 223, 194, 203, 175, 200,
             107, 252, 199, 227, 154, 105, 89, 57, 38, 85, 236, 192, 254, 88
@@ -1406,7 +1424,7 @@ fn test_query_historical() {
         .as_slice()
     );
 
-    let message_value = last_person.properties.get("message").unwrap();
+    let message_value = last_person.get("message").unwrap();
 
     let message = message_value
         .as_text()
@@ -1430,8 +1448,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     drive
@@ -1441,12 +1458,13 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect_err("not yet implemented");
 
     // assert_eq!(results.len(), 12);
     //
-    // let last_person = Document::from_bytes(results.first().unwrap().as_slice(), person_document_type)
+    // let last_person = Document::from_bytes(results.first().unwrap().as_slice(), person_document_type, platform_version)
     //     .expect("we should be able to deserialize the cbor");
     //
     // assert_eq!(
@@ -1458,7 +1476,7 @@ fn test_query_historical() {
     //         .as_slice()
     // );
     //
-    // let message_value = last_person.properties.get("message").unwrap();
+    // let message_value = last_person.get("message").unwrap();
     //
     // let message = message_value
     //     .as_text()
@@ -1484,8 +1502,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1495,6 +1512,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1514,8 +1532,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let (results, _, _) = drive
@@ -1525,6 +1542,7 @@ fn test_query_historical() {
             query_cbor.as_slice(),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1542,6 +1560,7 @@ fn test_query_historical() {
             true,
             StorageFlags::optional_default_as_cow(),
             Some(&db_transaction),
+            platform_version,
         )
         .expect("expected to apply contract successfully");
 
@@ -1562,6 +1581,7 @@ fn test_query_historical() {
             String::from("contact"),
             None,
             Some(&db_transaction),
+            Some(platform_version.protocol_version),
         )
         .expect("query should be executed");
 
@@ -1581,8 +1601,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let result = drive.query_documents_cbor_from_contract(
@@ -1591,6 +1610,7 @@ fn test_query_historical() {
         query_cbor.as_slice(),
         None,
         Some(&db_transaction),
+        Some(platform_version.protocol_version),
     );
 
     assert!(
@@ -1611,8 +1631,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types
-        .get("person")
+        .document_type_for_name("person")
         .expect("contract should have a person document type");
 
     let result = drive.query_documents_cbor_from_contract(
@@ -1621,6 +1640,7 @@ fn test_query_historical() {
         query_cbor.as_slice(),
         None,
         Some(&db_transaction),
+        Some(platform_version.protocol_version),
     );
 
     assert!(

@@ -25,6 +25,7 @@ use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;
 use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{KeyID, TimestampMillis};
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
