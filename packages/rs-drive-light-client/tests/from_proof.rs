@@ -132,10 +132,10 @@ test_maybe_from_proof! {
     grpc::GetIdentitiesRequest,
     grpc::GetIdentitiesResponse,
     Identities,
-    "vectors/TODO.json",
-    Ok(None)
+    "vectors/identities_not_found.json",
+    Ok(Some(_)) // cannot write a match like `Ok(Some(Vec[None]))`
 }
-
+// todo continue from here
 test_maybe_from_proof! {
     get_identities_by_pubkeys_not_found,
     grpc::GetIdentitiesByPublicKeyHashesRequest,

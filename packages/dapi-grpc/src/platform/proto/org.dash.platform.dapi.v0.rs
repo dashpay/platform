@@ -103,6 +103,7 @@ pub mod get_identity_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesRequest {
     #[prost(bytes = "vec", repeated, tag = "1")]
+    #[serde(with = "crate::deserialization::vec_base64string")]
     pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
@@ -619,6 +620,7 @@ pub mod get_data_contract_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsRequest {
     #[prost(bytes = "vec", repeated, tag = "1")]
+    #[serde(with = "crate::deserialization::vec_base64string")]
     pub ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     #[prost(bool, tag = "2")]
     pub prove: bool,

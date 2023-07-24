@@ -1,0 +1,30 @@
+[
+    {
+        "ids": [
+            "lCJoCnN5TKJdBflau+DETzZZBo/gjyYs9FI7BwIb9pY="
+        ],
+        "prove": true
+    },
+    {
+        "result": {
+            "proof": {
+                "grovedb_proof": "Ab4CAXbY04LyZMQiHJk2E7LMQ1PMyEjE2D+pbpJEkorYb2EDBAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmABi27gzffnuKTuEA1MTQX6e3gRbuVHOmjI5gjRUV8NDcBABxWq2/H8i/cjkiS8SN1XZihiBppPuOfOr4GmhmZ+ki7cRAq2LjwtLqRl3c1vXyNdJbjkiqqNzSo7D6lGlVpFqDdXnEAHDNjUTblAumsUkSxWiCnV+B1nOCpCCPNN/iT9qSVVtJgQBYAAlBAEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgAAJdDT2ZilF785sqTyzqiRJ5U6DXyS5jXETZbxBb48ifQEAH2xUy2aizaitWJt4Yn+JDX0/SxtKlOkrvhAKN0rjROfxERAdECAeOTEW6IdlqOMvhGztO2yd6dxASdV3ksITg47b9fYoEOAkRr2B9TkcQ7Cp/4F+aScMG5j4lIlqCz2kVB91NP8HefEAHVHN3hr0KlBi6TyLch48mF+kjvkgvE/STesqqLt+XNMwLCtRyiRJIQ0Nl/GqvvC/9tW10Trxufc3rtW4FSuu1JsxAFIIJ4LeMbMFEudUIFpcHINuhXx/6Bh9EkCIU4rOrCIvAwPLnuNi62Bt9q4cKEdKaDRPl8Hh/J1v6ss4c6OwEbqyQFIJR6xv2OznR8ffRr5xQnrWrtvyTQr8c4apqfNnnRhMn2BbzIXFMK5mZytVyu5Izws4ye5DpD4KkGDW2Lx9Sl9ooQERECqgv1FJZ+ECpZYk3mPD80A9b9zYa982Ne6FaWN8rJWkYQAW9/c4d/I75gsEUSOnjuiXW651t0qT/PxC+SGWM0z13dEQLRAgGuTSMOQGsZI1dAhRwnJCUha2ZRivxxTkcd0KvN9PaIYAKJNyCpe8Qvbzftju3UlyORgZUgVns2RLzRktV4NRnNLRAB+cnXx4ZIuyP4h3XfmjD3u21bkOzcH2F1lSpY9EsMyYoCArdtnlhzoaFyug5Nd5wfEL7LwokDDB2F6y0wggPyDv4QBSCCeC3jGzBRLnVCBaXByDboV8f+gYfRJAiFOKzqwiLwMCjYM5CSy5YOhZT1K8NRLwoOm9DWwQFT++RVRxeGkXrZBSCUesb9js50fH30a+cUJ61q7b8k0K/HOGqanzZ50YTJ9ijYM5CSy5YOhZT1K8NRLwoOm9DWwQFT++RVRxeGkXrZEBERAshpQLk9FgQyhCt8wmcbc+AqiSsDfux0oKCjsfFqv9NxEAHww4N2LcsSc8MuXlMEIPV8CbREpdZ67RQ4dBMADkcgRBE=",
+                "quorum_hash": "PP+mE5T6c3GPeNBWxIUD6rN8ODa+CVsD7AukkPshLIk=",
+                "signature": "gjlf3rmAaylycIIy7FLX1M0Ptk1i9z9duqqapwl9OSeveMWYMIk5kNDxBMQqNiMxDrWAO28avgkL3CS6EJ1uiT1JiEOUOcIkF/9A/hIn1a6GrfxPnYS2b5VUsDurZTsn",
+                "round": 0,
+                "block_id_hash": "qFvCyP2KlT8VXFH2x4G1G+jJblA16csI6kChdp1JyV0=",
+                "quorum_type": 106
+            }
+        },
+        "metadata": {
+            "height": "224",
+            "core_chain_locked_height": 1632,
+            "time_ms": "1690214737142",
+            "protocol_version": 1,
+            "chain_id": "dashmate_local_38"
+        }
+    },
+    {
+        "quorum_public_key": "a0e878a96f4f35f71077356c6fd4967a07acb02b1e838ac9841f7e10e93c9841ccb0ad4d975cc31fb605014f88bf8250"
+    }
+]
