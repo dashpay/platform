@@ -12,6 +12,8 @@ ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
 
+ENV RUSTC_WRAPPER ""
+
 WORKDIR /platform
 
 # Copy yarn and Cargo files
@@ -49,7 +51,6 @@ RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/rs-drive build && \
     yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean && \
     sccache --show-stats
 
 # Install Drive-specific dependencies using previous

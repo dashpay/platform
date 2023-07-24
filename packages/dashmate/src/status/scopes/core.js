@@ -10,10 +10,12 @@ const ServiceStatusEnum = require('../enums/serviceStatus');
  * @param {DockerCompose} dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
- * @param {ConfigFile} configFile
  */
-function getCoreScopeFactory(dockerCompose,
-  createRpcClient, getConnectionHost, configFile) {
+function getCoreScopeFactory(
+  dockerCompose,
+  createRpcClient,
+  getConnectionHost,
+) {
   /*
    * Get core status scope
    *

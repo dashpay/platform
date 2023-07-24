@@ -12,6 +12,8 @@ ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
 
+ENV RUSTC_WRAPPER ""
+
 WORKDIR /platform
 
 # Copy yarn and Cargo files
@@ -44,13 +46,12 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
+RUN --mount=type=cache,sharing=shared,target=/platform/target \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean && \
     sccache --show-stats
 
 # Install Test Suite specific dependencies using previous
