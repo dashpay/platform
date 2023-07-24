@@ -2198,7 +2198,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.21.2",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",

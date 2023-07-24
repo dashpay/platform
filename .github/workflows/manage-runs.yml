@@ -1,13 +1,12 @@
 name: Manage runs
 on:
-  push:
-    branches:
-      - master
-      - v[0-9]+\.[0-9]+-dev
+  pull_request:
+    types:
+      - closed
 
 jobs:
-  cancel-merged-pr-runs:
-    name: Cancel runs for already merged PRs
+  cancel-merged-or-closed-pr-runs:
+    name: Cancel runs for merged or closed PRs
     runs-on: ubuntu-22.04
     steps:
       - uses: octokit/request-action@v2.x
@@ -22,7 +21,7 @@ jobs:
       - name: Extract running workflow ids
         id: extract_workflow_ids
         run: |
-          current_branch=${GITHUB_REF##*/}
+          current_branch=${GITHUB_HEAD_REF}
 
           # loop thru the workflows found & filter out ones that are not on PRs pointing to this branch
           workflow_ids=$(echo '${{ steps.get_active_workflows.outputs.data }}' | \
