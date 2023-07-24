@@ -3,7 +3,7 @@ const { asValue } = require('awilix');
 const createDIContainer = require('../../src/createDIContainer');
 const HomeDir = require('../../src/config/HomeDir');
 
-describe.only('Local Network', function main() {
+describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
