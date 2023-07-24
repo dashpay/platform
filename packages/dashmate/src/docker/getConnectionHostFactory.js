@@ -1,8 +1,14 @@
+/**
+ * @param {DockerCompose} dockerCompose
+ * @param {boolean} isHelper
+ * @return {getConnectionHost}
+ */
 function getConnectionHostFactory(dockerCompose, isHelper) {
   /**
    * Get proper service endpoint url
-   * @param config
-   * @param serviceName
+   * @typedef {function} getConnectionHost
+   * @param {Config} config
+   * @param {string} serviceName
    * @return {Promise<string>}
    */
   async function getConnectionHost(config, serviceName) {

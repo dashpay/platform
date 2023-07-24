@@ -107,8 +107,7 @@ const assertServiceRunningFactory = require('./test/asserts/assertServiceRunning
 const generateEnvsFactory = require('./config/generateEnvsFactory');
 
 /**
- * @param [options]
- * @param [options.DASHMATE_HOME_DIR]
+ * @param {Object} [options]
  * @returns {Promise<AwilixContainer<any>>}
  */
 async function createDIContainer(options = {}) {
