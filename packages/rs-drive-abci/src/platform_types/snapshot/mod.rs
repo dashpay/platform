@@ -1,9 +1,9 @@
-use std::mem::{take};
 use crate::error::Error;
 use bincode::{config, Decode, Encode};
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
+use std::mem::take;
 use std::path::Path;
 use tenderdash_abci::proto::abci;
 use tenderdash_abci::proto::abci::response_offer_snapshot;
@@ -213,11 +213,7 @@ mod tests {
         let grove_dir = tempfile::tempdir().unwrap();
         let replication_dir = tempfile::tempdir().unwrap();
         let grove = GroveDb::open(grove_dir.path()).unwrap();
-        let mut manager = Manager::new(
-            "".to_string(),
-            Some(3),
-            Some(1),
-        );
+        let mut manager = Manager::new("".to_string(), Some(3), Some(1));
         let app_hash = vec![1, 2, 3, 4, 5];
         let snapshot_1000 = abci::Snapshot {
             height: 1000,
