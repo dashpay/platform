@@ -1,5 +1,7 @@
-// use bincode::serde::{decode_borrowed_from_slice, decode_from_slice, encode_to_vec};
+#[cfg(feature = "uniffi")]
 use bytes::Bytes;
+use drive_light_client::proof::from_proof::Identities;
+use drive_light_client::uniffi_bindings::codec::json::JsonCodec;
 use drive_light_client::uniffi_bindings::codec::{Codec, DEFAULT_CODEC};
 use drive_light_client::Error;
 
@@ -48,6 +50,7 @@ include!("utils.rs");
 /// and finally assert that the result matches the expected result pattern.
 macro_rules! test_proof {
     ($name:ident,$tested_fn:ident,$vector:expr,$req:ty,$resp:ty,$result:pat,$codec:expr) => {
+        #[cfg(feature = "uniffi")]
         #[test]
         fn $name() {
             use dapi_grpc::platform::v0::{$req, $resp};
@@ -72,6 +75,8 @@ macro_rules! test_proof {
     };
 }
 
+static CODEC: JsonCodec = JsonCodec {};
+
 test_proof!(
     identity_proof_json_not_found,
     identity_proof_json,
@@ -79,16 +84,103 @@ test_proof!(
     GetIdentityRequest,
     GetIdentityResponse,
     Result::Err(Error::DocumentMissingInProof),
-    DEFAULT_CODEC
+    CODEC
 );
 
 test_proof!(
-    get_identities_by_pubkey_hashes_not_found,
-    identities_by_pubkey_hashes_json,
-    "vectors/get_identities_by_hashes_not_found.json",
+    identity_by_pubkeys_proof_json,
+    identity_by_pubkeys_proof_json,
+    "vectors/TODO.json",
+    GetIdentityByPublicKeyHashesRequest,
+    GetIdentityByPublicKeyHashesResponse,
+    _,
+    CODEC
+);
+
+test_proof!(
+    identities_proof_json,
+    identities_proof_json,
+    "vectors/TODO.json",
+    GetIdentitiesRequest,
+    GetIdentitiesResponse,
+    Ok(_),
+    CODEC
+);
+
+test_proof!(
+    identities_by_pubkey_hashes_proof_json,
+    identities_by_pubkey_hashes_proof_json,
+    "vectors/TODO.json",
     GetIdentitiesByPublicKeyHashesRequest,
     GetIdentitiesByPublicKeyHashesResponse,
-    Result::Err(Error::DocumentMissingInProof),
-    DEFAULT_CODEC
+    Ok(_),
+    CODEC
 );
- 
+
+test_proof!(
+    identity_balance_proof_json,
+    identity_balance_proof_json,
+    "vectors/TODO.json",
+    GetIdentityRequest,
+    GetIdentityBalanceResponse,
+    Ok(_),
+    CODEC
+);
+
+test_proof!(
+    identity_balance_and_revision_proof_json,
+    identity_balance_and_revision_proof_json,
+    "vectors/TODO.json",
+    GetIdentityRequest,
+    GetIdentityBalanceAndRevisionResponse,
+    Ok(_),
+    CODEC
+);
+
+test_proof!(
+    data_contract_proof_json,
+    data_contract_proof_json,
+    "vectors/TODO.json",
+    GetDataContractRequest,
+    GetDataContractResponse,
+    Ok(_),
+    CODEC
+);
+
+test_proof!(
+    data_contracts_proof_json,
+    data_contracts_proof_json,
+    "vectors/TODO.json",
+    GetDataContractsRequest,
+    GetDataContractsResponse,
+    Ok(_),
+    CODEC
+);
+
+// test_proof!(
+//     documents_proof_json,
+//     DriveQuery<'static>,
+//     GetDocumentsResponse,
+//     Documents,
+//     CODEC
+// );
+
+// test_proof!(
+//     identity_proof_json_not_found,
+//     identity_proof_json,
+//     "vectors/identity_not_found.json",
+//     GetIdentityRequest,
+//     GetIdentityResponse,
+//     Result::Err(Error::DocumentMissingInProof),
+//     DEFAULT_CODEC
+// );
+
+// test_proof!(
+//     get_identities_by_pubkey_hashes_not_found,
+//     identities_by_pubkey_hashes_json,
+//     "vectors/get_identities_by_hashes_not_found.json",
+//     GetIdentitiesByPublicKeyHashesRequest,
+//     GetIdentitiesByPublicKeyHashesResponse,
+//     Result::Err(Error::DocumentMissingInProof),
+//     DEFAULT_CODEC
+// );

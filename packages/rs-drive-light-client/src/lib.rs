@@ -1,4 +1,5 @@
 /// Bindings generation using [uniffi]
+#[cfg(feature = "uniffi")]
 pub mod uniffi_bindings;
 
 /// Error definitions, compatible with bindings
