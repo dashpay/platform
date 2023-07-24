@@ -214,7 +214,7 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             &data.created_data_contract.data_contract.owner_id,
-            data.state_transition.get_owner_id()
+            data.state_transition.owner_id()
         );
     }
 

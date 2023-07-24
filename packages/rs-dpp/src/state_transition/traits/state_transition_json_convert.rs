@@ -1,8 +1,8 @@
-use std::convert::TryInto;
+use crate::state_transition::{StateTransitionValueConvert, ValueConvert};
 use crate::ProtocolError;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use crate::state_transition::{StateTransitionValueConvert, ValueConvert};
+use std::convert::TryInto;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct JsonStateTransitionSerializationOptions {
@@ -15,36 +15,16 @@ pub trait StateTransitionJsonConvert: Serialize + StateTransitionValueConvert {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
-    fn to_json(&self, options: JsonStateTransitionSerializationOptions) -> Result<JsonValue, ProtocolError> {
+    fn to_json(
+        &self,
+        options: JsonStateTransitionSerializationOptions,
+    ) -> Result<JsonValue, ProtocolError> {
         if options.into_validating_json {
             self.to_object(options.skip_signature)?
                 .try_into_validating_json()
                 .map_err(ProtocolError::ValueError)
         } else {
             self.to_object(options.skip_signature)?
-                .try_into()
-                .map_err(ProtocolError::ValueError)
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, Default)]
-pub struct JsonSerializationOptions {
-    pub into_validating_json: bool,
-}
-
-/// The trait contains methods related to conversion of StateTransition into different formats
-pub trait JsonConvert: Serialize + ValueConvert {
-    /// Returns the [`serde_json::Value`] instance that encodes:
-    ///  - Identifiers  - with base58
-    ///  - Binary data  - with base64
-    fn to_json(&self, options: JsonSerializationOptions) -> Result<JsonValue, ProtocolError> {
-        if options.into_validating_json {
-            self.to_object()
-                .try_into_validating_json()
-                .map_err(ProtocolError::ValueError)
-        } else {
-            self.to_object()?
                 .try_into()
                 .map_err(ProtocolError::ValueError)
         }

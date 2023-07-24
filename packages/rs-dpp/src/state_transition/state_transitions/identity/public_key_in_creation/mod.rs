@@ -5,7 +5,10 @@ use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+mod accessors;
+mod fields;
 pub mod v0;
+mod v0_methods;
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
 #[platform_error_type(ProtocolError)]

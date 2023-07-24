@@ -36,11 +36,11 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use drive::drive::batch::{DriveOperation, GroveDbOpBatch};
 use drive::grovedb::Transaction;
 
 use crate::error::Error;
@@ -188,7 +188,13 @@ mod tests {
 
                 platform
                     .drive
-                    .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction), platform_version)
+                    .apply_drive_operations(
+                        batch,
+                        true,
+                        &BlockInfo::default(),
+                        Some(transaction),
+                        platform_version,
+                    )
                     .expect("should apply batch");
             }
 
@@ -237,7 +243,13 @@ mod tests {
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(transaction), platform_version)
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default(),
+                    Some(transaction),
+                    platform_version,
+                )
                 .expect("should apply batch");
 
             // Next thousandth epoch should be created
@@ -268,7 +280,11 @@ mod tests {
 
             let aggregate_storage_fees = platform
                 .drive
-                .get_epoch_storage_credits_for_distribution(&thousandth_epoch, Some(transaction), platform_version)
+                .get_epoch_storage_credits_for_distribution(
+                    &thousandth_epoch,
+                    Some(transaction),
+                    platform_version,
+                )
                 .expect("should get epoch storage fees");
 
             if should_distribute {
@@ -283,7 +299,6 @@ mod tests {
 
     #[test]
     fn test_processing_epoch_change_for_epoch_0_1_and_4() {
-
         let platform_version = PlatformVersion::first();
 
         let platform = TestPlatformBuilder::new()

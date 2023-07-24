@@ -45,9 +45,9 @@ impl StateTransitionLike for DataContractCreateTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.get_owner_id(),
+            DataContractCreateTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

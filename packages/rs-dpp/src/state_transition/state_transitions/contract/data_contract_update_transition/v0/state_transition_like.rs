@@ -49,7 +49,7 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
     }
 
     /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         &self.data_contract.owner_id()
     }
 }

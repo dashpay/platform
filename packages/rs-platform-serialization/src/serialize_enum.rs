@@ -230,8 +230,6 @@ pub(super) fn derive_platform_serialize_enum(
         quote! {}
     };
 
-
-
     let bincode_encode_body = if nested {
         // if it's passthrough we just encode the variants directly
         if passthrough {

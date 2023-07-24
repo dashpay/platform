@@ -44,9 +44,7 @@ use crate::version::drive_versions::{
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{
-    AbciStructureVersion, PlatformArchitectureVersion, StateTransitionSigningVersion,
-};
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,
@@ -64,12 +62,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         min_version: 0,
         max_version: 0,
         default_current_version: 0,
-    },
-    state_transition_signing: StateTransitionSigningVersion {
-        sign_external: 0,
-        sign: 0,
-        verify_public_key_is_enabled: 0,
-        verify_public_key_level_and_purpose: 0,
     },
     drive: DriveVersion {
         structure: DriveStructureVersion {

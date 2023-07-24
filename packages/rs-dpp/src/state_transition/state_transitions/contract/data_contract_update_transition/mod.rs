@@ -82,7 +82,8 @@ mod test {
     use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use crate::data_contract::DataContract;
     use crate::state_transition::{
-        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
+        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
+        StateTransitionValueConvert,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::LATEST_PLATFORM_VERSION;
@@ -214,7 +215,7 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             &data.data_contract.owner_id,
-            data.state_transition.get_owner_id()
+            data.state_transition.owner_id()
         );
     }
 

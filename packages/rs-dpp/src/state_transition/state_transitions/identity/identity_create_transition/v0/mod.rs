@@ -10,7 +10,6 @@ mod version;
 use std::convert::{TryFrom, TryInto};
 
 use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use bincode::{config, Decode, Encode};
@@ -26,6 +25,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
 use crate::prelude::Identifier;
 
+use crate::identity::accessors::IdentityGettersV0;
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -45,14 +45,10 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
 #[platform_serialize(allow_nested)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreateTransitionV0 {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "type"))]
-    pub transition_type: StateTransitionType,
     // The signable
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
     pub asset_lock_proof: AssetLockProof,
-    // Generic identity ST fields
-    pub protocol_version: u32,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
@@ -63,8 +59,6 @@ pub struct IdentityCreateTransitionV0 {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreateTransitionV0Inner {
-    #[serde(rename = "type")]
-    transition_type: StateTransitionType,
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,
     asset_lock_proof: AssetLockProof,
@@ -78,7 +72,6 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 
     fn try_from(value: IdentityCreateTransitionV0Inner) -> Result<Self, Self::Error> {
         let IdentityCreateTransitionV0Inner {
-            transition_type,
             public_keys,
             asset_lock_proof,
             protocol_version,
@@ -86,10 +79,8 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
         } = value;
         let identity_id = asset_lock_proof.create_identifier()?;
         Ok(Self {
-            transition_type,
             public_keys,
             asset_lock_proof,
-            protocol_version,
             signature,
             identity_id,
         })
@@ -100,11 +91,9 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 impl Default for IdentityCreateTransitionV0 {
     fn default() -> Self {
         Self {
-            transition_type: StateTransitionType::IdentityCreate,
             public_keys: Default::default(),
             asset_lock_proof: Default::default(),
             identity_id: Default::default(),
-            protocol_version: Default::default(),
             signature: Default::default(),
         }
     }
@@ -115,7 +104,6 @@ impl TryFrom<Identity> for IdentityCreateTransitionV0 {
 
     fn try_from(identity: Identity) -> Result<Self, Self::Error> {
         let mut identity_create_transition = IdentityCreateTransitionV0::default();
-        identity_create_transition.set_protocol_version(identity.feature_version as u32);
 
         let public_keys = identity
             .public_keys()

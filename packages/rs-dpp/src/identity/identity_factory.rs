@@ -16,6 +16,7 @@ use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
 
 use crate::identity::v0::IdentityV0;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -117,24 +118,48 @@ impl IdentityFactory {
         ChainAssetLockProof::new(core_chain_locked_height, out_point)
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_create_transition(
         &self,
-        identity: Identity,
+        public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+        asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         let mut identity_create_transition: IdentityCreateTransition = identity.try_into()?;
-        identity_create_transition.set_protocol_version(self.protocol_version);
         Ok(identity_create_transition)
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
+    pub fn create_identity_with_create_transition(
+        &self,
+        public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+        asset_lock_proof: AssetLockProof,
+    ) -> Result<(Identity, IdentityCreateTransition), ProtocolError> {
+        let identifier = asset_lock_proof.create_identifier()?;
+        let identity = IdentityV0 {
+            id: identifier,
+            public_keys: public_keys.clone(),
+            balance: 0,
+            revision: 0,
+        };
+
+        let identity = IdentityCreateTransitionV0 {
+            public_keys: public_keys.into_iter().map(|(_, values)| values).collect(),
+            asset_lock_proof,
+            signature: Default::default(),
+            identity_id: identifier,
+        };
+
+        let mut identity_create_transition: IdentityCreateTransition = identity.try_into()?;
+        Ok(identity_create_transition)
+    }
+
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_topup_transition(
         &self,
         identity_id: Identifier,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityTopUpTransition, ProtocolError> {
         let mut identity_topup_transition = IdentityTopUpTransition::default();
-        identity_topup_transition.set_protocol_version(self.protocol_version);
         identity_topup_transition.set_identity_id(identity_id);
 
         identity_topup_transition
@@ -144,7 +169,7 @@ impl IdentityFactory {
         Ok(identity_topup_transition)
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_credit_transfer_transition(
         &self,
         identity_id: Identifier,
@@ -160,7 +185,7 @@ impl IdentityFactory {
         Ok(identity_credit_transfer_transition)
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,

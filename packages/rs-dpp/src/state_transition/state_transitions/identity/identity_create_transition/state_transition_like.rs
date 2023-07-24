@@ -42,9 +42,9 @@ impl StateTransitionLike for IdentityCreateTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            IdentityCreateTransition::V0(transition) => transition.get_owner_id(),
+            IdentityCreateTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

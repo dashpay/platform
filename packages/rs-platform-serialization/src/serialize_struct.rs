@@ -55,7 +55,6 @@ pub(super) fn derive_platform_serialize_struct(
         quote! {}
     };
 
-
     let expanded = if let Some(limit) = platform_serialize_limit {
         quote! {
             impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause

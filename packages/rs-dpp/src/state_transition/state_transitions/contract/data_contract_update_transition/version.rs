@@ -4,6 +4,8 @@ use crate::version::FeatureVersion;
 
 impl FeatureVersioned for DataContractUpdateTransition {
     fn feature_version(&self) -> FeatureVersion {
-        match self { DataContractUpdateTransition::V0(v0) => v0.feature_version() }
+        match self {
+            DataContractUpdateTransition::V0(v0) => v0.feature_version(),
+        }
     }
 }

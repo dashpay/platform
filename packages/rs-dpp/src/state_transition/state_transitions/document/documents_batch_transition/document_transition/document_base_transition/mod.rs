@@ -6,12 +6,14 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
     DocumentBaseTransitionV0, DocumentBaseTransitionV0Methods,
 };
 use bincode::{Decode, Encode};
+use derive_more::Display;
 pub use fields::*;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
 pub enum DocumentBaseTransition {
+    #[display(fmt = "V0({})", "_0")]
     V0(DocumentBaseTransitionV0),
 }
 

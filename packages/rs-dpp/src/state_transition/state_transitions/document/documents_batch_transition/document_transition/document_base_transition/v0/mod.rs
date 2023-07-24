@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use bincode::{Decode, Encode};
+use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
@@ -11,8 +12,14 @@ use serde_json::Value as JsonValue;
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Default, PartialEq, Display)]
 #[serde(rename_all = "camelCase")]
+#[display(
+    fmt = "ID: {}, Type: {}, Contract ID: {}",
+    "id",
+    "document_type_name",
+    "data_contract_id"
+)]
 pub struct DocumentBaseTransitionV0 {
     /// The document ID
     #[serde(rename = "$id")]

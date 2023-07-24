@@ -65,8 +65,11 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
         signer: &S,
         _version: FeatureVersion,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        data_contract.owner_id = identity.id;
-        data_contract.id = DataContract::generate_data_contract_id_v0(identity.id, entropy);
+        data_contract.set_id(DataContract::generate_data_contract_id_v0(
+            identity.id,
+            entropy,
+        ));
+        data_contract.set_owner_id(identity.id);
         let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract,
             entropy: Default::default(),
@@ -97,6 +100,6 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
 
     /// Returns ID of the created contract
     fn get_modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.data_contract.id]
+        vec![self.data_contract.id()]
     }
 }

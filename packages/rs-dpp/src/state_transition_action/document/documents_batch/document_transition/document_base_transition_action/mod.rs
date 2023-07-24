@@ -1,4 +1,6 @@
+use bincode::{Decode, Encode};
 use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
@@ -7,7 +9,7 @@ mod v0;
 use crate::data_contract::DataContract;
 pub use v0::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum DocumentBaseTransitionAction {
     V0(DocumentBaseTransitionActionV0),
 }

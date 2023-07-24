@@ -17,7 +17,6 @@ mod state_transition_types;
 pub mod errors;
 
 mod serialization;
-mod signing;
 mod state_transitions;
 mod traits;
 

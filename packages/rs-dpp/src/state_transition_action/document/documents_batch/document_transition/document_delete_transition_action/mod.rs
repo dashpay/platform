@@ -1,3 +1,5 @@
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::{DocumentDeleteTransitionActionAccessorsV0, DocumentDeleteTransitionActionV0};
 
 #[cfg(feature = "state-transition-transformers")]
@@ -6,7 +8,7 @@ pub mod v0;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum DocumentDeleteTransitionAction {
     V0(DocumentDeleteTransitionActionV0),
 }

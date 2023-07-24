@@ -4,6 +4,8 @@ use crate::version::FeatureVersion;
 
 impl FeatureVersioned for DocumentsBatchTransition {
     fn feature_version(&self) -> FeatureVersion {
-        match self { DocumentsBatchTransition::V0(v0) => v0.feature_version() }
+        match self {
+            DocumentsBatchTransition::V0(v0) => v0.feature_version(),
+        }
     }
 }

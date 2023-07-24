@@ -1,9 +1,13 @@
+use crate::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
 use crate::identity::{KeyID, SecurityLevel};
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0Methods;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::fields::DEFAULT_SECURITY_LEVEL;
 use crate::state_transition::documents_batch_transition::{
     get_security_level_requirement, DocumentsBatchTransitionV0,
 };
 use crate::state_transition::StateTransitionIdentitySigned;
+use platform_value::Identifier;
 use std::convert::TryFrom;
 
 impl StateTransitionIdentitySigned for DocumentsBatchTransitionV0 {

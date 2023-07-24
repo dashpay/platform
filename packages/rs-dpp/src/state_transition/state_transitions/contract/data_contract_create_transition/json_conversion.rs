@@ -1,12 +1,17 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
-use crate::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
+use crate::state_transition::{
+    JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
+};
 use crate::ProtocolError;
 use serde_json::Number;
 use serde_json::Value as JsonValue;
 
 impl StateTransitionJsonConvert for DataContractCreateTransition {
-    fn to_json(&self, options: JsonStateTransitionSerializationOptions) -> Result<JsonValue, ProtocolError> {
+    fn to_json(
+        &self,
+        options: JsonStateTransitionSerializationOptions,
+    ) -> Result<JsonValue, ProtocolError> {
         match self {
             DataContractCreateTransition::V0(transition) => {
                 let mut value = transition.to_json(options)?;
@@ -24,7 +29,9 @@ impl StateTransitionJsonConvert for DataContractCreateTransition {
 #[cfg(test)]
 mod test {
     use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
-    use crate::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
+    use crate::state_transition::{
+        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
+    };
     use crate::version;
     use platform_value::Bytes32;
 

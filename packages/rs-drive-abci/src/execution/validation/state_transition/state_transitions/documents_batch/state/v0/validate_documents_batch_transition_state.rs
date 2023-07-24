@@ -61,7 +61,7 @@ pub(crate) fn validate_document_batch_transition_state(
     transaction: TransactionArg,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
-    let owner_id = *batch_state_transition.get_owner_id();
+    let owner_id = *batch_state_transition.owner_id();
     let mut transitions_by_contracts_and_types: BTreeMap<
         &Identifier,
         BTreeMap<&String, Vec<&DocumentTransition>>,

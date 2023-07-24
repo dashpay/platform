@@ -28,14 +28,6 @@ impl FeatureVersionBounds {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct StateTransitionSigningVersion {
-    pub sign_external: FeatureVersion,
-    pub sign: FeatureVersion,
-    pub verify_public_key_is_enabled: FeatureVersion,
-    pub verify_public_key_level_and_purpose: FeatureVersion,
-}
-
-#[derive(Clone, Debug, Default)]
 pub struct AbciStructureVersion {
     pub extended_block_info: FeatureVersionBounds,
 }
@@ -52,7 +44,6 @@ pub struct PlatformVersion {
     pub identity: FeatureVersionBounds,
     pub proofs: FeatureVersionBounds,
     pub costs: FeatureVersionBounds,
-    pub state_transition_signing: StateTransitionSigningVersion,
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,

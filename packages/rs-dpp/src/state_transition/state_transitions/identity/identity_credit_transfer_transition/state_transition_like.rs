@@ -44,9 +44,9 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            IdentityCreditTransferTransition::V0(transition) => transition.get_owner_id(),
+            IdentityCreditTransferTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

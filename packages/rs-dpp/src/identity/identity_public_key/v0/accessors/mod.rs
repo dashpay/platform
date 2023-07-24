@@ -33,6 +33,10 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV0 {
         &self.data
     }
 
+    fn data_owned(self) -> BinaryData {
+        self.data
+    }
+
     fn disabled_at(&self) -> Option<TimestampMillis> {
         self.disabled_at
     }

@@ -1,12 +1,12 @@
 use crate::serialization_traits::{PlatformSerializable, Signable};
-use crate::state_transition::state_transition_helpers;
+use crate::state_transition::{state_transition_helpers, StateTransitionFieldTypes};
 use crate::ProtocolError;
 use platform_value::{Value, ValueMapHelper};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionValueConvert: Serialize {
+pub trait StateTransitionValueConvert: Serialize + StateTransitionFieldTypes {
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -51,49 +51,19 @@ pub trait StateTransitionValueConvert: Serialize {
     }
     fn from_object(raw_object: Value) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
-    fn from_value_map(
-        raw_data_contract_create_transition: BTreeMap<String, Value>,
-    ) -> Result<Self, ProtocolError>
+        Self: Sized,
+    {
+        platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)
+    }
+
+    fn from_value_map(raw_value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
-    fn clean_value(value: &mut Value) -> Result<(), ProtocolError>;
-}
-
-/// The trait contains methods related to conversion of StateTransition into different formats
-pub trait ValueConvert: Serialize {
-    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
-    /// for Identifiers and binary data
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        Self: Sized,
+    {
+        platform_value::from_value(Value::Map(raw_value_map.into_iter().collect()))
+            .map_err(ProtocolError::ValueError)
     }
-
-    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
-    /// for Identifiers and binary data
-    fn to_canonical_object(&self) -> Result<Value, ProtocolError> {
-        let mut object = self.to_object()?;
-        object.as_map_mut_ref().unwrap().sort_by_keys();
-        Ok(object)
+    fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+        Ok(())
     }
-
-    /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
-    /// for Identifiers and binary data
-    fn to_canonical_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        let mut object = self.to_cleaned_object()?;
-        object.as_map_mut_ref().unwrap().sort_by_keys();
-        Ok(object)
-    }
-
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        self.to_object()
-    }
-    fn from_object(raw_object: Value) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
-    fn from_value_map(
-        raw_data_contract_create_transition: BTreeMap<String, Value>,
-    ) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
-    fn clean_value(value: &mut Value) -> Result<(), ProtocolError>;
 }

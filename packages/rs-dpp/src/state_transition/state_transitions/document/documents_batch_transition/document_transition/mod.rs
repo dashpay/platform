@@ -19,6 +19,7 @@ pub mod document_replace_transition;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
+use derive_more::Display;
 pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
@@ -57,10 +58,15 @@ pub trait DocumentTransitionExt {
     fn set_data_contract_id(&mut self, id: Identifier);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq, Display)]
 pub enum DocumentTransition {
+    #[display(fmt = "CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),
+
+    #[display(fmt = "ReplaceDocumentTransition({})", "_0")]
     Replace(DocumentReplaceTransition),
+
+    #[display(fmt = "DeleteDocumentTransition({})", "_0")]
     Delete(DocumentDeleteTransition),
 }
 

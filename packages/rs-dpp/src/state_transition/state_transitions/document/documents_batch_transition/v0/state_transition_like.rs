@@ -40,7 +40,7 @@ impl StateTransitionLike for DocumentsBatchTransitionV0 {
     }
 
     /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         &self.owner_id
     }
 }

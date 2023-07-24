@@ -215,6 +215,12 @@ impl DataContract {
         }
     }
 
+    pub fn set_owner_id(&mut self, owner_id: Identifier) {
+        match self {
+            DataContract::V0(v0) => v0.owner_id = owner_id,
+        }
+    }
+
     pub fn set_id(&mut self, id: Identifier) {
         match self {
             DataContract::V0(v0) => v0.id = id,

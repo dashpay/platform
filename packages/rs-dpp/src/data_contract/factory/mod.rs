@@ -110,7 +110,7 @@ impl DataContractFactory {
         }
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     /// Create a DataContractCreateTransition
     pub fn create_data_contract_create_transition(
         &self,
@@ -123,7 +123,7 @@ impl DataContractFactory {
         }
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     /// Create a DataContractUpdateTransition
     pub fn create_data_contract_update_transition(
         &self,

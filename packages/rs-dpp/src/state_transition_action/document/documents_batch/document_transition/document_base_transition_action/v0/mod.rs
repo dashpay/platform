@@ -1,12 +1,13 @@
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
 
+use bincode::{Decode, Encode};
 use crate::data_contract::DataContract;
 use crate::identifier::Identifier;
 use serde::{Deserialize, Serialize};
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct DocumentBaseTransitionActionV0 {
     /// The document Id
     pub id: Identifier,
