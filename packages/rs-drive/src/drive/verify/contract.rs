@@ -63,8 +63,7 @@ impl Drive {
             }
         };
         if proved_key_values.is_empty() {
-            let empty: RootHash = [0; 32];
-            return Ok((empty, None));
+            return Ok((root_hash, None));
         }
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
