@@ -373,7 +373,7 @@ mod tests {
                 95,
                 &block_execution_context.into(),
                 &transaction,
-                platform_version.protocol_version,
+                platform_version,
             )
             .expect("to update withdrawal statuses");
 
@@ -382,7 +382,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
-                platform_version.protocol_version,
+                platform_version,
             )
             .expect("to fetch documents by status");
 
@@ -397,7 +397,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
                 Some(&transaction),
-                platform_version.protocol_version,
+                platform_version,
             )
             .expect("to fetch documents by status");
 
