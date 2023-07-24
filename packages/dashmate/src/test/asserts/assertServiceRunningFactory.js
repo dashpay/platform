@@ -1,5 +1,3 @@
-const generateEnvs = require('../../util/generateEnvs');
-
 /**
  * @param {ConfigFile} configFile
  * @param {DockerCompose} dockerCompose
@@ -17,7 +15,7 @@ function assertServiceRunningFactory(configFile, dockerCompose) {
    */
   async function assertServiceRunning(config, serviceName, expected = true) {
     const isRunning = await dockerCompose.isServiceRunning(
-      generateEnvs(configFile, config),
+      config,
       serviceName,
     );
 
