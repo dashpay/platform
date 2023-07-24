@@ -41,7 +41,7 @@ use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Returns the index of the unpaid Epoch.
-    pub(super) fn get_unpaid_epoch_index_v0(
+    pub fn get_unpaid_epoch_index_v0(
         &self,
         transaction: TransactionArg,
     ) -> Result<EpochIndex, Error> {

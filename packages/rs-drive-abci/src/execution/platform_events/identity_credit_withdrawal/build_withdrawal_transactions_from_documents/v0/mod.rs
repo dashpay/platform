@@ -41,7 +41,6 @@ where
             .fetch_and_remove_latest_withdrawal_transaction_index_operations(
                 drive_operation_types,
                 transaction,
-                &platform_version.drive,
             )?;
 
         for (i, document) in documents.iter().enumerate() {
@@ -131,6 +130,8 @@ mod tests {
         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::version::PlatformVersion;
 
         use crate::test::helpers::setup::TestPlatformBuilder;
 
@@ -138,14 +139,18 @@ mod tests {
 
         #[test]
         fn test_build() {
+            let protocol_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                protocol_version.into(),
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
@@ -163,6 +168,7 @@ mod tests {
                     "transactionIndex": 1u64,
                 }),
                 None,
+                protocol_version.into(),
             )
             .expect("expected withdrawal document");
 
@@ -190,6 +196,7 @@ mod tests {
                     "transactionIndex": 2u64,
                 }),
                 None,
+                protocol_version.into(),
             )
             .expect("expected withdrawal document");
 
@@ -210,12 +217,19 @@ mod tests {
                     &documents,
                     &mut batch,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to build transactions from documents");
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("to apply drive op batch");
 
             assert_eq!(

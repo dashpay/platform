@@ -72,7 +72,7 @@ where
         let old_voter_identity_key_ids = self.drive.fetch_identity_keys::<KeyIDVec>(
             key_request,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         if old_voter_identity_key_ids.is_empty() {
@@ -101,7 +101,7 @@ where
         let new_voter_identity_key_ids = self.drive.fetch_identity_keys::<KeyIDVec>(
             key_request,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         // two possibilities

@@ -47,7 +47,7 @@ where
         //todo: we need to split out errors
         //  between failed execution and internal errors
         let validation_result =
-            self.validate_fees_of_event_v0(&event, block_info, Some(transaction))?;
+            self.validate_fees_of_event_v0(&event, block_info, Some(transaction), platform_version)?;
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
@@ -67,17 +67,17 @@ where
                             true,
                             block_info,
                             Some(transaction),
-                            &platform_version.drive,
+                            platform_version,
                         )
                         .map_err(Error::Drive)?;
 
                     let balance_change =
-                        individual_fee_result.into_balance_change(identity.id.to_buffer());
+                        individual_fee_result.into_balance_change(identity.id.clone());
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
                         balance_change,
                         Some(transaction),
-                        &platform_version.drive,
+                        platform_version,
                     )?;
 
                     Ok(SuccessfulPaidExecution(
@@ -97,7 +97,7 @@ where
                         true,
                         block_info,
                         Some(transaction),
-                        &platform_version.drive,
+                        platform_version,
                     )
                     .map_err(Error::Drive)?;
                 Ok(SuccessfulFreeExecution)

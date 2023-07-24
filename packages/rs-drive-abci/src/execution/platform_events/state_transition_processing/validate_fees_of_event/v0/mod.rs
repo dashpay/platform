@@ -57,7 +57,7 @@ where
                         false,
                         block_info,
                         transaction,
-                        &platform_version.drive,
+                        platform_version,
                     )
                     .map_err(Error::Drive)?;
 
@@ -93,7 +93,7 @@ where
                         false,
                         block_info,
                         transaction,
-                        &platform_version.drive,
+                        platform_version,
                     )
                     .map_err(Error::Drive)?;
 

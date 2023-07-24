@@ -51,6 +51,8 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, Owne
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
 
 const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
@@ -79,7 +81,10 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
+        let dpns_contract = load_system_data_contract(
+            SystemDataContract::DPNS,
+            platform_version.into(),
+        )?;
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
@@ -92,28 +97,40 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Withdrawals,
                 (
-                    load_system_data_contract(SystemDataContract::Withdrawals)?,
+                    load_system_data_contract(
+                        SystemDataContract::Withdrawals,
+                        platform_version.into(),
+                    )?,
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::FeatureFlags,
                 (
-                    load_system_data_contract(SystemDataContract::FeatureFlags)?,
+                    load_system_data_contract(
+                        SystemDataContract::FeatureFlags,
+                        platform_version.into(),
+                    )?,
                     system_identity_public_keys.feature_flags_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Dashpay,
                 (
-                    load_system_data_contract(SystemDataContract::Dashpay)?,
+                    load_system_data_contract(
+                        SystemDataContract::Dashpay,
+                        platform_version.into(),
+                    )?,
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    load_system_data_contract(SystemDataContract::MasternodeRewards)?,
+                    load_system_data_contract(
+                        SystemDataContract::MasternodeRewards,
+                        platform_version.into(),
+                    )?,
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
@@ -167,7 +184,7 @@ impl<C> Platform<C> {
         let block_info = BlockInfo::default_with_time(genesis_time);
 
         self.drive
-            .apply_drive_operations(operations, true, &block_info, transaction)?;
+            .apply_drive_operations(operations, true, &block_info, transaction, platform_version)?;
 
         Ok(())
     }

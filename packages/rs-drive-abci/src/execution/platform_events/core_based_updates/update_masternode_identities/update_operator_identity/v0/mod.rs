@@ -28,6 +28,7 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use dpp::identity::accessors::IdentityGettersV0;
 
 impl<C> Platform<C>
 where
@@ -85,7 +86,7 @@ where
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
                 key_request,
                 Some(transaction),
-                &platform_version.drive,
+                platform_version,
             )?;
 
         // two possibilities, same identity or identity switch.
