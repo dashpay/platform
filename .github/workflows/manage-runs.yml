@@ -23,17 +23,22 @@ jobs:
         run: |
           current_branch=${GITHUB_REF##*/}
 
+          echo $current_branch
+
           # loop thru the workflows found & filter out ones that are not on PRs pointing to this branch
           workflow_ids=$(echo '${{ steps.get_active_workflows.outputs.data }}' | \
             jq '.workflow_runs | map({id, head_branch})' | \
             jq 'map(select(.head_branch == "'$current_branch'")) | map(.id)' | \
             jq 'join(",")')
 
+          echo $workflow_ids
+
           # strip the wrapping quote marks before passing to next step
           echo 'WORKFLOW_IDS='$(echo $workflow_ids | tr -d '"') >> $GITHUB_ENV
 
       - name: Cancel active workflow runs
         run: |
+          echo $WORKFLOW_IDS
           for id in ${WORKFLOW_IDS//,/ }
           do
             echo "Cancelling workflow with id: $id"
