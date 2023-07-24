@@ -5,6 +5,7 @@ use quote::quote;
 use syn::{Data, DataEnum, DataStruct, DeriveInput, LitInt, LitStr, Meta, Path, Type};
 
 pub(super) fn derive_platform_deserialize_struct(
+    token_stream_input: TokenStream,
     input: &DeriveInput,
     version_attributes: VersionAttributes,
     data_struct: &DataStruct,
@@ -33,13 +34,15 @@ pub(super) fn derive_platform_deserialize_struct(
         },
     };
 
+    // if we have passthrough or untagged we can't decode directly
     let bincode_decode_body = if nested {
+        let bincode_decode_body: proc_macro2::TokenStream =
+            crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
+                .unwrap_or_else(|e| e.into_token_stream())
+                .into();
+
         quote! {
-            impl #impl_generics bincode::Decode for #name #ty_generics #where_clause {
-                fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
-                    Self::decode(decoder)
-                }
-            }
+            #bincode_decode_body
         }
     } else {
         quote! {}

@@ -5,6 +5,7 @@ use quote::{format_ident, quote};
 use syn::{Data, DataEnum, DeriveInput, LitInt, LitStr, Meta, Path, Type};
 
 pub(super) fn derive_platform_deserialize_enum(
+    token_stream_input: TokenStream,
     input: &DeriveInput,
     version_attributes: VersionAttributes,
     data_enum: &DataEnum,
@@ -24,30 +25,18 @@ pub(super) fn derive_platform_deserialize_enum(
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    // let map_err_limit = quote! {.map_err(|e| {
-    //     match e {
-    //         bincode::error::DecodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-    //         _ => #crate_name::#error_type::PlatformDeserializationError(format!("unable to deserialize with limit {}: {}", stringify!(#name), e)),
-    //     }
-    // })};
-
     let map_err = quote! {.map_err(|e| {
         #crate_name::#error_type::PlatformDeserializationError(format!("unable to deserialize {} : {}", stringify!(#name), e))
     })};
 
-    let bincode_decode_body = if nested {
+    // if we have passthrough or untagged we can't decode directly
+    let bincode_decode_body = if nested && !passthrough && !untagged {
+        let bincode_decode_body: proc_macro2::TokenStream =
+            crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
+                .unwrap_or_else(|e| e.into_token_stream())
+                .into();
         quote! {
-            impl #impl_generics bincode::Decode for #name #ty_generics #where_clause {
-                fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
-                    Self::decode(decoder)
-                }
-            }
-            impl<'de> bincode::BorrowDecode<'de> for #name #ty_generics #where_clause {
-                fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
-                    Self::borrow_decode(decoder)
-                }
-            }
-
+            #bincode_decode_body
         }
     } else {
         quote! {}

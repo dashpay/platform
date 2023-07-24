@@ -105,29 +105,6 @@ pub(super) fn derive_platform_serialize_enum(
         serialize_into_consume = quote! { bincode::encode_to_vec(self, config)#map_err};
     };
 
-    let encode_body = if nested {
-        if passthrough {
-            let match_exprs = data_enum
-                .variants
-                .iter()
-                .map(|v| {
-                    let ident = &v.ident;
-                    quote! { #name::#ident(inner) => inner.encode(encoder) }
-                })
-                .collect::<Vec<_>>();
-
-            quote! {
-                match self {
-                    #( #match_exprs, )*
-                }
-            }
-        } else {
-            quote! { self.encode(encoder) }
-        }
-    } else {
-        quote! {}
-    };
-
     let without_limit_body = quote! {
         impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
         {
@@ -253,10 +230,35 @@ pub(super) fn derive_platform_serialize_enum(
         quote! {}
     };
 
-    let bincode_encode_body: proc_macro2::TokenStream =
-        crate::derive_bincode::derive_encode_inner(token_stream_input)
-            .unwrap_or_else(|e| e.into_token_stream())
-            .into();
+
+
+    let bincode_encode_body = if nested {
+        // if it's passthrough we just encode the variants directly
+        if passthrough {
+            let match_exprs = data_enum
+                .variants
+                .iter()
+                .map(|v| {
+                    let ident = &v.ident;
+                    quote! { #name::#ident(inner) => inner.encode(encoder) }
+                })
+                .collect::<Vec<_>>();
+
+            quote! {
+                match self {
+                    #( #match_exprs, )*
+                }
+            }
+        } else {
+            let bincode_encode_body: proc_macro2::TokenStream =
+                crate::derive_bincode::derive_encode_inner(token_stream_input)
+                    .unwrap_or_else(|e| e.into_token_stream())
+                    .into();
+            bincode_encode_body
+        }
+    } else {
+        quote! {}
+    };
 
     let mut expanded = quote! {};
 

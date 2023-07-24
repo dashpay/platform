@@ -47,19 +47,14 @@ pub(super) fn derive_platform_serialize_struct(
         },
     };
 
-    let encode_body = if nested {
-        quote! { self.encode(encoder) }
+    let bincode_encode_body = if nested {
+        crate::derive_bincode::derive_encode_inner(token_stream_input)
+            .unwrap_or_else(|e| e.into_token_stream())
+            .into()
     } else {
         quote! {}
     };
 
-    let bincode_encode_body = quote! {
-        impl #impl_generics bincode::Encode for #name #ty_generics #where_clause {
-            fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError> {
-                #encode_body
-            }
-        }
-    };
 
     let expanded = if let Some(limit) = platform_serialize_limit {
         quote! {

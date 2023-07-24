@@ -234,6 +234,8 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     attributes(platform_error_type, platform_serialize)
 )]
 pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
+    let cloned_token_stream_input = input.clone();
+
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
@@ -336,6 +338,7 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
         Data::Struct(data_struct) => {
             version_attributes.check_for_struct();
             derive_platform_deserialize_struct(
+                cloned_token_stream_input,
                 &input,
                 version_attributes,
                 data_struct,
@@ -346,6 +349,7 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
         Data::Enum(data_enum) => {
             version_attributes.check_for_enum();
             derive_platform_deserialize_enum(
+                cloned_token_stream_input,
                 &input,
                 version_attributes,
                 data_enum,
