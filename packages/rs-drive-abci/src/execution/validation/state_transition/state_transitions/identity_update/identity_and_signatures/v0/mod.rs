@@ -10,6 +10,8 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization_traits::{PlatformMessageSignable, Signable};
 use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -18,6 +20,7 @@ pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 }
 
@@ -26,6 +29,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityUpdateTransiti
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
@@ -42,7 +46,13 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityUpdateTransiti
         }
 
         let validation_result =
-            validate_state_transition_identity_signature_v0(drive, self, true, transaction)?;
+            validate_state_transition_identity_signature_v0(
+                drive,
+                self,
+                true,
+                transaction,
+                platform_version,
+            )?;
 
         if !validation_result.is_valid() {
             result.merge(validation_result);

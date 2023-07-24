@@ -3,6 +3,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;

@@ -8,7 +8,11 @@ use dpp::data_contract::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionAction,
 };
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -16,6 +20,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0<C: CoreRPCLike>(
@@ -28,6 +33,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
         // Data contract shouldn't exist
@@ -37,6 +43,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
                 None,
                 false,
                 tx,
+                platform_version,
             )?
             .1
             .is_some()

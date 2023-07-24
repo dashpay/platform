@@ -5,6 +5,7 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::Identi
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -13,6 +14,7 @@ pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 }
 
@@ -21,11 +23,16 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreditTransfer
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
         let maybe_partial_identity =
-            drive.fetch_identity_with_balance(self.identity_id.to_buffer(), tx)?;
+            drive.fetch_identity_with_balance(
+                self.identity_id.to_buffer(),
+                tx,
+                platform_version,
+            )?;
 
         let partial_identity = match maybe_partial_identity {
             None => {
