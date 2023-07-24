@@ -1,16 +1,21 @@
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::enrich_with_base_schema::PREFIX_BYTE_0;
+use crate::data_contract::validation::data_contract_validation::BASE_DOCUMENT_SCHEMA;
 use crate::data_contract::validation::multi_validator;
 use crate::data_contract::validation::multi_validator::{
     byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
 };
 use crate::data_contract::validation::validate_data_contract_max_depth::validate_data_contract_max_depth;
-use crate::mocks::JsonSchemaValidator;
 use crate::prelude::DataContract;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
+use crate::version::PlatformVersion;
 use crate::{Convertible, ProtocolError};
 
 impl DataContract {
-    pub fn validate_structure(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    pub fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let mut result = SimpleConsensusValidationResult::default();
         let raw_data_contract = self.clone().into_object()?;
 
@@ -35,7 +40,7 @@ impl DataContract {
 
         for (_, document_schema) in enriched_data_contract.documents.iter() {
             let json_schema_validation_result =
-                JsonSchemaValidator::validate_schema(document_schema);
+                JsonSchemaValidator::validate_schema(document_schema, platform_version)?;
             result.merge(json_schema_validation_result);
         }
         if !result.is_valid() {

@@ -49,7 +49,9 @@ pub trait DataContractCreateTransitionV0Methods {
         version: FeatureVersion,
     ) -> Result<DataContractCreateTransition, ProtocolError>;
 
-    fn get_data_contract(&self) -> &DataContract;
+    fn data_contract(&self) -> &DataContract;
+
+    fn entropy(&self) -> &Bytes32;
 
     fn set_data_contract(&mut self, data_contract: DataContract);
 
@@ -90,8 +92,12 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
         Ok(transition)
     }
 
-    fn get_data_contract(&self) -> &DataContract {
+    fn data_contract(&self) -> &DataContract {
         &self.data_contract
+    }
+
+    fn entropy(&self) -> &Bytes32 {
+        &self.entropy
     }
 
     fn set_data_contract(&mut self, data_contract: DataContract) {

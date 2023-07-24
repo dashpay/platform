@@ -33,9 +33,15 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransition {
         }
     }
 
-    fn get_data_contract(&self) -> &DataContract {
+    fn data_contract(&self) -> &DataContract {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.get_data_contract(),
+            DataContractCreateTransition::V0(transition) => transition.data_contract(),
+        }
+    }
+
+    fn entropy(&self) -> &Bytes32 {
+        match self {
+            DataContractCreateTransition::V0(transition) => transition.entropy(),
         }
     }
 

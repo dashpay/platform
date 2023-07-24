@@ -38,8 +38,6 @@ pub trait IdentityCreditTransferTransitionV0Methods {
     fn set_identity_id(&mut self, identity_id: Identifier);
     fn recipient_id(&self) -> Identifier;
     fn set_recipient_id(&mut self, recipient_id: Identifier);
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier;
     fn security_level_requirement(&self) -> Vec<SecurityLevel>;
 }
 
@@ -66,10 +64,6 @@ impl IdentityCreditTransferTransitionV0Methods for IdentityCreditTransferTransit
 
     fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
-    }
-
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {

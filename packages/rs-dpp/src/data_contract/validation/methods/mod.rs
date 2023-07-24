@@ -1,0 +1,5 @@
+mod validate;
+mod validate_index_definitions;
+mod validate_index_naming_duplicates;
+mod validate_not_defined_properties;
+mod validate_property_definition;

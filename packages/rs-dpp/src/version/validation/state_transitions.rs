@@ -4,14 +4,25 @@ use crate::version::PlatformVersion;
 
 impl PlatformVersion {
     pub fn validate_contract_version(&self, version: u16) -> SimpleConsensusValidationResult {
-        if self.contract.check_version(version) {
+        if self
+            .dpp
+            .contract_versions
+            .contract_serialization_version
+            .check_version(version)
+        {
             SimpleConsensusValidationResult::default()
         } else {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.contract.min_version,
-                    self.contract.max_version,
+                    self.dpp
+                        .contract_versions
+                        .contract_serialization_version
+                        .min_version,
+                    self.dpp
+                        .contract_versions
+                        .contract_serialization_version
+                        .max_version,
                 )
                 .into(),
             )
@@ -23,7 +34,8 @@ impl PlatformVersion {
         version: u16,
     ) -> SimpleConsensusValidationResult {
         if self
-            .state_transitions
+            .dpp
+            .state_transition_serialization_versions
             .identity_create_state_transition
             .check_version(version)
         {
@@ -32,10 +44,12 @@ impl PlatformVersion {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_create_state_transition
                         .min_version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_create_state_transition
                         .max_version,
                 )
@@ -49,7 +63,8 @@ impl PlatformVersion {
         version: u16,
     ) -> SimpleConsensusValidationResult {
         if self
-            .state_transitions
+            .dpp
+            .state_transition_serialization_versions
             .identity_top_up_state_transition
             .check_version(version)
         {
@@ -58,10 +73,12 @@ impl PlatformVersion {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_top_up_state_transition
                         .min_version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_top_up_state_transition
                         .max_version,
                 )
@@ -75,7 +92,8 @@ impl PlatformVersion {
         version: u16,
     ) -> SimpleConsensusValidationResult {
         if self
-            .state_transitions
+            .dpp
+            .state_transition_serialization_versions
             .identity_update_state_transition
             .check_version(version)
         {
@@ -84,10 +102,12 @@ impl PlatformVersion {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_update_state_transition
                         .min_version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_update_state_transition
                         .max_version,
                 )
@@ -101,7 +121,8 @@ impl PlatformVersion {
         version: u16,
     ) -> SimpleConsensusValidationResult {
         if self
-            .state_transitions
+            .dpp
+            .state_transition_serialization_versions
             .identity_credit_withdrawal_state_transition
             .check_version(version)
         {
@@ -110,10 +131,12 @@ impl PlatformVersion {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_credit_withdrawal_state_transition
                         .min_version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .identity_credit_withdrawal_state_transition
                         .max_version,
                 )
@@ -127,7 +150,8 @@ impl PlatformVersion {
         version: u16,
     ) -> SimpleConsensusValidationResult {
         if self
-            .state_transitions
+            .dpp
+            .state_transition_serialization_versions
             .contract_create_state_transition
             .check_version(version)
         {
@@ -136,10 +160,12 @@ impl PlatformVersion {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .contract_create_state_transition
                         .min_version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .contract_create_state_transition
                         .max_version,
                 )
@@ -153,7 +179,8 @@ impl PlatformVersion {
         version: u16,
     ) -> SimpleConsensusValidationResult {
         if self
-            .state_transitions
+            .dpp
+            .state_transition_serialization_versions
             .contract_update_state_transition
             .check_version(version)
         {
@@ -162,10 +189,12 @@ impl PlatformVersion {
             SimpleConsensusValidationResult::new_with_error(
                 UnsupportedVersionError::new(
                     version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .contract_update_state_transition
                         .min_version,
-                    self.state_transitions
+                    self.dpp
+                        .state_transition_serialization_versions
                         .contract_update_state_transition
                         .max_version,
                 )

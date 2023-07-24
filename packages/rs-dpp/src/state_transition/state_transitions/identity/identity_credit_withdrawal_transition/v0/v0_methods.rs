@@ -31,9 +31,6 @@ pub trait IdentityCreditWithdrawalTransitionV0Methods {
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreditWithdrawal
     }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier;
     fn set_revision(&mut self, revision: Revision);
     fn revision(&self) -> Revision;
 }
@@ -45,10 +42,5 @@ impl IdentityCreditWithdrawalTransitionV0Methods for IdentityCreditWithdrawalTra
 
     fn revision(&self) -> Revision {
         self.revision
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 }

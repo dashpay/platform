@@ -85,18 +85,21 @@ pub enum DataTriggerActionError {
     ValueError(#[from] ValueError),
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerActionError> for StateError {
     fn from(v: DataTriggerActionError) -> Self {
         StateError::DataTriggerActionError(v)
     }
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerError> for StateError {
     fn from(error: DataTriggerError) -> Self {
         StateError::DataTriggerError(error)
     }
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerError> for ConsensusError {
     fn from(error: DataTriggerError) -> Self {
         Self::StateError(StateError::DataTriggerError(error))

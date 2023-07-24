@@ -42,8 +42,6 @@ pub trait IdentityTopUpTransitionV0Methods {
     fn set_identity_id(&mut self, identity_id: Identifier);
     /// Returns identity id
     fn identity_id(&self) -> &Identifier;
-    /// Returns Owner ID
-    fn owner_id(&self) -> &Identifier;
 }
 
 impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
@@ -86,11 +84,6 @@ impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
 
     /// Returns identity id
     fn identity_id(&self) -> &Identifier {
-        &self.identity_id
-    }
-
-    /// Returns Owner ID
-    fn owner_id(&self) -> &Identifier {
         &self.identity_id
     }
 }

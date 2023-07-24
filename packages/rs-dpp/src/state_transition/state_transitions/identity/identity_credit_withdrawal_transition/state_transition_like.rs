@@ -8,9 +8,7 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
     /// Returns ID of the credit_withdrawalred contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => {
-                transition.get_modified_data_ids()
-            }
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 

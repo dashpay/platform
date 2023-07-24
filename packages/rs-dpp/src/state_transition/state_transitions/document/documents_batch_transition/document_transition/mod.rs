@@ -25,6 +25,9 @@ pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 use platform_value::Value;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
 
 pub const PROPERTY_ACTION: &str = "$action";
 

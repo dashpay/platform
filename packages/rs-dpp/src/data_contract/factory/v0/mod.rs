@@ -216,8 +216,9 @@ impl DataContractFactoryV0 {
 
     #[cfg(feature = "validation")]
     pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
-        let result =
-            DataContract::validate(self.data_contract_feature_version, raw_data_contract, false)?;
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+        let data_contract = DataContract::from_object(raw_data_contract.clone(), platform_version)?;
+        let result = data_contract.validate(platform_version)?;
 
         if !result.is_valid() {
             return Err(ProtocolError::InvalidDataContractError(

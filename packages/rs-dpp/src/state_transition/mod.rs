@@ -97,15 +97,12 @@ macro_rules! call_static_method {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    PlatformSerialize,
-    PlatformDeserialize,
-    PlatformSignable,
-    From,
-    PartialEq,
+    Debug, Clone, PlatformSerialize, PlatformDeserialize, PlatformSignable, From, PartialEq,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(limit = 100000)]

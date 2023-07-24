@@ -1,18 +1,16 @@
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
-use crate::data_contract::document_type::array_field::ArrayFieldType;
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::document::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
 use crate::version::dpp_versions::DocumentTypeVersions;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Identifier, ReplacementType, Value};
@@ -71,11 +69,17 @@ impl DocumentTypeV0 {
         required_fields: BTreeSet<String>,
         documents_keep_history: bool,
         documents_mutable: bool,
-        document_type_version: &DocumentTypeVersions,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let index_structure = IndexLevel::from(indices.as_slice());
-        let (identifier_paths, binary_paths) =
-            DocumentType::find_identifier_and_binary_paths(&properties, document_type_version)?;
+        let index_structure =
+            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
+        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
+            &properties,
+            &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions,
+        )?;
         Ok(DocumentTypeV0 {
             name,
             indices,
@@ -98,7 +102,7 @@ impl DocumentTypeV0 {
         definition_references: &BTreeMap<String, &Value>,
         default_keeps_history: bool,
         default_mutability: bool,
-        document_type_version: &DocumentTypeVersions,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut flattened_document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
         let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
@@ -159,7 +163,10 @@ impl DocumentTypeV0 {
                 property_key.clone(),
                 property_value,
                 definition_references,
-                document_type_version,
+                &platform_version
+                    .dpp
+                    .contract_versions
+                    .document_type_versions,
             )?;
 
             DocumentType::insert_values_nested(
@@ -168,7 +175,10 @@ impl DocumentTypeV0 {
                 property_key,
                 property_value,
                 definition_references,
-                document_type_version,
+                &platform_version
+                    .dpp
+                    .contract_versions
+                    .document_type_versions,
             )?;
         }
         // Add system properties
@@ -206,11 +216,15 @@ impl DocumentTypeV0 {
             );
         }
 
-        let index_structure = IndexLevel::from(indices.as_slice());
+        let index_structure =
+            IndexLevel::try_from_indices(indices.as_slice(), name, platform_version)?;
 
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &document_properties,
-            document_type_version,
+            &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions,
         )?;
         Ok(DocumentTypeV0 {
             name: String::from(name),

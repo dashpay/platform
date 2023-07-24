@@ -1,7 +1,9 @@
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::generate_data_contract_id;
 use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
+use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;
@@ -23,7 +25,8 @@ impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
         //     return Ok(result);
         // }
         //
-        // // Validate data contract
+        // Validate data contract
+        // self.data_contract().validate()
         // let data_contract_validator =
         //     DataContractValidator::new(Arc::new(protocol_version_validator)); // ffs
         // let result = data_contract_validator
@@ -33,12 +36,15 @@ impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
         // }
 
         // Validate data contract id
-        let generated_id = generate_data_contract_id(self.data_contract().owner_id, self.entropy);
-        if generated_id.as_slice() != self.data_contract.id.as_ref() {
+        let generated_id = DataContract::generate_data_contract_id_v0(
+            self.data_contract().owner_id(),
+            self.entropy(),
+        );
+        if generated_id != self.data_contract().id() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
                     generated_id.to_vec(),
-                    self.data_contract.id.as_ref().to_owned(),
+                    self.data_contract().id().to_vec(),
                 ))
                 .into(),
             ));

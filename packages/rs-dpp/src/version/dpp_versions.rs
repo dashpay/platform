@@ -3,10 +3,37 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPVersion {
+    pub validation: DPPValidationVersions,
     pub state_transition_serialization_versions: StateTransitionSerializationVersions,
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DPPValidationVersions {
+    pub validate_time_in_block_time_window: FeatureVersion,
+    pub json_schema_validator: JsonSchemaValidatorVersions,
+    pub data_contract: DataContractValidationVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DataContractValidationVersions {
+    pub validate: FeatureVersion,
+    pub validate_index_definitions: FeatureVersion,
+    pub validate_index_naming_duplicates: FeatureVersion,
+    pub validate_not_defined_properties: FeatureVersion,
+    pub validate_property_definition: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct JsonSchemaValidatorVersions {
+    pub get_schema_compilation_options: FeatureVersion,
+    pub new: FeatureVersion,
+    pub new_with_definitions: FeatureVersion,
+    pub validate: FeatureVersion,
+    pub validate_data_contract_schema: FeatureVersion,
+    pub validate_schema: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -39,6 +66,7 @@ pub struct ContractVersions {
     pub created_data_contract_structure_version: FeatureVersion,
     pub config_version: FeatureVersion,
     pub document_type_versions: DocumentTypeVersions,
+    pub index_versions: IndexVersions,
     pub contract_class_method_versions: ContractClassMethodVersions,
 }
 
@@ -50,6 +78,11 @@ pub struct ContractClassMethodVersions {
     pub get_document_types_from_contract: FeatureVersion,
     pub get_document_types_from_value: FeatureVersion,
     pub get_document_types_from_value_array: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IndexVersions {
+    pub index_levels_from_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
