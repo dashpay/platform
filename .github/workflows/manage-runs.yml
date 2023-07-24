@@ -21,8 +21,6 @@ jobs:
       - name: Extract running workflow ids
         id: extract_workflow_ids
         run: |
-          echo GITHUB_REF is ${GITHUB_REF}
-          echo GITHUB_REF_NAME is ${GITHUB_REF_NAME}
           echo GITHUB_HEAD_REF is ${GITHUB_HEAD_REF}
 
           current_branch=${GITHUB_HEAD_REF}
@@ -35,12 +33,12 @@ jobs:
             jq 'map(select(.head_branch == "'$current_branch'")) | map(.id)' | \
             jq 'join(",")')
 
-          echo $workflow_ids
+          echo workflow_ids is $workflow_ids
 
           # strip the wrapping quote marks before passing to next step
           echo 'WORKFLOW_IDS='$(echo $workflow_ids | tr -d '"') >> $GITHUB_ENV
 
-          echo $workflow_ids | tr -d '"'
+          echo 'WORKFLOW_IDS='$(echo $workflow_ids | tr -d '"')
 
       - name: Cancel active workflow runs
         run: |
