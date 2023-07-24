@@ -102,11 +102,12 @@ const getLocalConfigFactory = require('./config/system/configs/getLocalConfigFac
 const getTestnetConfigFactory = require('./config/system/configs/getTestnetConfigFactory');
 const getMainnetConfigFactory = require('./config/system/configs/getMainnetConfigFactory');
 const getConfigFileMigrationsFactory = require('./config/configFile/migrations/getConfigFileMigrationsFactory');
+const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
+const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const generateEnvsFactory = require('./config/generateEnvsFactory');
 
 /**
- * @param [options]
- * @param [options.DASHMATE_HOME_DIR]
+ * @param {Object} [options]
  * @returns {Promise<AwilixContainer<any>>}
  */
 async function createDIContainer(options = {}) {
@@ -289,6 +290,14 @@ async function createDIContainer(options = {}) {
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
     createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
+  });
+
+  /**
+   * Tests
+   */
+  container.register({
+    assertLocalServicesRunning: asFunction(assertLocalServicesRunningFactory).singleton(),
+    assertServiceRunning: asFunction(assertServiceRunningFactory).singleton(),
   });
 
   return container;

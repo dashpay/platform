@@ -25,7 +25,7 @@ class BaseCommand extends Command {
     this.parsedArgs = args;
     this.parsedFlags = flags;
 
-    this.container = await createDIContainer();
+    this.container = await createDIContainer(process.env);
 
     // Load configs
     /**
