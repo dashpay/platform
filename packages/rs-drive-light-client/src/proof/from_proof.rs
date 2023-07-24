@@ -85,6 +85,7 @@ pub trait QuorumInfoProvider: Send + Sync {
     ///
     /// * `quorum_type`: The type of the quorum.
     /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
+    /// * `core_chain_locked_height`: Core chain locked height for which the quorum must be valid
     ///
     /// # Returns
     ///
@@ -93,8 +94,9 @@ pub trait QuorumInfoProvider: Send + Sync {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
-        quorum_hash: Vec<u8>,
-    ) -> Result<Vec<u8>, Error>;
+        quorum_hash: Vec<u8>, // TODO: once we get rid of uniffi, we should take [u8;32] here
+        core_chain_locked_height: u32,
+    ) -> Result<Vec<u8>, Error>; // TODO: When we get rid of uniffi, we should return 48 bytes instead of Vec
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
