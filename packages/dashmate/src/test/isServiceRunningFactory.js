@@ -1,13 +1,10 @@
-const generateEnvs = require('../util/generateEnvs');
-
 /**
  * @param {Config} config
- * @param {ConfigFile} configFile
  * @param {DockerCompose} dockerCompose
  *
  * @returns {isServicesRunning}
  */
-function isServiceRunningFactory(config, configFile, dockerCompose) {
+function isServiceRunningFactory(config, dockerCompose) {
   /**
    * Check if service is running
    *
@@ -17,7 +14,7 @@ function isServiceRunningFactory(config, configFile, dockerCompose) {
    */
   async function isServicesRunning(serviceName) {
     return dockerCompose.isServiceRunning(
-      generateEnvs(configFile, config),
+      config,
       serviceName,
     );
   }

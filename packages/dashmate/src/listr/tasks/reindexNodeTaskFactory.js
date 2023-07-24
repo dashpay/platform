@@ -1,7 +1,6 @@
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 const path = require('path');
-const generateEnvs = require('../../util/generateEnvs');
 const CoreService = require('../../core/CoreService');
 const { TEMPLATES_DIR } = require('../../constants');
 
@@ -15,8 +14,6 @@ const { TEMPLATES_DIR } = require('../../constants');
  * @param {renderTemplate} renderTemplate
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
- * @param {configFileRepository} configFileRepository
- * @param {ConfigFile} configFile
  * @param {getConnectionHost} getConnectionHost
  * @param {Docker} docker
  * @return {reindexNodeTask}
@@ -31,8 +28,6 @@ function reindexNodeTaskFactory(
   renderTemplate,
   renderServiceTemplates,
   writeServiceConfigs,
-  configFileRepository,
-  configFile,
   getConnectionHost,
   docker,
 ) {
@@ -43,7 +38,7 @@ function reindexNodeTaskFactory(
    */
   async function getCoreContainer(config) {
     const [containerId] = await dockerCompose
-      .getContainersList(generateEnvs(configFile, config), {
+      .getContainersList(config, {
         quiet: true,
         all: true,
         filterServiceNames: 'core',
@@ -66,7 +61,7 @@ function reindexNodeTaskFactory(
         title: 'Check services are not running',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx, task) => {
-          const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
+          const isNodeRunning = await dockerCompose.isNodeRunning(config);
 
           let header;
           if (isNodeRunning) {
@@ -105,7 +100,7 @@ function reindexNodeTaskFactory(
 
           // Restart or start node (including Core container) to apply
           // reindex=1 from dashd.conf
-          const isNodeRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
+          const isNodeRunning = await dockerCompose.isNodeRunning(config);
 
           if (isNodeRunning) {
             return restartNodeTask(config);
