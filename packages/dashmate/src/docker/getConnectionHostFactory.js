@@ -1,6 +1,4 @@
-const generateEnvs = require('../util/generateEnvs');
-
-function getConnectionHostFactory(dockerCompose, isHelper, configFile) {
+function getConnectionHostFactory(dockerCompose, isHelper) {
   /**
    * Get proper service endpoint url
    * @param config
@@ -9,8 +7,7 @@ function getConnectionHostFactory(dockerCompose, isHelper, configFile) {
    */
   async function getConnectionHost(config, serviceName) {
     if (isHelper) {
-      const envs = generateEnvs(configFile, config);
-      const containerInfo = await dockerCompose.inspectService(envs, serviceName);
+      const containerInfo = await dockerCompose.inspectService(config, serviceName);
 
       const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks);
       const { IPAddress: containerIP } = containerInfo.NetworkSettings.Networks[firstNetwork];

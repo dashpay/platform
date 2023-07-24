@@ -4,7 +4,6 @@ const { Flags } = require('@oclif/core');
 
 const MuteOneLineError = require('../../../oclif/errors/MuteOneLineError');
 const GroupBaseCommand = require('../../../oclif/command/GroupBaseCommand');
-const generateEnvs = require('../../../util/generateEnvs');
 
 class GroupReindexCommand extends GroupBaseCommand {
   /**
@@ -38,7 +37,7 @@ class GroupReindexCommand extends GroupBaseCommand {
           // Check if any of group nodes started
           const isRunning = await configGroup
             .reduce(async (acc, config) => (await acc || dockerCompose
-              .isNodeRunning(generateEnvs(configFile, config))), false);
+              .isNodeRunning(config)), false);
 
           let header;
 

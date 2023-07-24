@@ -123,7 +123,6 @@ describe.skip('Testnet HP Fullnode', function main() {
 
       isServiceRunning = isServiceRunningFactory(
         config,
-        configFile,
         dockerCompose,
       );
 

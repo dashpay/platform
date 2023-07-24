@@ -1,15 +1,12 @@
 const { Listr } = require('listr2');
-const generateEnvs = require('../../util/generateEnvs');
 
 /**
  *
  * @param {DockerCompose} dockerCompose
- * @param {ConfigFile} configFile
  * @return {buildServicesTask}
  */
 function buildServicesTaskFactory(
   dockerCompose,
-  configFile,
 ) {
   /**
    * @typedef {buildServicesTask}
@@ -22,19 +19,19 @@ function buildServicesTaskFactory(
       task: async (ctx, task) => {
         // prebuild dependencies
 
-        const envs = {
-          ...generateEnvs(configFile, config),
-          COMPOSE_FILE: 'docker-compose.platform.deps.yml',
-        };
+        // const envs = {
+        //   ...generateEnvs(configFile, config),
+        //   COMPOSE_FILE: 'docker-compose.platform.deps.yml',
+        // };
+        //
+        // let obs = await dockerCompose.build(config, 'deps');
+        //
+        // await new Promise((res, rej) => {
+        //   obs
+        //     .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
+        // });
 
-        let obs = await dockerCompose.build(envs, 'deps');
-
-        await new Promise((res, rej) => {
-          obs
-            .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
-        });
-
-        obs = await dockerCompose.build(generateEnvs(configFile, config));
+        const obs = await dockerCompose.build(config);
 
         await new Promise((res, rej) => {
           obs

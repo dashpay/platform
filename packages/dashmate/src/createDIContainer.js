@@ -102,6 +102,7 @@ const getLocalConfigFactory = require('./config/system/configs/getLocalConfigFac
 const getTestnetConfigFactory = require('./config/system/configs/getTestnetConfigFactory');
 const getMainnetConfigFactory = require('./config/system/configs/getMainnetConfigFactory');
 const getConfigFileMigrationsFactory = require('./config/configFile/migrations/getConfigFileMigrationsFactory');
+const generateEnvsFactory = require('./config/generateEnvsFactory');
 
 /**
  * @param [options]
@@ -143,6 +144,7 @@ async function createDIContainer(options = {}) {
     migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
+    generateEnvs: asFunction(generateEnvsFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });

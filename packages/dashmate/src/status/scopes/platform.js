@@ -4,17 +4,18 @@ const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
 const providers = require('../providers');
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
-const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @returns {getPlatformScopeFactory}
  * @param {DockerCompose} dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
- * @param {ConfigFile} configFile
  */
-function getPlatformScopeFactory(dockerCompose,
-  createRpcClient, getConnectionHost, configFile) {
+function getPlatformScopeFactory(
+  dockerCompose,
+  createRpcClient,
+  getConnectionHost,
+) {
   async function getMNSync(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -50,7 +51,7 @@ function getPlatformScopeFactory(dockerCompose,
       network: null,
     };
     try {
-      if (!(await dockerCompose.isServiceRunning(generateEnvs(configFile, config), 'drive_tenderdash'))) {
+      if (!(await dockerCompose.isServiceRunning(config, 'drive_tenderdash'))) {
         info.dockerStatus = DockerStatusEnum.not_started;
         info.serviceStatus = ServiceStatusEnum.stopped;
 
@@ -62,7 +63,7 @@ function getPlatformScopeFactory(dockerCompose,
         return info;
       }
 
-      const dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_tenderdash');
+      const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
       const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
 
       info.dockerStatus = dockerStatus;
@@ -139,12 +140,12 @@ function getPlatformScopeFactory(dockerCompose,
     };
 
     try {
-      info.dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_abci');
+      info.dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
       info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
       if (info.serviceStatus === ServiceStatusEnum.up) {
         const driveEchoResult = await dockerCompose.execCommand(
-          generateEnvs(configFile, config),
+          config,
           'drive_abci',
           'drive-abci status',
         );

@@ -95,7 +95,7 @@ describe.skip('Local Network', function main() {
 
       group = configFile.getGroupConfigs(groupName);
 
-      areServicesRunning = areServicesRunningFactory(configFile, group, dockerCompose, SERVICES);
+      areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
       expect(configExists).to.be.true();
     });
