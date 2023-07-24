@@ -21,6 +21,9 @@ jobs:
       - name: Extract running workflow ids
         id: extract_workflow_ids
         run: |
+          echo ${GITHUB_REF}
+          echo ${GITHUB_REF##*/}
+
           current_branch=${GITHUB_REF##*/}
 
           echo $current_branch
