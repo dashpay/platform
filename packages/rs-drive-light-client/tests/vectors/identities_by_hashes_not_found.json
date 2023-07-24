@@ -8,23 +8,23 @@
     {
         "result": {
             "proof": {
-                "grovedb_proof": "BgEBGAIBGIICBRQg1d67ydAArpB3mKnEJOCFcj+1mpAPd2dmPcRdly1Bcxm6bj/IGzEH27CLOWQECc/umuQxAvlBnjk5Q7ukmZga6lOVYtI9Efb8X5p9EksC8jaGoXsoEAE4DctLttRLBmqUTj1Vio0v4/BsC0nQwWBXJFwhRgbwbBEC18BByuMPvwq1RsAYnLmHlLyQw6ugN50m4QyrSZ3o8PEQAcPnedzHdckxsIcroFiBdOVGD7qWyN7a1EkJs8xKh3yPEQK9sahaBlSZqy76+KCY+6B6siyYTvHdO/mMudoLjaQBlRABHnI1EFI/c/UMtq9kEDJ2h6uMZsN1dHu3Qifm0eP5WtoRAQCJAgFn6Z9XtqARmVdUuPZoyQSu+2SOI71gexMkzGwHVwpoYwLPvgU1vS3v5Ya4Y7nMuS0NZvsrgQ1zDnuiy34vswJhOxAEARgAGAIBFI0vVpTYAWmjGbwoi9Z8TTP5lIE5AC4s2K9/ZziQiYQXK9r2Qt4Pom+9XXYZ0VcucjxgkreNEQIpc+S1q8IKGL8qDqAB0ZCHPjVLwnTVp3BUM0ukIsboUxABDWQR8Wv30lot7cGw/ymyKECvRkuRg/3Pr9t6LkmsT50RAq2LjwtLqRl3c1vXyNdJbjkiqqNzSo7D6lGlVpFqDdXnEAHhP0Oti/IybvxdfgqSnxdQ5xVHIsRedRuunvUFm4SRFhE=",
-                "quorum_hash": "BcSIhAMa8rbult0vMmXL4rHM5GOnZE7yKqk3xsZ75Nk=",
-                "signature": "kjKW9O4/S4Yr7mj3FbkrxjsLNOLv1xYAoGhc7XELGb46CMgSkCXBprtjvgZxedUiCFDDzpehNl3HdhgdlM/B0qlq7XrnfYs1Zj2+LbWs/WvmyTlTjEcaJTWmuvj01N22",
+                "grovedb_proof": "BgEBGAIBGIICBRQKeS8pqcuJ1xpze2jkX6f+9Vkv42XgmGFAGhS1PZFDw0XEtbwZDtjadbtrHVkPpq/BvCkqAu0t83Qe2u5wol/2wpyf7rl3EwfnipCYIiLjXHh0Q3RfEAGXnHUA54B0u9SK5xjlHxiNwwvd/qfNeezOZIYOkyOkfxECo3LaUViN/4uj1OtIkj09hy2tbzD2Mzi9tondURkiRxkQAasCaJS5r36g1xkJyubJOL5ao+c1Q7lR50NC2WkJPGuEEQJAp67BBotlDcjSARcs6E7d7VuC89qh7cz03Tlw7oYZCxABORWLvzTjupCxhtwaaSNzCuvoGt232ieRTIlOtUI68S8RAQCJAgEnpGnG9PJaRjOgbGlnHGaf4JuOiEfASJCJzxxhLY/UYwLPvgU1vS3v5Ya4Y7nMuS0NZvsrgQ1zDnuiy34vswJhOxAEARgAGAIBFKGlxQWbGlixJ1zimmZsaRETKBPYAPDL45v9GJBps+N9bphf7ZQJp/jwLIlf4qpyfH2+dU+oEQJPgd8WRrJFu6ue7QC1luN0cE+1CflPi7A1+JYD56B9FhAB441y+Rnfnau5GjzLFsxsKel3Ev5icCTmjo5YZP+I08cRAq2LjwtLqRl3c1vXyNdJbjkiqqNzSo7D6lGlVpFqDdXnEAElpBQLHYIdWfy+XrPrO7VqdwG3EQpY67ooHXkwdzm1UhE=",
+                "quorum_hash": "JWQX+Pe7uVNjNStKVsw5nWDxb4lh8zPd+sLekEFqNQc=",
+                "signature": "oOu9Sq1yIz8Bpd7Zdcn1Ce2nBCrgy4k7t+LBDGJX/9N7NrT8Z1CYbGoLrie/fsqMEIj5reUAnLAMsL7dEnUAWLeqUFqCLhZJS9z+Coe5SYnDVTuifAj6MDHJLV0RaKGE",
                 "round": 0,
-                "block_id_hash": "NMnFTbJtD1g6UFVcvRyOGtD82cn9KovAQqGqdklGlw8=",
+                "block_id_hash": "H5hdJfGSuHzt4R5RLArKBJrqaGIBdImFJ7cu8xSa+oQ=",
                 "quorum_type": 106
             }
         },
         "metadata": {
-            "height": "365",
-            "core_chain_locked_height": 1685,
-            "time_ms": "1689768865007",
+            "height": "42",
+            "core_chain_locked_height": 1562,
+            "time_ms": "1690212629894",
             "protocol_version": 1,
-            "chain_id": "devnet"
+            "chain_id": "dashmate_local_38"
         }
     },
     {
-        "quorum_public_key": "a47f399416d51df01e082ccff9e90e7ae51d844d902cd3ad33c206e14bf76bafba9b6b688b5d05d4fb9a095147bb1525"
+        "quorum_public_key": "a7d3609d847ff4f880940c69c6b48bc174aa8936b5bad6a92c27cc1f2f2681516d0f440205397b995fa787761d83a50b"
     }
 ]
