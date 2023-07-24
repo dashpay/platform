@@ -30,8 +30,8 @@ use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub use v0::*;
 use crate::data_contract::created_data_contract::CreatedDataContract;
+pub use v0::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -59,10 +59,18 @@ pub enum DataContractCreateTransition {
 }
 
 impl DataContractCreateTransition {
-    pub fn try_from(value: CreatedDataContract, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
-        match platform_version.dpp.state_transition_serialization_versions.contract_create_state_transition.default_current_version {
+    pub fn try_from(
+        value: CreatedDataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .contract_create_state_transition
+            .default_current_version
+        {
             0 => {
-                let data_contract_create_transition : DataContractCreateTransitionV0 = value.into();
+                let data_contract_create_transition: DataContractCreateTransitionV0 = value.into();
                 Ok(data_contract_create_transition.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {

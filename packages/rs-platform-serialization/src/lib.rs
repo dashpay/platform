@@ -1,3 +1,7 @@
+mod attribute;
+mod derive_bincode;
+mod derive_bincode_enum;
+mod derive_bincode_struct;
 mod deserialize_enum;
 mod deserialize_struct;
 mod serialize_enum;
@@ -96,11 +100,13 @@ impl VersionAttributes {
 /// This macro is intended to be used for platform-specific serialization where it is necessary to control the serialization process more closely than what is provided by the standard `Serialize` trait.
 #[proc_macro_derive(PlatformSerialize, attributes(platform_error_type, platform_serialize))]
 pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
+    let cloned_input = input.clone();
+
+    let derive_input = parse_macro_input!(input as DeriveInput);
+    let name = &derive_input.ident;
 
     // Extract the error type from the attribute.
-    let error_type = input
+    let error_type = derive_input
         .attrs
         .iter()
         .find_map(|attr| {
@@ -122,7 +128,7 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let mut allow_prepend_version = false;
     let mut force_prepend_version = false;
 
-    if let Some(platform_serialize_attr) = input
+    if let Some(platform_serialize_attr) = derive_input
         .attrs
         .iter()
         .find(|attr| attr.path().is_ident("platform_serialize"))
@@ -194,11 +200,12 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         force_prepend_version,
     };
 
-    match &input.data {
+    match &derive_input.data {
         Data::Struct(data_struct) => {
             version_attributes.check_for_struct();
             derive_platform_serialize_struct(
-                &input,
+                cloned_input,
+                &derive_input,
                 version_attributes,
                 data_struct,
                 error_type,
@@ -207,7 +214,14 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         }
         Data::Enum(data_enum) => {
             version_attributes.check_for_enum();
-            derive_platform_serialize_enum(&input, version_attributes, data_enum, error_type, name)
+            derive_platform_serialize_enum(
+                cloned_input,
+                &derive_input,
+                version_attributes,
+                data_enum,
+                error_type,
+                name,
+            )
         }
         _ => {
             panic!("can only derive serialize on a struct or an enum")

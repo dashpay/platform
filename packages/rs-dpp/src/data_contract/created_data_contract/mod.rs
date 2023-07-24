@@ -40,7 +40,7 @@ impl CreatedDataContract {
         }
     }
 
-    pub fn data_contract_and_entropy_owned(self) -> (DataContract,Bytes32) {
+    pub fn data_contract_and_entropy_owned(self) -> (DataContract, Bytes32) {
         match self {
             CreatedDataContract::V0(v0) => (v0.data_contract, v0.entropy_used),
         }

@@ -8,6 +8,7 @@ use syn::{
 };
 
 pub(super) fn derive_platform_serialize_struct(
+    token_stream_input: TokenStream,
     input: &DeriveInput,
     version_attributes: VersionAttributes,
     data_struct: &DataStruct,

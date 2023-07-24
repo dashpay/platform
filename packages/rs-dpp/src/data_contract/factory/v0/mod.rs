@@ -233,7 +233,10 @@ impl DataContractFactoryV0 {
         &self,
         created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        DataContractCreateTransition::try_from(created_data_contract, PlatformVersion::get(self.protocol_version)?)
+        DataContractCreateTransition::try_from(
+            created_data_contract,
+            PlatformVersion::get(self.protocol_version)?,
+        )
     }
 
     #[cfg(feature = "state-transitions")]

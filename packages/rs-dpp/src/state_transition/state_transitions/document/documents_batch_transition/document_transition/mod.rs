@@ -175,7 +175,7 @@ pub trait DocumentTransitionMethodsV0 {
 //     }
 // }
 
-impl DocumentTransitionMethodsV0 for DocumentTransition  {
+impl DocumentTransitionMethodsV0 for DocumentTransition {
     fn base(&self) -> &DocumentBaseTransition {
         match self {
             DocumentTransition::Create(d) => &d.base(),

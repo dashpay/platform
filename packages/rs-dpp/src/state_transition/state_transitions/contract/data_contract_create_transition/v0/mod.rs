@@ -97,4 +97,3 @@ impl From<CreatedDataContract> for DataContractCreateTransitionV0 {
         }
     }
 }
-

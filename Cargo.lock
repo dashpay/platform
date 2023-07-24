@@ -258,7 +258,7 @@ version = "2.0.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
 dependencies = [
- "virtue",
+ "virtue 0.0.13",
 ]
 
 [[package]]
@@ -2647,6 +2647,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.18",
+ "virtue 0.0.14",
 ]
 
 [[package]]
@@ -4161,6 +4162,12 @@ name = "virtue"
 version = "0.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
+
+[[package]]
+name = "virtue"
+version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b522f715ead3537dc57c9907899a08e461a8f1e87fc8414a4a89bbd9854289ff"
 
 [[package]]
 name = "visualize"

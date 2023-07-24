@@ -20,9 +20,10 @@ impl IdentityTopUpTransitionAction {
         top_up_balance_amount: u64,
     ) -> Result<Self, ConsensusError> {
         match value {
-            IdentityTopUpTransition::V0(v0) => {
-                Ok(IdentityTopUpTransitionActionV0::try_from_borrowed(v0, top_up_balance_amount)?.into())
-            }
+            IdentityTopUpTransition::V0(v0) => Ok(
+                IdentityTopUpTransitionActionV0::try_from_borrowed(v0, top_up_balance_amount)?
+                    .into(),
+            ),
         }
     }
 }
