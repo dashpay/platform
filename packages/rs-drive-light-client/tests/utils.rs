@@ -14,8 +14,8 @@ pub fn load<Req, Resp>(
     drive_light_client::proof::from_proof::MockQuorumInfoProvider,
 )
 where
-    Req: dapi_grpc::Message + serde::de::DeserializeOwned,
-    Resp: dapi_grpc::Message + serde::de::DeserializeOwned,
+    Req: serde::de::DeserializeOwned, // dapi_grpc::Message
+    Resp: serde::de::DeserializeOwned,
 {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -24,7 +24,7 @@ where
     let f = File::open(path).unwrap();
     let (req, resp, quorum): (Req, Resp, QuorumInfo) = serde_json::from_reader(f).unwrap();
 
-    println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
+    // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
 
     let pubkey = quorum.quorum_public_key;
     let mut provider = drive_light_client::proof::from_proof::MockQuorumInfoProvider::new();

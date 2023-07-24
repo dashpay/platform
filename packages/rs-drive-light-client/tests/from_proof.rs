@@ -1,7 +1,11 @@
 use dapi_grpc::platform::v0 as grpc;
-use dpp::prelude::Identity;
+use dpp::prelude::{DataContract, Identity};
+use drive::query::DriveQuery;
 use drive_light_client::{
-    proof::from_proof::{FromProof, IdentitiesByPublicKeyHashes},
+    proof::from_proof::{
+        DataContracts, Documents, FromProof, Identities, IdentitiesByPublicKeyHashes,
+        IdentityBalance, IdentityBalanceAndRevision,
+    },
     Error,
 };
 
@@ -122,3 +126,66 @@ test_maybe_from_proof! {
     "vectors/identities_by_hashes_not_found.json",
     Ok(None)
 }
+
+test_maybe_from_proof! {
+    get_identities_not_found,
+    grpc::GetIdentitiesRequest,
+    grpc::GetIdentitiesResponse,
+    Identities,
+    "vectors/TODO.json",
+    Ok(None)
+}
+
+test_maybe_from_proof! {
+    get_identities_by_pubkeys_not_found,
+    grpc::GetIdentitiesByPublicKeyHashesRequest,
+    grpc::GetIdentitiesByPublicKeyHashesResponse,
+    IdentitiesByPublicKeyHashes,
+    "vectors/TODO.json",
+    Ok(None)
+}
+
+test_maybe_from_proof! {
+    get_identity_balance_not_found,
+    grpc::GetIdentityRequest,
+    grpc::GetIdentityBalanceResponse,
+    IdentityBalance,
+    "vectors/TODO.json",
+    Ok(None)
+}
+
+test_maybe_from_proof! {
+    get_identity_balance_and_revision_not_found,
+    grpc::GetIdentityRequest,
+    grpc::GetIdentityBalanceAndRevisionResponse,
+    IdentityBalanceAndRevision,
+    "vectors/TODO.json",
+    Ok(None)
+}
+
+test_maybe_from_proof! {
+    get_data_contract_not_found,
+    grpc::GetDataContractRequest,
+    grpc::GetDataContractResponse,
+    DataContract,
+    "vectors/TODO.json",
+    Ok(None)
+}
+
+test_maybe_from_proof! {
+    get_data_contracts_not_found,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/TODO.json",
+    Ok(None)
+}
+
+// test_maybe_from_proof! {
+//     get_documents_not_found,
+//     DriveQuery,
+//     grpc::GetDocumentsResponse,
+//     Documents,
+//     "vectors/TODO.json",
+//     Ok(None)
+// }
