@@ -9,11 +9,17 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 pub(crate) trait StateTransitionStructureValidationV0 {
-    fn validate_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
+    fn validate_structure_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
-    fn validate_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_structure_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema_v0(&IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);

@@ -214,8 +214,8 @@ mod tests {
     use super::*;
 
     use chrono::Utc;
-    use rust_decimal::prelude::ToPrimitive;
     use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
+    use rust_decimal::prelude::ToPrimitive;
 
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
     use drive::common::helpers::identities::create_test_masternode_identities;
@@ -223,11 +223,11 @@ mod tests {
     use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 
     mod helpers {
-        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use super::*;
         use crate::execution::types::block_fees::v0::BlockFeesV0;
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
         /// Process and validate block fees
@@ -357,14 +357,13 @@ mod tests {
 
         platform.create_mn_shares_contract(Some(&transaction));
 
-        let proposers =
-            create_test_masternode_identities(
-                &platform.drive,
-                6,
-                Some(56),
-                Some(&transaction),
-                platform_version,
-            );
+        let proposers = create_test_masternode_identities(
+            &platform.drive,
+            6,
+            Some(56),
+            Some(&transaction),
+            platform_version,
+        );
 
         let genesis_time_ms = Utc::now()
             .timestamp_millis()

@@ -147,11 +147,11 @@ where
 #[cfg(test)]
 mod tests {
 
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;

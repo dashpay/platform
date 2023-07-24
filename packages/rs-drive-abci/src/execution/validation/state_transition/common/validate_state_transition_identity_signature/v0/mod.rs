@@ -6,8 +6,10 @@ use dpp::consensus::signature::{
 
 use dpp::identity::PartialIdentity;
 
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::state_transition::StateTransitionIdentitySignedV0;
 use dpp::validation::ConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use dpp::{
     consensus::signature::{
@@ -23,8 +25,6 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use lazy_static::lazy_static;
 use std::collections::HashSet;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::version::PlatformVersion;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {

@@ -27,17 +27,12 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-#[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PartialEq,
-    PlatformSignable,
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PartialEq, PlatformSignable)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(allow_nested)]
 pub struct DataContractUpdateTransitionV0 {

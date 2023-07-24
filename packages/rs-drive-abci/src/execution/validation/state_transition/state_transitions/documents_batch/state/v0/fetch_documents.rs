@@ -6,8 +6,8 @@ use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
@@ -15,8 +15,7 @@ use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DocumentTransition;
 use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentTransition,
-    DocumentTransitionMethodsV0,
+    DocumentTransition, DocumentTransitionMethodsV0,
 };
 use dpp::validation::ConsensusValidationResult;
 use drive::contract::Contract;

@@ -42,7 +42,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
-    platform_version_path = "state_transitions.identity_credit_withdrawal_state_transition",
+    platform_version_path = "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition",
     allow_nested
 )]
 pub enum IdentityCreditWithdrawalTransition {

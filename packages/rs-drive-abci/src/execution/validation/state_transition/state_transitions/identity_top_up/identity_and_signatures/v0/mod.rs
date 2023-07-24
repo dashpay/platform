@@ -29,12 +29,11 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityTopUpTransitio
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
-        let maybe_partial_identity =
-            drive.fetch_identity_with_balance(
-                self.identity_id.to_buffer(),
-                tx,
-                platform_version,
-            )?;
+        let maybe_partial_identity = drive.fetch_identity_with_balance(
+            self.identity_id.to_buffer(),
+            tx,
+            platform_version,
+        )?;
 
         let partial_identity = match maybe_partial_identity {
             None => {

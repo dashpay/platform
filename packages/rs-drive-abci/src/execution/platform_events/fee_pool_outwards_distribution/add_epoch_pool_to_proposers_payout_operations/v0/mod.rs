@@ -172,14 +172,14 @@ mod tests {
             fee_pools::create_test_masternode_share_identities_and_documents,
             setup::TestPlatformBuilder,
         };
+        use dpp::block::block_info::BlockInfo;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
-        use dpp::block::block_info::BlockInfo;
-        use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
         #[test]
         fn test_payout_to_proposers() {

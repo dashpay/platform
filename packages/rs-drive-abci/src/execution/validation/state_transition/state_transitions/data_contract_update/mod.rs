@@ -134,7 +134,7 @@ mod tests {
     use dpp::platform_value::{BinaryData, Value};
     use dpp::state_transition::{StateTransitionFieldTypes, StateTransitionType};
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::{LATEST_VERSION, PlatformVersion};
+    use dpp::version::{PlatformVersion, LATEST_VERSION};
 
     struct TestData<T> {
         raw_state_transition: Value,
@@ -150,17 +150,21 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         platform
             .drive
-            .apply_contract(data_contract, block_info, true, None, None, platform_version)
+            .apply_contract(
+                data_contract,
+                block_info,
+                true,
+                None,
+                None,
+                platform_version,
+            )
             .expect("to apply contract");
     }
 
     fn setup_test() -> TestData<MockCoreRPCLike> {
         let platform_version = PlatformVersion::latest();
-        let data_contract = get_data_contract_fixture(
-            None,
-            platform_version.protocol_version,
-        )
-        .data_contract;
+        let data_contract =
+            get_data_contract_fixture(None, platform_version.protocol_version).data_contract;
         let mut updated_data_contract = data_contract.clone();
 
         updated_data_contract.increment_version();
@@ -204,10 +208,10 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
-        use serde_json::json;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+        use serde_json::json;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {

@@ -1,3 +1,5 @@
+pub mod v0_methods;
+
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use bincode::{Decode, Encode};

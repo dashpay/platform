@@ -6,8 +6,8 @@ use crate::execution::validation::data_trigger::{
 };
 
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
-use dpp::ProtocolError;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::ProtocolError;
 
 pub(crate) fn execute_data_triggers<'a>(
     document_transitions: &'a [DocumentTransitionAction],

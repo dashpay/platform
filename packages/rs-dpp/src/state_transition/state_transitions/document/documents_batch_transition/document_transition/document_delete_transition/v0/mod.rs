@@ -1,3 +1,5 @@
+pub mod v0_methods;
+
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::{data_contract::DataContract, errors::ProtocolError};

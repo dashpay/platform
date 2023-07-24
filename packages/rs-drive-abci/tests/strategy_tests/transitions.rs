@@ -2,6 +2,7 @@ use crate::signer::SimpleSigner;
 use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
@@ -14,20 +15,19 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
 };
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
-use dpp::version::{LATEST_VERSION, PlatformVersion};
+use dpp::version::{PlatformVersion, LATEST_VERSION};
+use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
 use std::collections::HashSet;
 use std::str::FromStr;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::withdrawal::Pooling;
 
 pub fn create_identity_top_up_transition(
     rng: &mut StdRng,

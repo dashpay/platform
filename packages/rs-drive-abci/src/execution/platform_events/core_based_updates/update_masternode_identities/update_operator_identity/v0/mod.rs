@@ -11,6 +11,7 @@ use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -28,7 +29,6 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::identity::accessors::IdentityGettersV0;
 
 impl<C> Platform<C>
 where

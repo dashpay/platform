@@ -55,11 +55,8 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let identity_id = self.get_identity_id();
-        let balance = drive.fetch_identity_balance(
-            self.identity_id.to_buffer(),
-            tx,
-            platform_version,
-        )?;
+        let balance =
+            drive.fetch_identity_balance(self.identity_id.to_buffer(), tx, platform_version)?;
 
         // Balance is here to check if the identity does already exist
         if balance.is_some() {
@@ -83,11 +80,8 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         };
 
         // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found = drive.has_asset_lock_outpoint(
-            &Bytes36(outpoint),
-            tx,
-            &platform_version.drive,
-        )?;
+        let asset_lock_already_found =
+            drive.has_asset_lock_outpoint(&Bytes36(outpoint), tx, &platform_version.drive)?;
 
         if asset_lock_already_found {
             let outpoint = OutPoint::from(outpoint);

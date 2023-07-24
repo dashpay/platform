@@ -40,6 +40,8 @@ use drive::dpp::identity::{
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -51,8 +53,6 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, Owne
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::DataContract;
 
 const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
@@ -81,10 +81,8 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let dpns_contract = load_system_data_contract(
-            SystemDataContract::DPNS,
-            platform_version.protocol_version,
-        )?;
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
@@ -183,8 +181,13 @@ impl<C> Platform<C> {
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
-        self.drive
-            .apply_drive_operations(operations, true, &block_info, transaction, platform_version)?;
+        self.drive.apply_drive_operations(
+            operations,
+            true,
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(())
     }

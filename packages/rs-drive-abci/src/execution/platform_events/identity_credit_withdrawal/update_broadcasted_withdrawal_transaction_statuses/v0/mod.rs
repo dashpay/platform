@@ -1,8 +1,8 @@
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::document::{Document, DocumentV0Setters};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::{Document, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
 use drive::dpp::contracts::withdrawals_contract;
@@ -189,16 +189,16 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
+    use dpp::version::PlatformVersion;
     use dpp::{
         data_contract::DataContract,
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
-    use dpp::version::PlatformVersion;
     use drive::tests::helpers::setup::setup_system_data_contract;
 
     #[test]

@@ -75,7 +75,7 @@ pub use v0::*;
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
-    platform_version_path = "state_transitions.documents_batch_state_transition",
+    platform_version_path = "dpp.state_transition_serialization_versions.documents_batch_state_transition",
     allow_nested
 )]
 pub enum DocumentsBatchTransition {

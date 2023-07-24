@@ -6,10 +6,15 @@ use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::any_schema_changes;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 use dpp::{
     consensus::basic::data_contract::{
         DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
@@ -31,11 +36,6 @@ use dpp::{
     state_transition::StateTransitionAction,
     Convertible, ProtocolError,
 };
-use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
-use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {

@@ -5,13 +5,13 @@ mod structure;
 use dpp::identity::PartialIdentity;
 
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
-use dpp::state_transition_action::StateTransitionAction;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 

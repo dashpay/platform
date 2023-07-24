@@ -1,7 +1,7 @@
 use crate::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
 use crate::identity::{KeyID, SecurityLevel};
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionMethodsV0;
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::fields::DEFAULT_SECURITY_LEVEL;
 use crate::state_transition::documents_batch_transition::{
     get_security_level_requirement, DocumentsBatchTransitionV0,

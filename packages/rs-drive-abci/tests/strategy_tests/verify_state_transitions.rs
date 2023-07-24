@@ -9,12 +9,12 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
-use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-use prost::Message;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
+use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use prost::Message;
 
 pub(crate) fn verify_state_transitions_were_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
@@ -193,7 +193,12 @@ pub(crate) fn verify_state_transitions_were_executed(
                     };
 
                     let (root_hash, document) = query
-                        .verify_proof(false, &response_proof.grovedb_proof, document_type, platform_version)
+                        .verify_proof(
+                            false,
+                            &response_proof.grovedb_proof,
+                            document_type,
+                            platform_version,
+                        )
                         .expect("expected to verify a document");
 
                     assert_eq!(

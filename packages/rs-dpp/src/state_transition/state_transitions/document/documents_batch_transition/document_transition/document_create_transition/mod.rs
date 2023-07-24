@@ -1,7 +1,6 @@
 mod v0;
+mod v0_methods;
 
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionMethodsV0;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -16,13 +15,5 @@ pub enum DocumentCreateTransition {
 impl Default for DocumentCreateTransition {
     fn default() -> Self {
         DocumentCreateTransition::V0(DocumentCreateTransitionV0::default()) // since only v0
-    }
-}
-
-impl DocumentTransitionMethodsV0 for DocumentCreateTransition {
-    fn base(&self) -> &DocumentBaseTransition {
-        match self {
-            DocumentCreateTransition::V0(v0) => &v0.base,
-        }
     }
 }

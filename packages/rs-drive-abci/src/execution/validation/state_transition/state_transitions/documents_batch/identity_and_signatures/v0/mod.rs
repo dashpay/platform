@@ -25,15 +25,13 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for DocumentsBatchTransiti
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        Ok(
-            validate_state_transition_identity_signature_v0(
-                drive,
-                self,
-                false,
-                transaction,
-                platform_version,
-            )?
-            .map(Some),
-        )
+        Ok(validate_state_transition_identity_signature_v0(
+            drive,
+            self,
+            false,
+            transaction,
+            platform_version,
+        )?
+        .map(Some))
     }
 }

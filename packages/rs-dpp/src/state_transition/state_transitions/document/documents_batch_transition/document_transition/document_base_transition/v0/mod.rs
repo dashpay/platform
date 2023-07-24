@@ -1,3 +1,5 @@
+pub mod v0_methods;
+
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
@@ -33,67 +35,6 @@ pub struct DocumentBaseTransitionV0 {
 
     #[serde(skip)]
     pub data_contract: DataContract,
-}
-
-/// A trait that contains getter and setter methods for `DocumentBaseTransitionV0`
-pub trait DocumentBaseTransitionV0Methods {
-    /// Returns the document ID.
-    fn id(&self) -> Identifier;
-
-    /// Sets the document ID.
-    fn set_id(&mut self, id: Identifier);
-
-    /// Returns the document type name.
-    fn document_type_name(&self) -> String;
-
-    /// Sets the document type name.
-    fn set_document_type_name(&mut self, document_type_name: String);
-
-    /// Returns the data contract ID.
-    fn data_contract_id(&self) -> Identifier;
-
-    /// Sets the data contract ID.
-    fn set_data_contract_id(&mut self, data_contract_id: Identifier);
-
-    /// Returns the data contract.
-    fn data_contract(&self) -> &DataContract;
-
-    /// Sets the data contract.
-    fn set_data_contract(&mut self, data_contract: DataContract);
-}
-
-impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
-    fn id(&self) -> Identifier {
-        self.id.clone()
-    }
-
-    fn set_id(&mut self, id: Identifier) {
-        self.id = id;
-    }
-
-    fn document_type_name(&self) -> String {
-        self.document_type_name.clone()
-    }
-
-    fn set_document_type_name(&mut self, document_type_name: String) {
-        self.document_type_name = document_type_name;
-    }
-
-    fn data_contract_id(&self) -> Identifier {
-        self.data_contract_id.clone()
-    }
-
-    fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
-        self.data_contract_id = data_contract_id;
-    }
-
-    fn data_contract(&self) -> &DataContract {
-        &self.data_contract
-    }
-
-    fn set_data_contract(&mut self, data_contract: DataContract) {
-        self.data_contract = data_contract;
-    }
 }
 
 impl DocumentBaseTransitionV0 {

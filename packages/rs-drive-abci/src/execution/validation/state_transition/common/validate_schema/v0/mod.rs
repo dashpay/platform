@@ -1,6 +1,6 @@
 use dpp::state_transition::StateTransitionFieldTypes;
-use dpp::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use dpp::validation::json_schema_validator::v0::JsonSchemaValidator;
+use dpp::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 
 pub(crate) fn validate_schema_v0(
     json_schema_validator: &JsonSchemaValidator,

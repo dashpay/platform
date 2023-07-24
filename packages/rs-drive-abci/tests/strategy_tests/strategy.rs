@@ -10,6 +10,7 @@ use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -18,14 +19,18 @@ use dpp::document::document_transition::document_base_transition::DocumentBaseTr
 use dpp::document::document_transition::{
     Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
 };
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentsBatchTransition};
+use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization_traits::PlatformSerializable;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
 };
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::{LATEST_VERSION, PlatformVersion};
+use dpp::version::{PlatformVersion, LATEST_VERSION};
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
@@ -40,11 +45,6 @@ use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::fee::Credits;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -218,7 +218,11 @@ impl Strategy {
     }
 
     // TODO: This belongs to `DocumentOp`
-    pub fn add_strategy_contracts_into_drive(&mut self, drive: &Drive, platform_version: &PlatformVersion) {
+    pub fn add_strategy_contracts_into_drive(
+        &mut self,
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) {
         for op in &self.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op.contract.serialize().expect("expected to serialize");
@@ -437,7 +441,8 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query = DriveQuery::any_item_query(contract, document_type.clone());
+                        let any_item_query =
+                            DriveQuery::any_item_query(contract, document_type.clone());
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -505,7 +510,8 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query = DriveQuery::any_item_query(contract, document_type.clone());
+                        let any_item_query =
+                            DriveQuery::any_item_query(contract, document_type.clone());
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -700,7 +706,14 @@ impl Strategy {
         } else {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
-                .state_transitions_for_block(platform, block_info, current_identities, signer, rng, platform_version);
+                .state_transitions_for_block(
+                    platform,
+                    block_info,
+                    current_identities,
+                    signer,
+                    rng,
+                    platform_version,
+                );
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut document_state_transitions);
 

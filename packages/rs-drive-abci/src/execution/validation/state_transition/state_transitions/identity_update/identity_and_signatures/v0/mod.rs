@@ -45,14 +45,13 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityUpdateTransiti
             }
         }
 
-        let validation_result =
-            validate_state_transition_identity_signature_v0(
-                drive,
-                self,
-                true,
-                transaction,
-                platform_version,
-            )?;
+        let validation_result = validate_state_transition_identity_signature_v0(
+            drive,
+            self,
+            true,
+            transaction,
+            platform_version,
+        )?;
 
         if !validation_result.is_valid() {
             result.merge(validation_result);

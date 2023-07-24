@@ -73,8 +73,13 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::extra::common::json_document_to_created_contract;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::util::hash::hash_to_hex_string;
+    use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -82,11 +87,6 @@ mod tests {
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
-    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::version::PlatformVersion;
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
@@ -378,7 +378,11 @@ mod tests {
             .abci_app
             .platform
             .drive
-            .fetch_identity_balance(outcome.identities.first().unwrap().id.to_buffer(), None, platform_version)
+            .fetch_identity_balance(
+                outcome.identities.first().unwrap().id.to_buffer(),
+                None,
+                platform_version,
+            )
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 

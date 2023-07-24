@@ -7,8 +7,8 @@ use dashcore_rpc::dashcore::{
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::document::{Document, DocumentV0Setters};
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::{Document, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::contracts::withdrawals_contract;
@@ -68,12 +68,11 @@ where
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
         // Get 16 latest withdrawal transactions from the queue
-        let untied_withdrawal_transactions =
-            self.drive.dequeue_withdrawal_transactions(
-                WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
-                Some(transaction),
-                &mut drive_operations,
-            )?;
+        let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
+            WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
+            Some(transaction),
+            &mut drive_operations,
+        )?;
 
         if untied_withdrawal_transactions.is_empty() {
             return Ok(Vec::new());

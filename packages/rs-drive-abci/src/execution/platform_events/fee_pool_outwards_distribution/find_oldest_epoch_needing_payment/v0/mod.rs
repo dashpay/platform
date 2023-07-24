@@ -25,9 +25,7 @@ impl<C> Platform<C> {
             return Ok(None);
         }
 
-        let unpaid_epoch_index = self
-            .drive
-            .get_unpaid_epoch_index_v0(transaction)?;
+        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index_v0(transaction)?;
 
         // We pay for previous epochs only
         if unpaid_epoch_index == current_epoch_index {
@@ -126,9 +124,9 @@ mod tests {
     use super::*;
 
     mod find_oldest_epoch_needing_payment {
-        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_unpaid_epoch_index_operation;
@@ -388,7 +386,7 @@ mod tests {
                     cached_current_epoch_start_block_height,
                     cached_current_epoch_start_block_core_height,
                     Some(&transaction),
-                    platform_version
+                    platform_version,
                 )
                 .expect("should find nothing");
 

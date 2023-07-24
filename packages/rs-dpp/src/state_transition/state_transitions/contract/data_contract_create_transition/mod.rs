@@ -53,7 +53,9 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = "state_transitions.contract_create_state_transition")]
+#[platform_serialize(
+    platform_version_path = "dpp.state_transition_serialization_versions.contract_create_state_transition"
+)]
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractCreateTransitionV0),

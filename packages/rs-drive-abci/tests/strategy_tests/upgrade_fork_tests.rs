@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use tenderdash_abci::proto::types::CoreChainLock;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::version::PlatformVersion;
+    use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::frequency::Frequency;

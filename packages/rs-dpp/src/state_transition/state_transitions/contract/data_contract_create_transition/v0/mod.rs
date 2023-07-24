@@ -41,6 +41,7 @@ use crate::version::PlatformVersion;
     serde(rename_all = "camelCase")
 )]
 #[platform_error_type(ProtocolError)]
+#[platform_serialize(allow_nested)]
 pub struct DataContractCreateTransitionV0 {
     //#[platform_serialization(versioned_structure, versioned_serialization)]
     pub data_contract: DataContract,

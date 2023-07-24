@@ -65,9 +65,11 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         };
 
         // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found = platform
-            .drive
-            .has_asset_lock_outpoint(&Bytes36(outpoint), tx, &platform_version.drive)?;
+        let asset_lock_already_found = platform.drive.has_asset_lock_outpoint(
+            &Bytes36(outpoint),
+            tx,
+            &platform_version.drive,
+        )?;
 
         if asset_lock_already_found {
             let outpoint = OutPoint::from(outpoint);

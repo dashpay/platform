@@ -10,6 +10,7 @@ use crate::{
     BlsModule, Convertible, NonConsensusError, ProtocolError,
 };
 
+use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;

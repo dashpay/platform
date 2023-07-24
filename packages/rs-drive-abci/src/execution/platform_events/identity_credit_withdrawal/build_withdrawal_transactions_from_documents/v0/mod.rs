@@ -122,16 +122,16 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::extended_block_info::BlockInfo;
 
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
-        use dpp::data_contract::base::DataContractBaseMethodsV0;
-        use dpp::version::PlatformVersion;
 
         use crate::test::helpers::setup::TestPlatformBuilder;
 
@@ -146,11 +146,9 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract = load_system_data_contract(
-                SystemDataContract::Withdrawals,
-                protocol_version.into(),
-            )
-            .expect("to load system data contract");
+            let data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, protocol_version.into())
+                    .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

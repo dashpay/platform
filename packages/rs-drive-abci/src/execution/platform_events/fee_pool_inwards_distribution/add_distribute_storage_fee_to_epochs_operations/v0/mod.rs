@@ -3,8 +3,7 @@ use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
 use dpp::fee::epoch::distribution::{
-    distribute_storage_fee_to_epochs_collection,
-    subtract_refunds_from_epoch_credits_collection,
+    distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
 };
 use dpp::fee::epoch::SignedCreditsPerEpoch;
 use dpp::version::PlatformVersion;
@@ -88,8 +87,8 @@ mod tests {
             CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
         };
         use dpp::fee::Credits;
-        use drive::drive::batch::DriveOperation;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+        use drive::drive::batch::DriveOperation;
         use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;

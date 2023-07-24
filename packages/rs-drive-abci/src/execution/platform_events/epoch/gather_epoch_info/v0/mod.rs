@@ -1,6 +1,6 @@
-use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::types::block_state_info;
+use dpp::version::PlatformVersion;
 
 use crate::platform_types::block_proposal;
 use crate::platform_types::epochInfo::v0::EpochInfoV0;
@@ -33,12 +33,8 @@ impl<C> Platform<C> {
             block_time_ms,
             ..
         } = &block_proposal;
-        let genesis_time_ms = self.get_genesis_time(
-            *height,
-            *block_time_ms,
-            transaction,
-            platform_version,
-        )?;
+        let genesis_time_ms =
+            self.get_genesis_time(*height, *block_time_ms, transaction, platform_version)?;
 
         EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)
     }

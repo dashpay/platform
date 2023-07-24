@@ -38,7 +38,7 @@ use serde::Serialize;
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(
-    platform_version_path = "state_transitions.identity_top_up_state_transition",
+    platform_version_path = "dpp.state_transition_serialization_versions.identity_top_up_state_transition",
     allow_nested
 )]
 pub enum IdentityTopUpTransition {
