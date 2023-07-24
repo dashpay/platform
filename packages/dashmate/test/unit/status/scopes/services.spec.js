@@ -6,7 +6,6 @@ describe('getServicesScopeFactory', () => {
     let mockDockerCompose;
 
     let config;
-    let configFile;
     let getServiceList;
     let getServicesScope;
 
@@ -15,13 +14,11 @@ describe('getServicesScopeFactory', () => {
 
       config = getConfigMock(this.sinon);
 
-      configFile = { getProjectId: this.sinon.stub() };
-
       getServiceList = this.sinon.stub();
 
       getServiceList.returns([{ name: 'mock', title: 'Mock service', image: 'fakeImageId' }]);
 
-      getServicesScope = getServicesScopeFactory(mockDockerCompose, configFile, getServiceList);
+      getServicesScope = getServicesScopeFactory(mockDockerCompose, getServiceList);
     });
 
     it('should just work', async () => {
