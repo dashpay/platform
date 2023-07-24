@@ -229,11 +229,11 @@ impl DataContractFactoryV0 {
     }
 
     #[cfg(feature = "state-transitions")]
-    pub fn create_data_contract_create_transition(
+    pub fn create_unsigned_data_contract_create_transition(
         &self,
         created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        Ok(created_data_contract.into())
+        DataContractCreateTransition::try_from(created_data_contract, PlatformVersion::get(self.protocol_version)?)
     }
 
     #[cfg(feature = "state-transitions")]
@@ -249,12 +249,12 @@ impl DataContractFactoryV0 {
             .contract_update_state_transition
             .default_current_version
         {
-            0 => DataContractUpdateTransitionV0 {
+            0 => Ok(DataContractUpdateTransitionV0 {
                 data_contract,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }
-            .into(),
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_json_object".to_string(),
                 known_versions: vec![0],
@@ -406,7 +406,7 @@ mod tests {
         } = get_test_data();
 
         let result = factory
-            .create_data_contract_create_transition(created_data_contract.clone())
+            .create_unsigned_data_contract_create_transition(created_data_contract.clone())
             .expect("Data Contract Transition should be created");
 
         assert_eq!(1, result.state_transition_protocol_version());

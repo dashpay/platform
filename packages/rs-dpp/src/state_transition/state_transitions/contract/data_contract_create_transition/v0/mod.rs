@@ -24,6 +24,7 @@ use crate::{
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
@@ -84,3 +85,16 @@ impl From<DataContract> for DataContractCreateTransitionV0 {
         }
     }
 }
+
+impl From<CreatedDataContract> for DataContractCreateTransitionV0 {
+    fn from(value: CreatedDataContract) -> Self {
+        let (data_contract, entropy) = value.data_contract_and_entropy_owned();
+        DataContractCreateTransitionV0 {
+            data_contract,
+            entropy,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+    }
+}
+

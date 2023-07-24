@@ -26,8 +26,8 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
     }
 }
 
-impl From<&IdentityUpdateTransition> for IdentityUpdateTransitionActionV0 {
-    fn from(value: &IdentityUpdateTransition) -> Self {
+impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
+    fn from(value: &IdentityUpdateTransitionV0) -> Self {
         let IdentityUpdateTransitionV0 {
             identity_id,
             add_public_keys,

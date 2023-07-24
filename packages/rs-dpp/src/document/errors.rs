@@ -8,6 +8,8 @@ use crate::document::Document;
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionMethodsV0;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
@@ -26,7 +28,7 @@ pub enum DocumentError {
     #[error("Invalid Document action submitted")]
     InvalidActionNameError { actions: Vec<String> },
     #[cfg(feature = "state-transitions")]
-    #[error("Invalid Document action '{}'", document_transition.base().action)]
+    #[error("Invalid Document action '{}'", document_transition)]
     InvalidDocumentActionError {
         document_transition: DocumentTransition,
     },

@@ -7,7 +7,7 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Bytes32, Identifier, Value};
+use platform_value::{BinaryData, Bytes32, Identifier, Value};
 
 /// The created data contract is a intermediate structure that can be consumed by a
 /// contract create state transition.
@@ -40,9 +40,27 @@ impl CreatedDataContract {
         }
     }
 
+    pub fn data_contract_and_entropy_owned(self) -> (DataContract,Bytes32) {
+        match self {
+            CreatedDataContract::V0(v0) => (v0.data_contract, v0.entropy_used),
+        }
+    }
+
     pub fn data_contract(&self) -> &DataContract {
         match self {
             CreatedDataContract::V0(v0) => &v0.data_contract,
+        }
+    }
+
+    pub fn entropy_used_owned(self) -> Bytes32 {
+        match self {
+            CreatedDataContract::V0(v0) => v0.entropy_used,
+        }
+    }
+
+    pub fn entropy_used(&self) -> &Bytes32 {
+        match self {
+            CreatedDataContract::V0(v0) => &v0.entropy_used,
         }
     }
 

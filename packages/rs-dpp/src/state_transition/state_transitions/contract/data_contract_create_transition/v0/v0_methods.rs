@@ -57,6 +57,7 @@ pub trait DataContractCreateTransitionV0Methods {
 }
 
 impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
+
     fn new_from_data_contract<S: Signer>(
         mut data_contract: DataContract,
         entropy: Bytes32,

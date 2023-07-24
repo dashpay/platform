@@ -18,6 +18,7 @@ use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
 use crate::document::INITIAL_REVISION;
+use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
@@ -38,7 +39,7 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[serde(flatten)]
-    pub base: DocumentBaseTransitionV0,
+    pub base: DocumentBaseTransition,
 
     /// Entropy used to create a Document ID.
     #[serde(rename = "$entropy")]

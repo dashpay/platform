@@ -31,6 +31,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use v0::*;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -55,6 +56,22 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractCreateTransitionV0),
+}
+
+impl DataContractCreateTransition {
+    pub fn try_from(value: CreatedDataContract, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version.dpp.state_transition_serialization_versions.contract_create_state_transition.default_current_version {
+            0 => {
+                let data_contract_create_transition : DataContractCreateTransitionV0 = value.into();
+                Ok(data_contract_create_transition.into())
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractCreateTransition::try_from(CreatedDataContract)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl From<DataContract> for DataContractCreateTransition {
@@ -106,7 +123,7 @@ mod test {
     }
 
     pub(crate) fn get_test_data() -> TestData {
-        let created_data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None, 1);
 
         let state_transition = DataContractCreateTransition::from_object(Value::from([
             (

@@ -10,7 +10,7 @@ impl IdentityTopUpTransitionAction {
     ) -> Result<Self, ConsensusError> {
         match value {
             IdentityTopUpTransition::V0(v0) => {
-                IdentityTopUpTransitionActionV0::try_from(v0, top_up_balance_amount).into()
+                Ok(IdentityTopUpTransitionActionV0::try_from(v0, top_up_balance_amount)?.into())
             }
         }
     }
@@ -21,7 +21,7 @@ impl IdentityTopUpTransitionAction {
     ) -> Result<Self, ConsensusError> {
         match value {
             IdentityTopUpTransition::V0(v0) => {
-                IdentityTopUpTransitionActionV0::try_from_borrowed(v0, top_up_balance_amount).into()
+                Ok(IdentityTopUpTransitionActionV0::try_from_borrowed(v0, top_up_balance_amount)?.into())
             }
         }
     }
