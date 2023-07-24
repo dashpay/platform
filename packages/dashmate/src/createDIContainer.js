@@ -105,8 +105,7 @@ const getConfigFileMigrationsFactory = require('./config/configFile/migrations/g
 const generateEnvsFactory = require('./config/generateEnvsFactory');
 
 /**
- * @param [options]
- * @param [options.DASHMATE_HOME_DIR]
+ * @param {Object} [options]
  * @returns {Promise<AwilixContainer<any>>}
  */
 async function createDIContainer(options = {}) {

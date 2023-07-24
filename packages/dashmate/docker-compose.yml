@@ -7,11 +7,12 @@ services:
     environment:
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
+      - DASHMATE_HOME_DIR=${DASHMATE_HOME_DIR:?err}
     ports:
       - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
     volumes:
-      - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate
+      - ${DASHMATE_HOME_DIR:?err}:${DASHMATE_HOME_DIR:?err}
       - /var/run/docker.sock:/var/run/docker.sock
 
   core:

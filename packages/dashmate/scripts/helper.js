@@ -14,10 +14,7 @@ const createDIContainer = require('../src/createDIContainer');
 
   const [configName] = args;
 
-  // eslint-disable-next-line no-console
-  console.info('Starting dashmate helper');
-
-  const container = await createDIContainer();
+  const container = await createDIContainer(process.env);
 
   // Load configs
   /**
@@ -34,10 +31,18 @@ const createDIContainer = require('../src/createDIContainer');
     configFile: asValue(configFile),
   });
 
+  const homeDir = container.resolve('homeDir');
+
+  // eslint-disable-next-line no-console
+  console.info(`Starting dashmate helper for ${homeDir.getPath()}`);
+
   const provider = config.get('platform.dapi.envoy.ssl.provider');
   const isEnabled = config.get('platform.dapi.envoy.ssl.enabled');
 
   if (isEnabled && provider === 'zerossl') {
+    // eslint-disable-next-line no-console
+    console.log('Schedule ZeroSSL certificate renewal');
+
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
     await scheduleRenewZeroSslCertificate(config);
   } else {
