@@ -83,7 +83,7 @@ impl<C> Platform<C> {
 
         let dpns_contract = load_system_data_contract(
             SystemDataContract::DPNS,
-            platform_version.into(),
+            platform_version.protocol_version,
         )?;
 
         let system_data_contract_types = BTreeMap::from_iter([
@@ -99,7 +99,7 @@ impl<C> Platform<C> {
                 (
                     load_system_data_contract(
                         SystemDataContract::Withdrawals,
-                        platform_version.into(),
+                        platform_version.protocol_version,
                     )?,
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
@@ -109,7 +109,7 @@ impl<C> Platform<C> {
                 (
                     load_system_data_contract(
                         SystemDataContract::FeatureFlags,
-                        platform_version.into(),
+                        platform_version.protocol_version,
                     )?,
                     system_identity_public_keys.feature_flags_contract_owner(),
                 ),
@@ -119,7 +119,7 @@ impl<C> Platform<C> {
                 (
                     load_system_data_contract(
                         SystemDataContract::Dashpay,
-                        platform_version.into(),
+                        platform_version.protocol_version,
                     )?,
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
@@ -129,7 +129,7 @@ impl<C> Platform<C> {
                 (
                     load_system_data_contract(
                         SystemDataContract::MasternodeRewards,
-                        platform_version.into(),
+                        platform_version.protocol_version,
                     )?,
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),

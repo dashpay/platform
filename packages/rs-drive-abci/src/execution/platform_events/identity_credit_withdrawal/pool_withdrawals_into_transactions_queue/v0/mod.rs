@@ -218,7 +218,7 @@ mod tests {
 
         let data_contract = load_system_data_contract(
             SystemDataContract::Withdrawals,
-            platform_version.into(),
+            platform_version.protocol_version,
         )
         .expect("to load system data contract");
 
@@ -238,7 +238,7 @@ mod tests {
                 "transactionIndex": 1u64,
             }),
             None,
-            platform_version.into(),
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
@@ -266,7 +266,7 @@ mod tests {
                 "transactionIndex": 2u64,
             }),
             None,
-            platform_version.into(),
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
@@ -293,7 +293,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
                 Some(&transaction),
-                platform_version.into(),
+                platform_version.protocol_version,
             )
             .expect("to fetch withdrawal documents");
 

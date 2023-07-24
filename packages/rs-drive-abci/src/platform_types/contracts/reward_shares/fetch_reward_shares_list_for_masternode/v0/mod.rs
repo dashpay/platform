@@ -95,7 +95,7 @@ impl<C> Platform<C> {
 
         let QueryDocumentsOutcome { documents, .. } =
             self.drive
-                .query_documents(drive_query, None, false, transaction, Some(platform_version.into()))?;
+                .query_documents(drive_query, None, false, transaction, Some(platform_version.protocol_version))?;
 
         Ok(documents)
     }

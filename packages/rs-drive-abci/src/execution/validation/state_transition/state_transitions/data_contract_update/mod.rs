@@ -158,7 +158,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let data_contract = get_data_contract_fixture(
             None,
-            platform_version.into(),
+            platform_version.protocol_version,
         )
         .data_contract;
         let mut updated_data_contract = data_contract.clone();

@@ -297,7 +297,7 @@ mod tests {
 
         let data_contract = load_system_data_contract(
             SystemDataContract::Withdrawals,
-            platform_version.into(),
+            platform_version.protocol_version,
         )
         .expect("to load system data contract");
 
@@ -327,7 +327,7 @@ mod tests {
                     "transactionId": Identifier::new([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
                 None,
-                platform_version.into(),
+                platform_version.protocol_version,
             ).expect("expected withdrawal document");
 
         let document_type = data_contract
@@ -356,7 +356,7 @@ mod tests {
                     "transactionId": Identifier::new([3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
                 }),
             None,
-            platform_version.into(),
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
@@ -373,7 +373,7 @@ mod tests {
                 95,
                 &block_execution_context.into(),
                 &transaction,
-                platform_version.into(),
+                platform_version.protocol_version,
             )
             .expect("to update withdrawal statuses");
 
@@ -382,7 +382,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::EXPIRED.into(),
                 Some(&transaction),
-                platform_version.into(),
+                platform_version.protocol_version,
             )
             .expect("to fetch documents by status");
 
@@ -397,7 +397,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::COMPLETE.into(),
                 Some(&transaction),
-                platform_version.into(),
+                platform_version.protocol_version,
             )
             .expect("to fetch documents by status");
 
