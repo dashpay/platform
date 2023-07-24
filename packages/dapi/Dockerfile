@@ -12,8 +12,6 @@ ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
 
-ENV RUSTC_WRAPPER ""
-
 WORKDIR /platform
 
 # Copy yarn and Cargo files
@@ -42,12 +40,13 @@ COPY packages/masternode-reward-shares-contract packages/masternode-reward-share
 COPY packages/feature-flags-contract packages/feature-flags-contract
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/platform/target \
+RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/wasm-dpp build && \
+    cargo clean && \
     sccache --show-stats
 
 # Install DAPI-specific dependencies using previous
