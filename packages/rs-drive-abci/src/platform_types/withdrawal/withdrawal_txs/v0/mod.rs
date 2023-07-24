@@ -15,6 +15,7 @@ use tenderdash_abci::proto::{
     types::{VoteExtension, VoteExtensionType},
 };
 use tenderdash_abci::signatures::SignDigest;
+use dpp::version::PlatformVersion;
 
 const MAX_WITHDRAWAL_TXS: u16 = 16;
 
@@ -70,12 +71,19 @@ impl<'a> WithdrawalTxs<'a> {
         transaction: TransactionArg,
         drive: &Drive,
         block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, AbciError> {
         self.validate()?;
         // TODO: Do we need to do sth with withdrawal txs to actually execute them?
         // FIXME: check if this is correct, esp. "apply" arg
         drive
-            .apply_drive_operations(self.drive_operations.clone(), true, block_info, transaction)
+            .apply_drive_operations(
+                self.drive_operations.clone(),
+                true,
+                block_info,
+                transaction,
+                platform_version,
+            )
             .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))
     }
 }
