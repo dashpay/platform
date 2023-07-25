@@ -103,7 +103,7 @@ mod tests {
             .expect("expected to create root tree successfully");
 
         let credits_match_expected = drive
-            .calculate_total_credits_balance(None, &platform_version.drive)
+            .calculate_total_credits_balance(Some(&db_transaction), &platform_version.drive)
             .expect("expected to get the result of the verification");
         assert!(credits_match_expected.ok().expect("no overflow"));
     }

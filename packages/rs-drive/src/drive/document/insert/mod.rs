@@ -394,11 +394,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 3055
+                storage_fee: 3056
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2316070,
+                processing_fee: 2316470,
                 ..Default::default()
             }
         );
@@ -461,11 +461,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1302
+                storage_fee: 1303
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 1496810,
+                processing_fee: 1497210,
                 ..Default::default()
             }
         );
@@ -534,8 +534,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        assert_eq!(1302, added_bytes);
-        assert_eq!(145124400, processing_fee);
+        assert_eq!(1303, added_bytes);
+        assert_eq!(145124800, processing_fee);
     }
 
     #[test]
@@ -769,11 +769,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1748
+                storage_fee: 1749
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2083390,
+                processing_fee: 2083790,
                 ..Default::default()
             }
         );

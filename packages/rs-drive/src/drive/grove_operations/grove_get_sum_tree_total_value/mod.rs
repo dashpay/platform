@@ -1,17 +1,12 @@
 mod v0;
 
-use crate::drive::grove_operations::{DirectQueryType, QueryTarget};
+use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
-use costs::CostContext;
 use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 use path::SubtreePath;
 
 impl Drive {
@@ -45,13 +40,12 @@ impl Drive {
             .basic
             .grove_get_sum_tree_total_value
         {
-            0 => self.grove_get_sum_tree_total_value(
+            0 => self.grove_get_sum_tree_total_value_v0(
                 path,
                 key,
                 query_type,
                 transaction,
                 drive_operations,
-                drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_sum_tree_total_value".to_string(),
