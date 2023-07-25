@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.5
-FROM strophy/buildbase:0.0.7 as builder
+FROM strophy/buildbase:0.0.8 as builder
 
 # TODO: Probably should be release by default
 ARG CARGO_BUILD_PROFILE=debug
