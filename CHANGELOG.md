@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** runs invalid helper version (#1231)
+* **dashmate:** Removed `dashmate.helper.docker.image` configuration option (#1231)
 
 ### Features
 
