@@ -18,7 +18,7 @@ impl From<DocumentsBatchTransitionV0> for StateTransition {
 impl StateTransitionLike for DocumentsBatchTransitionV0 {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.transitions.iter().map(|t| t.base().id()).collect()]
+        self.transitions.iter().map(|t| t.base().id()).collect()
     }
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {

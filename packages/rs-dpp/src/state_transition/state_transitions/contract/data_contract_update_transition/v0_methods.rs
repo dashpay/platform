@@ -33,14 +33,14 @@ impl DataContractUpdateTransitionV0Methods for DataContractUpdateTransition {
 
     fn get_data_contract(&self) -> &DataContract {
         match self {
-            DataContractUpdateTransition::V0(transition) => transition.get_data_contract(),
+            DataContractUpdateTransition::V0(transition) => &transition.data_contract,
         }
     }
 
     fn set_data_contract(&mut self, data_contract: DataContract) {
         match self {
             DataContractUpdateTransition::V0(transition) => {
-                transition.set_data_contract(data_contract)
+                transition.data_contract = data_contract
             }
         }
     }

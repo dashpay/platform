@@ -5,7 +5,7 @@ use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-mod accessors;
+pub mod accessors;
 mod fields;
 pub mod v0;
 mod v0_methods;

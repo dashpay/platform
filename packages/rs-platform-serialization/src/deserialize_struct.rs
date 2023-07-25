@@ -26,11 +26,11 @@ pub(super) fn derive_platform_deserialize_struct(
 
     let deserialize_into = match platform_serialize_into {
         Some(inner) => quote! {
-            let inner: #inner = bincode::decode_from_slice(&bytes, config)?;
+            let inner: #inner = bincode::decode_from_slice(&bytes, config).map(|(a, _)| a)?;
             Ok(inner.into())
         },
         None => quote! {
-            bincode::decode_from_slice(&bytes, config)
+            bincode::decode_from_slice(&bytes, config).map(|(a, _)| a)
         },
     };
 

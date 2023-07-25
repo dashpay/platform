@@ -5,7 +5,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
 use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::{NonConsensusError, ProtocolError};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
@@ -80,9 +80,11 @@ impl IndexLevel {
                 if properties_iter.peek().is_none() {
                     if current_level.has_index_with_uniqueness.is_some() {
                         // an index already exists return error
-                        return Err(BasicError::DuplicateIndexError(DuplicateIndexError::new(
-                            document_type_name.to_owned(),
-                            index.name.to_owned(),
+                        return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
+                            DuplicateIndexError::new(
+                                document_type_name.to_owned(),
+                                index.name.to_owned(),
+                            ),
                         ))
                         .into());
                     }
@@ -90,10 +92,12 @@ impl IndexLevel {
                     if index.unique {
                         unique_index_counter += 1;
                         if unique_index_counter > UNIQUE_INDEX_LIMIT_V0 {
-                            return Err(BasicError::UniqueIndicesLimitReachedError(
-                                UniqueIndicesLimitReachedError::new(
-                                    document_type_name.to_owned(),
-                                    UNIQUE_INDEX_LIMIT_V0,
+                            return Err(ConsensusError::BasicError(
+                                BasicError::UniqueIndicesLimitReachedError(
+                                    UniqueIndicesLimitReachedError::new(
+                                        document_type_name.to_owned(),
+                                        UNIQUE_INDEX_LIMIT_V0,
+                                    ),
                                 ),
                             )
                             .into());

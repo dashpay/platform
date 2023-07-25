@@ -28,6 +28,10 @@ pub trait IdentityPublicKeyInCreationV0Getters {
 
 /// Trait providing getters for `IdentityPublicKeyInCreationV0`.
 pub trait IdentityPublicKeyInCreationV0Setters {
+    fn set_signature(&mut self, signature: BinaryData);
+}
+
+impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreation {
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.signature = signature,

@@ -11,7 +11,7 @@ impl JsonSchemaValidator {
         platform_version: &PlatformVersion,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         match platform_version.dpp.validation.json_schema_validator.new {
-            0 => Self::new_v0(schema_json),
+            0 => Self::new_v0(schema_json, platform_version),
             version => Err(DashPlatformProtocolInitError::UnknownVersionMismatch {
                 method: "JsonSchemaValidator::new".to_string(),
                 known_versions: vec![0],

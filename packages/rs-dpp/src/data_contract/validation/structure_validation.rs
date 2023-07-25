@@ -1,3 +1,4 @@
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::enrich_with_base_schema::PREFIX_BYTE_0;
 use crate::data_contract::validation::data_contract_validation::BASE_DOCUMENT_SCHEMA;
@@ -47,17 +48,16 @@ impl DataContract {
             return Ok(result);
         }
 
-        for (document_name, document_type) in self.document_types.iter() {
+        for (document_name, document_type) in self.document_types().iter() {
             if document_type.indices.is_empty() {
                 continue;
             }
 
-            let document_schema =
-                self.documents
-                    .get(document_name)
-                    .ok_or(ProtocolError::CorruptedCodeExecution(
-                        "there should be a document schema".to_string(),
-                    ))?;
+            let document_schema = self.documents()?.get(document_name).ok_or(
+                ProtocolError::CorruptedCodeExecution(
+                    "there should be a document schema".to_string(),
+                ),
+            )?;
 
             let validation_result = DataContract::validate_index_naming_duplicates(
                 &document_type.indices,

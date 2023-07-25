@@ -400,7 +400,7 @@ fn generate_version_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStr
         .iter()
         .enumerate()
         .map(|(index, ident)| {
-            let index_feature = index as u32;
+            let index_feature = index as u16;
             quote! {
                 Self::#ident(_) => #index_feature
             }

@@ -1,7 +1,9 @@
 use crate::version::dpp_versions::{
-    ContractClassMethodVersions, ContractVersions, DPPVersion, DocumentClassMethodVersions,
-    DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions,
-    IdentityKeyTypeMethodVersions, IdentityVersions, StateTransitionSerializationVersions,
+    ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
+    DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
+    DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
+    IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
+    StateTransitionSerializationVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -554,6 +556,24 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     dpp: DPPVersion {
+        validation: DPPValidationVersions {
+            validate_time_in_block_time_window: 0,
+            json_schema_validator: JsonSchemaValidatorVersions {
+                get_schema_compilation_options: 0,
+                new: 0,
+                new_with_definitions: 0,
+                validate: 0,
+                validate_data_contract_schema: 0,
+                validate_schema: 0,
+            },
+            data_contract: DataContractValidationVersions {
+                validate: 0,
+                validate_index_definitions: 0,
+                validate_index_naming_duplicates: 0,
+                validate_not_defined_properties: 0,
+                validate_property_definition: 0,
+            },
+        },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_create_state_transition: FeatureVersionBounds {
                 min_version: 0,
@@ -622,6 +642,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
             },
         },
+        state_transition_conversion_versions: Default::default(),
         contract_versions: ContractVersions {
             contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,
@@ -651,6 +672,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 field_can_be_null: 0,
                 initial_revision: 0,
                 requires_revision: 0,
+            },
+            index_versions: IndexVersions {
+                index_levels_from_indices: 0,
             },
             contract_class_method_versions: ContractClassMethodVersions {
                 get_property_definition_by_path: 0,

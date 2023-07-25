@@ -136,10 +136,6 @@ pub enum ProtocolError {
     #[error(transparent)]
     InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
 
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
-    #[error(transparent)]
-    MissingDataContractIdError(MissingDataContractIdError),
-
     #[error(transparent)]
     PublicKeyIsDisabledError(PublicKeyIsDisabledError),
 

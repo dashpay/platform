@@ -1,3 +1,4 @@
+use crate::util::json_value::JsonValueExt;
 use crate::validation::JsonSchemaValidator;
 use crate::version::PlatformVersion;
 use crate::DashPlatformProtocolInitError;

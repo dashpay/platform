@@ -35,7 +35,7 @@ pub trait DataContractUpdateTransitionV0Methods {
     fn set_data_contract(&mut self, data_contract: DataContract);
 }
 
-impl DataContractUpdateTransitionV0Methods for DataContractCreateTransitionV0 {
+impl DataContractUpdateTransitionV0Methods for DataContractUpdateTransitionV0 {
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
         identity: &PartialIdentity,

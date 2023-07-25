@@ -313,8 +313,8 @@ impl DocumentTransitionV0Methods for DocumentTransition {
 
     fn revision(&self) -> Option<Revision> {
         match self {
-            DocumentTransition::Create(t) => t.revision(),
-            DocumentTransition::Replace(t) => Some(t.revision),
+            DocumentTransition::Create(_) => Some(1),
+            DocumentTransition::Replace(t) => Some(t.revision()),
             DocumentTransition::Delete(_) => None,
         }
     }
