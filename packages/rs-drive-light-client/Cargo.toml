@@ -7,35 +7,36 @@ rust-version = "1.70"
 crate-type = ["cdylib"]
 
 [dependencies]
-uniffi = { git = "https://github.com/mozilla/uniffi-rs" }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", optional = true }
 dapi-grpc = { path = "../dapi-grpc" }
 thiserror = { version = "1.0.39" }
-# prost = { version = "0.11" }
 bytes = { version = "1.4.0" }
-
 camino = { version = "1.1.4", optional = true }
 mockall = { version = "0.11", optional = true }
 
 drive = { path = "../rs-drive" }
 dpp = { path = "../rs-dpp" }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/timestamp-from-milis" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 tracing = { version = "0.1.37" }
+serde = { version = "1.0.171", default-features = false }
+serde_json = { version = "1.0.103", features = [
+    "preserve_order",
+], optional = true }
 
 [dev-dependencies]
-
-base64 = { version = "0.21.2" }
-hex = { version = "0.4" }
 tracing-subscriber = { version = "0.3.16" }
 serde_json = { version = "1.0.103" }
-serde = { version = "1.0.107" }
-prost = { version = "0.11.9" }
 
 [build-dependencies]
 
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", features = ["build"] }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", features = [
+    "build",
+], optional = true }
 
 [features]
-default = ["mock"]
+default = ["mock", "json"]
 bindgen = ["uniffi/cli", "dep:camino"]
 mock = ["drive/mockall", "dep:mockall"]
+json = ["dep:serde_json"]
+uniffi = ["dep:uniffi"]

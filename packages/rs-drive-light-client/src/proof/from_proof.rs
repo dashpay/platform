@@ -6,6 +6,7 @@ use dpp::document::Document;
 use dpp::prelude::{DataContract, Identifier, Identity, Revision};
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
+use drive::query::DriveQuery;
 
 use super::verify::verify_tenderdash_proof;
 
@@ -75,7 +76,7 @@ pub trait FromProof<Req, Resp> {
 /// Developers should implement this trait to provide required quorum details to [FromProof] implementations.
 ///
 /// It defines a single method `get_quorum_public_key` which retrieves the public key of a given quorum.
-#[uniffi::export(callback_interface)]
+#[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
 #[cfg_attr(feature = "mock", mockall::automock)]
 pub trait QuorumInfoProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
@@ -84,6 +85,7 @@ pub trait QuorumInfoProvider: Send + Sync {
     ///
     /// * `quorum_type`: The type of the quorum.
     /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
+    /// * `core_chain_locked_height`: Core chain locked height for which the quorum must be valid
     ///
     /// # Returns
     ///
@@ -92,8 +94,9 @@ pub trait QuorumInfoProvider: Send + Sync {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
-        quorum_hash: Vec<u8>,
-    ) -> Result<Vec<u8>, Error>;
+        quorum_hash: Vec<u8>, // TODO: once we get rid of uniffi, we should take [u8;32] here
+        core_chain_locked_height: u32,
+    ) -> Result<Vec<u8>, Error>; // TODO: When we get rid of uniffi, we should return 48 bytes instead of Vec
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
@@ -468,34 +471,38 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
 }
 
 // #[cfg_attr(feature = "mock", mockall::automock)]
-// impl FromProof<platform::GetDocumentsRequest, platform::GetDocumentsResponse> for Documents {
-//     fn maybe_from_proof(
-//         request: &platform::GetDocumentsRequest,
-//         response: &platform::GetDocumentsResponse,
-//         provider: Box<dyn QuorumInfoProvider>,
-//     ) -> Result<Option<Self>, Error> {
-//         // Parse response to read proof and metadata
-//         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
-//             platform::get_documents_response::Result::Proof(p) => p,
-//             platform::get_documents_response::Result::Documents(_) => {
-//                 return Err(Error::EmptyResponseProof)
-//             }
-//         };
+impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documents {
+    fn maybe_from_proof(
+        request: &DriveQuery<'dq>,
+        response: &platform::GetDocumentsResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_documents_response::Result::Proof(p) => p,
+            platform::get_documents_response::Result::Documents(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
 
-//         let mtd = response
-//             .metadata
-//             .as_ref()
-//             .ok_or(Error::EmptyResponseMetadata)?;
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
 
-//         // Extract content from proof and verify Drive/GroveDB proofs
-//         // TODO: figure out how to verify proof statically
-//         let (root_hash, maybe_documents) =
-//             Drive::verify_proof(&proof.grovedb_proof).map_err(|e| Error::DriveError {
-//                 error: e.to_string(),
-//             })?;
+        let (root_hash, documents) =
+            request
+                .verify_proof(&proof.grovedb_proof)
+                .map_err(|e| Error::DriveError {
+                    error: e.to_string(),
+                })?;
 
-//         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-//         Ok(maybe_documents)
-//     }
-// }
+        if documents.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(documents))
+        }
+    }
+}

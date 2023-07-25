@@ -21,6 +21,7 @@ pub(crate) fn verify_tenderdash_proof(
     let version = mtd.protocol_version as u64;
     let height = mtd.height as u64;
     let round = proof.round as u32;
+    let core_locked_height = mtd.core_chain_locked_height;
     let quorum_hash = TryInto::<[u8; 32]>::try_into(proof.quorum_hash.as_slice()).map_err(|e| {
         Error::InvalidQuorum {
             error: "invalid quorum hash size: ".to_string() + &e.to_string(),
@@ -30,7 +31,8 @@ pub(crate) fn verify_tenderdash_proof(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
-    let pubkey_bytes = provider.get_quorum_public_key(quorum_type, quorum_hash.to_vec())?;
+    let pubkey_bytes =
+        provider.get_quorum_public_key(quorum_type, quorum_hash.to_vec(), core_locked_height)?;
 
     let state_id = StateId {
         app_version: version,

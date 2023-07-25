@@ -31,8 +31,6 @@ pub fn generate() -> Result<(), std::io::Error> {
         PathBuf::from("src/platform/proto"),
     );
 
-    //   platform.field_attribute("id", r#"#[serde_as(as = "serde_with::base64::Base64")]"#);
-    // .type_attribute(".", "#[serde_with::serde_as]")
     #[cfg(feature = "serde")]
     let platform = platform
         .type_attribute(
@@ -42,36 +40,40 @@ pub fn generate() -> Result<(), std::io::Error> {
         .type_attribute(".", r#"#[serde(rename_all = "snake_case")]"#)
         .field_attribute(
             "id",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_base64")]"#,
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
+            "ids",
+            r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
         .field_attribute(
             "ResponseMetadata.height",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_string")]"#,
+            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
         )
         .field_attribute(
             "ResponseMetadata.time_ms",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_string")]"#,
+            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
         )
         .field_attribute(
             "GetIdentitiesByPublicKeyHashesRequest.public_key_hashes",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_seq_base64")]"#,
+            r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
         // Proof fields
         .field_attribute(
             "Proof.grovedb_proof",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_base64")]"#,
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
         )
         .field_attribute(
             "Proof.quorum_hash",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_base64")]"#,
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
         )
         .field_attribute(
             "Proof.signature",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_base64")]"#,
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
         )
         .field_attribute(
             "Proof.block_id_hash",
-            r#"#[serde(deserialize_with = "crate::deserialization::from_base64")]"#,
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
         );
 
     platform.generate().unwrap();

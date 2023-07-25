@@ -1,5 +1,6 @@
 /// Errors
-#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[derive(Debug, thiserror::Error)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Error))]
 pub enum Error {
     /// Not initialized
     #[error("not initialized: call initialize() first")]
@@ -32,16 +33,16 @@ pub enum Error {
     DocumentMissingInProof,
 
     /// Decode protobuf error
-    #[error("decode request protobuf: {error}")]
-    ProtoRequestDecodeError { error: String },
+    #[error("decode request: {error}")]
+    RequestDecodeError { error: String },
 
     /// Decode protobuf response error
-    #[error("decode response protobuf: {error}")]
-    ProtoResponseDecodeError { error: String },
+    #[error("decode response: {error}")]
+    ResponseDecodeError { error: String },
 
-    /// Encode protobuf error
-    #[error("encode protobuf: {error}")]
-    ProtoEncodeError { error: String },
+    /// Error when encoding data
+    #[error("data encoding: {error}")]
+    DataEncodingError { error: String },
 
     /// Cannot generate signature digest for data
     #[error("cannot generate signature digest for data: {error}")]
@@ -72,6 +73,7 @@ pub enum Error {
     UnexpectedCallbackError { error: String, reason: String },
 }
 
+#[cfg(feature = "uniffi")]
 impl From<uniffi::UnexpectedUniFFICallbackError> for Error {
     fn from(value: uniffi::UnexpectedUniFFICallbackError) -> Self {
         Self::UnexpectedCallbackError {
