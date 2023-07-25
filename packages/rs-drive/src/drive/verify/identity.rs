@@ -342,6 +342,9 @@ impl Drive {
         } else {
             GroveDb::verify_query(proof, &path_query)?
         };
+        if proved_key_values.is_empty() {
+            return Ok((root_hash, None));
+        }
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if path != unique_key_hashes_tree_path_vec() {
