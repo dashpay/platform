@@ -1,6 +1,6 @@
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -24,16 +24,13 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub trait IdentityCreditWithdrawalTransitionV0Methods {
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreditWithdrawal
     }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier;
     fn set_revision(&mut self, revision: Revision);
     fn revision(&self) -> Revision;
 }
@@ -45,10 +42,5 @@ impl IdentityCreditWithdrawalTransitionV0Methods for IdentityCreditWithdrawalTra
 
     fn revision(&self) -> Revision {
         self.revision
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 }

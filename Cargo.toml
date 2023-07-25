@@ -7,6 +7,8 @@ members = [
     "packages/rs-drive",
     "packages/rs-platform-value",
     "packages/rs-platform-serialization",
+    "packages/rs-platform-serialization-derive",
+    "packages/rs-platform-version",
     "packages/rs-platform-versioning",
     "packages/rs-platform-value-convertible",
     "packages/rs-drive-abci",

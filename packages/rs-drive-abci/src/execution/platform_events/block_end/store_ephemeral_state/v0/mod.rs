@@ -3,7 +3,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::platform_types::platform_state::PlatformState;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::version::PlatformVersion;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
@@ -28,9 +29,10 @@ where
         &self,
         platform_state: &PlatformState,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // we need to serialize the platform state
-        let serialized_platform_state = platform_state.serialize()?;
+        let serialized_platform_state = platform_state.serialize(platform_version)?;
 
         // next we need to store this data in grovedb
         //todo:: maybe this should be in actual state

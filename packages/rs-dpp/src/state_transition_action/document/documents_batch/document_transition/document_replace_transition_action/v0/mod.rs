@@ -8,10 +8,11 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use bincode::{Decode, Encode};
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::version::PlatformVersion;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct DocumentReplaceTransitionActionV0 {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction,

@@ -60,7 +60,7 @@ where
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
                 key_request,
                 Some(transaction),
-                &platform_version.drive,
+                platform_version,
             )?;
 
         if old_withdrawal_identity_keys.is_empty() {

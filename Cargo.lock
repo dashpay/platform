@@ -1131,8 +1131,10 @@ dependencies = [
  "nohash-hasher",
  "num_enum",
  "platform-serialization",
+ "platform-serialization-derive",
  "platform-value",
  "platform-value-convertible",
+ "platform-version",
  "platform-versioning",
  "pretty_assertions",
  "rand",
@@ -2644,6 +2646,14 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 name = "platform-serialization"
 version = "0.1.0"
 dependencies = [
+ "bincode 2.0.0-rc.3",
+ "platform-version",
+]
+
+[[package]]
+name = "platform-serialization-derive"
+version = "0.1.0"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.18",
@@ -2676,6 +2686,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.18",
+]
+
+[[package]]
+name = "platform-version"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "thiserror",
 ]
 
 [[package]]

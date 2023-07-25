@@ -1,3 +1,5 @@
+pub mod v0_methods;
+
 use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
@@ -22,6 +24,7 @@ use crate::state_transition::documents_batch_transition::document_base_transitio
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use derive_more::Display;
 
 pub(self) mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -34,8 +37,16 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
 #[serde(rename_all = "camelCase")]
+#[display(
+    fmt = "Base: {}, Entropy: {:?}, Created At: {:?}, Updated At: {:?}, Data: {:?}",
+    "base",
+    "entropy",
+    "created_at",
+    "updated_at",
+    "data"
+)]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[serde(flatten)]

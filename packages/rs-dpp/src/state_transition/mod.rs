@@ -7,7 +7,7 @@ use platform_value::{BinaryData, Value};
 pub use state_transition_types::*;
 
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
 use crate::ProtocolError;
@@ -17,7 +17,6 @@ mod state_transition_types;
 pub mod errors;
 
 mod serialization;
-mod signing;
 mod state_transitions;
 mod traits;
 
@@ -25,7 +24,7 @@ pub use traits::*;
 
 pub use state_transitions::*;
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
@@ -98,15 +97,12 @@ macro_rules! call_static_method {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    PlatformSerialize,
-    PlatformDeserialize,
-    PlatformSignable,
-    From,
-    PartialEq,
+    Debug, Clone, PlatformSerialize, PlatformDeserialize, PlatformSignable, From, PartialEq,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(limit = 100000)]

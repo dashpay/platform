@@ -8,10 +8,7 @@ use crate::consensus::signature::InvalidStateTransitionSignatureError;
 use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
 
-use crate::serialization_traits::{PlatformSerializable, Signable};
-use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
-};
+use crate::serialization::{PlatformSerializable, Signable};
 use crate::version::FeatureVersion;
 use crate::{
     identity::KeyType,
@@ -21,6 +18,16 @@ use crate::{
 };
 
 use crate::identity::KeyID;
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
+use crate::state_transition::errors::StateTransitionIsNotSignedError;
 use crate::state_transition::StateTransitionType;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 
@@ -55,6 +62,7 @@ pub trait StateTransitionLike:
     /// get modified ids list
     fn modified_data_ids(&self) -> Vec<Identifier>;
 
+    #[cfg(feature = "state-transition-signing")]
     /// Signs data with the private key
     fn sign_by_private_key(
         &mut self,
@@ -84,6 +92,7 @@ pub trait StateTransitionLike:
         Ok(())
     }
 
+    #[cfg(all(feature = "state-transition-validation"))]
     fn verify_by_public_key<T: BlsModule>(
         &self,
         public_key: &[u8],
@@ -104,6 +113,7 @@ pub trait StateTransitionLike:
         }
     }
 
+    #[cfg(all(feature = "state-transition-validation"))]
     fn verify_ecdsa_hash_160_signature_by_public_key_hash(
         &self,
         public_key_hash: &[u8],
@@ -124,6 +134,7 @@ pub trait StateTransitionLike:
             })
     }
 
+    #[cfg(all(feature = "state-transition-validation"))]
     /// Verifies an ECDSA signature with the public key
     fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.signature().is_empty() {
@@ -145,6 +156,7 @@ pub trait StateTransitionLike:
         )
     }
 
+    #[cfg(all(feature = "state-transition-validation"))]
     /// Verifies a BLS signature with the public key
     fn verify_bls_signature_by_public_key<T: BlsModule>(
         &self,
@@ -194,5 +206,5 @@ pub trait StateTransitionLike:
         }
     }
     /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier;
+    fn owner_id(&self) -> &Identifier;
 }

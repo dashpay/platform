@@ -4,6 +4,7 @@ use dpp::data_contract::state_transition::data_contract_create_transition::DataC
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -12,6 +13,7 @@ pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 }
 
@@ -20,10 +22,15 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for DataContractCreateTran
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        Ok(
-            validate_state_transition_identity_signature_v0(drive, self, false, transaction)?
-                .map(Some),
-        )
+        Ok(validate_state_transition_identity_signature_v0(
+            drive,
+            self,
+            false,
+            transaction,
+            platform_version,
+        )?
+        .map(Some))
     }
 }

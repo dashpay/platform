@@ -1,4 +1,4 @@
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
@@ -31,11 +31,9 @@ use crate::{
 use platform_value::string_encoding::Encoding;
 
 pub use self::document_transition::{document_base_transition, document_create_transition};
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use crate::serialization::PlatformSerializable;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-
-use crate::state_transition::signing::abstract_state_transition_identity_signed::StateTransitionIdentitySignedV0;
 
 pub mod document_transition;
 mod fields;
@@ -47,6 +45,7 @@ mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use crate::state_transition::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
@@ -55,7 +54,7 @@ use crate::state_transition::documents_batch_transition::document_transition::Do
 use crate::state_transition::documents_batch_transition::fields::{
     property_names, DEFAULT_SECURITY_LEVEL,
 };
-use crate::state_transition::signing::sign_external::StateTransitionIdentitySignExternalV0;
+
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 pub use v0::*;
 
@@ -75,16 +74,14 @@ pub use v0::*;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(
-    platform_version_path = "state_transitions.documents_batch_state_transition",
-    allow_nested
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
 pub enum DocumentsBatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DocumentsBatchTransitionV0),
 }
-
-impl StateTransitionIdentitySignExternalV0 for DocumentsBatchTransition {}
 
 //
 // impl Default for DocumentsBatchTransition {
@@ -274,51 +271,6 @@ impl StateTransitionIdentitySignExternalV0 for DocumentsBatchTransition {}
 //     }
 // }
 //
-impl StateTransitionIdentitySignedV0 for DocumentsBatchTransition {
-    fn get_owner_id(&self) -> &Identifier {
-        &self.owner_id
-    }
-
-    fn get_security_level_requirement(&self) -> Vec<crate::identity::SecurityLevel> {
-        // Step 1: Get all document types for the ST
-        // Step 2: Get document schema for every type
-        // If schema has security level, use that, if not, use the default security level
-        // Find the highest level (lowest int value) of all documents - the ST's signature
-        // requirement is the highest level across all documents affected by the ST./
-        let mut highest_security_level = SecurityLevel::lowest_level();
-
-        for transition in self.transitions.iter() {
-            let document_type = &transition.base().document_type_name;
-            let data_contract = &transition.base().data_contract;
-            let maybe_document_schema = data_contract.get_document_schema(document_type);
-
-            if let Ok(document_schema) = maybe_document_schema {
-                let document_security_level =
-                    get_security_level_requirement(document_schema, DEFAULT_SECURITY_LEVEL);
-
-                // lower enum enum representation means higher in security
-                if document_security_level < highest_security_level {
-                    highest_security_level = document_security_level
-                }
-            }
-        }
-        if highest_security_level == SecurityLevel::MASTER {
-            vec![SecurityLevel::MASTER]
-        } else {
-            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
-                .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
-                .collect()
-        }
-    }
-
-    fn get_signature_public_key_id(&self) -> Option<KeyID> {
-        self.signature_public_key_id
-    }
-
-    fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-        self.signature_public_key_id = Some(key_id);
-    }
-}
 //
 // impl DocumentsBatchTransition {
 //     fn to_value(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

@@ -8,6 +8,7 @@ mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use fields::*;
 
@@ -15,8 +16,8 @@ use crate::data_contract::property_names::ENTROPY;
 
 use crate::data_contract::DataContract;
 use crate::identity::KeyID;
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::{PlatformSerializable, Signable};
+use crate::serialization::PlatformDeserializable;
+use crate::serialization::{PlatformSerializable, Signable};
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
@@ -24,7 +25,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
@@ -52,7 +53,9 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = "state_transitions.contract_create_state_transition")]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.contract_create_state_transition"
+)]
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractCreateTransitionV0),
@@ -213,7 +216,7 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             &data.created_data_contract.data_contract.owner_id,
-            data.state_transition.get_owner_id()
+            data.state_transition.owner_id()
         );
     }
 

@@ -225,7 +225,7 @@ impl DocumentTypeV0 {
         let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
 
-        let index_structure = IndexLevel::from(indices.as_slice());
+        let index_structure = IndexLevel::try_from_indices(indices.as_slice())?;
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &properties,
             &PlatformVersion::latest()

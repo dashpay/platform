@@ -10,7 +10,7 @@ impl IdentityCreateTransitionAction {
     ) -> Result<Self, ConsensusError> {
         match value {
             IdentityCreateTransition::V0(v0) => {
-                IdentityCreateTransitionActionV0::try_from(v0, initial_balance_amount).into()
+                Ok(IdentityCreateTransitionActionV0::try_from(v0, initial_balance_amount)?.into())
             }
         }
     }
@@ -20,10 +20,10 @@ impl IdentityCreateTransitionAction {
         initial_balance_amount: u64,
     ) -> Result<Self, ConsensusError> {
         match value {
-            IdentityCreateTransition::V0(v0) => {
-                IdentityCreateTransitionActionV0::try_from_borrowed(v0, initial_balance_amount)
-                    .into()
-            }
+            IdentityCreateTransition::V0(v0) => Ok(
+                IdentityCreateTransitionActionV0::try_from_borrowed(v0, initial_balance_amount)?
+                    .into(),
+            ),
         }
     }
 }

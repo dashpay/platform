@@ -11,7 +11,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 #[cfg(test)]
 use dpp::validation::SimpleConsensusValidationResult;
@@ -131,7 +131,7 @@ mod tests {
     use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization_traits::{PlatformSerializable, Signable};
+    use dpp::serialization::serialization_traits::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionType};

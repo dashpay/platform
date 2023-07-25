@@ -3,6 +3,7 @@ use crate::execution::types::proposer_payouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
+use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use drive::drive::batch::{DriveOperation, GroveDbOpBatch, SystemOperationType};
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_unpaid_epoch_index_operation;
@@ -92,6 +93,7 @@ mod tests {
     use dpp::block::extended_block_info::BlockInfo;
 
     use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+    use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
@@ -101,6 +103,7 @@ mod tests {
 
     #[test]
     fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -117,6 +120,7 @@ mod tests {
                 None,
                 &transaction,
                 &mut batch,
+                platform_version,
             )
             .expect("should distribute fees");
 
@@ -125,6 +129,7 @@ mod tests {
 
     #[test]
     fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_proposers_paid() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -175,6 +180,7 @@ mod tests {
             proposers_count,
             Some(65), //random number
             Some(&transaction),
+            platform_version,
         );
 
         let mut batch = vec![];
@@ -186,12 +192,19 @@ mod tests {
                 None,
                 &transaction,
                 &mut batch,
+                platform_version,
             )
             .expect("should distribute fees");
 
         platform
             .drive
-            .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+            .apply_drive_operations(
+                batch,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should apply batch");
 
         assert!(matches!(
@@ -214,6 +227,7 @@ mod tests {
             &unpaid_epoch,
             &proposers[0],
             Some(&transaction),
+            platform_version,
         );
 
         assert!(matches!(

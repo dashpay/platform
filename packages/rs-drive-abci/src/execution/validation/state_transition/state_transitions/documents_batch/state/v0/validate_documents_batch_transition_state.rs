@@ -41,9 +41,11 @@ use dpp::{
 };
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionExt};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionV0Methods, DocumentTransitionMethodsV0};
+use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
@@ -61,7 +63,7 @@ pub(crate) fn validate_document_batch_transition_state(
     transaction: TransactionArg,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
-    let owner_id = *batch_state_transition.get_owner_id();
+    let owner_id = *batch_state_transition.owner_id();
     let mut transitions_by_contracts_and_types: BTreeMap<
         &Identifier,
         BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -394,7 +396,7 @@ fn validate_transition(
                     return Ok(result);
                 }
 
-                let validation_result = check_ownership(transition, original_document, owner_id);
+                let validation_result = check_ownership(transition, original_document, &owner_id);
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -414,7 +416,7 @@ fn validate_transition(
                         &document_replace_action,
                         owner_id,
                         transaction,
-                        &platform_version.drive,
+                        platform_version,
                     )?;
                 result.merge(validation_result);
                 document_replace_action
@@ -458,7 +460,7 @@ fn validate_transition(
                     result.add_errors(validation_result.errors);
                     return Ok(result);
                 };
-                let validation_result = check_ownership(transition, original_document, owner_id);
+                let validation_result = check_ownership(transition, original_document, &owner_id);
                 if !validation_result.is_valid() {
                     result.add_errors(validation_result.errors);
                 }

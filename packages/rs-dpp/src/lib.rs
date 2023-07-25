@@ -45,7 +45,7 @@ pub mod tests;
 pub mod balances;
 pub mod block;
 pub mod fee;
-pub mod serialization_traits;
+pub mod serialization;
 #[cfg(feature = "validation")]
 pub mod signing;
 #[cfg(feature = "state-transition-actions")]

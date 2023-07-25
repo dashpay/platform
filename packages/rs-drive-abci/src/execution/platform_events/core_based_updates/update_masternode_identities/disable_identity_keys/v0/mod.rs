@@ -3,6 +3,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
@@ -49,7 +50,7 @@ where
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(
                 operator_key_request,
                 Some(transaction),
-                &platform_version.drive,
+                platform_version,
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {
@@ -65,6 +66,7 @@ where
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(
                 voter_key_request,
                 Some(transaction),
+                platform_version,
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {

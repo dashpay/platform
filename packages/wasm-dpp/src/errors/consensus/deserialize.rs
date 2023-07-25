@@ -1,6 +1,6 @@
 use crate::errors::consensus::consensus_error::from_consensus_error;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization::serialization_traits::PlatformDeserializable;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 

@@ -13,7 +13,7 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization::PlatformDeserializable;
 use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionType};
 use crate::ProtocolError;

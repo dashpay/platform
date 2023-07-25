@@ -8,7 +8,7 @@ pub use validation::*;
 
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
@@ -117,9 +117,9 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
         self.0
-            .get_modified_data_ids()
+            .modified_data_ids()
             .into_iter()
             .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()

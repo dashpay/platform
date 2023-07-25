@@ -1,13 +1,13 @@
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::PlatformSerializable;
-use crate::serialization_traits::Signable;
+use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformSerializable;
+use crate::serialization::Signable;
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Identifier, Value};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
@@ -24,6 +24,7 @@ mod v0;
 mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 pub use fields::*;
 
@@ -48,9 +49,9 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(
-    platform_version_path = "state_transitions.contract_update_state_transition",
-    allow_nested
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
@@ -81,7 +82,8 @@ mod test {
     use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use crate::data_contract::DataContract;
     use crate::state_transition::{
-        JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
+        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
+        StateTransitionValueConvert,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::LATEST_PLATFORM_VERSION;
@@ -163,7 +165,7 @@ mod test {
         let data = get_test_data();
         let mut json_object = data
             .state_transition
-            .to_json(JsonSerializationOptions {
+            .to_json(JsonStateTransitionSerializationOptions {
                 skip_signature: false,
                 into_validating_json: false,
             })
@@ -213,7 +215,7 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             &data.data_contract.owner_id,
-            data.state_transition.get_owner_id()
+            data.state_transition.owner_id()
         );
     }
 

@@ -25,6 +25,9 @@ pub trait IdentityPublicKeyGettersV0 {
     /// Returns the data as BinaryData
     fn data(&self) -> &BinaryData;
 
+    /// Returns the data as BinaryData
+    fn data_owned(self) -> BinaryData;
+
     /// Returns the disabled_at timestamp as Option
     fn disabled_at(&self) -> Option<TimestampMillis>;
 

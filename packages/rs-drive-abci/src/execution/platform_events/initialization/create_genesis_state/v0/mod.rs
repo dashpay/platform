@@ -40,7 +40,9 @@ use drive::dpp::identity::{
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::DataContract;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
@@ -79,7 +81,8 @@ impl<C> Platform<C> {
 
         // Create system identities and contracts
 
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
 
         let system_data_contract_types = BTreeMap::from_iter([
             (
@@ -92,28 +95,40 @@ impl<C> Platform<C> {
             (
                 SystemDataContract::Withdrawals,
                 (
-                    load_system_data_contract(SystemDataContract::Withdrawals)?,
+                    load_system_data_contract(
+                        SystemDataContract::Withdrawals,
+                        platform_version.protocol_version,
+                    )?,
                     system_identity_public_keys.withdrawals_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::FeatureFlags,
                 (
-                    load_system_data_contract(SystemDataContract::FeatureFlags)?,
+                    load_system_data_contract(
+                        SystemDataContract::FeatureFlags,
+                        platform_version.protocol_version,
+                    )?,
                     system_identity_public_keys.feature_flags_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::Dashpay,
                 (
-                    load_system_data_contract(SystemDataContract::Dashpay)?,
+                    load_system_data_contract(
+                        SystemDataContract::Dashpay,
+                        platform_version.protocol_version,
+                    )?,
                     system_identity_public_keys.dashpay_contract_owner(),
                 ),
             ),
             (
                 SystemDataContract::MasternodeRewards,
                 (
-                    load_system_data_contract(SystemDataContract::MasternodeRewards)?,
+                    load_system_data_contract(
+                        SystemDataContract::MasternodeRewards,
+                        platform_version.protocol_version,
+                    )?,
                     system_identity_public_keys.masternode_reward_shares_contract_owner(),
                 ),
             ),
@@ -166,8 +181,13 @@ impl<C> Platform<C> {
 
         let block_info = BlockInfo::default_with_time(genesis_time);
 
-        self.drive
-            .apply_drive_operations(operations, true, &block_info, transaction)?;
+        self.drive.apply_drive_operations(
+            operations,
+            true,
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(())
     }

@@ -1,8 +1,7 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::PlatformSignable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::serialization::PlatformSerializable;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -15,7 +14,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
@@ -49,11 +48,13 @@ pub trait DataContractCreateTransitionV0Methods {
         version: FeatureVersion,
     ) -> Result<DataContractCreateTransition, ProtocolError>;
 
-    fn get_data_contract(&self) -> &DataContract;
+    fn data_contract(&self) -> &DataContract;
+
+    fn entropy(&self) -> &Bytes32;
 
     fn set_data_contract(&mut self, data_contract: DataContract);
 
-    fn get_modified_data_ids(&self) -> Vec<Identifier>;
+    fn modified_data_ids(&self) -> Vec<Identifier>;
 }
 
 impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
@@ -65,8 +66,11 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
         signer: &S,
         _version: FeatureVersion,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        data_contract.owner_id = identity.id;
-        data_contract.id = DataContract::generate_data_contract_id_v0(identity.id, entropy);
+        data_contract.set_id(DataContract::generate_data_contract_id_v0(
+            identity.id,
+            entropy,
+        ));
+        data_contract.set_owner_id(identity.id);
         let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract,
             entropy: Default::default(),
@@ -87,8 +91,12 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
         Ok(transition)
     }
 
-    fn get_data_contract(&self) -> &DataContract {
+    fn data_contract(&self) -> &DataContract {
         &self.data_contract
+    }
+
+    fn entropy(&self) -> &Bytes32 {
+        &self.entropy
     }
 
     fn set_data_contract(&mut self, data_contract: DataContract) {
@@ -96,7 +104,7 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
     }
 
     /// Returns ID of the created contract
-    fn get_modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.data_contract.id]
+    fn modified_data_ids(&self) -> Vec<Identifier> {
+        vec![self.data_contract.id()]
     }
 }

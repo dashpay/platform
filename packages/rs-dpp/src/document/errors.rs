@@ -8,8 +8,6 @@ use crate::document::Document;
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionMethodsV0;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {

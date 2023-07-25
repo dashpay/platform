@@ -4,6 +4,7 @@ mod structure;
 
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
     document::{

@@ -19,7 +19,7 @@ pub(crate) mod v0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub mod methods;
 #[cfg(feature = "random-public-keys")]
@@ -41,7 +41,7 @@ pub type TimestampMillis = u64;
     From,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(limit = 2000, allow_nested)]
+#[platform_serialize(limit = 2000, derive_bincode)]
 pub enum IdentityPublicKey {
     V0(IdentityPublicKeyV0),
 }
@@ -89,7 +89,7 @@ impl IdentityPublicKey {
 mod tests {
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::IdentityPublicKey;
-    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use serde::Deserialize;
 
     #[test]

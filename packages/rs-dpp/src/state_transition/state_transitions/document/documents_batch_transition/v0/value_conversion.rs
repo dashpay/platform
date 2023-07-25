@@ -1,5 +1,5 @@
 use anyhow::Context;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::collections::BTreeMap;
 
 use platform_value::btreemap_extensions::{
@@ -17,7 +17,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::documents_batch_transition::fields::property_names::TRANSITIONS;
 use crate::state_transition::documents_batch_transition::fields::*;
 use crate::state_transition::documents_batch_transition::{

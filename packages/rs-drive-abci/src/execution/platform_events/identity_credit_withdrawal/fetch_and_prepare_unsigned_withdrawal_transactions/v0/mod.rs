@@ -6,7 +6,9 @@ use dashcore_rpc::dashcore::{
 };
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::BlockInfo;
-use dpp::document::Document;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::{Document, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::contracts::withdrawals_contract;
@@ -56,7 +58,7 @@ where
             None,
             true,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -70,7 +72,6 @@ where
             WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
             Some(transaction),
             &mut drive_operations,
-            &platform_version.drive,
         )?;
 
         if untied_withdrawal_transactions.is_empty() {
@@ -110,7 +111,7 @@ where
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,
                         Some(transaction),
-                        &platform_version.drive,
+                        platform_version,
                     )?;
 
                     document.set_bytes(
@@ -159,7 +160,7 @@ where
             true,
             &block_info,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         Ok(unsigned_withdrawal_transactions)

@@ -1,6 +1,9 @@
+pub mod v0_methods;
+
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use bincode::{Decode, Encode};
+use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, ReplacementType, Value};
@@ -16,8 +19,15 @@ pub(self) mod property_names {
     pub const UPDATED_AT: &str = "$updatedAt";
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
 #[serde(rename_all = "camelCase")]
+#[display(
+    fmt = "Base: {}, Revision: {}, Updated At: {:?}, Data: {:?}",
+    "base",
+    "revision",
+    "updated_at",
+    "data"
+)]
 pub struct DocumentReplaceTransitionV0 {
     #[serde(flatten)]
     pub base: DocumentBaseTransition,

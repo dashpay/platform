@@ -1,7 +1,7 @@
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
-use crate::serialization_traits::Signable;
+use crate::serialization::Signable;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
@@ -35,7 +35,7 @@ pub trait DataContractUpdateTransitionV0Methods {
     fn set_data_contract(&mut self, data_contract: DataContract);
 }
 
-impl DataContractUpdateTransitionV0Methods for DataContractCreateTransitionV0 {
+impl DataContractUpdateTransitionV0Methods for DataContractUpdateTransitionV0 {
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
         identity: &PartialIdentity,

@@ -6,8 +6,10 @@ use dpp::consensus::signature::{
 
 use dpp::identity::PartialIdentity;
 
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::state_transition::StateTransitionIdentitySignedV0;
 use dpp::validation::ConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use dpp::{
     consensus::signature::{
@@ -39,6 +41,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
     state_transition: &impl StateTransitionIdentitySignedV0,
     request_revision: bool,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
     let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
@@ -54,9 +57,13 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
     );
 
     let maybe_partial_identity = if request_revision {
-        drive.fetch_identity_balance_with_keys_and_revision(key_request, transaction)?
+        drive.fetch_identity_balance_with_keys_and_revision(
+            key_request,
+            transaction,
+            platform_version,
+        )?
     } else {
-        drive.fetch_identity_balance_with_keys(key_request, transaction)?
+        drive.fetch_identity_balance_with_keys(key_request, transaction, platform_version)?
     };
 
     let partial_identity = match maybe_partial_identity {

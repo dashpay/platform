@@ -49,6 +49,9 @@ use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::version::PlatformVersion;
+use drive::drive::document::query::QueryDocumentsOutcome;
 use std::collections::BTreeMap;
 
 impl<C> Platform<C> {
@@ -57,6 +60,7 @@ impl<C> Platform<C> {
         &self,
         masternode_owner_id: &[u8],
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
         let document_type = self
             .drive
@@ -89,9 +93,13 @@ impl<C> Platform<C> {
             block_time_ms: None,
         };
 
-        let QueryDocumentsOutcome { documents, .. } =
-            self.drive
-                .query_documents(drive_query, None, false, transaction)?;
+        let QueryDocumentsOutcome { documents, .. } = self.drive.query_documents(
+            drive_query,
+            None,
+            false,
+            transaction,
+            Some(platform_version.protocol_version),
+        )?;
 
         Ok(documents)
     }

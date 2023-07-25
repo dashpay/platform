@@ -12,7 +12,7 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
-use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::{Convertible, ProtocolError};
 
 use crate::identifier::IdentifierWrapper;

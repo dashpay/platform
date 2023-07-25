@@ -38,6 +38,7 @@ use crate::error::Error;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
 
 use dpp::block::epoch::Epoch;
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::ProtocolError;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 use rust_decimal::Decimal;

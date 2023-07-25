@@ -14,13 +14,16 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::version::PlatformVersion;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 /// This will validate that all keys are valid against the state
 pub(crate) fn validate_unique_identity_public_key_hashes_in_state_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     // we should check that the public key is unique among all unique public keys
 
@@ -29,8 +32,11 @@ pub(crate) fn validate_unique_identity_public_key_hashes_in_state_v0(
         .map(|key| Ok((key.hash()?, key.id)))
         .collect::<Result<HashMap<[u8; 20], KeyID>, ProtocolError>>()?;
 
-    let duplicates = drive
-        .has_any_of_unique_public_key_hashes(key_ids_map.keys().copied().collect(), transaction)?;
+    let duplicates = drive.has_any_of_unique_public_key_hashes(
+        key_ids_map.keys().copied().collect(),
+        transaction,
+        platform_version,
+    )?;
 
     let duplicate_ids = duplicates
         .into_iter()

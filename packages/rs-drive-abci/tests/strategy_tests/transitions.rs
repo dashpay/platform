@@ -2,6 +2,7 @@ use crate::signer::SimpleSigner;
 use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
@@ -14,18 +15,26 @@ use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
 };
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
-use dpp::version::LATEST_VERSION;
+use dpp::version::{PlatformVersion, LATEST_VERSION};
+use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
 use std::collections::HashSet;
 use std::str::FromStr;
 
-pub fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> StateTransition {
-    let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
+pub fn create_identity_top_up_transition(
+    rng: &mut StdRng,
+    identity: &Identity,
+    platform_version: &PlatformVersion,
+) -> StateTransition {
+    let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng, platform_version);
     let sk: [u8; 32] = pk.try_into().unwrap();
     let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
     let asset_lock_proof =
@@ -47,12 +56,14 @@ pub fn create_identity_update_transition_add_keys(
     count: u16,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
+    platform_version: &PlatformVersion,
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.revision += 1;
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
         identity.public_keys().len() as KeyID,
         count as u32,
         rng,
+        platform_version,
     );
 
     let add_public_keys: Vec<IdentityPublicKey> = keys.iter().map(|(key, _)| key.clone()).collect();
@@ -211,16 +222,20 @@ pub fn create_identities_state_transitions(
     key_count: KeyID,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
+    platform_version: &PlatformVersion,
 ) -> Vec<(Identity, StateTransition)> {
     let (identities, keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
-        None, count, key_count, rng,
+        count,
+        key_count,
+        rng,
+        platform_version,
     )
     .expect("expected to create identities");
     signer.add_keys(keys);
     identities
         .into_iter()
         .map(|mut identity| {
-            let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
+            let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng, platform_version);
             let sk: [u8; 32] = pk.clone().try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
             let asset_lock_proof =

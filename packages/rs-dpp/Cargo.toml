@@ -51,9 +51,11 @@ thiserror = { version = "1.0" }
 mockall = { version = "0.11.3", optional = true }
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
+platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-value-convertible = { path = "../rs-platform-value-convertible" }
 platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
 ed25519-dalek = {version = "2.0.0-rc.2", features = ["rand_core"] }
 nohash-hasher = "0.2.0"
@@ -68,7 +70,7 @@ pretty_assertions = { version = "1.3.0" }
 [features]
 default = ["json-object", "platform-value"]
 drive = ["state-transition-actions", "fee-distribution", "system_contracts"]
-abci = ["state-transitions", "state-transition-actions", "state-transition-transformers"]
+abci = ["state-transitions", "state-transition-actions", "state-transition-transformers", "state-transition-validation", "validation"]
 cbor = ["ciborium"]
 validation = ["platform-value"]
 json-object = ["platform-value"]
@@ -77,6 +79,8 @@ state-transition-serde-conversion = ["state-transition-value-conversion"]
 state-transition-value-conversion = ["platform-value"]
 state-transition-json-conversion = ["json-object"]
 state-transition-cbor-conversion = ["cbor"]
+state-transition-validation = []
+state-transition-signing = []
 state-transitions = []
 state-transition-actions = []
 state-transition-transformers = ["state-transitions", "state-transition-actions"]

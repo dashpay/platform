@@ -73,8 +73,13 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::extra::common::json_document_to_created_contract;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::util::hash::hash_to_hex_string;
+    use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -324,6 +329,7 @@ mod tests {
 
     #[test]
     fn run_chain_one_identity_in_solitude() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -372,7 +378,11 @@ mod tests {
             .abci_app
             .platform
             .drive
-            .fetch_identity_balance(outcome.identities.first().unwrap().id.to_buffer(), None)
+            .fetch_identity_balance(
+                outcome.identities.first().unwrap().id.to_buffer(),
+                None,
+                platform_version,
+            )
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
@@ -484,6 +494,7 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -542,7 +553,7 @@ mod tests {
             .expect("expected a version counter");
         platform
             .drive
-            .fetch_versions_with_counter(None)
+            .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
         assert_eq!(
@@ -749,6 +760,7 @@ mod tests {
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
+        let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
         let _platform_state = platform.state.read().unwrap();
 
@@ -763,6 +775,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch identities");
 
@@ -906,8 +919,10 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract() {
+        let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
@@ -972,6 +987,7 @@ mod tests {
                 None,
                 None,
                 None,
+                platform_version,
             )
             .unwrap()
             .expect("expected to execute the fetch of a contract")
@@ -980,13 +996,16 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
+        let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
@@ -995,6 +1014,7 @@ mod tests {
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
@@ -1067,6 +1087,7 @@ mod tests {
                 None,
                 None,
                 None,
+                platform_version,
             )
             .unwrap()
             .expect("expected to execute the fetch of a contract")
@@ -1075,12 +1096,14 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract_owned();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1144,12 +1167,14 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract_owned();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1223,12 +1248,14 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract_owned();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1320,12 +1347,14 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract_owned();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1431,12 +1460,14 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract_owned();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1531,12 +1562,14 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract_owned();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1782,6 +1815,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -1792,6 +1826,7 @@ mod tests {
 
     #[test]
     fn run_chain_update_identities_remove_keys() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![Operation {
@@ -1858,6 +1893,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 

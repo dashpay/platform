@@ -3,12 +3,12 @@ use crate::block::extended_block_info::v0::{
     ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
 };
 use crate::protocol_error::ProtocolError;
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::PlatformSerializable;
+use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformSerializable;
 use crate::version::FeatureVersion;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 
 pub mod v0;
@@ -26,7 +26,7 @@ pub mod v0;
     From,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 pub enum ExtendedBlockInfo {
     V0(ExtendedBlockInfoV0),
 }

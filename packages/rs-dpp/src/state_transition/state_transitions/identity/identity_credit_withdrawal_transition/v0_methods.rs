@@ -6,12 +6,6 @@ use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use platform_value::Identifier;
 
 impl IdentityCreditWithdrawalTransitionV0Methods for IdentityCreditWithdrawalTransition {
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn set_revision(&mut self, revision: Revision) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.set_revision(revision),

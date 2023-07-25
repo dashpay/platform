@@ -1,10 +1,15 @@
 mod v0;
 
 use crate::identity::{Identity, IdentityV0};
+use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 pub use v0::*;
+
+impl ValueConvertible for Identity {}
+
+impl IdentityPlatformValueConversionMethodsV0 for Identity {}
 
 impl Identity {
     pub fn try_from_owned_value(

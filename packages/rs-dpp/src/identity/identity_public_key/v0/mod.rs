@@ -6,7 +6,7 @@ mod random;
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
 use platform_value::{BinaryData, Bytes20, ReplacementType, Value};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -30,7 +30,7 @@ use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCrea
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::util::vec;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,

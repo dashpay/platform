@@ -8,7 +8,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
-use dpp::serialization_traits::{
+use dpp::serialization::serialization_traits::{
     PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
 };
 use dpp::version::drive_versions::DriveVersion;

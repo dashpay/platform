@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::version::PlatformVersion;
     use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
@@ -14,6 +16,7 @@ mod tests {
 
     #[test]
     fn run_chain_version_upgrade() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -80,7 +83,7 @@ mod tests {
                 .expect("expected a version counter");
             platform
                 .drive
-                .fetch_versions_with_counter(None)
+                .fetch_versions_with_counter(None, &platform_version.drive)
                 .expect("expected to get versions");
 
             assert_eq!(

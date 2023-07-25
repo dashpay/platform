@@ -1,3 +1,13 @@
+mod accessors;
+#[cfg(feature = "state-transition-cbor-conversion")]
+mod cbor_conversion;
+#[cfg(feature = "state-transition-json-conversion")]
+mod json_conversion;
+mod types;
+#[cfg(feature = "state-transition-value-conversion")]
+mod value_conversion;
+mod version;
+
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "state-transition-cbor-conversion")]
 use ciborium::value::Value as CborValue;
@@ -16,7 +26,7 @@ use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
-use crate::platform_serialization::PlatformSignable;
+use platform_serialization_derive::PlatformSignable;
 
 #[cfg(feature = "state-transition-cbor-conversion")]
 use crate::util::cbor_serializer;
@@ -27,7 +37,9 @@ use crate::util::vec;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::serialization_traits::PlatformMessageSignable;
+use crate::serialization::PlatformMessageSignable;
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use crate::state_transition::public_key_in_creation::v0_methods::IdentityPublicKeyInCreationMethodsV0;
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
@@ -48,40 +60,38 @@ pub struct IdentityPublicKeyInCreationV0 {
     pub signature: BinaryData,
 }
 
-impl Convertible for IdentityPublicKeyInCreationV0 {
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreationV0 {
+    fn id(&self) -> KeyID {
+        self.id
     }
 
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    fn key_type(&self) -> KeyType {
+        self.key_type
     }
 
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    fn purpose(&self) -> Purpose {
+        self.purpose
     }
 
-    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
-            .try_into_validating_json()
-            .map_err(ProtocolError::ValueError)
+    fn security_level(&self) -> SecurityLevel {
+        self.security_level
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
-            .try_into()
-            .map_err(ProtocolError::ValueError)
+    fn read_only(&self) -> bool {
+        self.read_only
     }
-    #[cfg(feature = "state-transition-cbor-conversion")]
-    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let object = self.to_object()?;
 
-        cbor_serializer::serializable_value_to_cbor(&object, None)
+    fn data(&self) -> &BinaryData {
+        &self.data
+    }
+
+    fn signature(&self) -> &BinaryData {
+        &self.signature
     }
 }
 
-impl IdentityPublicKeyInCreationV0 {
-    pub fn to_identity_public_key(self) -> IdentityPublicKey {
+impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
+    fn into_identity_public_key(self) -> IdentityPublicKey {
         let Self {
             id,
             purpose,
@@ -103,12 +113,7 @@ impl IdentityPublicKeyInCreationV0 {
         .into()
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
-    pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
-        raw_object.try_into().map_err(ProtocolError::ValueError)
-    }
-
-    pub fn from_public_key_signed_with_private_key(
+    fn from_public_key_signed_with_private_key(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         private_key: &[u8],
@@ -122,7 +127,7 @@ impl IdentityPublicKeyInCreationV0 {
         Ok(public_key_with_witness)
     }
 
-    pub fn from_public_key_signed_external<S: Signer>(
+    fn from_public_key_signed_external<S: Signer>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,
@@ -141,103 +146,8 @@ impl IdentityPublicKeyInCreationV0 {
         Ok(public_key_with_witness)
     }
 
-    pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
-        Ok(Self {
-            id: value_map
-                .get_integer("id")
-                .map_err(ProtocolError::ValueError)?,
-            purpose: value_map
-                .get_integer::<u8>("purpose")
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
-            security_level: value_map
-                .get_integer::<u8>("securityLevel")
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
-            key_type: value_map
-                .get_integer::<u8>("keyType")
-                .map_err(ProtocolError::ValueError)?
-                .try_into()?,
-            data: value_map
-                .remove_binary_data("data")
-                .map_err(ProtocolError::ValueError)?,
-            read_only: value_map
-                .get_bool("readOnly")
-                .map_err(ProtocolError::ValueError)?,
-            signature: value_map
-                .remove_binary_data("signature")
-                .map_err(ProtocolError::ValueError)?,
-        })
-    }
-
-    pub fn from_raw_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
-        let identity_public_key: Self = serde_json::from_value(raw_object)?;
-        Ok(identity_public_key)
-    }
-
-    pub fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
-        let mut value: Value = raw_object.into();
-        value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
-        value.try_into().map_err(ProtocolError::ValueError)
-    }
-
-    /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut value = self.to_object()?;
-
-        if skip_signature || self.signature.is_empty() {
-            value
-                .remove("signature")
-                .map_err(ProtocolError::ValueError)?;
-        }
-
-        Ok(value)
-    }
-
-    /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
-        let mut value = self.to_cleaned_object()?;
-
-        if skip_signature || self.signature.is_empty() {
-            value
-                .remove("signature")
-                .map_err(ProtocolError::ValueError)?;
-        }
-
-        Ok(value)
-    }
-
-    /// Return raw data, with all binary fields represented as arrays
-    pub fn to_raw_json_object(&self, skip_signature: bool) -> Result<JsonValue, SerdeParsingError> {
-        let mut value = serde_json::to_value(self)?;
-
-        if skip_signature {
-            if let JsonValue::Object(ref mut o) = value {
-                o.remove("signature");
-            }
-        }
-
-        Ok(value)
-    }
-
-    /// Checks if public key security level is MASTER
-    pub fn is_master(&self) -> bool {
-        self.security_level == SecurityLevel::MASTER
-    }
-
-    pub fn to_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
-        vec::vec_to_array::<33>(self.data.as_slice())
-    }
-
     /// Get the original public key hash
-    pub fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
-        Into::<IdentityPublicKey>::into(self)
-            .hash()
-            .map(|hash| hash.to_vec())
-    }
-
-    /// Get the original public key hash
-    pub fn hash(&self) -> Result<[u8; 20], ProtocolError> {
+    fn hash(&self) -> Result<[u8; 20], ProtocolError> {
         Into::<IdentityPublicKey>::into(self)
             .hash()?
             .try_into()
@@ -248,56 +158,133 @@ impl IdentityPublicKeyInCreationV0 {
             })
     }
 
-    #[cfg(feature = "state-transition-cbor-conversion")]
-    pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
-        let key_value_map = cbor_value.as_map().ok_or_else(|| {
-            ProtocolError::DecodingError(String::from(
-                "Expected identity public key to be a key value map",
-            ))
-        })?;
-
-        let id = key_value_map.as_u16("id", "A key must have an uint16 id")?;
-        let key_type = key_value_map.as_u8("type", "Identity public key must have a type")?;
-        let purpose = key_value_map.as_u8("purpose", "Identity public key must have a purpose")?;
-        let security_level = key_value_map.as_u8(
-            "securityLevel",
-            "Identity public key must have a securityLevel",
-        )?;
-        let readonly =
-            key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
-        let public_key_bytes =
-            key_value_map.as_bytes("data", "Identity public key must have a data")?;
-        let signature_bytes = key_value_map.as_bytes("signature", "").unwrap_or_default();
-
-        Ok(Self {
-            id: id.into(),
-            purpose: purpose.try_into()?,
-            security_level: security_level.try_into()?,
-            key_type: key_type.try_into()?,
-            data: BinaryData::from(public_key_bytes),
-            read_only: readonly,
-            signature: BinaryData::from(signature_bytes),
-        })
-    }
-
-    #[cfg(feature = "state-transition-cbor-conversion")]
-    pub fn to_cbor_value(&self) -> CborValue {
-        let mut pk_map = CborCanonicalMap::new();
-
-        pk_map.insert("id", self.id);
-        pk_map.insert("data", self.data.as_slice());
-        pk_map.insert("type", self.key_type);
-        pk_map.insert("purpose", self.purpose);
-        pk_map.insert("readOnly", self.read_only);
-        pk_map.insert("securityLevel", self.security_level);
-
-        if !self.signature.is_empty() {
-            pk_map.insert("signature", self.signature.as_slice())
-        }
-
-        pk_map.to_value_sorted()
+    /// Get the original public key hash
+    fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
+        Into::<IdentityPublicKey>::into(self)
+            .hash()
+            .map(|hash| hash.to_vec())
     }
 }
+
+//
+//     #[cfg(feature = "state-transition-value-conversion")]
+//     pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
+//         raw_object.try_into().map_err(ProtocolError::ValueError)
+//     }
+//
+//
+//
+//
+//     pub fn from_raw_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
+//         let identity_public_key: Self = serde_json::from_value(raw_object)?;
+//         Ok(identity_public_key)
+//     }
+//
+//     pub fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
+//         let mut value: Value = raw_object.into();
+//         value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
+//         value.try_into().map_err(ProtocolError::ValueError)
+//     }
+//
+//     /// Return raw data, with all binary fields represented as arrays
+//     pub fn to_raw_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+//         let mut value = self.to_object()?;
+//
+//         if skip_signature || self.signature.is_empty() {
+//             value
+//                 .remove("signature")
+//                 .map_err(ProtocolError::ValueError)?;
+//         }
+//
+//         Ok(value)
+//     }
+//
+//     /// Return raw data, with all binary fields represented as arrays
+//     pub fn to_raw_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+//         let mut value = self.to_cleaned_object()?;
+//
+//         if skip_signature || self.signature.is_empty() {
+//             value
+//                 .remove("signature")
+//                 .map_err(ProtocolError::ValueError)?;
+//         }
+//
+//         Ok(value)
+//     }
+//
+//     /// Return raw data, with all binary fields represented as arrays
+//     pub fn to_raw_json_object(&self, skip_signature: bool) -> Result<JsonValue, SerdeParsingError> {
+//         let mut value = serde_json::to_value(self)?;
+//
+//         if skip_signature {
+//             if let JsonValue::Object(ref mut o) = value {
+//                 o.remove("signature");
+//             }
+//         }
+//
+//         Ok(value)
+//     }
+//
+//
+//
+//     pub fn to_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
+//         vec::vec_to_array::<33>(self.data.as_slice())
+//     }
+//
+//
+//
+//
+//
+//     #[cfg(feature = "state-transition-cbor-conversion")]
+//     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
+//         let key_value_map = cbor_value.as_map().ok_or_else(|| {
+//             ProtocolError::DecodingError(String::from(
+//                 "Expected identity public key to be a key value map",
+//             ))
+//         })?;
+//
+//         let id = key_value_map.as_u16("id", "A key must have an uint16 id")?;
+//         let key_type = key_value_map.as_u8("type", "Identity public key must have a type")?;
+//         let purpose = key_value_map.as_u8("purpose", "Identity public key must have a purpose")?;
+//         let security_level = key_value_map.as_u8(
+//             "securityLevel",
+//             "Identity public key must have a securityLevel",
+//         )?;
+//         let readonly =
+//             key_value_map.as_bool("readOnly", "Identity public key must have a readOnly")?;
+//         let public_key_bytes =
+//             key_value_map.as_bytes("data", "Identity public key must have a data")?;
+//         let signature_bytes = key_value_map.as_bytes("signature", "").unwrap_or_default();
+//
+//         Ok(Self {
+//             id: id.into(),
+//             purpose: purpose.try_into()?,
+//             security_level: security_level.try_into()?,
+//             key_type: key_type.try_into()?,
+//             data: BinaryData::from(public_key_bytes),
+//             read_only: readonly,
+//             signature: BinaryData::from(signature_bytes),
+//         })
+//     }
+//
+//     #[cfg(feature = "state-transition-cbor-conversion")]
+//     pub fn to_cbor_value(&self) -> CborValue {
+//         let mut pk_map = CborCanonicalMap::new();
+//
+//         pk_map.insert("id", self.id);
+//         pk_map.insert("data", self.data.as_slice());
+//         pk_map.insert("type", self.key_type);
+//         pk_map.insert("purpose", self.purpose);
+//         pk_map.insert("readOnly", self.read_only);
+//         pk_map.insert("securityLevel", self.security_level);
+//
+//         if !self.signature.is_empty() {
+//             pk_map.insert("signature", self.signature.as_slice())
+//         }
+//
+//         pk_map.to_value_sorted()
+//     }
+// }
 
 impl From<&IdentityPublicKeyInCreationV0> for IdentityPublicKey {
     fn from(val: &IdentityPublicKeyInCreationV0) -> Self {
@@ -322,7 +309,7 @@ impl From<IdentityPublicKey> for IdentityPublicKeyInCreationV0 {
             security_level: val.security_level(),
             key_type: val.key_type(),
             read_only: val.read_only(),
-            data: val.data(),
+            data: val.data_owned(),
             signature: Default::default(),
         }
     }

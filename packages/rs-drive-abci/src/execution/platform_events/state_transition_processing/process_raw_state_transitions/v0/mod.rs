@@ -63,12 +63,8 @@ where
             .into_iter()
             .zip(raw_state_transitions.iter())
             .map(|(state_transition, raw_state_transition)| {
-                let state_transition_execution_event = process_state_transition(
-                    &platform_ref,
-                    state_transition,
-                    Some(transaction),
-                    platform_version,
-                )?;
+                let state_transition_execution_event =
+                    process_state_transition(&platform_ref, state_transition, Some(transaction))?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;

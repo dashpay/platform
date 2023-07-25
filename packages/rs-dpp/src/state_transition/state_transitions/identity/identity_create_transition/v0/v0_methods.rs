@@ -1,4 +1,4 @@
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -10,25 +10,29 @@ use crate::{
     BlsModule, Convertible, NonConsensusError, ProtocolError,
 };
 
+use crate::identity::accessors::IdentityGettersV0;
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::version::FeatureVersion;
+use crate::version::{FeatureVersion, PlatformVersion};
 
 pub trait IdentityCreateTransitionV0Methods {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
-        version: FeatureVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
@@ -54,17 +58,16 @@ pub trait IdentityCreateTransitionV0Methods {
 }
 
 impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
-        _version: FeatureVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut identity_create_transition = IdentityCreateTransitionV0::default();
-        identity_create_transition.set_protocol_version(identity.feature_version as u32);
-
         let public_keys = identity
             .public_keys()
             .iter()
@@ -83,9 +86,9 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
             .iter_mut()
             .zip(identity.public_keys().iter())
             .try_for_each(|(public_key_with_witness, (_, public_key))| {
-                if public_key.key_type.is_unique_key_type() {
+                if public_key.key_type().is_unique_key_type() {
                     let signature = signer.sign(public_key, &key_signable_bytes)?;
-                    public_key_with_witness.signature = signature;
+                    public_key_with_witness.set_signature(signature);
                 }
                 Ok::<(), ProtocolError>(())
             })?;

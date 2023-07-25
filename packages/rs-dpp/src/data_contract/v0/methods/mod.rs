@@ -1,3 +1,5 @@
+mod enrich_with_base_schema;
+
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use crate::data_contract::data_contract_methods::base::DataContractBaseMethodsV0;
@@ -208,10 +210,7 @@ impl DataContractDocumentSchemaMethodsV0 for DataContractV0 {
             &BTreeMap::new(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
+            platform_version,
         )?;
 
         self.document_types.insert(doc_type, document_type.into());

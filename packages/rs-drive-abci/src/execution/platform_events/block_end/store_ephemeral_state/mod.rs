@@ -6,7 +6,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use crate::version::PlatformVersion;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
@@ -43,7 +43,7 @@ where
             .block_end
             .store_ephemeral_state
         {
-            0 => self.store_ephemeral_state_v0(platform_state, transaction),
+            0 => self.store_ephemeral_state_v0(platform_state, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "store_ephemeral_state".to_string(),
                 known_versions: vec![0],

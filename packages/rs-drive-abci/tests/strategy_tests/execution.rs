@@ -16,7 +16,9 @@ use dashcore_rpc::dashcore_rpc_json::{
     MasternodeListItem, QuorumInfoResult, QuorumType,
 };
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::identity::accessors::IdentityGettersV0;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;

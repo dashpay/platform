@@ -23,7 +23,7 @@ mod fields;
 #[cfg(feature = "client")]
 mod identity_facade;
 #[cfg(feature = "factories")]
-mod identity_factory;
+pub mod identity_factory;
 mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;

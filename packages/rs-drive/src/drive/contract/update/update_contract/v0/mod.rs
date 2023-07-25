@@ -13,7 +13,9 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::serialization::serialization_traits::{
+    PlatformSerializable, PlatformSerializableWithPlatformVersion,
+};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

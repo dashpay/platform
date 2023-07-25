@@ -1,7 +1,7 @@
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::IdentityNotFoundError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

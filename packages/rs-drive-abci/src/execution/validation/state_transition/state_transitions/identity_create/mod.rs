@@ -18,6 +18,7 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;

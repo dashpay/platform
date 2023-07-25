@@ -7,7 +7,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
-#[cfg(feature = "state-transitions")]
+#[cfg(feature = "validation")]
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
@@ -22,6 +22,7 @@ use dashcore::consensus::encode::Error as DashCoreError;
 
 use crate::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
+use platform_version::error::PlatformVersionError;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -83,6 +84,9 @@ pub enum ProtocolError {
     StructureError(#[from] StructureError),
 
     #[error(transparent)]
+    PlatformVersionError(#[from] PlatformVersionError),
+
+    #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
 
     #[error(transparent)]
@@ -135,10 +139,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
-
-    #[cfg(all(feature = "state-transitions", feature = "validation"))]
-    #[error(transparent)]
-    MissingDataContractIdError(MissingDataContractIdError),
 
     #[error(transparent)]
     PublicKeyIsDisabledError(PublicKeyIsDisabledError),

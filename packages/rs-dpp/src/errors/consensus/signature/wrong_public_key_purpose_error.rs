@@ -42,7 +42,7 @@ impl From<WrongPublicKeyPurposeError> for ConsensusError {
     }
 }
 
-#[cfg(feature = "state-transitions")]
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
 // This is a separate error of the same name, but from ProtocolError
 impl From<crate::state_transition::errors::WrongPublicKeyPurposeError> for ConsensusError {
     fn from(value: crate::state_transition::errors::WrongPublicKeyPurposeError) -> Self {
