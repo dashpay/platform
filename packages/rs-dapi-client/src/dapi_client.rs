@@ -5,7 +5,7 @@ use tracing::Instrument;
 
 use crate::{
     transport::{TransportClient, TransportRequest},
-    AddressList, RequestSettings,
+    AddressList, CanRetry, RequestSettings,
 };
 
 /// General DAPI request error type.
@@ -17,6 +17,16 @@ pub enum DapiClientError<TE> {
     /// There are no valid peer addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
+}
+
+impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
+    fn can_retry(&self) -> bool {
+        use DapiClientError::*;
+        match self {
+            NoAvailableAddresses => false,
+            Transport(transport_error) => transport_error.can_retry(),
+        }
+    }
 }
 
 /// Access point to DAPI.
@@ -84,7 +94,7 @@ impl DapiClient {
         // Start the routine with retry policy applied:
         routine
             .retry(&retry_settings)
-            .when(|e| !matches!(e, DapiClientError::NoAvailableAddresses))
+            .when(|e| e.can_retry())
             .instrument(tracing::info_span!("request routine"))
             .await
     }

@@ -6,7 +6,7 @@ pub(crate) mod json_rpc;
 use futures::future::BoxFuture;
 use http::Uri;
 
-use crate::{request_settings::AppliedRequestSettings, RequestSettings};
+use crate::{request_settings::AppliedRequestSettings, CanRetry, RequestSettings};
 
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
@@ -35,11 +35,4 @@ pub trait TransportClient: Send {
 
     /// Build client using peer's url.
     fn with_uri(uri: Uri) -> Self;
-}
-
-/// Allows to flag the transport error variant how tolerant we are of it and whether we can
-/// try to do a request again.
-pub trait CanRetry {
-    /// Get boolean flag that indicates if the error is retryable.
-    fn can_retry(&self) -> bool;
 }

@@ -60,3 +60,10 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
         dapi_client.execute(self, settings).boxed()
     }
 }
+
+/// Allows to flag the transport error variant how tolerant we are of it and whether we can
+/// try to do a request again.
+pub trait CanRetry {
+    /// Get boolean flag that indicates if the error is retryable.
+    fn can_retry(&self) -> bool;
+}

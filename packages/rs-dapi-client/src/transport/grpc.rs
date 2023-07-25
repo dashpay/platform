@@ -34,7 +34,14 @@ impl TransportClient for CoreGrpcClient {
 
 impl CanRetry for tonic::Status {
     fn can_retry(&self) -> bool {
-        todo!()
+        let code = self.code();
+
+        use tonic::Code::*;
+        match code {
+            Ok | DataLoss | Cancelled | Unknown | DeadlineExceeded | ResourceExhausted
+            | Aborted | Internal => true,
+            _ => false,
+        }
     }
 }
 
