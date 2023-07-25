@@ -49,7 +49,7 @@ where
             feature_version: state_transition.state_transition_protocol_version(),
             id: *state_transition.get_identity_id(),
             public_keys: state_transition
-                .get_public_keys()
+                .public_keys()
                 .iter()
                 .cloned()
                 .map(|pk| (pk.id, pk.to_identity_public_key()))

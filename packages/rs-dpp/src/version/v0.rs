@@ -1,7 +1,9 @@
 use crate::version::dpp_versions::{
-    ContractClassMethodVersions, ContractVersions, DPPVersion, DocumentClassMethodVersions,
-    DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions,
-    IdentityKeyTypeMethodVersions, IdentityVersions, StateTransitionSerializationVersions,
+    ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
+    DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
+    DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
+    IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
+    StateTransitionSerializationVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -25,32 +27,29 @@ use crate::version::drive_versions::{
     DriveCreditPoolStorageFeeDistributionPoolMethodVersions, DriveDocumentDeleteMethodVersions,
     DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
     DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentUpdateMethodVersions, DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions,
-    DriveGroveApplyMethodVersions, DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions,
-    DriveGroveCostMethodVersions, DriveGroveMethodVersions,
-    DriveIdentityCostEstimationMethodVersions, DriveIdentityFetchAttributesMethodVersions,
-    DriveIdentityFetchFullIdentityMethodVersions, DriveIdentityFetchMethodVersions,
-    DriveIdentityFetchPartialIdentityMethodVersions,
+    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveGroveApplyMethodVersions,
+    DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
+    DriveGroveMethodVersions, DriveIdentityCostEstimationMethodVersions,
+    DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
+    DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
     DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
     DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
     DriveIdentityKeysProveMethodVersions, DriveIdentityMethodVersions,
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
-    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveStructureVersion,
-    DriveSystemEstimationCostsMethodVersions, DriveSystemProtocolVersionMethodVersions,
-    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
-    DriveVerifySingleDocumentMethodVersions, DriveVersion,
+    DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
+    DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
+    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{
-    AbciStructureVersion, PlatformArchitectureVersion, StateTransitionSigningVersion,
-};
-use std::collections::BTreeMap;
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
-    protocol_version: 0,
+    protocol_version: 1,
     identity: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
@@ -65,12 +64,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         min_version: 0,
         max_version: 0,
         default_current_version: 0,
-    },
-    state_transition_signing: StateTransitionSigningVersion {
-        sign_external: 0,
-        sign: 0,
-        verify_public_key_is_enabled: 0,
-        verify_public_key_level_and_purpose: 0,
     },
     drive: DriveVersion {
         structure: DriveStructureVersion {
@@ -128,6 +121,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 remove_validators_proposed_app_versions: 0,
                 update_validator_proposed_app_version: 0,
             },
+            prove: DriveProveMethodVersions { prove_multiple: 0 },
             balances: DriveBalancesMethodVersions {
                 add_to_system_credits: 0,
                 add_to_system_credits_operations: 0,
@@ -136,6 +130,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 calculate_total_credits_balance: 0,
             },
             document: DriveDocumentMethodVersions {
+                query: DriveDocumentQueryMethodVersions { query_documents: 0 },
                 delete: DriveDocumentDeleteMethodVersions {
                     add_estimation_costs_for_remove_document_to_primary_storage: 0,
                     delete_document_for_contract: 0,
@@ -561,6 +556,24 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     dpp: DPPVersion {
+        validation: DPPValidationVersions {
+            validate_time_in_block_time_window: 0,
+            json_schema_validator: JsonSchemaValidatorVersions {
+                get_schema_compilation_options: 0,
+                new: 0,
+                new_with_definitions: 0,
+                validate: 0,
+                validate_data_contract_schema: 0,
+                validate_schema: 0,
+            },
+            data_contract: DataContractValidationVersions {
+                validate: 0,
+                validate_index_definitions: 0,
+                validate_index_naming_duplicates: 0,
+                validate_not_defined_properties: 0,
+                validate_property_definition: 0,
+            },
+        },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
             identity_create_state_transition: FeatureVersionBounds {
                 min_version: 0,
@@ -629,6 +642,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
             },
         },
+        state_transition_conversion_versions: Default::default(),
         contract_versions: ContractVersions {
             contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,
@@ -658,6 +672,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 field_can_be_null: 0,
                 initial_revision: 0,
                 requires_revision: 0,
+            },
+            index_versions: IndexVersions {
+                index_levels_from_indices: 0,
             },
             contract_class_method_versions: ContractClassMethodVersions {
                 get_property_definition_by_path: 0,

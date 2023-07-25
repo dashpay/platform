@@ -16,11 +16,11 @@ use crate::{
 };
 
 use crate::prelude::AssetLockProof;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::identity_create_transition::fields::*;
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 

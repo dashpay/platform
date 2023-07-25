@@ -4,7 +4,7 @@ use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTri
 use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -85,18 +85,21 @@ pub enum DataTriggerActionError {
     ValueError(#[from] ValueError),
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerActionError> for StateError {
     fn from(v: DataTriggerActionError) -> Self {
         StateError::DataTriggerActionError(v)
     }
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerError> for StateError {
     fn from(error: DataTriggerError) -> Self {
         StateError::DataTriggerError(error)
     }
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerError> for ConsensusError {
     fn from(error: DataTriggerError) -> Self {
         Self::StateError(StateError::DataTriggerError(error))

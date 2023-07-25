@@ -9,6 +9,9 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
@@ -17,6 +20,7 @@ pub(crate) fn verify_state_transitions_were_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &Vec<StateTransition>,
+    platform_version: &PlatformVersion,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
     let platform = PlatformRef {
@@ -59,7 +63,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     });
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -76,6 +80,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     None,
                     false,
                     data_contract_create.data_contract.id.into_buffer(),
+                    platform_version,
                 )
                 .expect("expected to verify full identity");
                 assert_eq!(
@@ -97,7 +102,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     });
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -114,6 +119,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     None,
                     false,
                     data_contract_update.data_contract.id.into_buffer(),
+                    platform_version,
                 )
                 .expect("expected to verify full identity");
                 assert_eq!(
@@ -150,7 +156,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     });
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -187,7 +193,12 @@ pub(crate) fn verify_state_transitions_were_executed(
                     };
 
                     let (root_hash, document) = query
-                        .verify_proof(false, &response_proof.grovedb_proof, document_type)
+                        .verify_proof(
+                            false,
+                            &response_proof.grovedb_proof,
+                            document_type,
+                            platform_version,
+                        )
                         .expect("expected to verify a document");
 
                     assert_eq!(
@@ -203,8 +214,9 @@ pub(crate) fn verify_state_transitions_were_executed(
                             assert_eq!(
                                 document,
                                 Document::try_from_create_transition(
-                                    creation_action,
-                                    documents_batch_transition.owner_id
+                                    &creation_action,
+                                    documents_batch_transition.owner_id,
+                                    platform_version,
                                 )
                                 .expect("expected to get document")
                             );
@@ -215,8 +227,9 @@ pub(crate) fn verify_state_transitions_were_executed(
                                 assert_eq!(
                                     document,
                                     Document::try_from_replace_transition(
-                                        replace_action,
-                                        documents_batch_transition.owner_id
+                                        &replace_action,
+                                        documents_batch_transition.owner_id,
+                                        platform_version,
                                     )
                                     .expect("expected to get document")
                                 );
@@ -239,7 +252,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     });
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -255,6 +268,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     false,
                     identity_create_transition.identity_id.into_buffer(),
+                    platform_version,
                 )
                 .expect("expected to verify full identity");
                 assert_eq!(
@@ -289,7 +303,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     });
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -305,6 +319,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     identity_top_up_transition.identity_id.into_buffer(),
                     false,
+                    platform_version,
                 )
                 .expect("expected to verify balance identity");
                 let balance = balance.expect("expected a balance");
@@ -339,7 +354,7 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
 
                 let serialized_get_proofs_response =
@@ -358,6 +373,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                         .identity_id
                         .into_buffer(),
                     false,
+                    platform_version,
                 )
                 .expect("expected to verify balance identity");
                 let _balance = balance.expect("expected a balance");
@@ -379,7 +395,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     });
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -395,6 +411,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     false,
                     identity_update_transition.identity_id.into_buffer(),
+                    platform_version,
                 )
                 .expect("expected to verify identity keys");
                 let identity = identity.expect("expected an identity");
@@ -435,7 +452,7 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -452,6 +469,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                         &response_proof.grovedb_proof,
                         identity_credit_transfer_action.identity_id.into_buffer(),
                         true,
+                        platform_version,
                     )
                     .expect("expected to verify balance identity");
 
@@ -467,6 +485,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                         &response_proof.grovedb_proof,
                         identity_credit_transfer_action.recipient_id.into_buffer(),
                         true,
+                        platform_version,
                     )
                     .expect("expected to verify balance recipient");
 

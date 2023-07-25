@@ -1,0 +1,80 @@
+use std::collections::BTreeMap;
+use platform_value::Value;
+use crate::identity::TimestampMillis;
+use crate::prelude::Revision;
+use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
+
+pub trait DocumentReplaceTransitionV0Methods {
+    /// Returns a reference to the `base` field of the `DocumentReplaceTransitionV0`.
+    fn base(&self) -> &DocumentBaseTransition;
+    /// Returns a mut reference to the `base` field of the `DocumentReplaceTransitionV0`.
+    fn base_mut(&mut self) -> &mut DocumentBaseTransition;
+
+    /// Sets the value of the `base` field in the `DocumentReplaceTransitionV0`.
+    fn set_base(&mut self, base: DocumentBaseTransition);
+
+    /// Returns a reference to the `revision` field of the `DocumentReplaceTransitionV0`.
+    fn revision(&self) -> Revision;
+
+    /// Sets the value of the `revision` field in the `DocumentReplaceTransitionV0`.
+    fn set_revision(&mut self, revision: Revision);
+
+    /// Returns a reference to the `updated_at` field of the `DocumentReplaceTransitionV0`.
+    fn updated_at(&self) -> Option<TimestampMillis>;
+
+    /// Sets the value of the `updated_at` field in the `DocumentReplaceTransitionV0`.
+    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>);
+
+    /// Returns a reference to the `data` field of the `DocumentReplaceTransitionV0`.
+    fn data(&self) -> Option<&BTreeMap<String, Value>>;
+
+    /// Returns a mutable reference to the `data` field of the `DocumentReplaceTransitionV0`.
+    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
+
+    /// Sets the value of the `data` field in the `DocumentReplaceTransitionV0`.
+    fn set_data(&mut self, data: Option<BTreeMap<String, Value>>);
+}
+
+impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransitionV0 {
+    fn base(&self) -> &DocumentBaseTransition {
+        &self.base
+    }
+
+    fn base_mut(&mut self) -> &mut DocumentBaseTransition {
+        &mut self.base
+    }
+
+    fn set_base(&mut self, base: DocumentBaseTransition) {
+        self.base = base;
+    }
+
+    fn revision(&self) -> Revision {
+        self.revision
+    }
+
+    fn set_revision(&mut self, revision: Revision) {
+        self.revision = revision;
+    }
+
+    fn updated_at(&self) -> Option<TimestampMillis> {
+        self.updated_at
+    }
+
+    fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>) {
+        self.updated_at = updated_at;
+    }
+
+    fn data(&self) -> Option<&BTreeMap<String, Value>> {
+        self.data.as_ref()
+    }
+
+    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
+        self.data.as_mut()
+    }
+
+    fn set_data(&mut self, data: Option<BTreeMap<String, Value>>) {
+        self.data = data;
+    }
+}

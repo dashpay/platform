@@ -1,10 +1,9 @@
 use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 #[cfg(feature = "state-transitions")]
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
-#[cfg(feature = "state-transitions")]
-use crate::data_contract::v0::created_data_contract::CreatedDataContractV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::document::Document;
 use crate::prelude::DataContract;

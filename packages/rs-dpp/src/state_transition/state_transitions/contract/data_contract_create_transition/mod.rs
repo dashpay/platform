@@ -1,13 +1,14 @@
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod serialize;
 mod state_transition_like;
 mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use fields::*;
 
@@ -15,50 +16,73 @@ use crate::data_contract::property_names::ENTROPY;
 
 use crate::data_contract::DataContract;
 use crate::identity::KeyID;
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::{PlatformSerializable, Signable};
+use crate::serialization::PlatformDeserializable;
+use crate::serialization::{PlatformSerializable, Signable};
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-pub use action::DataContractCreateTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
-use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::data_contract::state_transition::property_names::{SIGNATURE, SIGNATURE_PUBLIC_KEY_ID};
-use std::fmt;
+use crate::data_contract::created_data_contract::CreatedDataContract;
 pub use v0::*;
-pub use v0_action::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
 #[derive(
     Debug,
     Clone,
-    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
     Decode,
     From,
     PartialEq,
 )]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
+)]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.contract_create_state_transition)]
-#[serde(untagged)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.contract_create_state_transition"
+)]
 pub enum DataContractCreateTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractCreateTransitionV0),
+}
+
+impl DataContractCreateTransition {
+    pub fn try_from(
+        value: CreatedDataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .contract_create_state_transition
+            .default_current_version
+        {
+            0 => {
+                let data_contract_create_transition: DataContractCreateTransitionV0 = value.into();
+                Ok(data_contract_create_transition.into())
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractCreateTransition::try_from(CreatedDataContract)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl From<DataContract> for DataContractCreateTransition {
@@ -92,11 +116,11 @@ impl DataContractCreateTransition {
 #[cfg(test)]
 mod test {
     use crate::data_contract::created_data_contract::CreatedDataContract;
-    use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
     use integer_encoding::VarInt;
     use platform_value::Bytes32;
 
     use super::*;
+    use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -110,7 +134,7 @@ mod test {
     }
 
     pub(crate) fn get_test_data() -> TestData {
-        let created_data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None, 1);
 
         let state_transition = DataContractCreateTransition::from_object(Value::from([
             (
@@ -192,7 +216,7 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             &data.created_data_contract.data_contract.owner_id,
-            data.state_transition.get_owner_id()
+            data.state_transition.owner_id()
         );
     }
 

@@ -8,7 +8,7 @@ impl StateTransitionLike for IdentityTopUpTransition {
     /// Returns ID of the topupd contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            IdentityTopUpTransition::V0(transition) => transition.get_modified_data_ids(),
+            IdentityTopUpTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 
@@ -42,9 +42,9 @@ impl StateTransitionLike for IdentityTopUpTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            IdentityTopUpTransition::V0(transition) => transition.get_owner_id(),
+            IdentityTopUpTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

@@ -11,7 +11,7 @@ use dpp::data_contract::{CreatedDataContract, DataContract, DATA_CONTRACT_SCHEMA
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
 
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::{platform_value, Convertible, ProtocolError};
 
 use crate::identifier::identifier_from_js_value;

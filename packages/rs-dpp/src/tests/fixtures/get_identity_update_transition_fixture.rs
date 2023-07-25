@@ -1,5 +1,5 @@
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{

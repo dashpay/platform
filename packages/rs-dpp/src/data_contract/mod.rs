@@ -1,4 +1,4 @@
-use crate::serialization_traits::{
+use crate::serialization::{
     PlatformDeserializableFromVersionedStructure,
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
     PlatformSerializableWithPlatformVersion,
@@ -10,7 +10,7 @@ use derive_more::From;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 pub use generate_data_contract::*;
-use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value, ValueMap, ValueMapHelper};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -41,6 +41,7 @@ mod serialized_version;
 pub use data_contract_methods::*;
 pub mod accessors;
 pub mod data_contract_config;
+mod validation;
 
 pub use v0::*;
 
@@ -113,7 +114,7 @@ pub trait DataContractLike<'a> {
                                          // #[serde(untagged)]
                                          // #[platform_serde_versioned(version_field = "$version")]
 pub enum DataContract {
-    //#[versioned(0)]
+    //#[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractV0),
 }
 
@@ -215,6 +216,12 @@ impl DataContract {
         }
     }
 
+    pub fn set_owner_id(&mut self, owner_id: Identifier) {
+        match self {
+            DataContract::V0(v0) => v0.owner_id = owner_id,
+        }
+    }
+
     pub fn set_id(&mut self, id: Identifier) {
         match self {
             DataContract::V0(v0) => v0.id = id,
@@ -272,49 +279,49 @@ impl DataContract {
         }
     }
 
-    #[cfg(feature = "validation")]
-    pub fn validate(
-        protocol_version: u32,
-        raw_data_contract: &Value,
-        allow_non_current_data_contract_versions: bool,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let data_contract_system_version =
-            match raw_data_contract.get_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
-                Ok(Some(data_contract_system_version)) => data_contract_system_version,
-                Ok(None) => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::BasicError(BasicError::VersionError(
-                            "no system version found on data contract object".into(),
-                        )),
-                    ));
-                }
-                Err(e) => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::BasicError(BasicError::VersionError(
-                            format!("version error: {}", e.to_string()).into(),
-                        )),
-                    ));
-                }
-            };
-        if !allow_non_current_data_contract_versions {
-            Self::check_version_is_active(protocol_version, data_contract_system_version)?;
-        }
-        match data_contract_system_version {
-            0 => DataContractV0::validate(raw_data_contract),
-            _ => Ok(SimpleConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(BasicError::VersionError(
-                    "system version found on data contract object".into(),
-                )),
-            )),
-        }
-    }
+    // #[cfg(feature = "validation")]
+    // pub fn validate(
+    //     protocol_version: u32,
+    //     raw_data_contract: &Value,
+    //     allow_non_current_data_contract_versions: bool,
+    // ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    //     let data_contract_system_version =
+    //         match raw_data_contract.get_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
+    //             Ok(Some(data_contract_system_version)) => data_contract_system_version,
+    //             Ok(None) => {
+    //                 return Ok(SimpleConsensusValidationResult::new_with_error(
+    //                     ConsensusError::BasicError(BasicError::VersionError(
+    //                         "no system version found on data contract object".into(),
+    //                     )),
+    //                 ));
+    //             }
+    //             Err(e) => {
+    //                 return Ok(SimpleConsensusValidationResult::new_with_error(
+    //                     ConsensusError::BasicError(BasicError::VersionError(
+    //                         format!("version error: {}", e.to_string()).into(),
+    //                     )),
+    //                 ));
+    //             }
+    //         };
+    //     if !allow_non_current_data_contract_versions {
+    //         Self::check_version_is_active(protocol_version, data_contract_system_version)?;
+    //     }
+    //     match data_contract_system_version {
+    //         0 => DataContractV0::validate(raw_data_contract),
+    //         _ => Ok(SimpleConsensusValidationResult::new_with_error(
+    //             ConsensusError::BasicError(BasicError::VersionError(
+    //                 "system version found on data contract object".into(),
+    //             )),
+    //         )),
+    //     }
+    // }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::data_contract::v0::DataContractV0;
     use crate::data_contract::DataContract;
-    use crate::serialization_traits::PlatformSerializableWithPlatformVersion;
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;

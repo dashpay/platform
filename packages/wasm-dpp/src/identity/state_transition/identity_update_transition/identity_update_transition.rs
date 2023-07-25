@@ -24,7 +24,7 @@ use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 use dpp::{
     identifier::Identifier,
@@ -386,7 +386,7 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
         let ids = self.0.modified_data_ids();
 
         ids.into_iter()

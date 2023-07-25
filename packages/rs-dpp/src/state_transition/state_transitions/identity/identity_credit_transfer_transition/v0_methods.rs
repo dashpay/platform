@@ -45,12 +45,6 @@ impl IdentityCreditTransferTransitionV0Methods for IdentityCreditTransferTransit
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreditTransferTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {
         match self {
             IdentityCreditTransferTransition::V0(transition) => {

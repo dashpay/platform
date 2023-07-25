@@ -4,8 +4,8 @@ use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::bls_signatures;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::fee_result::FeeResult;
 use dpp::validation::SimpleValidationResult;
+use dpp::version::PlatformVersion;
 use drive::{
     drive::{batch::DriveOperation, Drive},
     query::TransactionArg,
@@ -71,12 +71,19 @@ impl<'a> WithdrawalTxs<'a> {
         transaction: TransactionArg,
         drive: &Drive,
         block_info: &BlockInfo,
+        platform_version: &PlatformVersion,
     ) -> Result<FeeResult, AbciError> {
         self.validate()?;
         // TODO: Do we need to do sth with withdrawal txs to actually execute them?
         // FIXME: check if this is correct, esp. "apply" arg
         drive
-            .apply_drive_operations(self.drive_operations.clone(), true, block_info, transaction)
+            .apply_drive_operations(
+                self.drive_operations.clone(),
+                true,
+                block_info,
+                transaction,
+                platform_version,
+            )
             .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))
     }
 }

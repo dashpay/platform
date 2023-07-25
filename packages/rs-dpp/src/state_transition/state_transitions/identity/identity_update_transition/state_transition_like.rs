@@ -8,7 +8,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
     /// Returns ID of the updated contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            IdentityUpdateTransition::V0(transition) => transition.get_modified_data_ids(),
+            IdentityUpdateTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 
@@ -42,9 +42,9 @@ impl StateTransitionLike for IdentityUpdateTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            IdentityUpdateTransition::V0(transition) => transition.get_owner_id(),
+            IdentityUpdateTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

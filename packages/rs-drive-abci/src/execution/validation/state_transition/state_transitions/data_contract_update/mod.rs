@@ -13,6 +13,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 
 use crate::platform_types::platform::PlatformRef;
@@ -39,7 +40,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0::<C>(),
+            0 => self.transform_into_action_v0(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -133,7 +134,7 @@ mod tests {
     use dpp::platform_value::{BinaryData, Value};
     use dpp::state_transition::{StateTransitionFieldTypes, StateTransitionType};
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::LATEST_VERSION;
+    use dpp::version::{PlatformVersion, LATEST_VERSION};
 
     struct TestData<T> {
         raw_state_transition: Value,
@@ -146,14 +147,24 @@ mod tests {
         data_contract: &DataContract,
         block_info: BlockInfo,
     ) {
+        let platform_version = PlatformVersion::latest();
         platform
             .drive
-            .apply_contract(data_contract, block_info, true, None, None)
+            .apply_contract(
+                data_contract,
+                block_info,
+                true,
+                None,
+                None,
+                platform_version,
+            )
             .expect("to apply contract");
     }
 
     fn setup_test() -> TestData<MockCoreRPCLike> {
-        let data_contract = get_data_contract_fixture(None).data_contract;
+        let platform_version = PlatformVersion::latest();
+        let data_contract =
+            get_data_contract_fixture(None, platform_version.protocol_version).data_contract;
         let mut updated_data_contract = data_contract.clone();
 
         updated_data_contract.increment_version();
@@ -197,6 +208,9 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
+        use dpp::block::block_info::BlockInfo;
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
         use serde_json::json;
 
         #[test]
@@ -262,6 +276,8 @@ mod tests {
                 mut data_contract,
                 platform,
             } = setup_test();
+
+            let platform_version = PlatformVersion::latest();
 
             data_contract.config.keeps_history = true;
             data_contract.config.readonly = false;
@@ -337,7 +353,14 @@ mod tests {
             // Fetch from time 0 without a limit or offset
             let contract_history = platform
                 .drive
-                .fetch_contract_with_history(*data_contract.id.as_bytes(), None, 0, None, None)
+                .fetch_contract_with_history(
+                    *data_contract.id.as_bytes(),
+                    None,
+                    0,
+                    None,
+                    None,
+                    platform_version,
+                )
                 .expect("to get contract history");
 
             let keys = contract_history.keys().copied().collect::<Vec<u64>>();
@@ -350,7 +373,14 @@ mod tests {
             // Fetch with an offset should offset from the newest to oldest
             let contract_history = platform
                 .drive
-                .fetch_contract_with_history(*data_contract.id.as_bytes(), None, 0, None, Some(1))
+                .fetch_contract_with_history(
+                    *data_contract.id.as_bytes(),
+                    None,
+                    0,
+                    None,
+                    Some(1),
+                    platform_version,
+                )
                 .expect("to get contract history");
 
             let keys = contract_history.keys().copied().collect::<Vec<u64>>();
@@ -361,7 +391,14 @@ mod tests {
             // Check that when we limit ny 1 we get only the most recent contract
             let contract_history = platform
                 .drive
-                .fetch_contract_with_history(*data_contract.id.as_bytes(), None, 0, Some(1), None)
+                .fetch_contract_with_history(
+                    *data_contract.id.as_bytes(),
+                    None,
+                    0,
+                    Some(1),
+                    None,
+                    platform_version,
+                )
                 .expect("to get contract history");
 
             let keys = contract_history.keys().copied().collect::<Vec<u64>>();

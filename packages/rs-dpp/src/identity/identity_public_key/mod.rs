@@ -15,10 +15,11 @@ pub use security_level::SecurityLevel;
 pub mod accessors;
 pub(crate) mod conversion;
 mod fields;
-mod v0;
+pub(crate) mod v0;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub mod methods;
 #[cfg(feature = "random-public-keys")]
@@ -40,7 +41,7 @@ pub type TimestampMillis = u64;
     From,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(limit = 2000, allow_nested)]
+#[platform_serialize(limit = 2000, derive_bincode)]
 pub enum IdentityPublicKey {
     V0(IdentityPublicKeyV0),
 }
@@ -50,13 +51,45 @@ impl IdentityPublicKey {
     pub fn is_master(&self) -> bool {
         self.security_level() == SecurityLevel::MASTER
     }
+
+    /// Generates an identity public key with the maximum possible size based on the platform version.
+    ///
+    /// This method constructs a key of the largest possible size for the given platform version.
+    /// This can be useful for stress testing or benchmarking purposes.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The `KeyID` for the generated key.
+    /// * `platform_version`: The platform version which determines the structure of the identity key.
+    ///
+    /// # Returns
+    ///
+    /// * `Self`: An instance of the `IdentityPublicKey` struct.
+    ///
+    pub fn max_possible_size_key(
+        id: KeyID,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => Ok(IdentityPublicKeyV0::max_possible_size_key(id).into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::max_possible_size_key".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::IdentityPublicKey;
-    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use serde::Deserialize;
 
     #[test]

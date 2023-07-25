@@ -12,9 +12,11 @@ use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::extended_block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
+use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
@@ -27,14 +29,11 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-
-
     fn get_owner_identity_key(
         payout_address: [u8; 20],
         key_id: KeyID,
@@ -50,7 +49,7 @@ impl<C> Platform<C>
         })
     }
 
-    fn get_voter_identity_key(
+    pub(crate) fn get_voter_identity_key(
         voting_address: [u8; 20],
         key_id: KeyID,
     ) -> Result<IdentityPublicKey, Error> {
@@ -65,7 +64,7 @@ impl<C> Platform<C>
         })
     }
 
-    fn get_operator_identity_keys(
+    pub(crate) fn get_operator_identity_keys(
         &self,
         pub_key_operator: Vec<u8>,
         operator_payout_address: Option<[u8; 20]>,
@@ -106,8 +105,6 @@ impl<C> Platform<C>
         Ok(identity_public_keys)
     }
 
-
-
     fn get_operator_identifier(
         pro_tx_hash: &[u8; 32],
         pub_key_operator: &[u8],
@@ -116,14 +113,14 @@ impl<C> Platform<C>
         Ok(operator_identifier)
     }
 
-    fn get_operator_identifier_from_masternode_list_item(
+    pub(crate) fn get_operator_identifier_from_masternode_list_item(
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
         let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
         Self::get_operator_identifier(pro_tx_hash, masternode.state.pub_key_operator.as_slice())
     }
 
-    fn get_voter_identifier(
+    pub(crate) fn get_voter_identifier(
         pro_tx_hash: &[u8; 32],
         voting_address: &[u8; 20],
     ) -> Result<[u8; 32], Error> {
@@ -131,7 +128,7 @@ impl<C> Platform<C>
         Ok(voting_identifier)
     }
 
-    fn get_voter_identifier_from_masternode_list_item(
+    pub(crate) fn get_voter_identifier_from_masternode_list_item(
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
         let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
@@ -151,7 +148,7 @@ impl<C> Platform<C>
             .expect("expected a 32 byte hash"))
     }
 
-    fn create_basic_identity(id: [u8; 32]) -> Identity {
+    pub(crate) fn create_basic_identity(id: [u8; 32]) -> Identity {
         Identity {
             feature_version: IDENTITY_PROTOCOL_VERSION,
             id: Identifier::new(id),

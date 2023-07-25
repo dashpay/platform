@@ -10,8 +10,9 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
@@ -48,7 +49,7 @@ impl StateTransitionLike for DataContractCreateTransitionV0 {
     }
 
     /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         &self.data_contract.owner_id()
     }
 }

@@ -9,7 +9,7 @@ impl StateTransitionLike for DataContractCreateTransition {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.get_modified_data_ids(),
+            DataContractCreateTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 
@@ -45,9 +45,9 @@ impl StateTransitionLike for DataContractCreateTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.get_owner_id(),
+            DataContractCreateTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

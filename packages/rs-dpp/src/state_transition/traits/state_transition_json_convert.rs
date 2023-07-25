@@ -1,19 +1,24 @@
+use crate::state_transition::{StateTransitionValueConvert, ValueConvert};
 use crate::ProtocolError;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use std::convert::TryInto;
 
 #[derive(Debug, Copy, Clone, Default)]
-pub struct JsonSerializationOptions {
+pub struct JsonStateTransitionSerializationOptions {
     pub skip_signature: bool,
     pub into_validating_json: bool,
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionJsonConvert: Serialize {
+pub trait StateTransitionJsonConvert: Serialize + StateTransitionValueConvert {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64
-    fn to_json(&self, options: JsonSerializationOptions) -> Result<JsonValue, ProtocolError> {
+    fn to_json(
+        &self,
+        options: JsonStateTransitionSerializationOptions,
+    ) -> Result<JsonValue, ProtocolError> {
         if options.into_validating_json {
             self.to_object(options.skip_signature)?
                 .try_into_validating_json()

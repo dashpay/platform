@@ -10,6 +10,7 @@ use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::extended_block_info::BlockInfo;
+use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -18,14 +19,18 @@ use dpp::document::document_transition::document_base_transition::DocumentBaseTr
 use dpp::document::document_transition::{
     Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
 };
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentsBatchTransition};
+use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
 };
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::LATEST_VERSION;
+use dpp::version::{PlatformVersion, LATEST_VERSION};
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
@@ -213,7 +218,11 @@ impl Strategy {
     }
 
     // TODO: This belongs to `DocumentOp`
-    pub fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
+    pub fn add_strategy_contracts_into_drive(
+        &mut self,
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) {
         for op in &self.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op.contract.serialize().expect("expected to serialize");
@@ -225,6 +234,7 @@ impl Strategy {
                         true,
                         Some(Cow::Owned(SingleEpoch(0))),
                         None,
+                        platform_version,
                     )
                     .expect("expected to be able to add contract");
             }
@@ -354,6 +364,7 @@ impl Strategy {
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut operations = vec![];
         let mut finalize_block_operations = vec![];
@@ -430,7 +441,8 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query = DriveQuery::any_item_query(contract, document_type);
+                        let any_item_query =
+                            DriveQuery::any_item_query(contract, document_type.clone());
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -444,7 +456,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), document_type)
+                                Document::from_bytes(first_item.as_slice(), document_type.clone())
                                     .expect("expected to deserialize document");
 
                             //todo: fix this into a search key request for the following
@@ -458,7 +470,7 @@ impl Strategy {
                             };
                             let identity = platform
                                 .drive
-                                .fetch_identity_balance_with_keys(request, None)
+                                .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let document_delete_transition = DocumentDeleteTransition {
@@ -498,7 +510,8 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query = DriveQuery::any_item_query(contract, document_type);
+                        let any_item_query =
+                            DriveQuery::any_item_query(contract, document_type.clone());
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -512,7 +525,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), document_type)
+                                Document::from_bytes(first_item.as_slice(), document_type.clone())
                                     .expect("expected to deserialize document");
 
                             //todo: fix this into a search key request for the following
@@ -527,7 +540,7 @@ impl Strategy {
                             };
                             let identity = platform
                                 .drive
-                                .fetch_identity_balance_with_keys(request, None)
+                                .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let document_replace_transition = DocumentReplaceTransition {
@@ -641,7 +654,7 @@ impl Strategy {
 
                         let fetched_owner_balance = platform
                             .drive
-                            .fetch_identity_balance(owner.id.to_buffer(), None)
+                            .fetch_identity_balance(owner.id.to_buffer(), None, platform_version)
                             .expect("expected to be able to get identity")
                             .expect("expected to get an identity");
 
@@ -693,7 +706,14 @@ impl Strategy {
         } else {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
-                .state_transitions_for_block(platform, block_info, current_identities, signer, rng);
+                .state_transitions_for_block(
+                    platform,
+                    block_info,
+                    current_identities,
+                    signer,
+                    rng,
+                    platform_version,
+                );
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut document_state_transitions);
 

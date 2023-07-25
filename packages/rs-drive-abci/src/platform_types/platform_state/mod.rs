@@ -16,7 +16,7 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;

@@ -70,6 +70,29 @@ impl Drive {
         Ok(fees)
     }
 
+    /// Disables a set of identity keys for a given identity in version 0.
+    ///
+    /// This method performs operations to disable specific identity keys for the identity
+    /// identified by `identity_id`. The disabling is done by marking the keys as disabled at
+    /// a specified timestamp (`disable_at`).
+    ///
+    /// # Parameters
+    ///
+    /// * `identity_id`: A unique identifier for the identity. It's a 32-byte array.
+    /// * `key_ids`: A vector of `KeyID` that represents the keys to be disabled.
+    /// * `disable_at`: A timestamp (in milliseconds) indicating when the keys should be marked as disabled.
+    /// * `estimated_costs_only_with_layer_info`: An optional mutable reference to a map that,
+    ///   if provided, will be populated with estimated layer information about the operation,
+    ///   rather than performing the actual disabling of keys. If `None`, the actual operations
+    ///   are executed.
+    /// * `transaction`: A transaction argument used for the disabling process.
+    /// * `platform_version`: Represents the platform version to ensure compatibility.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a vector of `LowLevelDriveOperation` which represents the operations
+    /// performed during the disabling process, or an `Error` if the operation fails.
+    ///
     pub fn disable_identity_keys_operations_v0(
         &self,
         identity_id: [u8; 32],

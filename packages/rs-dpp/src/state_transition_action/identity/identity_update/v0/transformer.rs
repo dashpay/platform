@@ -1,6 +1,6 @@
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransitionV0;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
 
 impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
@@ -26,8 +26,8 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
     }
 }
 
-impl From<&IdentityUpdateTransition> for IdentityUpdateTransitionActionV0 {
-    fn from(value: &IdentityUpdateTransition) -> Self {
+impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
+    fn from(value: &IdentityUpdateTransitionV0) -> Self {
         let IdentityUpdateTransitionV0 {
             identity_id,
             add_public_keys,

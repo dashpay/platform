@@ -3,14 +3,14 @@
 // use crate::data_contract::DataContract;
 // use crate::document::document_transition::document_base_transition::JsonValue;
 // use crate::identity::KeyID;
-// use crate::serialization_traits::PlatformDeserializable;
-// use crate::serialization_traits::{PlatformSerializable, Signable};
+// use crate::serialization::PlatformDeserializable;
+// use crate::serialization::{PlatformSerializable, Signable};
 // use crate::state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
 // use crate::version::{PlatformVersion};
 // use crate::{ProtocolError};
 // use bincode::{config, Decode, Encode};
 // use derive_more::From;
-// use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+// use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 // use platform_versioning::PlatformVersioned;
 // use platform_value::{BinaryData, Bytes32, Identifier, Value};
 // use serde::de::{MapAccess, Visitor};

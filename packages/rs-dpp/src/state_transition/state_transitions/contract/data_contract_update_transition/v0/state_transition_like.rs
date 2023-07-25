@@ -1,4 +1,4 @@
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
@@ -15,7 +15,7 @@ use crate::{
 
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::DataContractUpdate;
@@ -49,7 +49,7 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
     }
 
     /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         &self.data_contract.owner_id()
     }
 }

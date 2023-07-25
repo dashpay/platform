@@ -13,7 +13,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
-use dpp::serialization_traits::{
+use dpp::serialization::serialization_traits::{
     PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
 };
 use dpp::version::drive_versions::DriveVersion;

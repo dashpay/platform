@@ -110,7 +110,7 @@ impl DataContractFactory {
         }
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     /// Create a DataContractCreateTransition
     pub fn create_data_contract_create_transition(
         &self,
@@ -118,12 +118,12 @@ impl DataContractFactory {
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         match self {
             DataContractFactory::V0(v0) => {
-                v0.create_data_contract_create_transition(created_data_contract)
+                v0.create_unsigned_data_contract_create_transition(created_data_contract)
             }
         }
     }
 
-    #[cfg(feature = "state-transitions")]
+    #[cfg(all(feature = "state-transitions", feature = "client"))]
     /// Create a DataContractUpdateTransition
     pub fn create_data_contract_update_transition(
         &self,

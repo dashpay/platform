@@ -1,16 +1,13 @@
+use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 
-pub trait IdentityPlatformValueConversionMethodsV0 {
-    fn to_object(&self) -> Result<Value, ProtocolError>;
-    fn into_object(self) -> Result<Value, ProtocolError>;
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
-    /// Creates an identity from a raw object
-    fn from_object(
-        raw_object: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
+pub trait IdentityPlatformValueConversionMethodsV0: ValueConvertible {
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>
     where
-        Self: Sized;
+        Self: Sized + Clone,
+    {
+        self.to_object()
+    }
 }

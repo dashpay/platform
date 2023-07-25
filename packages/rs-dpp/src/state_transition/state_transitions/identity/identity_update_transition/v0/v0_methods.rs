@@ -1,6 +1,6 @@
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -13,8 +13,8 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -23,7 +23,7 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub trait IdentityUpdateTransitionV0Methods {
     fn try_from_identity_with_signer<S: Signer>(
@@ -34,7 +34,9 @@ pub trait IdentityUpdateTransitionV0Methods {
         public_keys_disabled_at: Option<u64>,
         signer: &S,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityUpdate

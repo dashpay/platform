@@ -61,9 +61,11 @@ mod delete;
 mod estimation_costs;
 #[cfg(feature = "full")]
 mod index_uniqueness;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
 mod insert;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
+pub mod query;
+#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
 mod update;
 
 #[cfg(any(feature = "full", feature = "verify"))]

@@ -4,7 +4,7 @@ use dpp::consensus::basic::BasicError;
 
 use dpp::identity::KeyID;
 use dpp::platform_value::Identifier;
-use dpp::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -36,7 +36,7 @@ pub(crate) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
     let keys = drive.fetch_identity_keys::<KeyIDVec>(
         identity_key_request,
         transaction,
-        &platform_version.drive,
+        platform_version,
     )?;
     if !keys.is_empty() {
         // keys should all be empty

@@ -13,7 +13,7 @@ use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization::serialization_traits::PlatformDeserializable;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
 

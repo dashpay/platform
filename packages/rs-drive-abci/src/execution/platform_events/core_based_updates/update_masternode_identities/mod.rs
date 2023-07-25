@@ -6,3 +6,4 @@ mod update_masternode_identities;
 mod update_operator_identity;
 mod update_owner_withdrawal_address;
 mod update_voter_identity;
+mod v0;

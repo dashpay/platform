@@ -1,5 +1,5 @@
 use crate::identity::TimestampMillis;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransitionV0;
+use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::v0::DocumentReplaceTransitionActionV0;
 
 impl DocumentReplaceTransitionActionV0 {

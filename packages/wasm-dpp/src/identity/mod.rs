@@ -12,7 +12,7 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
-use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::{Convertible, ProtocolError};
 
 use crate::identifier::IdentifierWrapper;
@@ -82,13 +82,13 @@ impl IdentityWasm {
 
         self.0.set_public_keys(public_keys);
 
-        Ok(self.0.get_public_keys().len())
+        Ok(self.0.public_keys().len())
     }
 
     #[wasm_bindgen(js_name=getPublicKeys)]
     pub fn get_public_keys(&self) -> Vec<JsValue> {
         self.0
-            .get_public_keys()
+            .public_keys()
             .iter()
             .map(|(_, k)| k.to_owned())
             .map(IdentityPublicKeyWasm::from)

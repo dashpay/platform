@@ -74,7 +74,7 @@ pub mod cache;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod config;
 ///DataContract module
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "full", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod contract;
 /// Fee pools module
 #[cfg(feature = "full")]
@@ -82,7 +82,7 @@ pub mod credit_pools;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
 /// Document module
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(any(feature = "full", feature = "verify", feature = "fixtures-and-mocks"))]
 pub mod document;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod flags;
@@ -97,8 +97,6 @@ pub mod initialization;
 pub mod object_size_info;
 #[cfg(feature = "full")]
 mod protocol_upgrade;
-#[cfg(feature = "full")]
-pub mod query;
 #[cfg(feature = "full")]
 mod shared_estimation_costs;
 #[cfg(feature = "full")]

@@ -3,6 +3,7 @@ pub mod transformer;
 
 use crate::document::{Document, DocumentV0};
 use crate::identity::TimestampMillis;
+use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
@@ -14,7 +15,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use crate::version::PlatformVersion;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct DocumentCreateTransitionActionV0 {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction,

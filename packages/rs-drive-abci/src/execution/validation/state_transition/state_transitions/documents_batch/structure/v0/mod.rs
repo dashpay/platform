@@ -14,7 +14,12 @@ use dpp::document::DocumentsBatchTransition;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -23,6 +28,7 @@ pub(crate) trait StateTransitionStructureValidationV0 {
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
@@ -31,6 +37,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema_v0(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
@@ -67,7 +74,13 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
             // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
                 drive
-                    .get_contract_with_fetch_info_and_fee(data_contract_id.0.0, None, true, tx)?
+                    .get_contract_with_fetch_info_and_fee(
+                        data_contract_id.0.0,
+                        None,
+                        true,
+                        tx,
+                        platform_version,
+                    )?
                     .1
                 else {
                     result.add_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(

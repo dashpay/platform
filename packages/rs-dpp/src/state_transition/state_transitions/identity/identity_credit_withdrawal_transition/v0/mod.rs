@@ -1,15 +1,16 @@
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -25,25 +26,20 @@ use crate::{
     ProtocolError,
 };
 
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::serialization::PlatformSerializable;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use crate::identity::SecurityLevel;
 use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
+use crate::withdrawal::Pooling;
 
-#[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
-    PartialEq,
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSignable, PartialEq)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[serde(rename_all = "camelCase")]
+#[platform_serialize(derive_bincode)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
@@ -78,12 +74,12 @@ mod test {
     use crate::identity::core_script::CoreScript;
     use crate::identity::KeyID;
     use crate::prelude::Revision;
-    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::state_transition::StateTransitionType;
     use crate::ProtocolError;
     use bincode::{config, Decode, Encode};
-    use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+    use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
     use std::fmt::Debug;

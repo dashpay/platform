@@ -30,6 +30,7 @@ pub enum DocumentInfo<'a> {
     DocumentEstimatedAverageSize(u32),
 }
 
+/// DocumentInfo V0 Methods
 pub trait DocumentInfoV0Methods {
     /// Returns true if self is a document with serialization.
     fn is_document_and_serialization(&self) -> bool;

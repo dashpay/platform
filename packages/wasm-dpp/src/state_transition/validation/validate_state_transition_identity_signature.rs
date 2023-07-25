@@ -8,7 +8,7 @@ use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
+use dpp::state_transition::state_transition_validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 
 use crate::StateTransitionExecutionContextWasm;

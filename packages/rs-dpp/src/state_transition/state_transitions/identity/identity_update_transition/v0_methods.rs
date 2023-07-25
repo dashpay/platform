@@ -1,10 +1,10 @@
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::{AssetLockProof, Revision, TimestampMillis};
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::state_transition::identity_update_transition::v0::v0_methods::IdentityUpdateTransitionV0Methods;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::FeatureVersion;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::{Bytes32, Identifier};

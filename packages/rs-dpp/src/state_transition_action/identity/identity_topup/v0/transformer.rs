@@ -1,7 +1,7 @@
 use crate::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransitionV0;
+use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 
 impl IdentityTopUpTransitionActionV0 {

@@ -1,14 +1,13 @@
-use crate::document::document_transition::document_base_transition::JsonValue;
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::PlatformSerializable;
-use crate::serialization_traits::Signable;
+use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformSerializable;
+use crate::serialization::Signable;
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Identifier, Value};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
@@ -17,14 +16,15 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 mod fields;
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod serialize;
 mod state_transition_like;
 mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 pub use fields::*;
 
@@ -36,22 +36,25 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 #[derive(
     Debug,
     Clone,
-    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
+)]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.contract_update_state_transition)]
-#[serde(untagged)]
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.contract_update_state_transition"
+)]
 pub enum DataContractUpdateTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractUpdateTransitionV0),
 }
 
@@ -76,10 +79,11 @@ mod test {
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
-    use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
+    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use crate::data_contract::DataContract;
     use crate::state_transition::{
-        JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
+        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
+        StateTransitionValueConvert,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version::LATEST_PLATFORM_VERSION;
@@ -93,7 +97,7 @@ mod test {
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None).data_contract;
+        let data_contract = get_data_contract_fixture(None, 1).data_contract_owned();
 
         let value_map = BTreeMap::from([
             (
@@ -161,7 +165,7 @@ mod test {
         let data = get_test_data();
         let mut json_object = data
             .state_transition
-            .to_json(JsonSerializationOptions {
+            .to_json(JsonStateTransitionSerializationOptions {
                 skip_signature: false,
                 into_validating_json: false,
             })
@@ -211,7 +215,7 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             &data.data_contract.owner_id,
-            data.state_transition.get_owner_id()
+            data.state_transition.owner_id()
         );
     }
 

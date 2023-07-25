@@ -87,6 +87,7 @@ where
                     block_info,
                     transaction,
                     &mut drive_operations,
+                    platform_version,
                 )?;
                 self.update_voter_identity(
                     update,
@@ -94,6 +95,7 @@ where
                     platform_state,
                     transaction,
                     &mut drive_operations,
+                    platform_version,
                 )?;
                 self.update_operator_identity(
                     update,
@@ -101,6 +103,7 @@ where
                     platform_state,
                     transaction,
                     &mut drive_operations,
+                    platform_version,
                 )?;
             }
 
@@ -110,6 +113,7 @@ where
                     block_info,
                     transaction,
                     &mut drive_operations,
+                    platform_version,
                 )?;
             }
         }
@@ -119,7 +123,7 @@ where
             true,
             block_info,
             Some(transaction),
-            &platform_version.drive,
+            platform_version,
         )?;
 
         let height = block_info.height;

@@ -1,4 +1,4 @@
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use crate::{
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -26,7 +26,9 @@ pub trait IdentityTopUpTransitionV0Methods {
         asset_lock_proof_private_key: &[u8],
         bls: &impl BlsModule,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>;
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 
     /// Get State Transition type
     fn get_type() -> StateTransitionType {
@@ -40,8 +42,6 @@ pub trait IdentityTopUpTransitionV0Methods {
     fn set_identity_id(&mut self, identity_id: Identifier);
     /// Returns identity id
     fn identity_id(&self) -> &Identifier;
-    /// Returns Owner ID
-    fn owner_id(&self) -> &Identifier;
 }
 
 impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
@@ -84,11 +84,6 @@ impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
 
     /// Returns identity id
     fn identity_id(&self) -> &Identifier {
-        &self.identity_id
-    }
-
-    /// Returns Owner ID
-    fn owner_id(&self) -> &Identifier {
         &self.identity_id
     }
 }

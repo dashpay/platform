@@ -1,44 +1,48 @@
 mod fields;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
-mod v0;
+pub(crate) mod v0;
 mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 use fields::*;
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
-pub use action::IdentityTopUpTransitionAction;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::Serialize;
 
 #[derive(
     Debug,
     Clone,
-    Serialize,
     PlatformDeserialize,
     PlatformSerialize,
-    PlatformSerdeVersionedDeserialize,
     PlatformSignable,
     PlatformVersioned,
-    Encode,
-    Decode,
     From,
     PartialEq,
 )]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged)
+)]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(platform_version_path = state_transitions.identity_state_transition)]
-#[serde(untagged)]
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
+)]
 pub enum IdentityTopUpTransition {
-    #[versioned(0)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(IdentityTopUpTransitionV0),
 }
 

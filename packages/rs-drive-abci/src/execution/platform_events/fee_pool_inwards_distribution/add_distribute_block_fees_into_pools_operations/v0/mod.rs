@@ -33,7 +33,7 @@ impl<C> Platform<C> {
             .get_epoch_processing_credits_for_distribution(
                 current_epoch,
                 transaction,
-                &platform_version.drive,
+                platform_version,
             )
             .or_else(|e| match e {
                 // Handle epoch change when storage fees are not set yet
@@ -52,7 +52,7 @@ impl<C> Platform<C> {
         let storage_distribution_credits_in_fee_pool = match cached_aggregated_storage_fees {
             None => self
                 .drive
-                .get_storage_fees_from_distribution_pool(transaction, &platform_version.drive)?,
+                .get_storage_fees_from_distribution_pool(transaction, platform_version)?,
             Some(storage_fees) => storage_fees,
         };
 
@@ -76,6 +76,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use dpp::block::extended_block_info::BlockInfo;
+    use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
 
@@ -85,6 +86,7 @@ mod tests {
 
     #[test]
     fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -113,22 +115,33 @@ mod tests {
                 None,
                 Some(&transaction),
                 &mut batch,
+                platform_version,
             )
             .expect("should distribute fees into pools");
 
         platform
             .drive
-            .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+            .apply_drive_operations(
+                batch,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should apply batch");
 
         let stored_processing_fee_credits = platform
             .drive
-            .get_epoch_processing_credits_for_distribution(&current_epoch_tree, Some(&transaction))
+            .get_epoch_processing_credits_for_distribution(
+                &current_epoch_tree,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should get processing fees");
 
         let stored_storage_fee_credits = platform
             .drive
-            .get_storage_fees_from_distribution_pool(Some(&transaction))
+            .get_storage_fees_from_distribution_pool(Some(&transaction), platform_version)
             .expect("should get storage fee pool");
 
         assert_eq!(stored_processing_fee_credits, processing_fees);
@@ -137,6 +150,7 @@ mod tests {
 
     #[test]
     fn test_distribute_block_fees_into_pools() {
+        let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -169,22 +183,33 @@ mod tests {
                 None,
                 Some(&transaction),
                 &mut batch,
+                platform_version,
             )
             .expect("should distribute fees into pools");
 
         platform
             .drive
-            .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+            .apply_drive_operations(
+                batch,
+                true,
+                &BlockInfo::default(),
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should apply batch");
 
         let stored_processing_fee_credits = platform
             .drive
-            .get_epoch_processing_credits_for_distribution(&current_epoch_tree, Some(&transaction))
+            .get_epoch_processing_credits_for_distribution(
+                &current_epoch_tree,
+                Some(&transaction),
+                platform_version,
+            )
             .expect("should get processing fees");
 
         let stored_storage_fee_credits = platform
             .drive
-            .get_storage_fees_from_distribution_pool(Some(&transaction))
+            .get_storage_fees_from_distribution_pool(Some(&transaction), platform_version)
             .expect("should get storage fee pool");
 
         assert_eq!(stored_processing_fee_credits, processing_fees);

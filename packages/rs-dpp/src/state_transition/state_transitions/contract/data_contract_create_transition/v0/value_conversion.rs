@@ -1,4 +1,4 @@
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::collections::BTreeMap;
 
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -14,7 +14,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};

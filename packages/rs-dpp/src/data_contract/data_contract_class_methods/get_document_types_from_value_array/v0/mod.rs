@@ -38,10 +38,7 @@ impl DataContract {
                     definition_references,
                     documents_keep_history_contract_default,
                     documents_mutable_contract_default,
-                    &platform_version
-                        .dpp
-                        .contract_versions
-                        .document_type_versions,
+                    platform_version,
                 )?),
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {

@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use itertools::{Either, Itertools};
-use platform_serialization::PlatformSerialize;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Identifier;
 use platform_value::{ReplacementType, Value, ValueMapHelper};

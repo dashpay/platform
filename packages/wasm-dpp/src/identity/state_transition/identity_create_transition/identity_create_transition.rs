@@ -24,7 +24,7 @@ use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::{
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
@@ -133,7 +133,7 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=getPublicKeys)]
     pub fn get_public_keys(&self) -> Vec<JsValue> {
         self.0
-            .get_public_keys()
+            .public_keys()
             .iter()
             .map(IdentityPublicKeyInCreation::to_owned)
             .map(IdentityPublicKeyWithWitnessWasm::from)
@@ -143,7 +143,7 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(getter, js_name=publicKeys)]
     pub fn public_keys(&self) -> Vec<JsValue> {
-        self.get_public_keys()
+        self.public_keys()
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -290,7 +290,7 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWrapper> {
+    pub fn modified_data_ids(&self) -> Vec<IdentifierWrapper> {
         let ids = self.0.modified_data_ids();
 
         ids.into_iter().map(IdentifierWrapper::from).collect()

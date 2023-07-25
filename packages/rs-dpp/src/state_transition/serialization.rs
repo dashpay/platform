@@ -1,4 +1,4 @@
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization::PlatformDeserializable;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 
@@ -34,9 +34,9 @@ mod tests {
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
-    use crate::serialization_traits::PlatformMessageSignable;
-    use crate::serialization_traits::Signable;
-    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::PlatformMessageSignable;
+    use crate::serialization::Signable;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{

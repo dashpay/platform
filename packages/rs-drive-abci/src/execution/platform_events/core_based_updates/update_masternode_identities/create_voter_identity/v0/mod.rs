@@ -3,13 +3,14 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::dashcore::hashes::Hash;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    fn create_voter_identity(
+    pub(crate) fn create_voter_identity(
         pro_tx_hash: &[u8; 32],
         voting_key: &[u8; 20],
     ) -> Result<Identity, Error> {
@@ -19,7 +20,7 @@ where
         Ok(identity)
     }
 
-    fn create_voter_identity_from_masternode_list_item(
+    pub(crate) fn create_voter_identity_from_masternode_list_item(
         &self,
         masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {

@@ -258,7 +258,7 @@ version = "2.0.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
 dependencies = [
- "virtue",
+ "virtue 0.0.13",
 ]
 
 [[package]]
@@ -1131,8 +1131,10 @@ dependencies = [
  "nohash-hasher",
  "num_enum",
  "platform-serialization",
+ "platform-serialization-derive",
  "platform-value",
  "platform-value-convertible",
+ "platform-version",
  "platform-versioning",
  "pretty_assertions",
  "rand",
@@ -2644,9 +2646,18 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 name = "platform-serialization"
 version = "0.1.0"
 dependencies = [
+ "bincode 2.0.0-rc.3",
+ "platform-version",
+]
+
+[[package]]
+name = "platform-serialization-derive"
+version = "0.1.0"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.18",
+ "virtue 0.0.14",
 ]
 
 [[package]]
@@ -2675,6 +2686,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.18",
+]
+
+[[package]]
+name = "platform-version"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "thiserror",
 ]
 
 [[package]]
@@ -4161,6 +4180,12 @@ name = "virtue"
 version = "0.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
+
+[[package]]
+name = "virtue"
+version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b522f715ead3537dc57c9907899a08e461a8f1e87fc8414a4a89bbd9854289ff"
 
 [[package]]
 name = "visualize"

@@ -6,10 +6,15 @@ use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::any_schema_changes;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 use dpp::{
     consensus::basic::data_contract::{
         DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
@@ -38,6 +43,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0(
@@ -50,6 +56,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
@@ -59,7 +66,13 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-                .get_contract_with_fetch_info_and_fee(self.data_contract.id.0 .0, None, add_to_cache_if_pulled, tx)?
+                .get_contract_with_fetch_info_and_fee(
+                    self.data_contract.id.0.0,
+                    None,
+                    add_to_cache_if_pulled,
+                    tx,
+                    platform_version,
+                )?
                 .1
             else {
                 validation_result

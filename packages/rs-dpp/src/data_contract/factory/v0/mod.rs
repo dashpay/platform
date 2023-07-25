@@ -3,8 +3,6 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-#[cfg(feature = "state-transitions")]
-use data_contract::state_transition::property_names as st_prop;
 use platform_value::{Bytes32, Error, Value};
 
 use crate::data_contract::errors::InvalidDataContractError;
@@ -19,15 +17,15 @@ use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::DataContract;
-use crate::serialization_traits::{
-    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
-};
+use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::state_transition::data_contract_update_transition::{
+    DataContractUpdateTransition, DataContractUpdateTransitionV0,
+};
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
+use crate::state_transition::StateTransitionType;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::{
@@ -216,8 +214,9 @@ impl DataContractFactoryV0 {
 
     #[cfg(feature = "validation")]
     pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
-        let result =
-            DataContract::validate(self.data_contract_feature_version, raw_data_contract, false)?;
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+        let data_contract = DataContract::from_object(raw_data_contract.clone(), platform_version)?;
+        let result = data_contract.validate(platform_version)?;
 
         if !result.is_valid() {
             return Err(ProtocolError::InvalidDataContractError(
@@ -229,11 +228,14 @@ impl DataContractFactoryV0 {
     }
 
     #[cfg(feature = "state-transitions")]
-    pub fn create_data_contract_create_transition(
+    pub fn create_unsigned_data_contract_create_transition(
         &self,
         created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        Ok(created_data_contract.into())
+        DataContractCreateTransition::try_from(
+            created_data_contract,
+            PlatformVersion::get(self.protocol_version)?,
+        )
     }
 
     #[cfg(feature = "state-transitions")]
@@ -241,23 +243,26 @@ impl DataContractFactoryV0 {
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        let raw_object = BTreeMap::from([
-            (
-                st_prop::STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
-                Value::U16(
-                    LATEST_PLATFORM_VERSION
-                        .state_transitions
-                        .contract_update_state_transition
-                        .default_current_version,
-                ),
-            ),
-            (
-                st_prop::DATA_CONTRACT.to_string(),
-                data_contract.try_into()?,
-            ),
-        ]);
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
 
-        DataContractUpdateTransition::from_value_map(raw_object)
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .contract_update_state_transition
+            .default_current_version
+        {
+            0 => Ok(DataContractUpdateTransitionV0 {
+                data_contract,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContract::from_json_object".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 }
 
@@ -266,7 +271,7 @@ mod tests {
     use super::*;
     use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::property_names;
-    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization::PlatformSerializable;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::Convertible;
@@ -278,7 +283,9 @@ mod tests {
     }
 
     fn get_test_data() -> TestData {
-        let created_data_contract = get_data_contract_fixture(None);
+        let platform_version = PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, platform_version.protocol_version);
         let raw_data_contract = created_data_contract
             .into_data_contract()
             .as_v0()
@@ -286,7 +293,7 @@ mod tests {
             .to_object()
             .unwrap();
 
-        let factory = DataContractFactoryV0::new(1, None);
+        let factory = DataContractFactoryV0::new(platform_version.protocol_version, None);
         TestData {
             created_data_contract,
             raw_data_contract,
@@ -401,7 +408,7 @@ mod tests {
         } = get_test_data();
 
         let result = factory
-            .create_data_contract_create_transition(created_data_contract.clone())
+            .create_unsigned_data_contract_create_transition(created_data_contract.clone())
             .expect("Data Contract Transition should be created");
 
         assert_eq!(1, result.state_transition_protocol_version());

@@ -12,7 +12,7 @@ use crate::{
 
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
@@ -58,7 +58,7 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
     }
 
     /// Get owner ID
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         &self.identity_id
     }
 }

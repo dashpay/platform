@@ -7,7 +7,21 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
-    /// Given public key hashes, fetches full identities as proofs.
+    /// This function query requested identities, documents and contracts and provide cryptographic proofs
+    ///
+    /// # Parameters
+    /// - `identity_queries`: A list of [IdentityDriveQuery]. These specify the identities
+    ///   to be proven.
+    /// - `contract_ids`: A list of Data Contract IDs to prove
+    /// - `document_queries`: A list of [SingleDocumentDriveQuery]. These specify the documents
+    ///   to be proven.
+    /// - `transaction`: An optional grovedb transaction
+    /// - `drive_version`: A reference to the [DriveVersion] object that specifies the version of
+    ///   the function to call.
+    ///
+    /// # Returns
+    /// Returns a `Result` with a `Vec<u8>` containing the proof data if the function succeeds,
+    /// or an `Error` if the function fails.
     pub(super) fn prove_multiple_v0(
         &self,
         identity_queries: &Vec<IdentityDriveQuery>,

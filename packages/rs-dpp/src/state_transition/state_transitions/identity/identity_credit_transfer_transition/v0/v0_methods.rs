@@ -1,5 +1,4 @@
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -15,7 +14,7 @@ use crate::identity::{Identity, IdentityPublicKey};
 
 use crate::identity::SecurityLevel::{CRITICAL, MASTER};
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -24,7 +23,7 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 pub trait IdentityCreditTransferTransitionV0Methods {
     /// Get State Transition Type
@@ -38,8 +37,6 @@ pub trait IdentityCreditTransferTransitionV0Methods {
     fn set_identity_id(&mut self, identity_id: Identifier);
     fn recipient_id(&self) -> Identifier;
     fn set_recipient_id(&mut self, recipient_id: Identifier);
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier;
     fn security_level_requirement(&self) -> Vec<SecurityLevel>;
 }
 
@@ -66,10 +63,6 @@ impl IdentityCreditTransferTransitionV0Methods for IdentityCreditTransferTransit
 
     fn set_amount(&mut self, amount: u64) {
         self.amount = amount;
-    }
-
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 
     fn security_level_requirement(&self) -> Vec<SecurityLevel> {

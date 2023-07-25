@@ -26,7 +26,7 @@ pub enum DocumentError {
     #[error("Invalid Document action submitted")]
     InvalidActionNameError { actions: Vec<String> },
     #[cfg(feature = "state-transitions")]
-    #[error("Invalid Document action '{}'", document_transition.base().action)]
+    #[error("Invalid Document action '{}'", document_transition)]
     InvalidDocumentActionError {
         document_transition: DocumentTransition,
     },

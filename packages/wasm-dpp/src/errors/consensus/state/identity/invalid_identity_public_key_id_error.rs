@@ -3,7 +3,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::KeyID;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeyIdError)]

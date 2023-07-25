@@ -31,7 +31,7 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the key fetching fails or the version is not supported.
-    pub(crate) fn fetch_identity_keys<T: IdentityPublicKeyResult>(
+    pub fn fetch_identity_keys<T: IdentityPublicKeyResult>(
         &self,
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,

@@ -15,8 +15,13 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionAction;
 
 use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
+use dpp::state_transition::identity_update_transition::{
+    IdentityUpdateTransition, IdentityUpdateTransitionAction,
+};
+use dpp::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
+use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 use drive::grovedb::TransactionArg;
@@ -30,6 +35,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
     fn transform_into_action_v0(
@@ -42,6 +48,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
@@ -52,6 +59,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                 self.add_public_keys.as_slice(),
                 drive,
                 tx,
+                platform_version,
             )?
             .errors,
         );
@@ -66,6 +74,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                 self.add_public_keys.as_slice(),
                 drive,
                 tx,
+                platform_version,
             )?
             .errors,
         );
@@ -82,6 +91,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                     self.disable_public_keys.clone(),
                     drive,
                     tx,
+                    platform_version,
                 )?
                 .errors,
             );

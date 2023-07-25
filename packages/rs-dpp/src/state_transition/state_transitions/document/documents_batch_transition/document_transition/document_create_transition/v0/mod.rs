@@ -1,3 +1,5 @@
+pub mod v0_methods;
+
 use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
@@ -9,17 +11,20 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::string::ToString;
 
-use crate::document::{Document, ExtendedDocument};
+use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
-use crate::document::document_transition::document_base_transition::DocumentBaseTransitionV0;
-use crate::document::document_transition::DocumentTransitionObjectLike;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
-use crate::state_transition::documents_batch_transition::document_transition::document_base_transition::DocumentBaseTransitionV0;
 
 use crate::document::INITIAL_REVISION;
+use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
+    DocumentBaseTransitionV0, DocumentTransitionObjectLike,
+};
+use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+use derive_more::Display;
 
 pub(self) mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -32,12 +37,20 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
 #[serde(rename_all = "camelCase")]
+#[display(
+    fmt = "Base: {}, Entropy: {:?}, Created At: {:?}, Updated At: {:?}, Data: {:?}",
+    "base",
+    "entropy",
+    "created_at",
+    "updated_at",
+    "data"
+)]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
     #[serde(flatten)]
-    pub base: DocumentBaseTransitionV0,
+    pub base: DocumentBaseTransition,
 
     /// Entropy used to create a Document ID.
     #[serde(rename = "$entropy")]
@@ -51,61 +64,61 @@ pub struct DocumentCreateTransitionV0 {
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     pub data: Option<BTreeMap<String, Value>>,
 }
-
-impl DocumentCreateTransitionV0 {
-    pub fn get_revision(&self) -> Option<Revision> {
-        //todo: fix this
-        Some(INITIAL_REVISION)
-    }
-
-    pub(crate) fn to_document(&self, owner_id: Identifier) -> Result<Document, ProtocolError> {
-        let properties = self.data.clone().unwrap_or_default();
-        Ok(Document {
-            id: self.base.id,
-            owner_id,
-            properties,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-            revision: self.get_revision(),
-        })
-    }
-
-    pub(crate) fn to_extended_document(
-        &self,
-        owner_id: Identifier,
-    ) -> Result<ExtendedDocument, ProtocolError> {
-        Ok(ExtendedDocument {
-            feature_version: LATEST_PLATFORM_VERSION
-                .extended_document
-                .default_current_version,
-            document_type_name: self.base.document_type_name.clone(),
-            data_contract_id: self.base.data_contract_id,
-            document: self.to_document(owner_id)?,
-            data_contract: self.base.data_contract.clone(),
-            metadata: None,
-            entropy: Bytes32::new(self.entropy),
-        })
-    }
-
-    pub(crate) fn into_document(self, owner_id: Identifier) -> Result<Document, ProtocolError> {
-        let id = self.base.id;
-        let revision = self.get_revision();
-        let created_at = self.created_at;
-        let updated_at = self.updated_at;
-        let properties = self.data.unwrap_or_default();
-        Ok(Document {
-            id,
-            owner_id,
-            properties,
-            created_at,
-            updated_at,
-            revision,
-        })
-    }
-}
+//
+// impl DocumentCreateTransitionV0 {
+//     pub fn get_revision(&self) -> Option<Revision> {
+//         //todo: fix this
+//         Some(INITIAL_REVISION)
+//     }
+//
+//     pub(crate) fn to_document(&self, owner_id: Identifier) -> Result<Document, ProtocolError> {
+//         let properties = self.data.clone().unwrap_or_default();
+//         Ok(Document {
+//             id: self.base.id,
+//             owner_id,
+//             properties,
+//             created_at: self.created_at,
+//             updated_at: self.updated_at,
+//             revision: self.get_revision(),
+//         })
+//     }
+//
+//     pub(crate) fn to_extended_document(
+//         &self,
+//         owner_id: Identifier,
+//     ) -> Result<ExtendedDocument, ProtocolError> {
+//         Ok(ExtendedDocument {
+//             feature_version: LATEST_PLATFORM_VERSION
+//                 .extended_document
+//                 .default_current_version,
+//             document_type_name: self.base.document_type_name.clone(),
+//             data_contract_id: self.base.data_contract_id,
+//             document: self.to_document(owner_id)?,
+//             data_contract: self.base.data_contract.clone(),
+//             metadata: None,
+//             entropy: Bytes32::new(self.entropy),
+//         })
+//     }
+//
+//     pub(crate) fn into_document(self, owner_id: Identifier) -> Result<Document, ProtocolError> {
+//         let id = self.base.id;
+//         let revision = self.get_revision();
+//         let created_at = self.created_at;
+//         let updated_at = self.updated_at;
+//         let properties = self.data.unwrap_or_default();
+//         Ok(Document {
+//             id,
+//             owner_id,
+//             properties,
+//             created_at,
+//             updated_at,
+//             revision,
+//         })
+//     }
+// }
 
 impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
@@ -138,7 +151,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         Ok(document)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -149,7 +162,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         Self::from_value_map(map, data_contract)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -169,12 +182,12 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         })
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
         transition_base_map.insert(
@@ -199,14 +212,14 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         Ok(transition_base_map)
     }
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "state-transition-value-conversion")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
@@ -215,7 +228,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
 #[cfg(test)]
 mod test {
 
-    use crate::document::document_transition::DocumentCreateTransition;
+    use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 

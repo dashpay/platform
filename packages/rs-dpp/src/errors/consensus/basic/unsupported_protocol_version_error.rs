@@ -53,7 +53,7 @@ impl TryFrom<Value> for UnsupportedProtocolVersionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization::PlatformSerializable;
 
     #[test]
     fn test_try_from() {

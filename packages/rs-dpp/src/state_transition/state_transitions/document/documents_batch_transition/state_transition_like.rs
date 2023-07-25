@@ -1,6 +1,4 @@
 use crate::identity::KeyID;
-use crate::state_transition::documents_batch_transition::v0::v0_methods::DataContractCreateTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::DataContractCreateTransition;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -10,7 +8,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            DocumentsBatchTransition::V0(transition) => transition.get_modified_data_ids(),
+            DocumentsBatchTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 
@@ -44,9 +42,9 @@ impl StateTransitionLike for DocumentsBatchTransition {
         }
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> &Identifier {
         match self {
-            DocumentsBatchTransition::V0(transition) => transition.get_owner_id(),
+            DocumentsBatchTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

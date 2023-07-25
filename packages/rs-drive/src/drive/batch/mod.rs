@@ -34,7 +34,8 @@
 
 /// Operation module
 pub mod drive_op_batch;
-pub(crate) mod grovedb_op_batch;
+// TODO: Must crate only but we need to remove of use it first
+pub mod grovedb_op_batch;
 pub mod transitions;
 
 pub use drive_op_batch::DataContractOperationType;

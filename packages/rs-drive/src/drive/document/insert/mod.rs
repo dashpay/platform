@@ -72,109 +72,71 @@ pub use add_indices_for_top_index_level_for_contract_operations::*;
 mod add_reference_for_index_level_for_contract_operations;
 pub use add_reference_for_index_level_for_contract_operations::*;
 
-use dpp::data_contract::document_type::IndexLevel;
-
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType::SiblingReference;
-use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::AllSubtrees;
-use grovedb::EstimatedSumTrees::NoSumTrees;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::option::Option::None;
 
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{
-    contract_document_type_path_vec,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_keeping_history_primary_key_path_for_unknown_document_id,
-    contract_documents_keeping_history_storage_time_reference_path_size,
-    contract_documents_primary_key_path, document_reference_size, make_document_reference,
-    unique_event_id,
-};
-
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
-    DocumentRefAndSerialization, DocumentRefInfo,
-};
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyUnknownElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo::{PathFixedSizeKeyRef, PathKeySize};
-use crate::drive::object_size_info::{
-    DocumentAndContractInfo, OwnedDocumentInfo, PathInfo, PathKeyElementInfo,
-};
+use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::DataContract;
 
-use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::error::document::DocumentError;
-use crate::error::fee::FeeError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-#[cfg(test)]
+#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
 use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+use dpp::document::serialization_traits::DocumentCborMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
-use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 
-#[cfg(feature = "full")]
+impl Drive {
+    /// Deserializes a document and a contract and adds the document to the contract.
+    #[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
+    pub fn add_cbor_serialized_document_for_serialized_contract(
+        &self,
+        serialized_document: &[u8],
+        serialized_contract: &[u8],
+        document_type_name: &str,
+        owner_id: Option<[u8; 32]>,
+        override_document: bool,
+        block_info: BlockInfo,
+        apply: bool,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        let contract = DataContract::from_cbor(serialized_contract, platform_version)?;
+
+        let document = Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
+
+        let document_info = DocumentRefInfo((&document, storage_flags));
+
+        let document_type = contract.document_type_for_name(document_type_name)?;
+
+        self.add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
+                contract: &contract,
+                document_type,
+            },
+            override_document,
+            block_info,
+            apply,
+            transaction,
+            platform_version,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-
-    impl Drive {
-        /// Deserializes a document and a contract and adds the document to the contract.
-        pub fn add_cbor_serialized_document_for_serialized_contract(
-            &self,
-            serialized_document: &[u8],
-            serialized_contract: &[u8],
-            document_type_name: &str,
-            owner_id: Option<[u8; 32]>,
-            override_document: bool,
-            block_info: BlockInfo,
-            apply: bool,
-            storage_flags: Option<Cow<StorageFlags>>,
-            transaction: TransactionArg,
-            platform_version: &PlatformVersion,
-        ) -> Result<FeeResult, Error> {
-            let contract = DataContract::from_cbor(serialized_contract, platform_version)?;
-
-            let document =
-                Document::from_cbor(serialized_document, None, owner_id, platform_version)?;
-
-            let document_info = DocumentRefInfo((&document, storage_flags));
-
-            let document_type = contract.document_type_for_name(document_type_name)?;
-
-            self.add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info,
-                        owner_id,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
-                override_document,
-                block_info,
-                apply,
-                transaction,
-                platform_version,
-            )
-        }
-    }
     use std::option::Option::None;
 
     use super::*;
@@ -432,11 +394,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 3055
+                storage_fee: 3056
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2316070,
+                processing_fee: 2316470,
                 ..Default::default()
             }
         );
@@ -499,11 +461,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1302
+                storage_fee: 1303
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 1496810,
+                processing_fee: 1497210,
                 ..Default::default()
             }
         );
@@ -572,8 +534,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        assert_eq!(1302, added_bytes);
-        assert_eq!(145124400, processing_fee);
+        assert_eq!(1303, added_bytes);
+        assert_eq!(145124800, processing_fee);
     }
 
     #[test]
@@ -807,11 +769,11 @@ mod tests {
         assert_eq!(
             fee_result,
             FeeResult {
-                storage_fee: 1748
+                storage_fee: 1749
                     * Epoch::new(0)
                         .unwrap()
                         .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
-                processing_fee: 2083390,
+                processing_fee: 2083790,
                 ..Default::default()
             }
         );

@@ -3,11 +3,9 @@ mod v0;
 use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcome;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 

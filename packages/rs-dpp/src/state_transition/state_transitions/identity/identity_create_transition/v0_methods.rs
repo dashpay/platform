@@ -4,29 +4,34 @@ use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionType;
-use crate::version::FeatureVersion;
+use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::{Bytes32, Identifier};
 
 impl IdentityCreateTransitionV0Methods for IdentityCreateTransition {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
-        version: FeatureVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        match version {
+        match platform_version
+            .dpp
+            .state_transition_conversion_versions
+            .identity_to_identity_create_transition_with_signer
+        {
             0 => Ok(IdentityCreateTransitionV0::try_from_identity_with_signer(
                 identity,
                 asset_lock_proof,
                 asset_lock_proof_private_key,
                 signer,
                 bls,
-                version,
+                platform_version,
             )?
             .into()),
             v => Err(ProtocolError::UnknownVersionError(format!(

@@ -1,42 +1,36 @@
 mod identity_signed;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
-use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{KeyID, SecurityLevel};
-use crate::platform_serialization::PlatformSignable;
+
 use crate::prelude::Identifier;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::version::LATEST_VERSION;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-#[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
-    PartialEq,
+#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSignable, PartialEq)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
-#[serde(rename_all = "camelCase")]
+#[platform_serialize(derive_bincode)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
@@ -65,7 +59,7 @@ impl Default for IdentityCreditTransferTransitionV0 {
 mod test {
     use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionV0;
 
-    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::StateTransitionType;
 
     use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;

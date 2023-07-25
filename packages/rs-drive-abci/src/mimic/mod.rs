@@ -14,7 +14,7 @@ use dashcore_rpc::dashcore;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use dpp::block::extended_block_info::BlockInfo;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
