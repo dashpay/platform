@@ -55,7 +55,7 @@ pub fn generate() -> Result<(), std::io::Error> {
             r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
         )
         .field_attribute(
-            "GetIdentitiesByPublicKeyHashesRequest.public_key_hashes",
+            "public_key_hashes",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
         // Proof fields

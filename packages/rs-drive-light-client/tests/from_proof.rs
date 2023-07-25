@@ -99,6 +99,8 @@ macro_rules! test_maybe_from_proof {
     ($name:ident,$req:ty,$resp:ty,$object:ty,$vector:expr,$result:pat) => {
         #[test]
         fn $name() {
+            enable_logs();
+
             let (request, response, quorum_info_callback) = load::<$req, $resp>($vector);
 
             let ret =
@@ -119,11 +121,11 @@ test_maybe_from_proof! {
 }
 
 test_maybe_from_proof! {
-    get_identities_by_hashes_not_found,
-    grpc::GetIdentitiesByPublicKeyHashesRequest,
-    grpc::GetIdentitiesByPublicKeyHashesResponse,
-    IdentitiesByPublicKeyHashes,
-    "vectors/identities_by_hashes_not_found.json",
+    get_identity_by_pubkeys_not_found,
+    grpc::GetIdentityByPublicKeyHashesRequest,
+    grpc::GetIdentityByPublicKeyHashesResponse,
+    Identity,
+    "vectors/TODO.json",
     Ok(None)
 }
 
@@ -135,16 +137,17 @@ test_maybe_from_proof! {
     "vectors/identities_not_found.json",
     Ok(Some(_)) // cannot write a match like `Ok(Some(Vec[None]))`
 }
-// todo continue from here
+
 test_maybe_from_proof! {
-    get_identities_by_pubkeys_not_found,
+    get_identities_by_hashes_not_found,
     grpc::GetIdentitiesByPublicKeyHashesRequest,
     grpc::GetIdentitiesByPublicKeyHashesResponse,
     IdentitiesByPublicKeyHashes,
-    "vectors/TODO.json",
+    "vectors/identities_by_pubkeys_not_found.json",
     Ok(None)
 }
 
+// todo continue from here
 test_maybe_from_proof! {
     get_identity_balance_not_found,
     grpc::GetIdentityRequest,
