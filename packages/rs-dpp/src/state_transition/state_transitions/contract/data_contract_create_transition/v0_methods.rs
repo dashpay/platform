@@ -53,9 +53,9 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransition {
         }
     }
 
-    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+    fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            DataContractCreateTransition::V0(transition) => transition.get_modified_data_ids(),
+            DataContractCreateTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 }

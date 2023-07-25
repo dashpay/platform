@@ -230,8 +230,8 @@ impl IdentityCreditTransferTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
-        let ids = self.0.get_modified_data_ids();
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
+        let ids = self.0.modified_data_ids();
 
         ids.into_iter()
             .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())

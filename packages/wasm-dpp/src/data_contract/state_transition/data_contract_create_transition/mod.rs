@@ -117,9 +117,9 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
         self.0
-            .get_modified_data_ids()
+            .modified_data_ids()
             .into_iter()
             .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()

@@ -55,7 +55,7 @@ pub trait DataContractCreateTransitionV0Methods {
 
     fn set_data_contract(&mut self, data_contract: DataContract);
 
-    fn get_modified_data_ids(&self) -> Vec<Identifier>;
+    fn modified_data_ids(&self) -> Vec<Identifier>;
 }
 
 impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
@@ -105,7 +105,7 @@ impl DataContractCreateTransitionV0Methods for DataContractCreateTransitionV0 {
     }
 
     /// Returns ID of the created contract
-    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+    fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.data_contract.id()]
     }
 }

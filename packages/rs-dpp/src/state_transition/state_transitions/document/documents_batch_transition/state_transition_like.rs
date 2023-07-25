@@ -8,7 +8,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            DocumentsBatchTransition::V0(transition) => transition.get_modified_data_ids(),
+            DocumentsBatchTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 

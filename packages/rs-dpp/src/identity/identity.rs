@@ -13,6 +13,7 @@ use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use crate::serialization_traits::ValueConvertible;
 
 /// The identity is not stored inside of drive, because of this, the serialization is mainly for
 /// transport, the serialization of the identity will include the version, so no passthrough or

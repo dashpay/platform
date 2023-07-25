@@ -11,6 +11,7 @@ use crate::prelude::DataContract;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::version::PlatformVersion;
 use crate::{Convertible, ProtocolError};
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 impl DataContract {
     pub fn validate_structure(
@@ -39,7 +40,7 @@ impl DataContract {
         let enriched_data_contract =
             self.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
 
-        for (_, document_schema) in enriched_data_contract.documents.iter() {
+        for (_, document_schema) in enriched_data_contract.documents()?.iter() {
             let json_schema_validation_result =
                 JsonSchemaValidator::validate_schema(document_schema, platform_version)?;
             result.merge(json_schema_validation_result);
@@ -49,7 +50,7 @@ impl DataContract {
         }
 
         for (document_name, document_type) in self.document_types().iter() {
-            if document_type.indices.is_empty() {
+            if document_type.indices().is_empty() {
                 continue;
             }
 
@@ -60,18 +61,18 @@ impl DataContract {
             )?;
 
             let validation_result = DataContract::validate_index_naming_duplicates(
-                &document_type.indices,
+                &document_type.indices(),
                 document_name,
             );
             result.merge(validation_result);
 
             let validation_result =
-                DataContract::validate_max_unique_indices(&document_type.indices, document_name);
+                DataContract::validate_max_unique_indices(&document_type.indices(), document_name);
             result.merge(validation_result);
 
             let (validation_result, should_stop_further_validation) =
                 DataContract::validate_index_definitions(
-                    &document_type.indices,
+                    &document_type.indices(),
                     document_name,
                     document_schema,
                 );

@@ -3,7 +3,7 @@ use crate::identity::KeyType;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{BlsModule, ProtocolError};
-use platform_value::Value;
+use platform_value::{platform_value, Value};
 
 pub trait Signable {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError>;
@@ -105,17 +105,25 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
 }
 
 pub trait ValueConvertible {
-    fn to_object(&self) -> Result<Value, ProtocolError>;
+    fn to_object(&self) -> Result<Value, ProtocolError>  where Self: Sized + Clone {
+        platform_value::to_value(self.clone()).map_err(ProtocolError::ValueError)
+    }
 
-    fn into_object(self) -> Result<Value, ProtocolError>;
+    fn into_object(self) -> Result<Value, ProtocolError> where Self: Sized {
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+    }
 
     fn from_object(value: Value) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
+        Self: Sized {
+        platform_value::from_value(value).map_err(ProtocolError::ValueError)
+    }
 
     fn from_object_ref(value: &Value) -> Result<Self, ProtocolError>
     where
-        Self: Sized;
+        Self: Sized {
+        platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
+    }
 }
 
 pub trait PlatformMessageSignable {
