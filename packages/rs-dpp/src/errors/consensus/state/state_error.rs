@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use crate::consensus::state::data_trigger::data_trigger_error::{
     DataTriggerActionError, DataTriggerError,
@@ -107,6 +108,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DataContractIsReadonlyError(DataContractIsReadonlyError),
+
+    #[error(transparent)]
+    DataContractConfigUpdateError(DataContractConfigUpdateError),
 }
 
 impl From<StateError> for ConsensusError {

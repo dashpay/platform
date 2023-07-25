@@ -137,6 +137,9 @@ mod test {
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
     use dpp::bls_signatures::PublicKey;
+    use dpp::dashcore::hashes::hex::ToHex;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use tenderdash_abci::proto::types::{BlockId, PartSetHeader, StateId};
     use tenderdash_abci::signatures::{SignBytes, SignDigest};
 
@@ -162,10 +165,7 @@ mod test {
             app_hash,
             app_version: 1,
             core_chain_locked_height: 3,
-            time: Some(tenderdash_abci::proto::google::protobuf::Timestamp {
-                seconds: 0,
-                nanos: 0,
-            }),
+            time: 0,
         };
 
         let block_id = BlockId {
@@ -176,16 +176,10 @@ mod test {
             }),
             state_id: state_id.sha256(CHAIN_ID, HEIGHT, ROUND as i32).unwrap(),
         };
-        let pubkey = hex::decode(
-            "b7b76cbef11f48952b4c9778b0cd1e27948c6438c0480e69ce78\
-            dc4748611f4463389450a6898f91b08f1de666934324",
-        )
-        .unwrap();
+        let pubkey = hex::decode("8d63d603fe858be4d7c14a8f308936bd3447c1f361148ad508a04df92f48cd3b2f2b374ef5d1ee8a75f5aeda2f6f3418").unwrap();
 
         let pubkey = PublicKey::from_bytes(pubkey.as_slice()).unwrap();
-        let signature = hex::decode("95e4a532ccb549cd4feca372b61dd2a5dedea2bb5c33ac22d70e310f\
-            7e38126b21029c29e6af6d00462b7c6f5e47047414dbfb2e1008fa0969a246bc38b61e96edddea9c35a01670b0ae45f0\
-            8a2626b251bb2a8e937547e65994f2c72d2e8f4e").unwrap();
+        let signature = hex::decode("b95efd51c69a0baf09b130871e735b49cb1b9a0d566bc7ba8fd0fa149dbd28539ab3df435e87ed2a83c94ea714bc8e120504b1cba9363b32c3d58499ed85ecf14539e8e99329fa7952420e4ad9da80b3b28388d62be00770988e4aee705da830").unwrap();
 
         let commit = Commit::new_from_cleaned(
             ci,
@@ -194,12 +188,14 @@ mod test {
             QuorumType::LlmqTest,
             CHAIN_ID,
         );
-
-        let expect_sign_bytes = hex::decode("0200000039300000000000000200000000000000\
-            35117edfe49351da1e81d1b0f2edfa0b984a7508958870337126efb352f1210711ae5fef92053e8998c37cb4\
-            915968cadfbd2af4fa176b77ade0dadc74028fc5746573745f636861696e5f6964").unwrap();
+        let expect_sign_bytes = hex::decode(
+            "020000003930000000000000020000000000000035117edfe49351da1e81d1b0f2edfa0b984a7508\
+            958870337126efb352f1210715e56fe9d267359b4b437a52636174ac64aa9a021671aabc9985023695bc6e3\
+            6746573745f636861696e5f6964",
+        )
+        .unwrap();
         let expect_sign_id =
-            hex::decode("6f3cb0168cfaf3d9806be8a9eaa85d6ac10e2d32ce02e6a965a66f6c598b06cf")
+            hex::decode("58fb34b03f9028e6ac181418c753f33e471ae223bb66b2bef7b46732a15b7eac")
                 .unwrap();
         assert_eq!(
             expect_sign_bytes,

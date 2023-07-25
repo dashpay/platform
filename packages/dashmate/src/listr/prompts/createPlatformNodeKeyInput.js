@@ -7,6 +7,11 @@ const validateTenderdashNodeKey = require('./validators/validateTenderdashNodeKe
  * @returns {Object}
  */
 function createPlatformNodeKeyInput(options = {}) {
+  let { initial } = options;
+  if (initial === null || initial === undefined) {
+    initial = generateTenderdashNodeKey();
+  }
+
   return {
     type: 'input',
     name: 'platformNodeKey',
@@ -18,7 +23,7 @@ function createPlatformNodeKeyInput(options = {}) {
   automatically generated for you.\n`,
     message: 'Enter Ed25519 node key',
     hint: 'Base64 encoded',
-    initial: options.initial === '' || options.initial ? options.initial : generateTenderdashNodeKey(),
+    initial,
     validate: validateTenderdashNodeKey,
   };
 }

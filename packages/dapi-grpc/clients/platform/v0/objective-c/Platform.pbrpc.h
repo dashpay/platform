@@ -18,6 +18,8 @@
 @class BroadcastStateTransitionResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
+@class GetDataContractHistoryRequest;
+@class GetDataContractHistoryResponse;
 @class GetDataContractRequest;
 @class GetDataContractResponse;
 @class GetDataContractsRequest;
@@ -104,6 +106,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
 - (GRPCUnaryProtoCall *)getDataContractWithMessage:(GetDataContractRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getDataContractHistory(GetDataContractHistoryRequest) returns (GetDataContractHistoryResponse)
+
+- (GRPCUnaryProtoCall *)getDataContractHistoryWithMessage:(GetDataContractHistoryRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
@@ -201,6 +207,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getDataContractHistory(GetDataContractHistoryRequest) returns (GetDataContractHistoryResponse)
+
+- (void)getDataContractHistoryWithRequest:(GetDataContractHistoryRequest *)request handler:(void(^)(GetDataContractHistoryResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDataContractHistoryWithRequest:(GetDataContractHistoryRequest *)request handler:(void(^)(GetDataContractHistoryResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)

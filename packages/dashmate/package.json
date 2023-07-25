@@ -7,8 +7,9 @@
     "postpack": "rm -f oclif.manifest.json",
     "prepack": "oclif manifest && oclif readme",
     "version": "oclif readme && git add README.md",
-    "test": "yarn run test:unit",
+    "test": "yarn run test:unit && yarn run test:e2e",
     "test:unit": "mocha --recursive test/unit",
+    "test:e2e": "mocha --recursive test/e2e",
     "helper": "node scripts/helper.js"
   },
   "repository": {
@@ -75,6 +76,7 @@
     "hasbin": "^1.2.3",
     "is-wsl": "2.2.0",
     "jayson": "^3.3.4",
+    "js-yaml": "^4.1.0",
     "listr2": "5.0.7",
     "lodash": "^4.17.21",
     "memory-streams": "^0.1.3",

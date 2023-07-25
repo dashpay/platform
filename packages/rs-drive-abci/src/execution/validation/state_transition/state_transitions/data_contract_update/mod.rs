@@ -135,6 +135,7 @@ mod tests {
         use super::*;
 
         use dpp::assert_state_consensus_errors;
+        use dpp::consensus::state::state_error::StateError;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
@@ -207,7 +208,6 @@ mod tests {
             data_contract.config.keeps_history = true;
             data_contract.config.readonly = false;
 
-            // TODO: check that keep_history actually works
             apply_contract(
                 &platform,
                 &data_contract,
@@ -310,6 +310,86 @@ mod tests {
             // Check that when we limit ny 1 we get only the most recent contract
             assert_eq!(contract_history.len(), 1);
             assert_eq!(keys[0], 2000);
+        }
+
+        #[test]
+        fn should_fail_if_trying_to_update_config() {
+            let TestData {
+                raw_state_transition: _,
+                mut data_contract,
+                platform,
+            } = setup_test();
+
+            data_contract.config.keeps_history = true;
+            data_contract.config.readonly = false;
+
+            apply_contract(
+                &platform,
+                &data_contract,
+                BlockInfo {
+                    time_ms: 1000,
+                    height: 100,
+                    core_height: 10,
+                    epoch: Default::default(),
+                },
+            );
+
+            let updated_document = json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "newProp": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                "$createdAt"
+                ],
+                "additionalProperties": false
+            });
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema("niceDocument".into(), updated_document)
+                .expect("to be able to set document schema");
+
+            // It should be not possible to modify this
+            data_contract.config.keeps_history = false;
+
+            // TODO: add a data contract stop transition
+            let state_transition = DataContractUpdateTransition {
+                protocol_version: LATEST_VERSION,
+                data_contract: data_contract.clone(),
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+                transition_type: StateTransitionType::DataContractUpdate,
+            };
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform.state.read().unwrap(),
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition
+                .validate_state(&platform_ref, None)
+                .expect("state transition to be validated");
+
+            assert!(!result.is_valid());
+            let errors = assert_state_consensus_errors!(
+                result,
+                StateError::DataContractConfigUpdateError,
+                1
+            );
+            let error = errors.get(0).expect("to have an error");
+            assert_eq!(
+                error.additional_message(),
+                "contract can not change whether it keeps history: changing from true to false"
+            );
         }
     }
 }

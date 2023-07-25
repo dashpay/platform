@@ -43,10 +43,6 @@ jobs:
     name: WASM compilation
     runs-on: self-hosted
     timeout-minutes: 15
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -56,19 +52,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Compile WASM
         run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp

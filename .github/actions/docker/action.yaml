@@ -2,48 +2,81 @@
 name: "Build Docker image"
 description: "Build Docker image with Rust caching"
 inputs:
-  dockerfile:
-    description: Path to the Dockerfile, for example `./Dockerfile`
-    required: true
   image:
     description: Name of image in Docker Hub, like `dashpay/drive`
     required: true
+  dockerfile:
+    description: Path to the Dockerfile, for example `./Dockerfile`
+    default: './Dockerfile'
   target:
     description: "Target stage within Dockerfile: dapi, drive-abci, dashmate-helper, test-suite"
-    required: false
   push:
     description: Shall we push the image to Docker Hub?
     default: "false"
   dockerhub_username:
     description: User name to use when pushing images to Docker Hub
-    required: false
   dockerhub_token:
     description: Docker Hub token to use
-    required: false
   image_tag:
     description: Docker image tag
     default: ${{ github.head_ref || github.ref_name }}
+  platforms:
+    description: Docker image platform to build
+    default: amd64,arm64
+  cache_mounts:
+    description: Load cache mounts cache
+  cargo_profile:
+    description: Cargo build profile, i.e release or dev
+    default: release
 
 runs:
   using: composite
   steps:
-    - name: Setup sccache
-      uses: mozilla-actions/sccache-action@v0.0.3
-
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@master
-      with:
-        platforms: amd64,arm64
-
-    - name: Set up Docker Build
-      uses: docker/setup-buildx-action@v2.4.1
-
     - name: Login to DockerHub
       uses: docker/login-action@v2
       with:
         username: ${{ inputs.dockerhub_username }}
         password: ${{ inputs.dockerhub_token }}
-      if: inputs.dockerhub_token != ''
+      if: ${{ inputs.dockerhub_token != '' }}
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@master
+      with:
+        platforms: ${{ inputs.platforms }}
+
+    - name: Format platforms for docker
+      uses: actions/github-script@v6
+      id: platforms
+      with:
+        result-encoding: string
+        script: |
+          return '${{inputs.platforms}}'
+             .split(',')
+             .map((platform) => `linux/${platform.trim()}`)
+             .join(',')
+
+    - name: Set up Docker BuildX
+      id: buildx
+      uses: docker/setup-buildx-action@v2
+      with:
+        install: true
+        driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
+        cleanup: false
+        platforms: ${{ steps.platforms.outputs.result }}
+        config-inline: |
+          [worker.oci]
+            gc = true
+            gckeepstorage = 40000 # 40 GB
+            [[worker.oci.gcpolicy]]
+              all = true
+              keepBytes = 30000000000 # 30 GB
+              keepDuration = 864000 # 10 days
+
+    - name: Load Docker mount cache
+      uses: dcginfra/buildkit-cache-dance/inject@main
+      if: ${{ inputs.cache_mounts != '' }}
+      with:
+        mounts: ${{ inputs.cache_mounts }}
 
     - name: Set suffix
       uses: actions/github-script@v6
@@ -74,32 +107,32 @@ runs:
           suffix=${{ steps.suffix.outputs.result }},onlatest=true
           latest=${{ github.event_name == 'release' }}
 
-    # ARM build takes very long time, so we build PRs for AMD64 only
-    - name: Select target platforms
-      shell: bash
-      id: select_platforms
-      run: |
-        if  [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]] ; then
-          echo "build_platforms=linux/amd64" >> $GITHUB_ENV
-        else
-          echo "build_platforms=linux/amd64,linux/arm64" >> $GITHUB_ENV
-        fi
+    - name: Configure docker layer cache
+      uses: ./.github/actions/s3-layer-cache-settings
+      id: layer_cache_settings
+      with:
+        name: ${{ inputs.image }}
+        head_ref: ${{ inputs.image_tag }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v4.0.0
       with:
         context: .
+        builder: ${{ steps.buildx.outputs.name }}
         file: ${{ inputs.dockerfile }}
         target: ${{ inputs.target }}
         tags: ${{ steps.docker_meta.outputs.tags }}
         labels: ${{ steps.docker_meta.outputs.labels }}
         build-args: |
-          SCCACHE_GHA_ENABLED=true
-          ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-          ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
-          CARGO_BUILD_PROFILE=dev
-        platforms: ${{ env.build_platforms }}
-        push: ${{ inputs.push }}
-        cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
-        cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
+          CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
+        platforms: ${{ steps.platforms.outputs.result }}
+        push: ${{ fromJSON(inputs.push) }}
+        cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
+        cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
+
+    - name: Save Docker mount cache
+      uses: dcginfra/buildkit-cache-dance/extract@main
+      if: ${{ inputs.cache_mounts != '' }}
+      with:
+        mounts: ${{ inputs.cache_mounts }}

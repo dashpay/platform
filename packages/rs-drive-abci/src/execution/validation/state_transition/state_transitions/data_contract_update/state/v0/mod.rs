@@ -5,10 +5,14 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::consensus::ConsensusError;
+use dpp::data_contract::contract_config::ContractConfig;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::any_schema_changes;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use dpp::document::document_transition::document_base_transition::JsonValue;
+use dpp::identifier::Identifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::{
     consensus::basic::data_contract::{
@@ -45,6 +49,57 @@ pub(crate) trait StateTransitionStateValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
+fn validate_config_update(
+    old_config: &ContractConfig,
+    new_config: &ContractConfig,
+    contract_id: Identifier,
+) -> Result<(), ConsensusError> {
+    if old_config.readonly {
+        return Err(DataContractIsReadonlyError::new(contract_id).into());
+    }
+
+    if new_config.readonly {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not be changed to readonly",
+        )
+        .into());
+    }
+
+    if new_config.keeps_history != old_config.keeps_history {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            format!(
+                "contract can not change whether it keeps history: changing from {} to {}",
+                old_config.keeps_history, new_config.keeps_history
+            ),
+        )
+        .into());
+    }
+
+    if new_config.documents_keep_history_contract_default
+        != old_config.documents_keep_history_contract_default
+    {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not change the default of whether documents keeps history",
+        )
+        .into());
+    }
+
+    if new_config.documents_mutable_contract_default
+        != old_config.documents_mutable_contract_default
+    {
+        return Err(DataContractConfigUpdateError::new(
+            contract_id,
+            "contract can not change the default of whether documents are mutable",
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
@@ -77,6 +132,15 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))
+        }
+
+        if let Err(e) = validate_config_update(
+            &existing_data_contract.config,
+            &self.data_contract.config,
+            self.data_contract.id.0 .0.into(),
+        ) {
+            validation_result.add_error(e);
+            return Ok(validation_result);
         }
 
         let mut existing_data_contract_object = existing_data_contract.to_object()?;

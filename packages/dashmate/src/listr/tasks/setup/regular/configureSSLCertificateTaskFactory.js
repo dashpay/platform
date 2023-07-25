@@ -33,37 +33,41 @@ function configureSSLCertificateTaskFactory(
         title: 'Set SSL certificate file',
         enabled: (ctx) => ctx.certificateProvider === SSL_PROVIDERS.FILE,
         task: async (ctx, task) => {
-          const form = await task.prompt({
-            type: 'form',
-            message: 'Specify paths to your certificate files',
-            choices: [
-              {
-                name: 'chainFilePath',
-                message: 'Path to certificate chain file',
-                validate: validateFileExists,
+          let form = ctx.fileCertificateProviderForm;
+
+          if (!ctx.fileCertificateProviderForm) {
+            form = await task.prompt({
+              type: 'form',
+              message: 'Specify paths to your certificate files',
+              choices: [
+                {
+                  name: 'chainFilePath',
+                  message: 'Path to certificate chain file',
+                  validate: validateFileExists,
+                },
+                {
+                  name: 'privateFilePath',
+                  message: 'Path to certificate key file',
+                  validate: validateFileExists,
+                },
+              ],
+              validate: ({ chainFilePath, privateFilePath }) => {
+                if (!validateFileExists(chainFilePath)) {
+                  return 'certificate chain file path is not valid';
+                }
+
+                if (!validateFileExists(privateFilePath)) {
+                  return 'certificate key file path is not valid';
+                }
+
+                if (chainFilePath === privateFilePath) {
+                  return 'the same path for both files';
+                }
+
+                return true;
               },
-              {
-                name: 'privateFilePath',
-                message: 'Path to certificate key file',
-                validate: validateFileExists,
-              },
-            ],
-            validate: ({ chainFilePath, privateFilePath }) => {
-              if (!validateFileExists(chainFilePath)) {
-                return 'certificate chain file path is not valid';
-              }
-
-              if (!validateFileExists(privateFilePath)) {
-                return 'certificate key file path is not valid';
-              }
-
-              if (chainFilePath === privateFilePath) {
-                return 'the same path for both files';
-              }
-
-              return true;
-            },
-          });
+            });
+          }
 
           ctx.certificateFile = fs.readFileSync(form.chainFilePath, 'utf8');
           ctx.privateKeyFile = fs.readFileSync(form.privateFilePath, 'utf8');
@@ -130,13 +134,15 @@ function configureSSLCertificateTaskFactory(
             choices.push({ name: SSL_PROVIDERS.SELF_SIGNED, message: 'Self-signed' });
           }
 
-          ctx.certificateProvider = await task.prompt({
-            type: 'select',
-            header,
-            message: 'How do you want to configure SSL?',
-            choices,
-            initial: SSL_PROVIDERS.ZEROSSL,
-          });
+          if (!ctx.certificateProvider) {
+            ctx.certificateProvider = await task.prompt({
+              type: 'select',
+              header,
+              message: 'How do you want to configure SSL?',
+              choices,
+              initial: SSL_PROVIDERS.ZEROSSL,
+            });
+          }
 
           ctx.config.set('platform.dapi.envoy.ssl.provider', ctx.certificateProvider);
 

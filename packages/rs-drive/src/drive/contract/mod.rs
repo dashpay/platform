@@ -1225,7 +1225,7 @@ impl Drive {
     ///
     /// * `transaction` - A transaction that requests the contract.
     ///
-    /// * `start_at_date` - A `u64` representing the timestamp in Unix Epoch format from which to
+    /// * `start_at_ms` - A `u64` representing the timestamp in Unix Epoch format from which to
     /// start fetching the contract's history.
     ///
     /// * `limit` - An `Option<u16>` that sets the maximum number of contract history entries
@@ -1254,14 +1254,14 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         transaction: TransactionArg,
-        start_at_date: u64,
+        start_at_ms: u64,
         limit: Option<u16>,
         offset: Option<u16>,
     ) -> Result<BTreeMap<u64, Contract>, Error> {
         let mut ops = Vec::new();
 
         let path_query =
-            Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
+            Self::fetch_contract_history_query(contract_id, start_at_ms, limit, offset)?;
 
         let (results, _cost) = self.grove_get_path_query(
             &path_query,

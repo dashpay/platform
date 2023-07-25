@@ -1,6 +1,4 @@
 const EventEmitter = require('events');
-const { configure: configureDashcore } = require('@dashevo/dashcore-lib');
-const X11 = require('wasm-x11-hash');
 const { SpvChain, SPVError } = require('@dashevo/dash-spv');
 
 const BlockHeadersReader = require('./BlockHeadersReader');
@@ -51,7 +49,6 @@ class BlockHeadersProvider extends EventEmitter {
     this.spvChain = new SpvChain(this.options.network, 100);
 
     this.state = STATES.IDLE;
-    this.wasmX11Ready = false;
 
     this.errorHandler = this.errorHandler.bind(this);
     this.headersHandler = this.headersHandler.bind(this);
@@ -79,13 +76,7 @@ class BlockHeadersProvider extends EventEmitter {
    * @private
    */
   async init() {
-    if (!this.wasmX11Ready) {
-      const x11Hash = await X11();
-      configureDashcore({
-        x11hash: x11Hash,
-      });
-      this.wasmX11Ready = true;
-    }
+    await SpvChain.wasmX11Ready();
 
     if (!this.blockHeadersReader) {
       this.blockHeadersReader = new BlockHeadersReader(
@@ -113,12 +104,18 @@ class BlockHeadersProvider extends EventEmitter {
    * Initializes SPV chain with a list of headers and a known lastSyncedHeaderHeight
    *
    * @param headers
-   * @param lastSyncedHeaderHeight
+   * @param firstHeaderHeight
    */
-  initializeWith(headers, lastSyncedHeaderHeight) {
-    const firstHeaderHeight = lastSyncedHeaderHeight - headers.length + 1;
-    this.spvChain.reset(firstHeaderHeight);
-    this.spvChain.addHeaders(headers, firstHeaderHeight);
+  async initializeChainWith(headers, firstHeaderHeight) {
+    await SpvChain.wasmX11Ready();
+
+    if (headers.length === 0) {
+      // If there are no headers, initialize chain from genesis
+      this.spvChain.initialize();
+    } else {
+      this.spvChain.initialize(headers[0], firstHeaderHeight);
+      this.spvChain.addHeaders(headers);
+    }
   }
 
   /**
@@ -130,7 +127,8 @@ class BlockHeadersProvider extends EventEmitter {
   ensureChainRoot(height) {
     // Flush spv chain in case header at specified height was not found
     if (!this.spvChain.hashesByHeight.has(height - 1)) {
-      this.spvChain.reset(height);
+      this.spvChain.reset();
+      this.spvChain.pendingStartBlockHeight = height;
     }
   }
 

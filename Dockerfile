@@ -3,7 +3,9 @@
 # Docker image for rs-drive-abci
 #
 # This image is divided multiple parts:
-# - deps - includes all dependencies and some libraries
+# - deps-base - includes all base dependencies and some libraries
+# - deps-sccache - deps image with sccache included
+# - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
 # - sources - includes full source code
 # - build-* - actual build process of given image
 # - drive-abci, dashmate-helper, test-suite, dapi - final images
@@ -11,8 +13,9 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
-# - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
+# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables avaialable:
+#   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
+#   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
@@ -28,10 +31,13 @@
 
 ARG ALPINE_VERSION=3.16
 
+# Set RUSTC_WRAPPER to `sccache` to enable sccache caching
+ARG RUSTC_WRAPPER
+
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM rust:alpine${ALPINE_VERSION} as deps
+FROM rust:alpine${ALPINE_VERSION} as deps-base
 
 #
 # Install some dependencies
@@ -73,6 +79,27 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
+# Configure Node.js
+RUN npm config set audit false && \
+    npm install -g npm@9.6.6 && \
+    npm install -g corepack@latest && \
+    corepack enable
+
+# Switch to clang
+RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+
+
+# Select whether we want dev or release
+ARG CARGO_BUILD_PROFILE=dev
+ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+
+ARG NODE_ENV=production
+ENV NODE_ENV ${NODE_ENV}
+
+ARG RUSTC_WRAPPER
+
+FROM deps-base AS deps-sccache
+
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
@@ -80,20 +107,9 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
 
-# Configure Node.js
-RUN npm install -g npm@9.6.6 && \
-    npm install -g corepack@latest && \
-    corepack prepare yarn@3.3.0 --activate && \
-    corepack enable
-
-# Switch to clang
-RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
-
 #
 # Configure sccache
 #
-# Activate sccache for Rust code
-ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
@@ -104,26 +120,28 @@ ARG SCCACHE_MEMCACHED
 # Disable incremental buildings, not supported by sccache
 ARG CARGO_INCREMENTAL=false
 
-# Select whether we want dev or release
-ARG CARGO_BUILD_PROFILE=dev
-ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
-
-ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
+#
+# DEPS: FULL DEPENCIES LIST
+#
+# This is separate from `deps` to use sccache for caching
+FROM deps-${RUSTC_WRAPPER:-base} AS deps
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 WORKDIR /platform
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=private,id=target_${TARGETARCH},target=/platform/target \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    export CARGO_TARGET_DIR=/platform/target ; \
-    cargo install --profile "${CARGO_BUILD_PROFILE}" wasm-bindgen-cli@0.2.85 && \
-    cargo install --profile "${CARGO_BUILD_PROFILE}" cargo-lock --features=cli
+    RUSTFLAGS="-C target-feature=-crt-static" \
+    CARGO_TARGET_DIR="/platform/target" \
+    # TODO: Build wasm with build.rs
+    # Meanwhile if you want to update wasm-bindgen you also need to update version in:
+    #  - packages/wasm-dpp/Cargo.toml
+    #  - packages/wasm-dpp/scripts/build-wasm.sh
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86
 
 #
 # LOAD SOURCES
@@ -146,41 +164,36 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=private,id=target_${TARGETARCH},target=/platform/target \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
-        -p drive-abci \
-       --config net.git-fetch-with-cli=true && \
-    cp /platform/target/*/drive-abci /artifacts/drive-abci && \
-    sccache --show-stats
+        --package drive-abci && \
+    cp /platform/target/*/drive-abci /artifacts/ && \
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM sources AS build-js
 
-RUN mkdir /artifacts
-
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=target_wasm_${TARGETARCH},target=/platform/target \
-    --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn install && \
+    cp -R /platform/.yarn/unplugged /tmp/ && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
-    yarn install && \
     yarn build && \
-    cp -R /platform/.yarn/unplugged /tmp/ && \
-    sccache --show-stats
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
@@ -237,10 +250,7 @@ FROM build-js AS build-dashmate-helper
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production dashmate && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production dashmate
 
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
@@ -288,10 +298,7 @@ FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/platform-test-suite && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production @dashevo/platform-test-suite
 
 #
 #  STAGE: FINAL TEST SUITE IMAGE
@@ -349,10 +356,7 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,id=target_unplugged_${TARGETARCH},target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/dapi && \
-    cp -R /platform/.yarn/unplugged /tmp/
+RUN yarn workspaces focus --production @dashevo/dapi
 
 #
 # STAGE: FINAL DAPI IMAGE

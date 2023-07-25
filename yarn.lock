@@ -1469,7 +1469,7 @@ __metadata:
     sinon-chai: ^3.7.0
     swagger-jsdoc: ^3.5.0
     ws: ^7.5.3
-    zeromq: ^5.2.8
+    zeromq: ~5.2.8
   languageName: unknown
   linkType: soft
 
@@ -1495,6 +1495,8 @@ __metadata:
     memdown: ^5.1.0
     mocha: ^9.1.2
     should: ^13.2.3
+    sinon: ^11.1.2
+    wasm-x11-hash: ~0.0.2
   languageName: unknown
   linkType: soft
 
@@ -6167,6 +6169,7 @@ __metadata:
     hasbin: ^1.2.3
     is-wsl: 2.2.0
     jayson: ^3.3.4
+    js-yaml: ^4.1.0
     listr2: 5.0.7
     lodash: ^4.17.21
     memory-streams: ^0.1.3
@@ -9460,7 +9463,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"js-yaml@npm:4.1.0":
+"js-yaml@npm:4.1.0, js-yaml@npm:^4.1.0":
   version: 4.1.0
   resolution: "js-yaml@npm:4.1.0"
   dependencies:
@@ -11049,7 +11052,18 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"node-gyp-build@npm:^4.2.3, node-gyp-build@npm:^4.3.0":
+"node-gyp-build@npm:^4.2.3":
+  version: 4.6.0
+  resolution: "node-gyp-build@npm:4.6.0"
+  bin:
+    node-gyp-build: bin.js
+    node-gyp-build-optional: optional.js
+    node-gyp-build-test: build-test.js
+  checksum: 25d78c5ef1f8c24291f4a370c47ba52fcea14f39272041a90a7894cd50d766f7c8cb8fb06c0f42bf6f69b204b49d9be3c8fc344aac09714d5bdb95965499eb15
+  languageName: node
+  linkType: hard
+
+"node-gyp-build@npm:^4.3.0":
   version: 4.3.0
   resolution: "node-gyp-build@npm:4.3.0"
   bin:
@@ -15199,10 +15213,10 @@ typescript@^3.9.5:
   languageName: node
   linkType: hard
 
-"word-wrap@npm:^1.2.3, word-wrap@npm:~1.2.3":
-  version: 1.2.3
-  resolution: "word-wrap@npm:1.2.3"
-  checksum: 30b48f91fcf12106ed3186ae4fa86a6a1842416df425be7b60485de14bec665a54a68e4b5156647dec3a70f25e84d270ca8bc8cd23182ed095f5c7206a938c1f
+"word-wrap@npm:^1.2.4":
+  version: 1.2.4
+  resolution: "word-wrap@npm:1.2.4"
+  checksum: 8f1f2e0a397c0e074ca225ba9f67baa23f99293bc064e31355d426ae91b8b3f6b5f6c1fc9ae5e9141178bb362d563f55e62fd8d5c31f2a77e3ade56cb3e35bd1
   languageName: node
   linkType: hard
 
@@ -15618,7 +15632,7 @@ typescript@^3.9.5:
   languageName: node
   linkType: hard
 
-"zeromq@npm:^5.2.8":
+"zeromq@npm:~5.2.8":
   version: 5.2.8
   resolution: "zeromq@npm:5.2.8"
   dependencies:

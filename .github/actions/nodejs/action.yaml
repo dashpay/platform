@@ -1,0 +1,38 @@
+---
+name: "Setup Node.JS"
+description: "Setup Node.JS binaries, dependencies and cache"
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-region: eu-west-1
+
+    - name: Setup Node.JS
+      uses: actions/setup-node@v3
+      with:
+        node-version: "16"
+
+    - name: Enable corepack
+      shell: bash
+      run: corepack enable
+
+    - name: Disable NPM audit
+      shell: bash
+      run: npm config set audit false
+
+    - name: Cache NPM build artifacts
+      uses: everpcpc/actions-cache@v1
+      with:
+        bucket: platform-runner-cache
+        root: actions-cache
+        path: |
+          .yarn/unplugged
+        key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-yarn-unplugged-
+
+    - name: Install dependencies
+      shell: bash
+      run: yarn install

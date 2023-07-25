@@ -102,8 +102,10 @@ impl<C> Platform<C> {
             height: state.height(),
             core_chain_locked_height: state.core_height(),
             time_ms: state.last_block_time_ms().unwrap_or_default(),
+            chain_id: self.config.abci.chain_id.clone(),
             protocol_version: state.current_protocol_version_in_consensus,
         };
+        let quorum_type: u32 = self.config.quorum_type() as u32;
         match query_path {
             "/identity" => {
                 let GetIdentityRequest { id, prove } =
@@ -117,6 +119,8 @@ impl<C> Platform<C> {
                         result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -160,6 +164,8 @@ impl<C> Platform<C> {
                         result: Some(get_identities_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -212,6 +218,8 @@ impl<C> Platform<C> {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -244,6 +252,8 @@ impl<C> Platform<C> {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -328,6 +338,8 @@ impl<C> Platform<C> {
                         result: Some(get_identity_keys_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -360,6 +372,8 @@ impl<C> Platform<C> {
                         result: Some(get_data_contract_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -401,6 +415,8 @@ impl<C> Platform<C> {
                         result: Some(get_data_contracts_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -448,7 +464,7 @@ impl<C> Platform<C> {
                     id,
                     limit,
                     offset,
-                    start_at_seconds,
+                    start_at_ms,
                     prove,
                 } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(
                     query_data
@@ -456,39 +472,33 @@ impl<C> Platform<C> {
                 let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
 
                 // TODO: make a cast safe
-                let limit = limit
-                    .map(|limit| {
-                        u16::try_from(limit).map_err(|_| {
-                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
-                                "can't fit u16 limit from the supplied value",
-                            )))
-                        })
-                    })
-                    .transpose()?;
-                let offset = offset
-                    .map(|offset| {
-                        u16::try_from(offset).map_err(|_| {
-                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
-                                "can't fit u16 offset from the supplied value",
-                            )))
-                        })
-                    })
-                    .transpose()?;
+                let limit = u16::try_from(limit).map_err(|_| {
+                    Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
+                        "can't fit u16 limit from the supplied value",
+                    )))
+                })?;
+                let offset = u16::try_from(offset).map_err(|_| {
+                    Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
+                        "can't fit u16 offset from the supplied value",
+                    )))
+                })?;
 
                 let response_data = if prove {
                     let proof =
                         check_validation_result_with_data!(self.drive.prove_contract_history(
                             contract_id.to_buffer(),
                             None,
-                            start_at_seconds.unwrap_or_default(),
-                            limit,
-                            offset
+                            start_at_ms,
+                            Some(limit),
+                            Some(offset)
                         ));
                     GetDataContractHistoryResponse {
                         metadata: Some(metadata),
                         result: Some(get_data_contract_history_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -499,9 +509,9 @@ impl<C> Platform<C> {
                         check_validation_result_with_data!(self.drive.fetch_contract_with_history(
                             contract_id.to_buffer(),
                             None,
-                            start_at_seconds.unwrap_or_default(),
-                            limit,
-                            offset
+                            start_at_ms,
+                            Some(limit),
+                            Some(offset)
                         ));
 
                     let contract_historical_entries = check_validation_result_with_data!(contracts
@@ -512,12 +522,7 @@ impl<C> Platform<C> {
                         >(
                             get_data_contract_history_response::DataContractHistoryEntry {
                                 date: date_in_seconds,
-                                // TODO: figure out why this is optional
-                                value: Some(
-                                    get_data_contract_history_response::DataContractValue {
-                                        value: data_contract.serialize()?
-                                    }
-                                )
+                                value: data_contract.serialize()?
                             }
                         ))
                         .collect());
@@ -645,6 +650,8 @@ impl<C> Platform<C> {
                         result: Some(get_documents_response::Result::Proof(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
                             signature: state.last_block_signature().to_vec(),
                             round: state.last_block_round(),
                         })),
@@ -687,6 +694,8 @@ impl<C> Platform<C> {
                             Proof {
                                 grovedb_proof: proof,
                                 quorum_hash: state.last_quorum_hash().to_vec(),
+                                quorum_type,
+                                block_id_hash: state.last_block_id_hash().to_vec(),
                                 signature: state.last_block_signature().to_vec(),
                                 round: state.last_block_round(),
                             },
@@ -737,6 +746,8 @@ impl<C> Platform<C> {
                             Proof {
                                 grovedb_proof: proof,
                                 quorum_hash: state.last_quorum_hash().to_vec(),
+                                quorum_type,
+                                block_id_hash: state.last_block_id_hash().to_vec(),
                                 signature: state.last_block_signature().to_vec(),
                                 round: state.last_block_round(),
                             },
@@ -822,6 +833,8 @@ impl<C> Platform<C> {
                     proof: Some(Proof {
                         grovedb_proof: proof,
                         quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_type,
+                        block_id_hash: state.last_block_id_hash().to_vec(),
                         signature: state.last_block_signature().to_vec(),
                         round: state.last_block_round(),
                     }),
@@ -860,9 +873,9 @@ mod test {
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
                 id: vec![1; 32],
-                limit: Some(10),
-                offset: Some(0),
-                start_at_seconds: None,
+                limit: 10,
+                offset: 0,
+                start_at_ms: 0,
                 prove: false,
             }
         }
@@ -1001,16 +1014,16 @@ mod test {
             let first_entry = history_entries.pop().unwrap();
 
             assert_eq!(first_entry.date, 1000);
-            let first_entry_data_contract = first_entry.value.expect("To have data contract");
+            let first_entry_data_contract = first_entry.value;
             let first_data_contract_update =
-                DataContract::deserialize_no_limit(&first_entry_data_contract.value)
+                DataContract::deserialize_no_limit(&first_entry_data_contract)
                     .expect("To decode data contract");
             assert_eq!(first_data_contract_update, original_data_contract);
 
             assert_eq!(second_entry.date, 2000);
-            let second_entry_data_contract = second_entry.value.expect("To have data contract");
+            let second_entry_data_contract = second_entry.value;
             let second_data_contract_update =
-                DataContract::deserialize_no_limit(&second_entry_data_contract.value)
+                DataContract::deserialize_no_limit(&second_entry_data_contract)
                     .expect("To decode data contract");
 
             let updated_doc = second_data_contract_update
@@ -1079,7 +1092,7 @@ mod test {
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id.to_buffer(),
-                request.start_at_seconds(),
+                request.start_at_ms,
                 Some(10),
                 Some(0),
             )
@@ -1125,7 +1138,7 @@ mod test {
 
             let request = GetDataContractHistoryRequest {
                 id: original_data_contract.id.to_vec(),
-                limit: Some(100000),
+                limit: 100000,
                 ..default_request()
             };
             let request_data = request.encode_to_vec();
@@ -1159,7 +1172,7 @@ mod test {
 
             let request = GetDataContractHistoryRequest {
                 id: original_data_contract.id.to_vec(),
-                offset: Some(100000),
+                offset: 100000,
                 ..default_request()
             };
             let request_data = request.encode_to_vec();

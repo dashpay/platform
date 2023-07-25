@@ -10,15 +10,20 @@ const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture'
 describe('BlockHeadersProvider - unit', () => {
   let blockHeadersProvider;
   let headers;
+  let spvChain;
 
   beforeEach(function () {
     blockHeadersProvider = new BlockHeadersProvider();
-    blockHeadersProvider.setSpvChain({
+    spvChain = {
       addHeaders: this.sinon.stub().callsFake((newHeaders) => newHeaders),
       hashesByHeight: new Map([[0, '0x000000001']]),
       reset: this.sinon.spy(),
       validate: this.sinon.spy(),
-    });
+      wasmX11Ready: this.sinon.stub().returns(true),
+      initialized: this.sinon.stub().returns(true),
+      initialize: this.sinon.stub(),
+    };
+    blockHeadersProvider.setSpvChain(spvChain);
 
     const blockHeadersReader = new EventEmitter();
     blockHeadersReader.readHistorical = this.sinon.spy();
@@ -140,7 +145,9 @@ describe('BlockHeadersProvider - unit', () => {
     it('should reset SPV chain in case header at specified height is missing', async () => {
       blockHeadersProvider.ensureChainRoot(2);
       expect(blockHeadersProvider.spvChain.reset)
-        .to.have.been.calledOnceWith(2);
+        .to.have.been.calledOnce();
+      expect(blockHeadersProvider.spvChain.pendingStartBlockHeight)
+        .to.equal(2);
     });
   });
 
