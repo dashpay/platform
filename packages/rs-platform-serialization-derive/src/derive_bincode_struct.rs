@@ -11,7 +11,8 @@ pub(crate) struct DeriveStruct {
 
 impl DeriveStruct {
     pub fn generate_encode(self, generator: &mut Generator) -> Result<()> {
-        let crate_name = &self.attributes.crate_name;
+        //let crate_name = &self.attributes.crate_name;
+        let crate_name = "platform_serialization";
         generator
             .impl_for(&format!("{}::PlatformVersionEncode", crate_name))
             .modify_generic_constraints(|generics, where_constraints| {
@@ -31,14 +32,12 @@ impl DeriveStruct {
                 }
                 Ok(())
             })?
-            .generate_fn("encode")
-            .with_generic_deps("__E", [format!("{}::enc::Encoder", crate_name)])
+            .generate_fn("platform_encode")
+            .with_generic_deps("__E", ["bincode::enc::Encoder"])
             .with_self_arg(virtue::generate::FnSelfArg::RefSelf)
             .with_arg("encoder", "&mut __E")
-            .with_return_type(format!(
-                "core::result::Result<(), {}::error::EncodeError>",
-                crate_name
-            ))
+            .with_arg("platform_version", "&crate::version::PlatformVersion")
+            .with_return_type("core::result::Result<(), bincode::error::EncodeError>".to_string())
             .body(|fn_body| {
                 if let Some(fields) = self.fields.as_ref() {
                     for field in fields.names() {
@@ -48,12 +47,12 @@ impl DeriveStruct {
                             .unwrap_or_default();
                         if attributes.with_serde {
                             fn_body.push_parsed(format!(
-                                "{0}::Encode::encode(&{0}::serde::Compat(&self.{1}), encoder)?;",
+                                "{0}::PlatformVersionEncode::platform_encode(&{0}::serde::Compat(&self.{1}), encoder, platform_version)?;",
                                 crate_name, field
                             ))?;
                         } else {
                             fn_body.push_parsed(format!(
-                                "{}::Encode::encode(&self.{}, encoder)?;",
+                                "{}::PlatformVersionEncode::platform_encode(&self.{}, encoder, platform_version)?;",
                                 crate_name, field
                             ))?;
                         }

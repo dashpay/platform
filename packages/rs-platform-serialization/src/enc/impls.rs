@@ -1,4 +1,4 @@
-use crate::enc::PlatformVersionEncode;
+use crate::PlatformVersionEncode;
 use bincode::enc::write::Writer;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;

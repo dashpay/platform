@@ -93,34 +93,26 @@ pub(super) fn derive_platform_serialize_struct(
         )
     };
 
-    let serialize_into = if derive_bincode {
-        match platform_serialize_into.clone() {
-            Some(inner) => quote! {
-                let inner: #inner = self.clone().into();
-                inner.serialize()
-            },
-            None => quote! {
-                        #config
-                #crate_name::serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
-            },
-        }
-    } else {
-        quote! {}
+    let serialize_into = match platform_serialize_into.clone() {
+        Some(inner) => quote! {
+            let inner: #inner = self.clone().into();
+            inner.serialize_with_platform_version(platform_version)
+        },
+        None => quote! {
+                    #config
+            platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
+        },
     };
 
-    let serialize_into_consume = if derive_bincode {
-        match platform_serialize_into {
-            Some(inner) => quote! {
-                let inner: #inner = self.into();
-                inner.serialize_consume()
-            },
-            None => quote! {
-                    #config
-                #crate_name::serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
-            },
-        }
-    } else {
-        quote! {}
+    let serialize_into_consume = match platform_serialize_into {
+        Some(inner) => quote! {
+            let inner: #inner = self.into();
+            inner.serialize_consume_with_platform_version(platform_version)
+        },
+        None => quote! {
+                #config
+            platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
+        },
     };
 
     let bincode_encode_body = if true {

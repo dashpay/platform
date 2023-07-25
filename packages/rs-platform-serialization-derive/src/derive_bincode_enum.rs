@@ -18,9 +18,10 @@ impl DeriveEnum {
     }
 
     pub fn generate_encode(self, generator: &mut Generator) -> Result<()> {
-        let crate_name = self.attributes.crate_name.as_str();
+        //let crate_name = self.attributes.crate_name.as_str();
+        let crate_name = "platform_serialization";
         generator
-            .impl_for(format!("{}::Encode", crate_name))
+            .impl_for(format!("{}::PlatformVersionEncode", crate_name))
             .modify_generic_constraints(|generics, where_constraints| {
                 if let Some((bounds, lit)) =
                     (self.attributes.encode_bounds.as_ref()).or(self.attributes.bounds.as_ref())
@@ -32,7 +33,7 @@ impl DeriveEnum {
                 } else {
                     for g in generics.iter_generics() {
                         where_constraints
-                            .push_constraint(g, format!("{}::Encode", crate_name))
+                            .push_constraint(g, format!("{}::PlatformVersionEncode", crate_name))
                             .unwrap();
                     }
                 }
@@ -42,6 +43,7 @@ impl DeriveEnum {
             .with_generic_deps("__E", ["bincode::enc::Encoder"])
             .with_self_arg(FnSelfArg::RefSelf)
             .with_arg("encoder", "&mut __E")
+            .with_arg("platform_version", "&crate::version::PlatformVersion")
             .with_return_type(
                 "core::result::Result<(), bincode::error::EncodeError>",
             )
@@ -89,7 +91,7 @@ impl DeriveEnum {
                         // }
                         match_body.group(Delimiter::Brace, |body| {
                             // variant index
-                            body.push_parsed(format!("<u32 as {}::PlatformVersionEncode>::encode", crate_name))?;
+                            body.push_parsed(format!("<u32 as {}::PlatformVersionEncode>::platform_encode", crate_name))?;
                             body.group(Delimiter::Parenthesis, |args| {
                                 args.punct('&');
                                 args.group(Delimiter::Parenthesis, |num| {
@@ -111,13 +113,13 @@ impl DeriveEnum {
                                         .unwrap_or_default();
                                     if attributes.with_serde {
                                         body.push_parsed(format!(
-                                            "{0}::Encode::encode(&{0}::serde::Compat({1}), encoder)?;",
+                                            "{0}::PlatformVersionEncode::platform_encode(&{0}::serde::Compat({1}), encoder, platform_version)?;",
                                             crate_name,
                                             field_name.to_string_with_prefix(TUPLE_FIELD_PREFIX),
                                         ))?;
                                     } else {
                                         body.push_parsed(format!(
-                                            "{0}::Encode::encode({1}, encoder)?;",
+                                            "{0}::PlatformVersionEncode::platform_encode({1}, encoder, platform_version)?;",
                                             crate_name,
                                             field_name.to_string_with_prefix(TUPLE_FIELD_PREFIX),
                                         ))?;

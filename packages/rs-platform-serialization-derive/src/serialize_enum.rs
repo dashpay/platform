@@ -46,7 +46,7 @@ pub(super) fn derive_platform_serialize_enum(
             .iter()
             .map(|v| {
                 let ident = &v.ident;
-                quote! { #name::#ident(inner) => PlatformSerializable::serialize(inner) }
+                quote! { #name::#ident(inner) => #crate_name::serialization::PlatformSerializable::serialize_with_platform_version(inner, platform_version, platform_version) }
             })
             .collect::<Vec<_>>();
 
@@ -61,7 +61,7 @@ pub(super) fn derive_platform_serialize_enum(
             .iter()
             .map(|v| {
                 let ident = &v.ident;
-                quote! { #name::#ident(inner) => PlatformSerializable::serialize_consume(inner) }
+                quote! { #name::#ident(inner) => #crate_name::serialization::PlatformSerializable::serialize_consume_with_platform_version(inner, platform_version) }
             })
             .collect::<Vec<_>>();
 
@@ -91,7 +91,7 @@ pub(super) fn derive_platform_serialize_enum(
             .iter()
             .map(|v| {
                 let ident = &v.ident;
-                quote! { #name::#ident(inner) => bincode::encode_to_vec(inner, config) }
+                quote! { #name::#ident(inner) => platform_serialization::platform_encode_to_vec(inner, config) }
             })
             .collect::<Vec<_>>();
 
@@ -134,82 +134,82 @@ pub(super) fn derive_platform_serialize_enum(
             }
         }
     };
+    //
+    // let with_limit_prefix_version_body = quote! {
+    //     impl #impl_generics #crate_name::serialization::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
+    //         fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
+    //             let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
+    //
+    //             let mut serialized = #serialize_into;
+    //
+    //             let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
+    //                 match e {
+    //                     bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+    //                     _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
+    //                 }
+    //             })?;
+    //
+    //             encoded_version.append(&mut serialized); // prepend the version to the serialized data
+    //
+    //             Ok(encoded_version)
+    //         }
+    //
+    //         fn serialize_consume_with_prefix_version(self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
+    //             let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
+    //
+    //             let mut serialized = #serialize_into_consume;
+    //
+    //             let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
+    //                 match e {
+    //                     bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+    //                     _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
+    //                 }
+    //             })?;
+    //
+    //             encoded_version.append(&mut serialized); // prepend the version to the serialized data
+    //
+    //             Ok(encoded_version)
+    //         }
+    //     }
+    // };
 
-    let with_limit_prefix_version_body = quote! {
-        impl #impl_generics #crate_name::serialization::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
-            fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
-                let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
-
-                let mut serialized = #serialize_into;
-
-                let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                    }
-                })?;
-
-                encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-                Ok(encoded_version)
-            }
-
-            fn serialize_consume_with_prefix_version(self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
-                let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
-
-                let mut serialized = #serialize_into_consume;
-
-                let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                    }
-                })?;
-
-                encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-                Ok(encoded_version)
-            }
-        }
-    };
-
-    let with_prefix_version_body = quote! {
-        impl #impl_generics #crate_name::serialization::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
-            fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
-                let config = bincode::config::standard().with_big_endian().with_no_limit();
-
-                let mut serialized = #serialize_into;
-
-                let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                    }
-                })?;
-
-                encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-                Ok(encoded_version)
-            }
-
-            fn serialize_consume_with_prefix_version(self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
-                let config = bincode::config::standard().with_big_endian().with_no_limit();
-
-                let mut serialized = #serialize_into_consume
-
-                let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
-                    match e {
-                        bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
-                        _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
-                    }
-                })?;
-
-                encoded_version.append(&mut serialized); // prepend the version to the serialized data
-
-                Ok(encoded_version)
-            }
-        }
-    };
+    // let with_prefix_version_body = quote! {
+    //     impl #impl_generics #crate_name::serialization::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
+    //         fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
+    //             let config = bincode::config::standard().with_big_endian().with_no_limit();
+    //
+    //             let mut serialized = #serialize_into;
+    //
+    //             let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
+    //                 match e {
+    //                     bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+    //                     _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
+    //                 }
+    //             })?;
+    //
+    //             encoded_version.append(&mut serialized); // prepend the version to the serialized data
+    //
+    //             Ok(encoded_version)
+    //         }
+    //
+    //         fn serialize_consume_with_prefix_version(self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
+    //             let config = bincode::config::standard().with_big_endian().with_no_limit();
+    //
+    //             let mut serialized = #serialize_into_consume
+    //
+    //             let mut encoded_version = bincode::encode_to_vec(&version, config.clone()).map_err(|e| {
+    //                 match e {
+    //                     bincode::error::EncodeError::Io{inner, index} => #crate_name::#error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+    //                     _ => #crate_name::#error_type::PlatformSerializationError(format!("unable to serialize version {}: {}", stringify!(#name), e)),
+    //                 }
+    //             })?;
+    //
+    //             encoded_version.append(&mut serialized); // prepend the version to the serialized data
+    //
+    //             Ok(encoded_version)
+    //         }
+    //     }
+    // };
 
     let with_platform_version_body = if let Some(platform_version_path) = platform_version_path {
         let platform_version_path_tokens =
@@ -238,7 +238,7 @@ pub(super) fn derive_platform_serialize_enum(
                 .iter()
                 .map(|v| {
                     let ident = &v.ident;
-                    quote! { #name::#ident(inner) => inner.encode(encoder) }
+                    quote! { #name::#ident(inner) => inner.platform_encode(encoder, platform_version) }
                 })
                 .collect::<Vec<_>>();
 
@@ -263,13 +263,11 @@ pub(super) fn derive_platform_serialize_enum(
     if force_prepend_version {
         if with_limit {
             expanded = quote! {
-                #with_limit_prefix_version_body
                 #with_platform_version_body
                 #bincode_encode_body
             };
         } else {
             expanded = quote! {
-                #with_prefix_version_body
                 #with_platform_version_body
                 #bincode_encode_body
             };
@@ -278,14 +276,12 @@ pub(super) fn derive_platform_serialize_enum(
         if with_limit {
             expanded = quote! {
                 #with_limit_body
-                #with_limit_prefix_version_body
                 #with_platform_version_body
                 #bincode_encode_body
             };
         } else {
             expanded = quote! {
                 #without_limit_body
-                #with_prefix_version_body
                 #with_platform_version_body
                 #bincode_encode_body
             };
