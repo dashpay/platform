@@ -1372,7 +1372,9 @@ proto.org.dash.platform.dapi.v0.Proof.toObject = function(includeInstance, msg) 
     grovedbProof: msg.getGrovedbProof_asB64(),
     quorumHash: msg.getQuorumHash_asB64(),
     signature: msg.getSignature_asB64(),
-    round: jspb.Message.getFieldWithDefault(msg, 4, 0)
+    round: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    blockIdHash: msg.getBlockIdHash_asB64(),
+    quorumType: jspb.Message.getFieldWithDefault(msg, 6, 0)
   };
 
   if (includeInstance) {
@@ -1424,6 +1426,14 @@ proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader = function(msg
     case 4:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setRound(value);
+      break;
+    case 5:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setBlockIdHash(value);
+      break;
+    case 6:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setQuorumType(value);
       break;
     default:
       reader.skipField();
@@ -1479,6 +1489,20 @@ proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter = function(message
   if (f !== 0) {
     writer.writeUint32(
       4,
+      f
+    );
+  }
+  f = message.getBlockIdHash_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      5,
+      f
+    );
+  }
+  f = message.getQuorumType();
+  if (f !== 0) {
+    writer.writeUint32(
+      6,
       f
     );
   }
@@ -1629,6 +1653,66 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.setRound = function(value) {
 };
 
 
+/**
+ * optional bytes block_id_hash = 5;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getBlockIdHash = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+};
+
+
+/**
+ * optional bytes block_id_hash = 5;
+ * This is a type-conversion wrapper around `getBlockIdHash()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getBlockIdHash_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getBlockIdHash()));
+};
+
+
+/**
+ * optional bytes block_id_hash = 5;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getBlockIdHash()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getBlockIdHash_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getBlockIdHash()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.setBlockIdHash = function(value) {
+  return jspb.Message.setProto3BytesField(this, 5, value);
+};
+
+
+/**
+ * optional uint32 quorum_type = 6;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumType = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 6, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.setQuorumType = function(value) {
+  return jspb.Message.setProto3IntField(this, 6, value);
+};
+
+
 
 
 
@@ -1664,7 +1748,8 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInst
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
     timeMs: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0)
+    protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    chainId: jspb.Message.getFieldWithDefault(msg, 5, "")
   };
 
   if (includeInstance) {
@@ -1716,6 +1801,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
     case 4:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setProtocolVersion(value);
+      break;
+    case 5:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setChainId(value);
       break;
     default:
       reader.skipField();
@@ -1771,6 +1860,13 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
   if (f !== 0) {
     writer.writeUint32(
       4,
+      f
+    );
+  }
+  f = message.getChainId();
+  if (f.length > 0) {
+    writer.writeString(
+      5,
       f
     );
   }
@@ -1846,6 +1942,24 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = 
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setProtocolVersion = function(value) {
   return jspb.Message.setProto3IntField(this, 4, value);
+};
+
+
+/**
+ * optional string chain_id = 5;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getChainId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setChainId = function(value) {
+  return jspb.Message.setProto3StringField(this, 5, value);
 };
 
 

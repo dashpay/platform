@@ -182,6 +182,7 @@ mod test {
             },
             app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
             quorum_hash: [0u8; 32],
+            block_id_hash: [0u8; 32],
             signature: [0u8; 96],
             round: 0,
         });
@@ -364,6 +365,7 @@ mod test {
             },
             app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
             quorum_hash: [0u8; 32],
+            block_id_hash: [0u8; 32],
             signature: [0u8; 96],
             round: 0,
         });

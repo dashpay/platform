@@ -25,6 +25,14 @@ export class Proof extends jspb.Message {
   getRound(): number;
   setRound(value: number): void;
 
+  getBlockIdHash(): Uint8Array | string;
+  getBlockIdHash_asU8(): Uint8Array;
+  getBlockIdHash_asB64(): string;
+  setBlockIdHash(value: Uint8Array | string): void;
+
+  getQuorumType(): number;
+  setQuorumType(value: number): void;
+
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): Proof.AsObject;
   static toObject(includeInstance: boolean, msg: Proof): Proof.AsObject;
@@ -41,6 +49,8 @@ export namespace Proof {
     quorumHash: Uint8Array | string,
     signature: Uint8Array | string,
     round: number,
+    blockIdHash: Uint8Array | string,
+    quorumType: number,
   }
 }
 
@@ -56,6 +66,9 @@ export class ResponseMetadata extends jspb.Message {
 
   getProtocolVersion(): number;
   setProtocolVersion(value: number): void;
+
+  getChainId(): string;
+  setChainId(value: string): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ResponseMetadata.AsObject;
@@ -73,6 +86,7 @@ export namespace ResponseMetadata {
     coreChainLockedHeight: number,
     timeMs: number,
     protocolVersion: number,
+    chainId: string,
   }
 }
 
