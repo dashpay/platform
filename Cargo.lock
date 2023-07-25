@@ -3458,6 +3458,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rs-sdk"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "dapi-grpc",
+ "dpp",
+ "drive",
+ "thiserror",
+]
+
+[[package]]
 name = "rust_decimal"
 version = "1.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

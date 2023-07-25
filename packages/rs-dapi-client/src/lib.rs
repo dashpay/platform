@@ -1,194 +1,62 @@
-//! This crate provides [DapiClient] --- client for a decentralized API for Dash.
-//!
-//! # Examples
-//! ```no_run
-//! # use rs_dapi_client::{Settings, platform::GetIdentity, AddressList, DapiClient, DapiError};
-//! # let _ = async {
-//! let mut client = DapiClient::new(AddressList::new(), Settings::default());
-//! let request = GetIdentity { id: b"0".to_vec() };
-//! let response = client.execute(request, Settings::default()).await?;
-//!
-//! # Ok::<(), DapiError<_, _>>(())
-//! # };
-//! ```
+//! This crate provides [DapiClient] --- transport layer for a decentralized API for Dash.
 
 #![deny(missing_docs)]
 
 mod address_list;
-pub mod core;
-pub mod platform;
-mod settings;
+mod dapi_client;
+mod request_settings;
 mod transport;
 
-use std::fmt;
-
-use backon::{ExponentialBuilder, Retryable};
-use tracing::Instrument;
+use futures::{future::BoxFuture, FutureExt};
 
 pub use address_list::AddressList;
-pub use settings::Settings;
-use transport::{TransportClient, TransportRequest};
+pub use dapi_client::{DapiClient, DapiClientError};
+pub use request_settings::RequestSettings;
 
-/// DAPI request.
-/// Since each of DAPI requests goes through the same execution process is was generalized
-/// with this trait to run requests the same way.
-pub trait DapiRequest: fmt::Debug {
-    /// Response type for the request.
-    type DapiResponse;
+/// A DAPI request could be executed with an initialized [DapiClient].
+///
+/// # Examples
+/// ```no_run
+/// use rs_dapi_client::{RequestSettings, AddressList, DapiClient, DapiClientError, DapiRequest};
+/// use dapi_grpc::platform::v0::{self as platform_proto};
+///
+/// # let _ = async {
+/// let mut client = DapiClient::new(AddressList::new(), RequestSettings::default());
+/// let request = platform_proto::GetIdentityRequest { id: b"0".to_vec(), prove: true };
+/// let response = request.execute(&mut client, RequestSettings::default()).await?;
+/// # Ok::<(), DapiClientError<_>>(())
+/// # };
+/// ```
+pub trait DapiRequest {
+    /// Response from DAPI for this specific request.
+    type Response;
+    /// An error type for the transport this request uses.
+    type TransportError;
 
-    /// Settings that will override [DapiClient]'s ones each time the request is executed.
-    const SETTINGS_OVERRIDES: Settings;
-
-    /// Error that may happen during conversion from transport-specific response to the
-    /// DAPI response.
-    type Error: std::error::Error;
-
-    /// 1 to 1 mapping from the DAPI request to a type that represents a way for the data
-    /// to be fetched.
-    type TransportRequest: TransportRequest;
-
-    /// Get the transport layer request.
-    fn to_transport_request(&self) -> Self::TransportRequest;
-
-    /// Attempts to build DAPI response specific to this DAPI request from transport layer data.
-    fn try_from_transport_response(
-        transport_response: <Self::TransportRequest as TransportRequest>::Response,
-    ) -> Result<Self::DapiResponse, Self::Error>;
-}
-
-/// Access point to DAPI.
-#[derive(Debug)]
-pub struct DapiClient {
-    address_list: AddressList,
-    settings: Settings,
-}
-
-impl DapiClient {
-    /// Initialize new [DapiClient] and optionally override default settings.
-    pub fn new(address_list: AddressList, settings: Settings) -> Self {
-        Self {
-            address_list,
-            settings,
-        }
-    }
-}
-
-/// General DAPI request error type.
-#[derive(Debug, thiserror::Error)]
-pub enum DapiClientError<TE, PE> {
-    /// The error happened on transport layer
-    #[error("transport error: {0}")]
-    Transport(TE),
-    /// Successful transport execution, but was unable to make a conversion from
-    /// transport response to DAPI response.
-    #[error("response parse error: {0}")]
-    ParseResponse(PE),
-    /// There are no valid peer addresses to use.
-    #[error("no available addresses to use")]
-    NoAvailableAddresses,
-}
-
-impl DapiClient {
-    /// Execute the [DapiRequest].
-    #[tracing::instrument]
-    pub async fn execute<'c, R>(
-        &'c mut self,
-        request: R,
-        settings: Settings,
-    ) -> Result<
-        R::DapiResponse,
-        DapiClientError<<R::TransportRequest as TransportRequest>::Error, R::Error>,
-    >
+    /// Executes the request.
+    fn execute<'c>(
+        self,
+        dapi_client: &'c mut DapiClient,
+        settings: RequestSettings,
+    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where
-        R: DapiRequest,
-    {
-        // Join settings of different sources to get final version of the settings for this execution:
-        let applied_settings = self
-            .settings
-            .override_by(R::SETTINGS_OVERRIDES)
-            .override_by(settings)
-            .finalize();
-
-        // Setup retry policy:
-        let retry_settings = ExponentialBuilder::default().with_max_times(applied_settings.retries);
-
-        // Setup DAPI request execution routine future. It's a closure that will be called more than
-        // once to build new future on each retry:
-        let routine = || {
-            // Try to get an address to initialize transport on:
-            let address = self
-                .address_list
-                .get_live_address()
-                .ok_or(DapiClientError::NoAvailableAddresses);
-
-            // Get a transport client requried by the DAPI request from this DAPI client.
-            // It stays wrapped in [Result] since wa want to return future of [Result], not a
-            // [Result] itself.
-            let transport_client = address.map(|addr| {
-                <R::TransportRequest as TransportRequest>::Client::with_uri(addr.uri().clone())
-            });
-
-            let transport_request = request.to_transport_request();
-
-            async move {
-                // On a lower layer DAPI requests should be executed as transport requests first:
-                let transport_response = transport_request
-                    .execute(&mut transport_client?, &applied_settings)
-                    .await
-                    .map_err(|e| DapiClientError::<_, <R as DapiRequest>::Error>::Transport(e))?;
-
-                // Next try to build a proper DAPI response if possible:
-                let dapi_response =
-                    R::try_from_transport_response(transport_response).map_err(|e| {
-                        DapiClientError::<
-                            <<R as DapiRequest>::TransportRequest as TransportRequest>::Error,
-                            _,
-                        >::ParseResponse(e)
-                    })?;
-
-                Ok::<_, DapiClientError<_, _>>(dapi_response)
-            }
-        };
-
-        // Start the routine with retry policy applied:
-        // TODO: define what is retryable and what's not
-        routine
-            .retry(&retry_settings)
-            .when(|e| !matches!(e, DapiClientError::NoAvailableAddresses))
-            .instrument(tracing::info_span!("request routine"))
-            .await
-    }
+        Self: 'c;
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// The trait is intentionally made sealed since it defines what is possible to send to DAPI.
+impl<T: transport::TransportRequest + Send> DapiRequest for T {
+    type Response = T::Response;
 
-    #[test]
-    fn example() {
-        // This is not actually a test but a sandbox to check if our loosely coupled
-        // thing would agree to compile.
+    type TransportError = <T::Client as transport::TransportClient>::Error;
 
-        let mut address_list = AddressList::new();
-        address_list.add_uri("http://127.0.0.1".parse().expect("seems legit"));
-
-        let mut dapi_client = DapiClient::new(
-            address_list,
-            Settings {
-                timeout: Some(std::time::Duration::from_secs(1)),
-                retries: Some(3),
-                ..Settings::default()
-            },
-        );
-        let _ = async {
-            dapi_client
-                .execute(platform::GetIdentity { id: vec![] }, Settings::default())
-                .await
-                .unwrap();
-            dapi_client
-                .execute(core::GetStatus {}, Settings::default())
-                .await
-                .unwrap();
-        };
+    fn execute<'c>(
+        self,
+        dapi_client: &'c mut DapiClient,
+        settings: RequestSettings,
+    ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
+    where
+        Self: 'c,
+    {
+        dapi_client.execute(self, settings).boxed()
     }
 }

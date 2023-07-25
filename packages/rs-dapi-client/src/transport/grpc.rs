@@ -1,4 +1,6 @@
-//! gRPC transport definitions.
+//! Listing of gRPC requests used in DAPI.
+
+use std::time::Duration;
 
 use dapi_grpc::core::v0::{self as core_proto, core_client::CoreClient};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
@@ -6,50 +8,15 @@ use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
 use tonic::{transport::Channel, IntoRequest};
 
-use super::{TransportClient, TransportRequest};
-use crate::settings::AppliedSettings;
+use super::{CanRetry, TransportClient, TransportRequest};
+use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
 type PlatformGrpcClient = PlatformClient<Channel>;
 type CoreGrpcClient = CoreClient<Channel>;
 
-/// Shared transport implementation for all gRPC platform requests.
-impl<Req> TransportRequest for Req
-where
-    Req: GrpcTransportRequest,
-{
-    type Response = Req::GrpcTransportResponse;
-    type Client = Req::GrpcClient;
+impl TransportClient for PlatformGrpcClient {
     type Error = tonic::Status;
 
-    fn execute<'c>(
-        self,
-        client: &'c mut Self::Client,
-        settings: &AppliedSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, Self::Error>> {
-        let mut grpc_request = self.into_request();
-        grpc_request.set_timeout(settings.timeout);
-
-        (Self::get_grpc_method())(client, grpc_request)
-    }
-}
-
-/// Type alias to pull out a certain method of PlatformClient.
-type GrpcMethod<Req, Resp, Client> =
-    Box<dyn Fn(&mut Client, tonic::Request<Req>) -> BoxFuture<Result<Resp, tonic::Status>>>;
-
-/// Generic properties of all requests that use gRPC transport.
-pub trait GrpcTransportRequest: Sized + Clone {
-    /// Transport layer response specific for the gRPC request.
-    type GrpcTransportResponse;
-
-    /// gRPC client to use. May vary because core and platform gRPC clients are still different types.
-    type GrpcClient: TransportClient;
-
-    /// Get a handle for a gRPC client method according to the gRPC request.
-    fn get_grpc_method() -> GrpcMethod<Self, Self::GrpcTransportResponse, Self::GrpcClient>;
-}
-
-impl TransportClient for PlatformGrpcClient {
     fn with_uri(uri: Uri) -> Self {
         let channel = Channel::builder(uri).connect_lazy();
         PlatformGrpcClient::new(channel)
@@ -57,28 +24,44 @@ impl TransportClient for PlatformGrpcClient {
 }
 
 impl TransportClient for CoreGrpcClient {
+    type Error = tonic::Status;
+
     fn with_uri(uri: Uri) -> Self {
         let channel = Channel::builder(uri).connect_lazy();
         CoreGrpcClient::new(channel)
     }
 }
 
+impl CanRetry for tonic::Status {
+    fn can_retry(&self) -> bool {
+        todo!()
+    }
+}
+
 /// A shortcut to link between gRPC request type, response type, client and its
 /// method in order to represent it in a form of types and data.
-macro_rules! link_grpc_method {
-    ($request:ty, $response:ty, $client:ty, $($method:tt)+) => {
-        impl GrpcTransportRequest for $request {
-            type GrpcTransportResponse = $response;
+macro_rules! impl_transport_request_grpc {
+    ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl TransportRequest for $request {
+            type Client = $client;
 
-            type GrpcClient = $client;
+            type Response = $response;
 
-            fn get_grpc_method() -> GrpcMethod<Self, Self::GrpcTransportResponse, Self::GrpcClient> {
-                Box::new(|client, request| {
-                    client
-                        .$($method)+(request)
-                        .map_ok(tonic::Response::into_inner)
-                        .boxed()
-                })
+            const SETTINGS_OVERRIDES: RequestSettings = $settings;
+
+            fn execute_transport<'c>(
+                self,
+                client: &'c mut Self::Client,
+                settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
+            {
+                let mut grpc_request = self.into_request();
+                grpc_request.set_timeout(settings.timeout);
+
+                client
+                    .$($method)+(grpc_request)
+                    .map_ok(|response| response.into_inner())
+                    .boxed()
             }
         }
     };
@@ -86,81 +69,95 @@ macro_rules! link_grpc_method {
 
 // Link to each platform gRPC request what client and method to use:
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::GetIdentityRequest,
     platform_proto::GetIdentityResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     get_identity
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::GetDocumentsRequest,
     platform_proto::GetDocumentsResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     get_documents
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::GetDataContractRequest,
     platform_proto::GetDataContractResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     get_data_contract
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::GetConsensusParamsRequest,
     platform_proto::GetConsensusParamsResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     get_consensus_params
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::GetDataContractHistoryRequest,
     platform_proto::GetDataContractHistoryResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     get_data_contract_history
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::BroadcastStateTransitionRequest,
     platform_proto::BroadcastStateTransitionResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     broadcast_state_transition
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultRequest,
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
+    RequestSettings {
+        timeout: Some(Duration::from_secs(120)),
+        ..RequestSettings::default()
+    },
     wait_for_state_transition_result
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     platform_proto::GetIdentitiesByPublicKeyHashesRequest,
     platform_proto::GetIdentitiesByPublicKeyHashesResponse,
     PlatformGrpcClient,
+    RequestSettings::default(),
     get_identities_by_public_key_hashes
 );
 
 // Link to each core gRPC request what client and method to use:
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     core_proto::GetTransactionRequest,
     core_proto::GetTransactionResponse,
     CoreGrpcClient,
+    RequestSettings::default(),
     get_transaction
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     core_proto::GetStatusRequest,
     core_proto::GetStatusResponse,
     CoreGrpcClient,
+    RequestSettings::default(),
     get_status
 );
 
-link_grpc_method!(
+impl_transport_request_grpc!(
     core_proto::BroadcastTransactionRequest,
     core_proto::BroadcastTransactionResponse,
     CoreGrpcClient,
+    RequestSettings::default(),
     broadcast_transaction
 );

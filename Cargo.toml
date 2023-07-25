@@ -19,4 +19,5 @@ members = [
     "packages/rs-drive-light-client",
     "packages/rs-drive-light-client-bindings",
     "packages/rs-dapi-client",
+    "packages/rs-sdk",
 ]
