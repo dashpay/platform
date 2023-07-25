@@ -271,7 +271,7 @@ impl
             .iter()
             .map(|pk_hash| {
                 pk_hash.to_vec().try_into().map_err(|_| Error::DriveError {
-                    error: "Ivalid public key hash length".to_string(),
+                    error: "Invalid public key hash length".to_string(),
                 })
             })
             .collect::<Result<Vec<[u8; 20]>, Error>>()?;
