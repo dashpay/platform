@@ -37,6 +37,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
+use crate::drive::system::{misc_path, misc_path_vec};
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
@@ -170,7 +171,7 @@ impl Drive {
 
         // In Misc
         batch.add_insert(
-            vec![vec![RootTree::Misc as u8]],
+            misc_path_vec(),
             TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
             Element::Item(0.encode_var_vec(), None),
         );
@@ -208,7 +209,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create structure");
         let mut query = Query::new();
         query.insert_all();
@@ -237,11 +238,10 @@ mod tests {
     fn test_initial_state_structure_proper_heights() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("should open Drive successfully");
-        let db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(None, &platform_version)
             .expect("expected to create structure");
 
         // Merk Level 0
