@@ -1,3 +1,38 @@
+### [0.24.16](https://github.com/dashpay/platform/compare/v0.24.15...v0.24.16) (2023-07-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** Removed `dashmate.helper.docker.image` configuration option (#1231)
+
+### Features
+
+* **dashmate:** allow separation of a service build ([#1206](https://github.com/dashpay/platform/issues/1206))
+* **dashmate:** reindex reworked ([#1212](https://github.com/dashpay/platform/issues/1212))
+
+
+### Bug Fixes
+
+* **dashmate:** invalid testnet chain id ([#1233](https://github.com/dashpay/platform/issues/1233))
+* **dashmate:** runs invalid helper version ([#1231](https://github.com/dashpay/platform/issues/1231))
+* word wrap audit fail ([#1235](https://github.com/dashpay/platform/issues/1235))
+
+
+### Miscellaneous Chores
+
+* remove envoy build from dashmate and release ([#1232](https://github.com/dashpay/platform/issues/1232))
+
+
+### Code Refactoring
+
+* **dashmate:** dynamic home dir path ([#1237](https://github.com/dashpay/platform/issues/1237))
+* **dashmate:** move all envs definition to `generateEnvs` ([#1246](https://github.com/dashpay/platform/issues/1246))
+
+
+### Tests
+
+* **dashmate:** increase the reliability of e2e tests ([#1204](https://github.com/dashpay/platform/issues/1204))
+
 ### [0.24.15](https://github.com/dashpay/platform/compare/v0.24.14...v0.24.15) (2023-07-10)
 
 
