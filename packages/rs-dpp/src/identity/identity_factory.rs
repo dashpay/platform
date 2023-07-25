@@ -13,8 +13,9 @@ use std::iter::FromIterator;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization::PlatformDeserializable;
 
+use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 #[cfg(feature = "state-transitions")]
@@ -73,7 +74,7 @@ impl IdentityFactory {
         buffer: Vec<u8>,
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        let identity: Identity = Identity::deserialize(&buffer).map_err(|e| {
+        let identity: Identity = Identity::deserialize_no_limit(&buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
             ))
@@ -89,16 +90,17 @@ impl IdentityFactory {
 
     #[cfg(feature = "validation")]
     pub fn validate_identity(&self, raw_identity: &Value) -> Result<(), ProtocolError> {
-        let result = self
-            .identity_validator
-            .validate_identity_object(raw_identity)?;
-
-        if !result.is_valid() {
-            return Err(ProtocolError::InvalidIdentityError {
-                errors: result.errors,
-                raw_identity: raw_identity.to_owned(),
-            });
-        }
+        //todo: reenable
+        // let result = self
+        //     .identity_validator
+        //     .validate_identity_object(raw_identity)?;
+        //
+        // if !result.is_valid() {
+        //     return Err(ProtocolError::InvalidIdentityError {
+        //         errors: result.errors,
+        //         raw_identity: raw_identity.to_owned(),
+        //     });
+        // }
 
         Ok(())
     }

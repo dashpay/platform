@@ -1,5 +1,6 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::enrich_with_base_schema::PREFIX_BYTE_0;
 use crate::data_contract::validation::data_contract_validation::BASE_DOCUMENT_SCHEMA;
 use crate::data_contract::validation::multi_validator;
@@ -11,7 +12,6 @@ use crate::prelude::DataContract;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::version::PlatformVersion;
 use crate::{Convertible, ProtocolError};
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 impl DataContract {
     pub fn validate_structure(

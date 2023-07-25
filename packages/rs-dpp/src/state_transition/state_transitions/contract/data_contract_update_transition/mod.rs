@@ -1,13 +1,13 @@
-use crate::serialization_traits::PlatformDeserializable;
-use crate::serialization_traits::PlatformSerializable;
-use crate::serialization_traits::Signable;
+use crate::serialization::PlatformDeserializable;
+use crate::serialization::PlatformSerializable;
+use crate::serialization::Signable;
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Identifier, Value};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
@@ -49,9 +49,9 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(
-    platform_version_path = "dpp.state_transition_serialization_versions.contract_update_state_transition",
-    allow_nested
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

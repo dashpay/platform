@@ -11,13 +11,12 @@ mod value_conversion;
 mod version;
 
 use crate::identity::KeyID;
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::PlatformSerializable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::PlatformSerializable;
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
 };
@@ -32,7 +31,7 @@ use std::collections::{BTreeMap, HashMap};
     derive(Serialize, Deserialize)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,

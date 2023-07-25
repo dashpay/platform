@@ -1,4 +1,4 @@
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
@@ -31,8 +31,8 @@ use crate::{
 use platform_value::string_encoding::Encoding;
 
 pub use self::document_transition::{document_base_transition, document_create_transition};
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use crate::serialization::PlatformSerializable;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 
 pub mod document_transition;
@@ -74,9 +74,9 @@ pub use v0::*;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(
-    platform_version_path = "dpp.state_transition_serialization_versions.documents_batch_state_transition",
-    allow_nested
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
 pub enum DocumentsBatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

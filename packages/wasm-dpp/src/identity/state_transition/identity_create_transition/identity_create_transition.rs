@@ -24,7 +24,7 @@ use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::{
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,

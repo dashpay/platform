@@ -16,7 +16,7 @@ pub(super) fn derive_platform_deserialize_struct(
         crate_name,
         platform_serialize_limit,
         platform_serialize_into,
-        nested,
+        derive_bincode: nested,
         ..
     } = version_attributes;
 
@@ -50,7 +50,7 @@ pub(super) fn derive_platform_deserialize_struct(
 
     let expanded = if let Some(limit) = platform_serialize_limit {
         quote! {
-            impl #impl_generics #crate_name::serialization_traits::PlatformDeserializable for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause
             {
                 fn deserialize(bytes: &[u8]) -> Result<Self, #error_type> {
                     let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
@@ -77,7 +77,7 @@ pub(super) fn derive_platform_deserialize_struct(
     } else {
         // we only need deserialize_no_limit, as deserialize will use deserialize_no_limit
         quote! {
-            impl #impl_generics #crate_name::serialization_traits::PlatformDeserializable for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause
             {
                 fn deserialize_no_limit(bytes: &[u8]) -> Result<Self, #error_type> {
                     let config = bincode::config::standard().with_big_endian().with_no_limit();

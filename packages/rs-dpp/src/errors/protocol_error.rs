@@ -22,6 +22,7 @@ use dashcore::consensus::encode::Error as DashCoreError;
 
 use crate::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
+use platform_version::error::PlatformVersionError;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -81,6 +82,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     StructureError(#[from] StructureError),
+
+    #[error(transparent)]
+    PlatformVersionError(#[from] PlatformVersionError),
 
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),

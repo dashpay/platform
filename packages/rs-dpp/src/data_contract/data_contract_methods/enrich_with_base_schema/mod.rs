@@ -14,6 +14,10 @@ impl DataContract {
         schema_id_byte_prefix: u8,
         exclude_properties: &[&str],
     ) -> Result<Self, ProtocolError> {
-        match self { DataContract::V0(v0) => Ok(v0.enrich_with_base_schema(base_schema, schema_id_byte_prefix, exclude_properties)?.into()) }
+        match self {
+            DataContract::V0(v0) => Ok(v0
+                .enrich_with_base_schema(base_schema, schema_id_byte_prefix, exclude_properties)?
+                .into()),
+        }
     }
 }

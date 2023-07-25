@@ -9,7 +9,7 @@ use crate::ProtocolError;
 use bincode::Decode;
 use derive_more::From;
 pub use fields::*;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 )]
 #[serde(untagged)]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 pub enum DataContractConfig {
     V0(DataContractConfigV0),
 }

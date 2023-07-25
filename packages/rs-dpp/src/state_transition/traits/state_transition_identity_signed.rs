@@ -1,4 +1,4 @@
-use crate::serialization_traits::Signable;
+use crate::serialization::Signable;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use anyhow::anyhow;
 use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
@@ -240,12 +240,12 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 //
 //     use super::StateTransitionIdentitySignedV0;
 //     use super::*;
-//     use crate::serialization_traits::PlatformDeserializable;
-//     use crate::serialization_traits::PlatformSerializable;
-//     use crate::serialization_traits::Signable;
+//     use crate::serialization::PlatformDeserializable;
+//     use crate::serialization::PlatformSerializable;
+//     use crate::serialization::Signable;
 //     use crate::version::FeatureVersion;
 //     use bincode::{config, Decode, Encode};
-//     use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+//     use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 //
 //     #[derive(
 //         Debug,

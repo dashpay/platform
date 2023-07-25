@@ -1,7 +1,7 @@
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
-use crate::serialization_traits::Signable;
+use crate::serialization::Signable;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,

@@ -7,9 +7,9 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::{BinaryData, Value};
@@ -22,14 +22,14 @@ use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
-use crate::serialization_traits::PlatformSerializable;
+use crate::serialization::PlatformSerializable;
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -45,7 +45,7 @@ mod property_names {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityTopUpTransitionV0 {
     // Own ST fields

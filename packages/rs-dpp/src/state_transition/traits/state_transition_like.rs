@@ -8,7 +8,7 @@ use crate::consensus::signature::InvalidStateTransitionSignatureError;
 use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
 
-use crate::serialization_traits::{PlatformSerializable, Signable};
+use crate::serialization::{PlatformSerializable, Signable};
 use crate::version::FeatureVersion;
 use crate::{
     identity::KeyType,

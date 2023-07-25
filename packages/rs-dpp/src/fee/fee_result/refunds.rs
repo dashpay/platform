@@ -11,7 +11,7 @@ use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;

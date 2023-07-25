@@ -5,9 +5,12 @@ use bincode::{Decode, Encode};
 use crate::data_contract::DataContract;
 use crate::identifier::Identifier;
 use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use crate::ProtocolError;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
+#[platform_error_type(ProtocolError)]
 pub struct DocumentBaseTransitionActionV0 {
     /// The document Id
     pub id: Identifier,

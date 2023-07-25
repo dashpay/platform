@@ -22,7 +22,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::{
     identifier::Identifier,

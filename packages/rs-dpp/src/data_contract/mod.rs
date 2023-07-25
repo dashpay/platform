@@ -1,4 +1,4 @@
-use crate::serialization_traits::{
+use crate::serialization::{
     PlatformDeserializableFromVersionedStructure,
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
     PlatformSerializableWithPlatformVersion,
@@ -10,7 +10,7 @@ use derive_more::From;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 pub use generate_data_contract::*;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value, ValueMap, ValueMapHelper};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -321,7 +321,7 @@ impl DataContract {
 mod tests {
     use crate::data_contract::v0::DataContractV0;
     use crate::data_contract::DataContract;
-    use crate::serialization_traits::PlatformSerializableWithPlatformVersion;
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;

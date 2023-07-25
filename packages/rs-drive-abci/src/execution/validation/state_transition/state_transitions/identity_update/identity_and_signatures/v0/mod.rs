@@ -8,7 +8,7 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization_traits::{PlatformMessageSignable, Signable};
+use dpp::serialization::serialization_traits::{PlatformMessageSignable, Signable};
 use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::version::PlatformVersion;

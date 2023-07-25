@@ -151,9 +151,9 @@ pub fn convert_to_consensus_signature_error(
 mod test {
     use super::*;
     use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
-    use crate::serialization_traits::PlatformDeserializable;
-    use crate::serialization_traits::PlatformSerializable;
-    use crate::serialization_traits::Signable;
+    use crate::serialization::PlatformDeserializable;
+    use crate::serialization::PlatformSerializable;
+    use crate::serialization::Signable;
     use crate::state_transition::errors::{PublicKeyMismatchError, WrongPublicKeyPurposeError};
     use crate::version::FeatureVersion;
     use crate::{
@@ -172,7 +172,7 @@ mod test {
         NativeBlsModule,
     };
     use bincode::{config, Decode, Encode};
-    use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+    use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
     use platform_value::BinaryData;
     use serde::{Deserialize, Serialize};
     use std::vec;

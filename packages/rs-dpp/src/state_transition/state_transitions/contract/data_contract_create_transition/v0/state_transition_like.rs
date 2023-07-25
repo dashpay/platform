@@ -10,7 +10,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::identity::PartialIdentity;

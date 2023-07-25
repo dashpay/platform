@@ -1,4 +1,9 @@
 use crate::identity::KeyType;
+use bincode::config::Config;
+use bincode::enc;
+use bincode::enc::write::SizeWriter;
+use bincode::enc::Encoder;
+use bincode::error::EncodeError;
 
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
@@ -105,23 +110,31 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
 }
 
 pub trait ValueConvertible {
-    fn to_object(&self) -> Result<Value, ProtocolError>  where Self: Sized + Clone {
+    fn to_object(&self) -> Result<Value, ProtocolError>
+    where
+        Self: Sized + Clone,
+    {
         platform_value::to_value(self.clone()).map_err(ProtocolError::ValueError)
     }
 
-    fn into_object(self) -> Result<Value, ProtocolError> where Self: Sized {
+    fn into_object(self) -> Result<Value, ProtocolError>
+    where
+        Self: Sized,
+    {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
     fn from_object(value: Value) -> Result<Self, ProtocolError>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         platform_value::from_value(value).map_err(ProtocolError::ValueError)
     }
 
     fn from_object_ref(value: &Value) -> Result<Self, ProtocolError>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
     }
 }

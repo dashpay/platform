@@ -38,14 +38,13 @@ impl DeriveEnum {
                 }
                 Ok(())
             })?
-            .generate_fn("encode")
-            .with_generic_deps("__E", [format!("{}::enc::Encoder", crate_name)])
+            .generate_fn("platform_encode")
+            .with_generic_deps("__E", ["bincode::enc::Encoder"])
             .with_self_arg(FnSelfArg::RefSelf)
             .with_arg("encoder", "&mut __E")
-            .with_return_type(format!(
-                "core::result::Result<(), {}::error::EncodeError>",
-                crate_name
-            ))
+            .with_return_type(
+                "core::result::Result<(), bincode::error::EncodeError>",
+            )
             .body(|fn_body| {
                 fn_body.ident_str("match");
                 fn_body.ident_str("self");
@@ -90,7 +89,7 @@ impl DeriveEnum {
                         // }
                         match_body.group(Delimiter::Brace, |body| {
                             // variant index
-                            body.push_parsed(format!("<u32 as {}::Encode>::encode", crate_name))?;
+                            body.push_parsed(format!("<u32 as {}::PlatformVersionEncode>::encode", crate_name))?;
                             body.group(Delimiter::Parenthesis, |args| {
                                 args.punct('&');
                                 args.group(Delimiter::Parenthesis, |num| {

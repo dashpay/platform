@@ -5,7 +5,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization_traits::{
+use dpp::serialization::serialization_traits::{
     PlatformDeserializable, PlatformSerializable, PlatformSerializableWithPlatformVersion,
 };
 use dpp::version::drive_versions::DriveVersion;

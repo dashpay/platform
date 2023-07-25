@@ -10,11 +10,9 @@ mod version;
 use std::convert::{TryFrom, TryInto};
 use std::process::id;
 
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
@@ -43,7 +41,7 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
     serde(rename_all = "camelCase"),
     serde(try_from = "IdentityCreateTransitionV0Inner")
 )]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreateTransitionV0 {
     // The signable

@@ -51,9 +51,11 @@ thiserror = { version = "1.0" }
 mockall = { version = "0.11.3", optional = true }
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
+platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-value-convertible = { path = "../rs-platform-value-convertible" }
 platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
 ed25519-dalek = {version = "2.0.0-rc.2", features = ["rand_core"] }
 nohash-hasher = "0.2.0"

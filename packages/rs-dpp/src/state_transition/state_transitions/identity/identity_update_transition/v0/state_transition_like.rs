@@ -12,7 +12,7 @@ use crate::{
 
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };

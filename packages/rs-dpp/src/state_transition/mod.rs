@@ -7,7 +7,7 @@ use platform_value::{BinaryData, Value};
 pub use state_transition_types::*;
 
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 mod abstract_state_transition;
 use crate::ProtocolError;
@@ -24,7 +24,7 @@ pub use traits::*;
 
 pub use state_transitions::*;
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };

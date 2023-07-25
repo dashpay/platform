@@ -14,7 +14,7 @@ pub(super) fn derive_platform_deserialize_enum(
 ) -> TokenStream {
     let VersionAttributes {
         passthrough,
-        nested,
+        derive_bincode: nested,
         platform_version_path,
         platform_serialize_limit,
         untagged,
@@ -119,7 +119,7 @@ pub(super) fn derive_platform_deserialize_enum(
             };
 
             let without_limit = quote! {
-                impl #impl_generics #crate_name::serialization_traits::PlatformDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
+                impl #impl_generics #crate_name::serialization::PlatformDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
                     fn versioned_deserialize(
                         data: &[u8],
                         platform_version: &PlatformVersion,
@@ -163,7 +163,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 };
 
                 quote! {
-                    impl #impl_generics #crate_name::serialization_traits::PlatformLimitDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
+                    impl #impl_generics #crate_name::serialization::PlatformLimitDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
                         fn versioned_limit_deserialize(
                             data: &[u8],
                             platform_version: &PlatformVersion,
@@ -187,9 +187,9 @@ pub(super) fn derive_platform_deserialize_enum(
         }
     } else {
         quote! {
-            impl #impl_generics #crate_name::serialization_traits::PlatformDeserializable for #name #ty_generics #where_clause {
+            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause {
                         fn deserialize(
-                            data: &[u8],
+                            data: &[u8]
                         ) -> Result<Self, ProtocolError>
                         where
                             Self: Sized {
@@ -197,8 +197,8 @@ pub(super) fn derive_platform_deserialize_enum(
                             bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
                         }
 
-                                        fn deserialize_no_limit(
-                            data: &[u8],
+                        fn deserialize_no_limit(
+                            data: &[u8]
                         ) -> Result<Self, ProtocolError>
                         where
                             Self: Sized {
@@ -214,7 +214,7 @@ pub(super) fn derive_platform_deserialize_enum(
         #platform_deserialize_body
     };
 
-    // eprintln!("Processing variant: {}", &expanded);
+    // eprintln!("Processing deserialize variant: {}", &expanded);
 
     TokenStream::from(expanded)
 }

@@ -8,9 +8,9 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
-use crate::serialization_traits::PlatformSerializable;
+use crate::serialization::PlatformSerializable;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::version::FeatureVersion;
@@ -34,7 +34,7 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(PlatformDeserialize, PlatformSerialize, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(
@@ -42,7 +42,7 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated

@@ -150,7 +150,7 @@ mod tests {
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
-    use dpp::serialization_traits::PlatformSerializable;
+    use dpp::serialization::serialization_traits::PlatformSerializable;
     use dpp::util::cbor_serializer;
     use dpp::version::drive_versions::DriveVersion;
 

@@ -1,8 +1,7 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::PlatformSignable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::serialization::PlatformSerializable;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -15,7 +14,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;

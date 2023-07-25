@@ -26,7 +26,7 @@ use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
-use crate::platform_serialization::PlatformSignable;
+use platform_serialization_derive::PlatformSignable;
 
 #[cfg(feature = "state-transition-cbor-conversion")]
 use crate::util::cbor_serializer;
@@ -37,7 +37,7 @@ use crate::util::vec;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::serialization_traits::PlatformMessageSignable;
+use crate::serialization::PlatformMessageSignable;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::v0_methods::IdentityPublicKeyInCreationMethodsV0;
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};

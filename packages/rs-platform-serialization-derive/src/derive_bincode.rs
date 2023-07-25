@@ -27,7 +27,7 @@ pub(crate) fn derive_encode_inner(input: TokenStream) -> Result<TokenStream> {
         }
     }
 
-    generator.export_to_file("bincode", "Encode");
+    generator.export_to_file("platform_versioned_bincode", "Encode");
     generator.finish()
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn derive_decode_inner(input: TokenStream) -> Result<TokenStream> {
         }
     }
 
-    generator.export_to_file("bincode", "Decode");
+    generator.export_to_file("platform_versioned_bincode", "Decode");
     generator.finish()
 }
 
@@ -83,6 +83,6 @@ pub(crate) fn derive_borrow_decode_inner(input: TokenStream) -> Result<TokenStre
         }
     }
 
-    generator.export_to_file("bincode", "BorrowDecode");
+    generator.export_to_file("platform_versioned_bincode", "BorrowDecode");
     generator.finish()
 }

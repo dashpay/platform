@@ -8,7 +8,7 @@ pub use validation::*;
 
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,

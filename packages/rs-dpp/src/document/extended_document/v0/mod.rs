@@ -5,7 +5,7 @@ use crate::document::{Document, DocumentV0Getters};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
-use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
+use crate::serialization::{PlatformDeserializable, ValueConvertible};
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;

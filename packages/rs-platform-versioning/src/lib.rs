@@ -84,13 +84,31 @@ use syn::{
 /// If the `platform_serde_versioned` attribute is not present, the default version field name will be `$version`.
 #[proc_macro_derive(
     PlatformSerdeVersionedDeserialize,
-    attributes(versioned, platform_serde_versioned)
+    attributes(
+        versioned,
+        platform_serde_versioned,
+        platform_serialize,
+        platform_version_path
+    )
 )]
 pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream {
     let DeriveInput {
         ident, data, attrs, ..
     } = parse_macro_input!(input);
     let name_str = ident.to_string();
+
+    let path = parse_path(&attrs);
+
+    let path_tokens: proc_macro2::TokenStream = {
+        let mut tokens = proc_macro2::TokenStream::new();
+        for (i, ident) in path.iter().enumerate() {
+            if i != 0 {
+                tokens.extend(quote! { . });
+            }
+            tokens.extend(quote! { #ident });
+        }
+        tokens
+    };
 
     let mut version_field_name = String::from("$version");
 
@@ -130,7 +148,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
 
         quote! {
             #version => {
-                let value = #variant_ident_sub::from_object(map_clone, current_platform_version).map_err(|e|serde::de::Error::custom(e.to_string()))?;
+                let value = #variant_ident_sub::from_object(map_clone).map_err(|e|serde::de::Error::custom(e.to_string()))?;
                 Ok(#ident::#variant_ident(value))
             }
         }
@@ -162,7 +180,9 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
                         }
                         let version: crate::version::FeatureVersion = map_clone.get_integer(#version_field_name).map_err(|_|serde::de::Error::missing_field(#version_field_name))?;
                         let current_platform_version = crate::version::PlatformVersion::get_current().map_err(|e|serde::de::Error::custom(e.to_string()))?;
-
+                       if current_platform_version.#path_tokens != version {
+                        return Err(::serde::de::Error::custom("Invalid version value"));
+                    }
                         match version {
                             #(#arms,)*
                             _ => Err(::serde::de::Error::custom("Invalid version value")),
@@ -359,28 +379,25 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
 }
 
 fn parse_path(attrs: &[Attribute]) -> Vec<Ident> {
-    let mut platform_version_path = None;
-
-    if let Some(platform_serialize_attr) = attrs
-        .iter()
-        .find(|attr| attr.path().is_ident("platform_serialize"))
-    {
-        platform_serialize_attr
-            .parse_nested_meta(|meta| {
-                if meta.path.is_ident("platform_version_path") {
-                    let value = meta.value()?;
-                    platform_version_path = Some(value.parse::<LitStr>()?);
-                }
-                Ok(())
-            })
-            .expect("expected to parse nested meta");
-    }
-
-    if platform_version_path.is_none() {
-        for attr in attrs {
-            if attr.path().is_ident("platform_version_path") {
-                platform_version_path = attr.parse_args().expect("Failed to parse path");
-            }
+    let mut platform_version_path = None::<LitStr>;
+    //
+    // if let Some(platform_serialize_attr) = attrs
+    //     .iter()
+    //     .find(|attr| attr.path().is_ident("platform_serialize"))
+    // {
+    //     platform_serialize_attr
+    //         .parse_nested_meta(|meta| {
+    //             if meta.path.is_ident("platform_version_path") {
+    //                 let value = meta.value()?;
+    //                 platform_version_path = Some(value.parse::<LitStr>()?);
+    //             }
+    //             Ok(())
+    //         })
+    //         .expect("expected to parse nested meta");
+    // }
+    for attr in attrs {
+        if attr.path().is_ident("platform_version_path") {
+            platform_version_path = attr.parse_args().expect("Failed to parse path");
         }
     }
 

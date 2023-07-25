@@ -1,5 +1,4 @@
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -24,7 +23,7 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 pub trait IdentityCreditTransferTransitionV0Methods {
     /// Get State Transition Type

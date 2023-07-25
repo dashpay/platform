@@ -15,7 +15,7 @@ pub(super) fn derive_platform_serialize_enum(
 ) -> TokenStream {
     let VersionAttributes {
         passthrough,
-        nested,
+        derive_bincode: nested,
         platform_serialize_limit,
         platform_version_path,
         untagged,
@@ -106,7 +106,7 @@ pub(super) fn derive_platform_serialize_enum(
     };
 
     let without_limit_body = quote! {
-        impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
+        impl #impl_generics #crate_name::serialization::PlatformSerializable for #name #ty_generics #where_clause
         {
             fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_no_limit();
@@ -121,7 +121,7 @@ pub(super) fn derive_platform_serialize_enum(
     };
 
     let with_limit_body = quote! {
-        impl #impl_generics #crate_name::serialization_traits::PlatformSerializable for #name #ty_generics #where_clause
+        impl #impl_generics #crate_name::serialization::PlatformSerializable for #name #ty_generics #where_clause
         {
             fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
@@ -136,7 +136,7 @@ pub(super) fn derive_platform_serialize_enum(
     };
 
     let with_limit_prefix_version_body = quote! {
-        impl #impl_generics #crate_name::serialization_traits::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
+        impl #impl_generics #crate_name::serialization::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
             fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_limit::<#limit>();
 
@@ -174,7 +174,7 @@ pub(super) fn derive_platform_serialize_enum(
     };
 
     let with_prefix_version_body = quote! {
-        impl #impl_generics #crate_name::serialization_traits::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
+        impl #impl_generics #crate_name::serialization::PlatformSerializableWithPrefixVersion for #name #ty_generics #where_clause {
             fn serialize_with_prefix_version(&self, version: #crate_name::version::FeatureVersion) -> Result<Vec<u8>, #error_type> {
                 let config = bincode::config::standard().with_big_endian().with_no_limit();
 
@@ -216,7 +216,7 @@ pub(super) fn derive_platform_serialize_enum(
             proc_macro2::TokenStream::from_str(&platform_version_path.value())
                 .expect("Expected a valid field path for 'platform_version_path'");
         quote! {
-        impl #impl_generics #crate_name::serialization_traits::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause {
+        impl #impl_generics #crate_name::serialization::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause {
             fn serialize_with_platform_version(&self, version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
                 self.serialize_with_prefix_version(&self, version.#platform_version_path_tokens)
             }

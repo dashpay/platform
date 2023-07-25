@@ -1,10 +1,10 @@
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::{property_names, IdentityV0};
+use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use std::convert::TryInto;
-use crate::serialization_traits::ValueConvertible;
 
 impl ValueConvertible for IdentityV0 {}
 

@@ -12,11 +12,10 @@ use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::PlatformSerializable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::PlatformSerializable;
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
@@ -34,7 +33,7 @@ use crate::{
     serde(rename_all = "camelCase")
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(allow_nested)]
+#[platform_serialize(derive_bincode)]
 pub struct DataContractUpdateTransitionV0 {
     pub data_contract: DataContract,
     #[platform_signable(exclude_from_sig_hash)]

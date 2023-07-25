@@ -8,9 +8,8 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::serialization_traits::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
-use platform_serialization::PlatformSignable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -23,7 +22,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -41,9 +40,7 @@ use crate::version::PlatformVersion;
     serde(rename_all = "camelCase")
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(allow_nested)]
 pub struct DataContractCreateTransitionV0 {
-    //#[platform_serialization(versioned_structure, versioned_serialization)]
     pub data_contract: DataContract,
     pub entropy: Bytes32,
     #[platform_signable(exclude_from_sig_hash)]

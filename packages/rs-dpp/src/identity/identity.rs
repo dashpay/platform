@@ -2,18 +2,18 @@ use crate::identity::conversion::platform_value::IdentityPlatformValueConversion
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AssetLockProof, Revision};
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization::ValueConvertible;
+use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::util::hash;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_versioning::PlatformSerdeVersionedDeserialize;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use crate::serialization_traits::ValueConvertible;
 
 /// The identity is not stored inside of drive, because of this, the serialization is mainly for
 /// transport, the serialization of the identity will include the version, so no passthrough or
@@ -29,7 +29,8 @@ use crate::serialization_traits::ValueConvertible;
     From,
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(limit = 15000, allow_nested)]
+#[platform_serialize(limit = 15000, derive_bincode)]
+#[platform_version_path("dpp.identity_versions.identity_structure_version")]
 #[serde(untagged)]
 pub enum Identity {
     #[versioned(0)]

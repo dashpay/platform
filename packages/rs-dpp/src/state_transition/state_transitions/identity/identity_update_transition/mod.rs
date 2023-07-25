@@ -11,7 +11,7 @@ mod version;
 
 use fields::*;
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::identity_update_transition::fields::property_names::ADD_PUBLIC_KEYS_SIGNATURE;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
@@ -19,7 +19,7 @@ use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::Serialize;
 
@@ -39,9 +39,9 @@ use serde::Serialize;
     serde(untagged)
 )]
 #[platform_error_type(ProtocolError)]
-#[platform_serialize(
-    platform_version_path = "dpp.state_transition_serialization_versions.identity_update_state_transition",
-    allow_nested
+#[platform_serialize(derive_bincode)]
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

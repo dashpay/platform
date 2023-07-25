@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;

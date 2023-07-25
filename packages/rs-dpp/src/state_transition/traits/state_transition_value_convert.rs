@@ -1,4 +1,4 @@
-use crate::serialization_traits::{PlatformSerializable, Signable};
+use crate::serialization::{PlatformSerializable, Signable};
 use crate::state_transition::{state_transition_helpers, StateTransitionFieldTypes};
 use crate::ProtocolError;
 use platform_value::{Value, ValueMapHelper};

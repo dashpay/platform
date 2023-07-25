@@ -13,7 +13,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
-use dpp::serialization_traits::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::serialization_traits::PlatformDeserializableFromVersionedStructure;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

@@ -2,7 +2,7 @@ mod test {
     use crate::data_contract::contract_config::DataContractConfigV0;
 
     use crate::data_contract::extra::common::json_document_to_contract;
-    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::{data_contract::DataContract, util::json_schema::JsonSchemaExt};
 
     type IndexName = &'static str;

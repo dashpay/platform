@@ -17,9 +17,7 @@ use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::DataContract;
-use crate::serialization_traits::{
-    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
-};
+use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -273,7 +271,7 @@ mod tests {
     use super::*;
     use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::property_names;
-    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization::PlatformSerializable;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::Convertible;

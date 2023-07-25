@@ -177,7 +177,7 @@ mod tests {
 
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::serialization_traits::{
+    use dpp::serialization::serialization_traits::{
         PlatformSerializable, PlatformSerializableWithPlatformVersion,
     };
     use dpp::util::cbor_serializer;

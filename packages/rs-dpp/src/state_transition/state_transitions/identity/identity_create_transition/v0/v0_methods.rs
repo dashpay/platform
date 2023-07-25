@@ -1,4 +1,4 @@
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ use crate::identity::signer::Signer;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use bincode::{config, Decode, Encode};
 
