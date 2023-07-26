@@ -1,23 +1,26 @@
+pub mod de;
 pub mod enc;
 mod features;
-pub mod de;
 
 use bincode::config::Config;
-use bincode::enc::{EncoderImpl, write};
-use bincode::enc::write::Writer;
-use bincode::{Decode, error};
-use bincode::de::{Decoder, DecoderImpl, read};
 use bincode::de::read::Reader;
-pub use features::platform_encode_to_vec;
+use bincode::de::{read, Decoder, DecoderImpl};
+use bincode::enc::write::Writer;
+use bincode::enc::{write, EncoderImpl};
 pub use enc::PlatformVersionEncode;
+pub use features::platform_encode_to_vec;
 
 pub use de::PlatformVersionedBorrowDecode;
 pub use de::PlatformVersionedDecode;
+
+pub use bincode::de::BorrowDecode;
+pub use bincode::de::Decode;
+pub use bincode::enc::Encode;
+use bincode::error;
 use platform_version::version::PlatformVersion;
 
 extern crate alloc;
 extern crate std;
-
 
 /// Encode the given value into the given slice. Returns the amount of bytes that have been written.
 ///

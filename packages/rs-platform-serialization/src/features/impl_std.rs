@@ -1,3 +1,7 @@
+use crate::{
+    impl_platform_versioned_borrow_decode, PlatformVersionEncode, PlatformVersionedBorrowDecode,
+    PlatformVersionedDecode,
+};
 use bincode::{
     config::Config,
     de::{read::Reader, BorrowDecode, BorrowDecoder, Decode, Decoder, DecoderImpl},
@@ -5,6 +9,7 @@ use bincode::{
     error::{DecodeError, EncodeError},
 };
 use core::time::Duration;
+use platform_version::version::PlatformVersion;
 use std::{
     collections::{HashMap, HashSet},
     ffi::{CStr, CString},
@@ -15,8 +20,6 @@ use std::{
     sync::{Mutex, RwLock},
     time::SystemTime,
 };
-use platform_version::version::PlatformVersion;
-use crate::{impl_platform_versioned_borrow_decode, PlatformVersionedBorrowDecode, PlatformVersionedDecode, PlatformVersionEncode};
 
 /// Decode type `D` from the given reader with the given `Config`. The reader can be any type that implements `std::io::Read`, e.g. `std::fs::File`.
 ///
@@ -44,8 +47,8 @@ impl<R> IoReader<R> {
 }
 
 impl<R> Reader for IoReader<R>
-    where
-        R: std::io::Read,
+where
+    R: std::io::Read,
 {
     #[inline(always)]
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
@@ -108,29 +111,44 @@ impl<'storage, W: std::io::Write> Writer for IoWriter<'storage, W> {
 }
 
 impl<'a> PlatformVersionEncode for &'a CStr {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         self.to_bytes().encode(encoder)
     }
 }
 
 impl PlatformVersionEncode for CString {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         self.as_bytes().encode(encoder)
     }
 }
 
 impl PlatformVersionedDecode for CString {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(CString);
 
 impl<T> PlatformVersionEncode for Mutex<T>
-    where
-        T: PlatformVersionEncode,
+where
+    T: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         let t = self.lock().map_err(|_| EncodeError::LockFailed {
             type_name: core::any::type_name::<Mutex<T>>(),
         })?;
@@ -139,29 +157,39 @@ impl<T> PlatformVersionEncode for Mutex<T>
 }
 
 impl<T> PlatformVersionedDecode for Mutex<T>
-    where
-        T: PlatformVersionedDecode,
+where
+    T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(Mutex::new(t))
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Mutex<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(Mutex::new(t))
     }
 }
 
 impl<T> PlatformVersionEncode for RwLock<T>
-    where
-        T: PlatformVersionEncode,
+where
+    T: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         let t = self.read().map_err(|_| EncodeError::LockFailed {
             type_name: core::any::type_name::<RwLock<T>>(),
         })?;
@@ -170,57 +198,84 @@ impl<T> PlatformVersionEncode for RwLock<T>
 }
 
 impl<T> PlatformVersionedDecode for RwLock<T>
-    where
-        T: PlatformVersionedDecode,
+where
+    T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(RwLock::new(t))
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for RwLock<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(RwLock::new(t))
     }
 }
 
 impl PlatformVersionEncode for SystemTime {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion)  -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for SystemTime {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(SystemTime);
 
 impl PlatformVersionEncode for &'_ Path {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
 }
 
 impl<'de> PlatformVersionedBorrowDecode<'de> for &'de Path {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::BorrowDecode::borrow_decode(decoder)
     }
 }
 
 impl PlatformVersionEncode for PathBuf {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for PathBuf {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let string = std::string::String::decode(decoder)?;
         bincode::Decode::decode(decoder)
     }
@@ -228,90 +283,135 @@ impl PlatformVersionedDecode for PathBuf {
 impl_platform_versioned_borrow_decode!(PathBuf);
 
 impl PlatformVersionEncode for IpAddr {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for IpAddr {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(IpAddr);
 
 impl PlatformVersionEncode for Ipv4Addr {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for Ipv4Addr {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(Ipv4Addr);
 
 impl PlatformVersionEncode for Ipv6Addr {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for Ipv6Addr {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(Ipv6Addr);
 
 impl PlatformVersionEncode for SocketAddr {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for SocketAddr {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(SocketAddr);
 
 impl PlatformVersionEncode for SocketAddrV4 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for SocketAddrV4 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(SocketAddrV4);
 
 impl PlatformVersionEncode for SocketAddrV6 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         Encode::encode(self, encoder)
     }
 }
 
 impl PlatformVersionedDecode for SocketAddrV6 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(SocketAddrV6);
 
-
 impl<K, V, S> PlatformVersionEncode for HashMap<K, V, S>
-    where
-        K: PlatformVersionEncode,
-        V: PlatformVersionEncode,
+where
+    K: PlatformVersionEncode,
+    V: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         for (k, v) in self.iter() {
             PlatformVersionEncode::platform_encode(k, encoder, platform_version)?;
@@ -322,12 +422,15 @@ impl<K, V, S> PlatformVersionEncode for HashMap<K, V, S>
 }
 
 impl<K, V, S> PlatformVersionedDecode for HashMap<K, V, S>
-    where
-        K: PlatformVersionedDecode + Eq + std::hash::Hash,
-        V: PlatformVersionedDecode,
-        S: std::hash::BuildHasher + Default,
+where
+    K: PlatformVersionedDecode + Eq + std::hash::Hash,
+    V: PlatformVersionedDecode,
+    S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<(K, V)>(len)?;
 
@@ -345,12 +448,15 @@ impl<K, V, S> PlatformVersionedDecode for HashMap<K, V, S>
     }
 }
 impl<'de, K, V, S> PlatformVersionedBorrowDecode<'de> for HashMap<K, V, S>
-    where
-        K: PlatformVersionedBorrowDecode<'de> + Eq + std::hash::Hash,
-        V: PlatformVersionedBorrowDecode<'de>,
-        S: std::hash::BuildHasher + Default,
+where
+    K: PlatformVersionedBorrowDecode<'de> + Eq + std::hash::Hash,
+    V: PlatformVersionedBorrowDecode<'de>,
+    S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<(K, V)>(len)?;
 
@@ -369,11 +475,14 @@ impl<'de, K, V, S> PlatformVersionedBorrowDecode<'de> for HashMap<K, V, S>
 }
 
 impl<T, S> PlatformVersionedDecode for HashSet<T, S>
-    where
-        T: PlatformVersionedDecode + Eq + Hash,
-        S: std::hash::BuildHasher + Default,
+where
+    T: PlatformVersionedDecode + Eq + Hash,
+    S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -391,11 +500,14 @@ impl<T, S> PlatformVersionedDecode for HashSet<T, S>
 }
 
 impl<'de, T, S> PlatformVersionedBorrowDecode<'de> for HashSet<T, S>
-    where
-        T: PlatformVersionedBorrowDecode<'de> + Eq + Hash,
-        S: std::hash::BuildHasher + Default,
+where
+    T: PlatformVersionedBorrowDecode<'de> + Eq + Hash,
+    S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -412,10 +524,14 @@ impl<'de, T, S> PlatformVersionedBorrowDecode<'de> for HashSet<T, S>
 }
 
 impl<T, S> PlatformVersionEncode for HashSet<T, S>
-    where
-        T: PlatformVersionEncode,
+where
+    T: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         for item in self.iter() {
             item.platform_encode(encoder, platform_version)?;

@@ -41,6 +41,7 @@ use crate::version::PlatformVersion;
 )]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransitionV0 {
+    #[platform_serialize(versioned)]
     pub data_contract: DataContract,
     pub entropy: Bytes32,
     #[platform_signable(exclude_from_sig_hash)]

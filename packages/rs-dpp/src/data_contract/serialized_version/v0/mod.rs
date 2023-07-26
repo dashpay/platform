@@ -2,11 +2,11 @@ use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName, PropertyPath};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
+use crate::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use crate::ProtocolError;
 
 #[derive(Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
 #[platform_error_type(ProtocolError)]
@@ -18,8 +18,10 @@ pub struct DataContractSerializationFormatV0 {
     pub id: Identifier,
 
     /// Internal configuration for the contract.
+    #[platform_serialize(versioned)]
     pub config: DataContractConfig,
 
+    //todo: we should just store a schema number
     /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]
     pub schema: String,

@@ -35,6 +35,7 @@ use crate::{
 #[platform_error_type(ProtocolError)]
 #[platform_serialize(derive_bincode)]
 pub struct DataContractUpdateTransitionV0 {
+    #[platform_serialize(versioned)]
     pub data_contract: DataContract,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,

@@ -1,6 +1,7 @@
-use bincode::error::{DecodeError, EncodeError};
-use crate::{enc::{
-}, impl_platform_versioned_borrow_decode, PlatformVersionedBorrowDecode, PlatformVersionedDecode, PlatformVersionEncode};
+use crate::{
+    impl_platform_versioned_borrow_decode, PlatformVersionEncode, PlatformVersionedBorrowDecode,
+    PlatformVersionedDecode,
+};
 #[cfg(target_has_atomic = "ptr")]
 use alloc::sync::Arc;
 use alloc::{
@@ -12,11 +13,12 @@ use alloc::{
     vec::Vec,
 };
 use bincode::config::Config;
-use bincode::de::{BorrowDecoder, Decoder};
-use bincode::enc::Encoder;
-use bincode::enc::write::{SizeWriter, Writer};
-use bincode::{enc, Encode};
 use bincode::de::read::Reader;
+use bincode::de::{BorrowDecoder, Decoder};
+use bincode::enc::write::{SizeWriter, Writer};
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::{enc, Encode};
 use platform_version::version::PlatformVersion;
 
 #[derive(Default)]
@@ -67,10 +69,13 @@ pub fn platform_encode_to_vec<E: PlatformVersionEncode, C: Config>(
 }
 
 impl<T> PlatformVersionedDecode for BinaryHeap<T>
-    where
-        T: PlatformVersionedDecode + Ord,
+where
+    T: PlatformVersionedDecode + Ord,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -86,10 +91,13 @@ impl<T> PlatformVersionedDecode for BinaryHeap<T>
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for BinaryHeap<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de> + Ord,
+where
+    T: PlatformVersionedBorrowDecode<'de> + Ord,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -106,10 +114,14 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for BinaryHeap<T>
 }
 
 impl<T> PlatformVersionEncode for BinaryHeap<T>
-    where
-        T: PlatformVersionEncode + Ord,
+where
+    T: PlatformVersionEncode + Ord,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         for val in self.iter() {
             val.platform_encode(encoder, platform_version)?;
@@ -119,11 +131,14 @@ impl<T> PlatformVersionEncode for BinaryHeap<T>
 }
 
 impl<K, V> PlatformVersionedDecode for BTreeMap<K, V>
-    where
-        K: PlatformVersionedDecode + Ord,
-        V: PlatformVersionedDecode, 
+where
+    K: PlatformVersionedDecode + Ord,
+    V: PlatformVersionedDecode,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<(K, V)>(len)?;
 
@@ -140,11 +155,14 @@ impl<K, V> PlatformVersionedDecode for BTreeMap<K, V>
     }
 }
 impl<'de, K, V> PlatformVersionedBorrowDecode<'de> for BTreeMap<K, V>
-    where
-        K: PlatformVersionedBorrowDecode<'de> + Ord,
-        V: PlatformVersionedBorrowDecode<'de>,
+where
+    K: PlatformVersionedBorrowDecode<'de> + Ord,
+    V: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<(K, V)>(len)?;
 
@@ -162,11 +180,15 @@ impl<'de, K, V> PlatformVersionedBorrowDecode<'de> for BTreeMap<K, V>
 }
 
 impl<K, V> PlatformVersionEncode for BTreeMap<K, V>
-    where
-        K: PlatformVersionEncode + Ord,
-        V: PlatformVersionEncode,
+where
+    K: PlatformVersionEncode + Ord,
+    V: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         for (key, val) in self.iter() {
             key.platform_encode(encoder, platform_version)?;
@@ -177,10 +199,13 @@ impl<K, V> PlatformVersionEncode for BTreeMap<K, V>
 }
 
 impl<T> PlatformVersionedDecode for BTreeSet<T>
-    where
-        T: PlatformVersionedDecode + Ord,
+where
+    T: PlatformVersionedDecode + Ord,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -196,10 +221,13 @@ impl<T> PlatformVersionedDecode for BTreeSet<T>
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for BTreeSet<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de> + Ord,
+where
+    T: PlatformVersionedBorrowDecode<'de> + Ord,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -216,10 +244,14 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for BTreeSet<T>
 }
 
 impl<T> PlatformVersionEncode for BTreeSet<T>
-    where
-        T: PlatformVersionEncode + Ord,
+where
+    T: PlatformVersionEncode + Ord,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         for item in self.iter() {
             item.platform_encode(encoder, platform_version)?;
@@ -229,10 +261,13 @@ impl<T> PlatformVersionEncode for BTreeSet<T>
 }
 
 impl<T> PlatformVersionedDecode for VecDeque<T>
-    where
-        T: PlatformVersionedDecode, 
+where
+    T: PlatformVersionedDecode,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -248,10 +283,13 @@ impl<T> PlatformVersionedDecode for VecDeque<T>
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for VecDeque<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -268,10 +306,14 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for VecDeque<T>
 }
 
 impl<T> PlatformVersionEncode for VecDeque<T>
-    where
-        T: PlatformVersionEncode,
+where
+    T: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         for item in self.iter() {
             item.platform_encode(encoder, platform_version)?;
@@ -281,10 +323,13 @@ impl<T> PlatformVersionEncode for VecDeque<T>
 }
 
 impl<T> PlatformVersionedDecode for Vec<T>
-    where
-        T: PlatformVersionedDecode + 'static,
+where
+    T: PlatformVersionedDecode + 'static,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
 
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<u8>() {
@@ -310,10 +355,13 @@ impl<T> PlatformVersionedDecode for Vec<T>
 }
 
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Vec<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let len = crate::de::decode_slice_len(decoder)?;
         decoder.claim_container_read::<T>(len)?;
 
@@ -322,17 +370,24 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Vec<T>
             // See the documentation on `unclaim_bytes_read` as to why we're doing this here
             decoder.unclaim_bytes_read(core::mem::size_of::<T>());
 
-            vec.push(T::platform_versioned_borrow_decode(decoder, platform_version)?);
+            vec.push(T::platform_versioned_borrow_decode(
+                decoder,
+                platform_version,
+            )?);
         }
         Ok(vec)
     }
 }
 
 impl<T> PlatformVersionEncode for Vec<T>
-    where
-        T: PlatformVersionEncode + 'static,
+where
+    T: PlatformVersionEncode + 'static,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         crate::enc::encode_slice_len(encoder, self.len())?;
         if core::any::TypeId::of::<T>() == core::any::TypeId::of::<u8>() {
             let slice: &[u8] = unsafe { core::mem::transmute(self.as_slice()) };
@@ -346,102 +401,137 @@ impl<T> PlatformVersionEncode for Vec<T>
     }
 }
 
-
 impl PlatformVersionedDecode for String {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
-         bincode::Decode::decode(decoder)
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
+        bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(String);
 
 impl PlatformVersionedDecode for Box<str> {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
-         bincode::Decode::decode(decoder)
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
+        bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(Box<str>);
 
 impl PlatformVersionEncode for String {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        _: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         Encode::encode(self, encoder)
     }
 }
 
 impl<T> PlatformVersionedDecode for Box<T>
-    where
-        T: PlatformVersionedDecode, 
+where
+    T: PlatformVersionedDecode,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_versioned)?;
         Ok(Box::new(t))
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Box<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_versioned)?;
         Ok(Box::new(t))
     }
 }
 
 impl<T> PlatformVersionEncode for Box<T>
-    where
-        T: PlatformVersionEncode + ?Sized,
+where
+    T: PlatformVersionEncode + ?Sized,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         T::platform_encode(self, encoder, platform_version)
     }
 }
 
 impl<T> PlatformVersionedDecode for Box<[T]>
-    where
-        T: PlatformVersionedDecode + 'static,
+where
+    T: PlatformVersionedDecode + 'static,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_decode(decoder, platform_version)?;
         Ok(vec.into_boxed_slice())
     }
 }
 
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Box<[T]>
-    where
-        T: PlatformVersionedBorrowDecode<'de> + 'de,
+where
+    T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(vec.into_boxed_slice())
     }
 }
 
 impl<'cow, T> PlatformVersionedDecode for Cow<'cow, T>
-    where
-        T: ToOwned + ?Sized,
-        <T as ToOwned>::Owned: PlatformVersionedDecode, 
+where
+    T: ToOwned + ?Sized,
+    <T as ToOwned>::Owned: PlatformVersionedDecode,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = <T as ToOwned>::Owned::platform_versioned_decode(decoder, platform_versioned)?;
         Ok(Cow::Owned(t))
     }
 }
 impl<'cow, T> PlatformVersionedBorrowDecode<'cow> for Cow<'cow, T>
-    where
-        T: ToOwned + ?Sized,
-        &'cow T: PlatformVersionedBorrowDecode<'cow>,
+where
+    T: ToOwned + ?Sized,
+    &'cow T: PlatformVersionedBorrowDecode<'cow>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'cow>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'cow>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = <&T>::platform_versioned_borrow_decode(decoder, platform_versioned)?;
         Ok(Cow::Borrowed(t))
     }
 }
 
 impl<'cow, T> PlatformVersionEncode for Cow<'cow, T>
-    where
-        T: ToOwned + ?Sized,
-        for<'a> &'a T: PlatformVersionEncode,
+where
+    T: ToOwned + ?Sized,
+    for<'a> &'a T: PlatformVersionEncode,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         self.as_ref().platform_encode(encoder, platform_version)
     }
 }
@@ -449,7 +539,12 @@ impl<'cow, T> PlatformVersionEncode for Cow<'cow, T>
 #[test]
 fn test_cow_round_trip() {
     let start = Cow::Borrowed("Foo");
-    let encoded = crate::platform_encode_to_vec(&start, bincode::config::standard(), PlatformVersion::first()).unwrap();
+    let encoded = crate::platform_encode_to_vec(
+        &start,
+        bincode::config::standard(),
+        PlatformVersion::first(),
+    )
+    .unwrap();
     let (end, _) =
         crate::borrow_decode_from_slice::<Cow<str>, _>(&encoded, crate::config::standard())
             .unwrap();
@@ -460,49 +555,65 @@ fn test_cow_round_trip() {
 }
 
 impl<T> PlatformVersionedDecode for Rc<T>
-    where
-        T: PlatformVersionedDecode, 
+where
+    T: PlatformVersionedDecode,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(Rc::new(t))
     }
 }
 
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_versioned)?;
         Ok(Rc::new(t))
     }
 }
 
 impl<T> PlatformVersionEncode for Rc<T>
-    where
-        T: PlatformVersionEncode + ?Sized,
+where
+    T: PlatformVersionEncode + ?Sized,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         T::platform_encode(self, encoder, platform_version)
     }
 }
 
 impl<T> PlatformVersionedDecode for Rc<[T]>
-    where
-        T: PlatformVersionedDecode + 'static,
+where
+    T: PlatformVersionedDecode + 'static,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_decode(decoder, platform_versioned)?;
         Ok(vec.into())
     }
 }
 
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<[T]>
-    where
-        T: PlatformVersionedBorrowDecode<'de> + 'de,
+where
+    T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_borrow_decode(decoder, platform_versioned)?;
         Ok(vec.into())
     }
@@ -510,10 +621,13 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<[T]>
 
 #[cfg(target_has_atomic = "ptr")]
 impl<T> PlatformVersionedDecode for Arc<T>
-    where
-        T: PlatformVersionedDecode, 
+where
+    T: PlatformVersionedDecode,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(Arc::new(t))
     }
@@ -521,17 +635,23 @@ impl<T> PlatformVersionedDecode for Arc<T>
 
 #[cfg(target_has_atomic = "ptr")]
 impl PlatformVersionedDecode for Arc<str> {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
-         bincode::Decode::decode(decoder)
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
+        bincode::Decode::decode(decoder)
     }
 }
 
 #[cfg(target_has_atomic = "ptr")]
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<T>
-    where
-        T: PlatformVersionedBorrowDecode<'de>,
+where
+    T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_versioned: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_versioned: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_versioned)?;
         Ok(Arc::new(t))
     }
@@ -539,27 +659,37 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<T>
 
 #[cfg(target_has_atomic = "ptr")]
 impl<'de> PlatformVersionedBorrowDecode<'de> for Arc<str> {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::BorrowDecode::borrow_decode(decoder)
     }
 }
 
 #[cfg(target_has_atomic = "ptr")]
 impl<T> PlatformVersionEncode for Arc<T>
-    where
-        T: PlatformVersionEncode + ?Sized,
+where
+    T: PlatformVersionEncode + ?Sized,
 {
-    fn platform_encode<E: Encoder>(&self, encoder: &mut E, platform_version: &PlatformVersion) -> Result<(), EncodeError> {
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
         T::platform_encode(self, encoder, platform_version)
     }
 }
 
 #[cfg(target_has_atomic = "ptr")]
 impl<T> PlatformVersionedDecode for Arc<[T]>
-    where
-        T: PlatformVersionedDecode + 'static,
+where
+    T: PlatformVersionedDecode + 'static,
 {
-     fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_decode(decoder, platform_version)?;
         Ok(vec.into())
     }
@@ -567,10 +697,13 @@ impl<T> PlatformVersionedDecode for Arc<[T]>
 
 #[cfg(target_has_atomic = "ptr")]
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<[T]>
-    where
-        T: PlatformVersionedBorrowDecode<'de> + 'de,
+where
+    T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(vec.into())
     }

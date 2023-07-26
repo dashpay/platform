@@ -13,8 +13,8 @@ use core::{
     ops::{Bound, Range, RangeInclusive},
     time::Duration,
 };
-use std::collections::BTreeMap;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 impl PlatformVersionEncode for () {
     fn platform_encode<E: Encoder>(

@@ -113,13 +113,19 @@ impl DeriveEnum {
                                         .unwrap_or_default();
                                     if attributes.with_serde {
                                         body.push_parsed(format!(
-                                            "{0}::PlatformVersionEncode::platform_encode(&{0}::serde::Compat({1}), encoder, platform_version)?;",
+                                            "{0}::Encode::encode(&bincode::serde::Compat({1}), encoder)?;",
+                                            crate_name,
+                                            field_name.to_string_with_prefix(TUPLE_FIELD_PREFIX),
+                                        ))?;
+                                    } else if attributes.with_platform_version {
+                                        body.push_parsed(format!(
+                                            "{0}::PlatformVersionEncode::platform_encode({1}, encoder, platform_version)?;",
                                             crate_name,
                                             field_name.to_string_with_prefix(TUPLE_FIELD_PREFIX),
                                         ))?;
                                     } else {
                                         body.push_parsed(format!(
-                                            "{0}::PlatformVersionEncode::platform_encode({1}, encoder, platform_version)?;",
+                                            "{0}::Encode::encode({1}, encoder)?;",
                                             crate_name,
                                             field_name.to_string_with_prefix(TUPLE_FIELD_PREFIX),
                                         ))?;
@@ -146,7 +152,8 @@ impl DeriveEnum {
 
     /// Build the catch-all case for an int-to-enum decode implementation
     fn invalid_variant_case(&self, enum_name: &str, result: &mut StreamBuilder) -> Result {
-        let crate_name = self.attributes.crate_name.as_str();
+        //let crate_name = self.attributes.crate_name.as_str();
+        let crate_name = "platform_serialization";
 
         // we'll be generating:
         // variant => Err(
@@ -219,28 +226,30 @@ impl DeriveEnum {
     }
 
     pub fn generate_decode(self, generator: &mut Generator) -> Result<()> {
-        let crate_name = self.attributes.crate_name.as_str();
+        //let crate_name = self.attributes.crate_name.as_str();
+        let crate_name = "platform_serialization";
 
         // Remember to keep this mostly in sync with generate_borrow_decode
 
         let enum_name = generator.target_name().to_string();
 
         generator
-            .impl_for(format!("{}::Decode", crate_name))
+            .impl_for(format!("{}::PlatformVersionedDecode", crate_name))
             .modify_generic_constraints(|generics, where_constraints| {
                 if let Some((bounds, lit)) = (self.attributes.decode_bounds.as_ref()).or(self.attributes.bounds.as_ref()) {
                     where_constraints.clear();
                     where_constraints.push_parsed_constraint(bounds).map_err(|e| e.with_span(lit.span()))?;
                 } else {
                     for g in generics.iter_generics() {
-                        where_constraints.push_constraint(g, format!("{}::Decode", crate_name))?;
+                        where_constraints.push_constraint(g, format!("{}::PlatformVersionedDecode", crate_name))?;
                     }
                 }
                 Ok(())
             })?
-            .generate_fn("decode")
+            .generate_fn("platform_versioned_decode")
             .with_generic_deps("__D", [format!("{}::de::Decoder", crate_name)])
             .with_arg("decoder", "&mut __D")
+            .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))
             .body(|fn_builder| {
                 if self.variants.is_empty() {
@@ -288,7 +297,13 @@ impl DeriveEnum {
                                             if attributes.with_serde {
                                                 variant_body
                                                     .push_parsed(format!(
-                                                        "<{0}::serde::Compat<_> as {0}::Decode>::decode(decoder)?.0,",
+                                                        "<bincode::serde::Compat<_> as {0}::Decode>::decode(decoder)?.0,",
+                                                        crate_name
+                                                    ))?;
+                                            } else if attributes.with_platform_version {
+                                                variant_body
+                                                    .push_parsed(format!(
+                                                        "{}::PlatformVersionedDecode::platform_versioned_decode(decoder, platform_version)?,",
                                                         crate_name
                                                     ))?;
                                             } else {
@@ -318,19 +333,20 @@ impl DeriveEnum {
     }
 
     pub fn generate_borrow_decode(self, generator: &mut Generator) -> Result<()> {
-        let crate_name = &self.attributes.crate_name;
+        //let crate_name = &self.attributes.crate_name;
+        let crate_name = "platform_serialization";
 
         // Remember to keep this mostly in sync with generate_decode
         let enum_name = generator.target_name().to_string();
 
-        generator.impl_for_with_lifetimes(format!("{}::BorrowDecode", crate_name), ["__de"])
+        generator.impl_for_with_lifetimes(format!("{}::PlatformVersionedBorrowDecode", crate_name), ["__de"])
             .modify_generic_constraints(|generics, where_constraints| {
                 if let Some((bounds, lit)) = (self.attributes.borrow_decode_bounds.as_ref()).or(self.attributes.bounds.as_ref()) {
                     where_constraints.clear();
                     where_constraints.push_parsed_constraint(bounds).map_err(|e| e.with_span(lit.span()))?;
                 } else {
                     for g in generics.iter_generics() {
-                        where_constraints.push_constraint(g, format!("{}::de::BorrowDecode<'__de>", crate_name)).unwrap();
+                        where_constraints.push_constraint(g, format!("{}::de::PlatformVersionedBorrowDecode<'__de>", crate_name)).unwrap();
                     }
                     for lt in generics.iter_lifetimes() {
                         where_constraints.push_parsed_constraint(format!("'__de: '{}", lt.ident))?;
@@ -338,9 +354,10 @@ impl DeriveEnum {
                 }
                 Ok(())
             })?
-            .generate_fn("borrow_decode")
+            .generate_fn("platform_versioned_borrow_decode")
             .with_generic_deps("__D", [format!("{}::de::BorrowDecoder<'__de>", crate_name)])
             .with_arg("decoder", "&mut __D")
+            .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))
             .body(|fn_builder| {
                 if self.variants.is_empty() {
@@ -384,7 +401,9 @@ impl DeriveEnum {
                                             let attributes = field.attributes().get_attribute::<FieldAttributes>()?.unwrap_or_default();
                                             if attributes.with_serde {
                                                 variant_body
-                                                    .push_parsed(format!("<{0}::serde::BorrowCompat<_> as {0}::BorrowDecode>::borrow_decode(decoder)?.0,", crate_name))?;
+                                                    .push_parsed(format!("<bincode::serde::BorrowCompat<_> as {0}::BorrowDecode>::borrow_decode(decoder)?.0,", crate_name))?;
+                                            } else if attributes.with_platform_version {
+                                                variant_body.push_parsed(format!("{}::PlatformVersionedBorrowDecode::platform_versioned_borrow_decode(decoder, platform_version)?,", crate_name))?;
                                             } else {
                                                 variant_body.push_parsed(format!("{}::BorrowDecode::borrow_decode(decoder)?,", crate_name))?;
                                             }

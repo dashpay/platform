@@ -1,6 +1,6 @@
 use super::{PlatformVersionedBorrowDecode, PlatformVersionedDecode};
-use bincode::error::DecodeError;
 use bincode::de::{BorrowDecoder, Decoder};
+use bincode::error::DecodeError;
 use platform_version::version::PlatformVersion;
 
 macro_rules! impl_tuple {

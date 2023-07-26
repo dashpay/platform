@@ -1,5 +1,9 @@
-
+use crate::de::PlatformVersionedDecode;
 use crate::{impl_platform_versioned_borrow_decode, PlatformVersionedBorrowDecode};
+use bincode::de::read::Reader;
+use bincode::de::{BorrowDecoder, Decoder};
+use bincode::error::DecodeError;
+use bincode::Decode;
 use core::{
     any::TypeId,
     cell::{Cell, RefCell},
@@ -10,15 +14,13 @@ use core::{
     ops::{Bound, Range, RangeInclusive},
     time::Duration,
 };
-use bincode::de::{BorrowDecoder, Decoder};
-use bincode::de::read::Reader;
-use bincode::Decode;
-use bincode::error::DecodeError;
 use platform_version::version::PlatformVersion;
-use crate::de::PlatformVersionedDecode;
 
 impl PlatformVersionedDecode for bool {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
@@ -26,202 +28,289 @@ impl_platform_versioned_borrow_decode!(bool);
 
 impl PlatformVersionedDecode for u8 {
     #[inline]
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(u8);
 
 impl PlatformVersionedDecode for NonZeroU8 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroU8);
 
 impl PlatformVersionedDecode for u16 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(u16);
 
 impl PlatformVersionedDecode for NonZeroU16 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroU16);
 
 impl PlatformVersionedDecode for u32 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(u32);
 
 impl PlatformVersionedDecode for NonZeroU32 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroU32);
 
 impl PlatformVersionedDecode for u64 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(u64);
 
 impl PlatformVersionedDecode for NonZeroU64 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroU64);
 
 impl PlatformVersionedDecode for u128 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(u128);
 
 impl PlatformVersionedDecode for NonZeroU128 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroU128);
 
 impl PlatformVersionedDecode for usize {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(usize);
 
 impl PlatformVersionedDecode for NonZeroUsize {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroUsize);
 
 impl PlatformVersionedDecode for i8 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(i8);
 
 impl PlatformVersionedDecode for NonZeroI8 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroI8);
 
 impl PlatformVersionedDecode for i16 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(i16);
 
 impl PlatformVersionedDecode for NonZeroI16 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroI16);
 
 impl PlatformVersionedDecode for i32 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(i32);
 
 impl PlatformVersionedDecode for NonZeroI32 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroI32);
 
 impl PlatformVersionedDecode for i64 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(i64);
 
 impl PlatformVersionedDecode for NonZeroI64 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroI64);
 
 impl PlatformVersionedDecode for i128 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(i128);
 
 impl PlatformVersionedDecode for NonZeroI128 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroI128);
 
 impl PlatformVersionedDecode for isize {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(isize);
 
 impl PlatformVersionedDecode for NonZeroIsize {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(NonZeroIsize);
 
 impl PlatformVersionedDecode for f32 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(f32);
 
 impl PlatformVersionedDecode for f64 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(f64);
 
 impl PlatformVersionedDecode for char {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
 impl_platform_versioned_borrow_decode!(char);
 
 impl<'a, 'de: 'a> PlatformVersionedBorrowDecode<'de> for &'a [u8] {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::BorrowDecode::borrow_decode(decoder)
     }
 }
 
 impl<'a, 'de: 'a> PlatformVersionedBorrowDecode<'de> for &'a str {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::BorrowDecode::borrow_decode(decoder)
     }
 }
@@ -230,7 +319,10 @@ impl<T, const N: usize> PlatformVersionedDecode for [T; N]
 where
     T: PlatformVersionedDecode + Sized + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         decoder.claim_bytes_read(core::mem::size_of::<[T; N]>())?;
 
         // Optimize for `[u8; N]`
@@ -261,7 +353,10 @@ impl<'de, T, const N: usize> PlatformVersionedBorrowDecode<'de> for [T; N]
 where
     T: PlatformVersionedBorrowDecode<'de> + Sized + 'static,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         decoder.claim_bytes_read(core::mem::size_of::<[T; N]>())?;
 
         // Optimize for `[u8; N]`
@@ -289,19 +384,28 @@ where
 }
 
 impl PlatformVersionedDecode for () {
-    fn platform_versioned_decode<D: Decoder>(_: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        _: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         Ok(())
     }
 }
 impl_platform_versioned_borrow_decode!(());
 
 impl<T> PlatformVersionedDecode for core::marker::PhantomData<T> {
-    fn platform_versioned_decode<D: Decoder>(_: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        _: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         Ok(core::marker::PhantomData)
     }
 }
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for core::marker::PhantomData<T> {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(_: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        _: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         Ok(core::marker::PhantomData)
     }
 }
@@ -310,7 +414,10 @@ impl<T> PlatformVersionedDecode for Option<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         match super::decode_option_variant(decoder, core::any::type_name::<Option<T>>())? {
             Some(_) => {
                 let val = T::platform_versioned_decode(decoder, platform_version)?;
@@ -325,7 +432,10 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Option<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         match super::decode_option_variant(decoder, core::any::type_name::<Option<T>>())? {
             Some(_) => {
                 let val = T::platform_versioned_borrow_decode(decoder, platform_version)?;
@@ -357,7 +467,10 @@ where
     T: PlatformVersionedDecode,
     U: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let is_ok = u32::decode(decoder)?;
         match is_ok {
             0 => {
@@ -382,7 +495,10 @@ where
     T: PlatformVersionedBorrowDecode<'de>,
     U: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let is_ok = u32::decode(decoder)?;
         match is_ok {
             0 => {
@@ -406,7 +522,10 @@ impl<T> PlatformVersionedDecode for Cell<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(Cell::new(t))
     }
@@ -416,7 +535,10 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Cell<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(Cell::new(t))
     }
@@ -426,7 +548,10 @@ impl<T> PlatformVersionedDecode for RefCell<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(RefCell::new(t))
     }
@@ -436,14 +561,20 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for RefCell<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let t = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(RefCell::new(t))
     }
 }
 
 impl PlatformVersionedDecode for Duration {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        _: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
@@ -453,7 +584,10 @@ impl<T> PlatformVersionedDecode for Range<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let min = T::platform_versioned_decode(decoder, platform_version)?;
         let max = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(min..max)
@@ -463,7 +597,10 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Range<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let min = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         let max = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(min..max)
@@ -474,7 +611,10 @@ impl<T> PlatformVersionedDecode for RangeInclusive<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let min = T::platform_versioned_decode(decoder, platform_version)?;
         let max = T::platform_versioned_decode(decoder, platform_version)?;
         Ok(RangeInclusive::new(min, max))
@@ -485,7 +625,10 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for RangeInclusive<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         let min = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         let max = T::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(RangeInclusive::new(min, max))
@@ -496,11 +639,20 @@ impl<T> PlatformVersionedDecode for Bound<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         match u32::decode(decoder)? {
             0 => Ok(Bound::Unbounded),
-            1 => Ok(Bound::Included(T::platform_versioned_decode(decoder, platform_version)?)),
-            2 => Ok(Bound::Excluded(T::platform_versioned_decode(decoder, platform_version)?)),
+            1 => Ok(Bound::Included(T::platform_versioned_decode(
+                decoder,
+                platform_version,
+            )?)),
+            2 => Ok(Bound::Excluded(T::platform_versioned_decode(
+                decoder,
+                platform_version,
+            )?)),
             x => Err(DecodeError::UnexpectedVariant {
                 allowed: &bincode::error::AllowedEnumVariants::Range { max: 2, min: 0 },
                 found: x,
@@ -514,11 +666,20 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Bound<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError> {
         match u32::decode(decoder)? {
             0 => Ok(Bound::Unbounded),
-            1 => Ok(Bound::Included(T::platform_versioned_borrow_decode(decoder, platform_version)?)),
-            2 => Ok(Bound::Excluded(T::platform_versioned_borrow_decode(decoder, platform_version)?)),
+            1 => Ok(Bound::Included(T::platform_versioned_borrow_decode(
+                decoder,
+                platform_version,
+            )?)),
+            2 => Ok(Bound::Excluded(T::platform_versioned_borrow_decode(
+                decoder,
+                platform_version,
+            )?)),
             x => Err(DecodeError::UnexpectedVariant {
                 allowed: &bincode::error::AllowedEnumVariants::Range { max: 2, min: 0 },
                 found: x,

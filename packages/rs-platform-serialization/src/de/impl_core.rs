@@ -20,8 +20,8 @@ use core::mem::{self, MaybeUninit};
 /// dropped.
 #[allow(clippy::while_let_on_iterator)]
 pub fn collect_into_array<E, I, T, const N: usize>(iter: &mut I) -> Option<Result<[T; N], E>>
-    where
-        I: Iterator<Item = Result<T, E>>,
+where
+    I: Iterator<Item = Result<T, E>>,
 {
     if N == 0 {
         // SAFETY: An empty array is always inhabited and has no validity invariants.

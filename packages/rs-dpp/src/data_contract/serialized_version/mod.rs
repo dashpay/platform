@@ -3,15 +3,18 @@ use crate::data_contract::serialized_version::v0::DataContractSerializationForma
 use crate::data_contract::DataContract;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
 use derive_more::From;
 
 pub(in crate::data_contract) mod v0;
 
 pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(Encode, Decode, From)]
+#[derive(PlatformSerialize, PlatformDeserialize, From)]
+#[platform_error_type(ProtocolError)]
+#[platform_serialize(derive_bincode)]
 pub enum DataContractSerializationFormat {
+    #[platform_serialize(versioned)]
     V0(DataContractSerializationFormatV0),
 }
 

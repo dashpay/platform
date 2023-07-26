@@ -1,6 +1,6 @@
+use crate::ProtocolError;
 use lazy_static::lazy_static;
 pub use platform_version::version::*;
-use crate::ProtocolError;
 use std::sync::{RwLock, RwLockReadGuard};
 
 lazy_static! {

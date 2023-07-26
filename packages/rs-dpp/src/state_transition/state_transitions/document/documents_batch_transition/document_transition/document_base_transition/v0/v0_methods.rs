@@ -21,15 +21,6 @@ pub trait DocumentBaseTransitionV0Methods {
 
     /// Sets the data contract ID.
     fn set_data_contract_id(&mut self, data_contract_id: Identifier);
-
-    /// Returns the data contract.
-    fn data_contract(&self) -> &DataContract;
-
-    /// Returns the data contract.
-    fn data_contract_owned(self) -> DataContract;
-
-    /// Sets the data contract.
-    fn set_data_contract(&mut self, data_contract: DataContract);
 }
 
 impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
@@ -55,17 +46,5 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
 
     fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
         self.data_contract_id = data_contract_id;
-    }
-
-    fn data_contract(&self) -> &DataContract {
-        &self.data_contract
-    }
-
-    fn data_contract_owned(self) -> DataContract {
-        self.data_contract
-    }
-
-    fn set_data_contract(&mut self, data_contract: DataContract) {
-        self.data_contract = data_contract;
     }
 }

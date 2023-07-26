@@ -1,12 +1,12 @@
 //! Decoder-based structs and traits.
 
+mod impl_core;
 mod impl_tuples;
 mod impls;
-mod impl_core;
 
 use bincode::de::{BorrowDecoder, Decoder};
-use bincode::Decode;
 use bincode::error::DecodeError;
+use bincode::Decode;
 use platform_version::version::PlatformVersion;
 
 /// Trait that makes a type able to be decoded, akin to serde's `DeserializeOwned` trait.
@@ -77,7 +77,10 @@ use platform_version::version::PlatformVersion;
 /// ```
 pub trait PlatformVersionedDecode: Sized {
     /// Attempt to decode this type with the given [Decode].
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError>;
+    fn platform_versioned_decode<D: Decoder>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError>;
 }
 
 /// Trait that makes a type able to be decoded, akin to serde's `Deserialize` trait.
@@ -87,7 +90,10 @@ pub trait PlatformVersionedDecode: Sized {
 /// This trait will be automatically implemented if you enable the `derive` feature and add `#[derive(bincode::Decode)]` to a type with a lifetime.
 pub trait PlatformVersionedBorrowDecode<'de>: Sized {
     /// Attempt to decode this type with the given [BorrowDecode].
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError>;
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+        decoder: &mut D,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DecodeError>;
 }
 
 /// Helper macro to implement `PlatformVersionedBorrowDecode` for any type that implements `PlatformVersionedDecode`.
@@ -99,7 +105,10 @@ macro_rules! impl_platform_versioned_borrow_decode {
                 decoder: &mut D,
                 platform_version: &PlatformVersion,
             ) -> core::result::Result<Self, bincode::error::DecodeError> {
-                $crate::PlatformVersionedBorrowDecode::platform_versioned_borrow_decode(decoder, platform_version)
+                $crate::PlatformVersionedBorrowDecode::platform_versioned_borrow_decode(
+                    decoder,
+                    platform_version,
+                )
             }
         }
     };
