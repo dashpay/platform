@@ -33,9 +33,9 @@ describe('Testnet HP Fullnode', function main() {
     // Create config file
     configFileRepository = container.resolve('configFileRepository');
 
-    const createDefaultConfigs = container.resolve('createDefaultConfigs');
+    const createConfigFile = container.resolve('createConfigFile');
 
-    configFile = createDefaultConfigs();
+    configFile = createConfigFile();
 
     container.register({
       configFile: asValue(configFile),
