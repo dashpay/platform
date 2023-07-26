@@ -27,7 +27,7 @@ function buildServicesTaskFactory(
 
         const obs = await dockerCompose.buildWithEnvs(
           envs,
-          { serviceName: 'deps' },
+          { serviceName: '_base' },
         );
 
         await new Promise((res, rej) => {
