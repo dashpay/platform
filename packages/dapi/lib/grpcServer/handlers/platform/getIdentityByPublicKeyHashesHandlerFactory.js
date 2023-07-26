@@ -28,8 +28,8 @@ function getIdentityByPublicKeyHashesHandlerFactory(
   async function getIdentityByPublicKeyHashesHandler(call) {
     const { request } = call;
 
-    if (request.getPublicKeyHashList().length === 0) {
-      throw new InvalidArgumentGrpcError('No public key hashes were provided');
+    if (request.getPublicKeyHash().length === 0) {
+      throw new InvalidArgumentGrpcError('No public key hash is provided');
     }
 
     const identitiesResponseBuffer = await driveClient

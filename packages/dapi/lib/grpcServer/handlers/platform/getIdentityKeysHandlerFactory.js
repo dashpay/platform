@@ -28,7 +28,7 @@ function getIdentityKeysHandlerFactory(driveClient) {
   async function getIdentityKeysHandler(call) {
     const { request } = call;
 
-    if (!request.getId()) {
+    if (!request.getIdentityId()) {
       throw new InvalidArgumentGrpcError('identity id is not specified');
     }
 

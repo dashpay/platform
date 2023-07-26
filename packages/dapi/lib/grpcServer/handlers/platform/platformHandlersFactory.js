@@ -17,8 +17,6 @@ const {
   v0: {
     BroadcastStateTransitionRequest,
     GetIdentityRequest,
-    GetIdentityBalanceRequest,
-    GetIdentityBalanceAndRevisionRequest,
     GetIdentityKeysRequest,
     GetDataContractRequest,
     GetDataContractsRequest,
@@ -37,9 +35,7 @@ const {
       GetIdentityResponse: PBJSGetIdentityResponse,
       GetIdentitiesRequest: PBJSGetIdentitiesRequest,
       GetIdentitiesResponse: PBJSGetIdentitiesResponse,
-      GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
       GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
-      GetIdentityBalanceAndRevisionRequest: PBJSGetIdentityBalanceAndRevisionRequest,
       GetIdentityBalanceAndRevisionResponse: PBJSGetIdentityBalanceAndRevisionResponse,
       GetIdentityKeysRequest: PBJSGetIdentityKeysRequest,
       GetIdentityKeysResponse: PBJSGetIdentityKeysResponse,
@@ -194,8 +190,8 @@ function platformHandlersFactory(
 
   const wrappedGetIdentityBalance = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetIdentityBalanceRequest,
-      PBJSGetIdentityBalanceRequest,
+      GetIdentityRequest,
+      PBJSGetIdentityRequest,
     ),
     protobufToJsonFactory(
       PBJSGetIdentityBalanceResponse,
@@ -210,8 +206,8 @@ function platformHandlersFactory(
 
   const wrappedGetIdentityBalanceAndRevision = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetIdentityBalanceAndRevisionRequest,
-      PBJSGetIdentityBalanceAndRevisionRequest,
+      GetIdentityRequest,
+      PBJSGetIdentityRequest,
     ),
     protobufToJsonFactory(
       PBJSGetIdentityBalanceAndRevisionResponse,
