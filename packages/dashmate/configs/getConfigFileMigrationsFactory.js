@@ -2,17 +2,17 @@
 
 /**
  * @param {HomeDir} homeDir
- * @param {SystemConfigs} systemConfigs
+ * @param {DefaultConfigs} defaultConfigs
  * @returns {getConfigFileMigrations}
  */
-function getConfigFileMigrationsFactory(homeDir, systemConfigs) {
+function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
   /**
    * @typedef {function} getConfigFileMigrations
    * @returns {Object}
    */
   function getConfigFileMigrations() {
-    const base = systemConfigs.get('base');
-    const testnet = systemConfigs.get('testnet');
+    const base = defaultConfigs.get('base');
+    const testnet = defaultConfigs.get('testnet');
 
     return {
       '0.24.0': (configFile) => {

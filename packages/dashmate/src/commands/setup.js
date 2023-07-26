@@ -22,7 +22,7 @@ class SetupCommand extends BaseCommand {
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
    * @param {DockerCompose} dockerCompose
-   * @param {SystemConfigs} systemConfigs
+   * @param {DefaultConfigs} defaultConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -39,7 +39,7 @@ class SetupCommand extends BaseCommand {
     setupLocalPresetTask,
     setupRegularPresetTask,
     dockerCompose,
-    systemConfigs,
+    defaultConfigs,
   ) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
@@ -73,9 +73,9 @@ class SetupCommand extends BaseCommand {
           if (ctx.preset === PRESET_LOCAL) {
             isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
           } else {
-            const systemConfig = systemConfigs.get(ctx.preset);
+            const defaultConfig = defaultConfigs.get(ctx.preset);
 
-            isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(systemConfig);
+            isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(defaultConfig);
           }
 
           if (isAlreadyConfigured) {

@@ -25,7 +25,7 @@ const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/val
  *
  * @param {Context} ctx
  * @param {TaskWrapper} task
- * @param {SystemConfigs} systemConfigs
+ * @param {DefaultConfigs} defaultConfigs
  * @returns {Promise<{
  *   keys: {},
  *   ipAndPorts: {
@@ -41,7 +41,7 @@ const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/val
  *   platformNodeKey: null
  * }>}
  */
-async function registerMasternodeWithCoreWallet(ctx, task, systemConfigs) {
+async function registerMasternodeWithCoreWallet(ctx, task, defaultConfigs) {
   const blsSignatures = await BlsSignatures();
   const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
 
@@ -198,10 +198,10 @@ async function registerMasternodeWithCoreWallet(ctx, task, systemConfigs) {
     );
 
     const platformP2PPort = state.ipAndPorts.platformP2PPort
-      || systemConfigs.get(ctx.preset).get('platform.drive.tenderdash.p2p.port');
+      || defaultConfigs.get(ctx.preset).get('platform.drive.tenderdash.p2p.port');
 
     const platformHTTPPort = state.ipAndPorts.platformHTTPPort
-      || systemConfigs.get(ctx.preset).get('platform.dapi.envoy.http.port');
+      || defaultConfigs.get(ctx.preset).get('platform.dapi.envoy.http.port');
 
     let command;
     if (ctx.isHP) {

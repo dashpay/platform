@@ -25,9 +25,9 @@ describe('Local Network', function main() {
     // Create config file
     configFileRepository = container.resolve('configFileRepository');
 
-    const createSystemConfigs = container.resolve('createSystemConfigs');
+    const createDefaultConfigs = container.resolve('createDefaultConfigs');
 
-    configFile = createSystemConfigs();
+    configFile = createDefaultConfigs();
 
     // Update local config template that will be used to setup nodes
     const localConfig = configFile.getConfig(groupName);

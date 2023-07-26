@@ -1,4 +1,4 @@
-class SystemConfigs {
+class DefaultConfigs {
   /**
    * @type {Object<string, function(): Config>}
    */
@@ -47,4 +47,4 @@ class SystemConfigs {
   }
 }
 
-module.exports = SystemConfigs;
+module.exports = DefaultConfigs;

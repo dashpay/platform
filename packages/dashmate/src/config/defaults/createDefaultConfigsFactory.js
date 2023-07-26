@@ -4,20 +4,20 @@ const packageJson = require('../../../package.json');
 const getShortHash = require('../../util/getShortHash');
 
 /**
- * @param {SystemConfigs} systemConfigs
+ * @param {DefaultConfigs} defaultConfigs
  * @param {HomeDir} homeDir
- * @return {createSystemConfigs}
+ * @return {createDefaultConfigs}
  */
-function createSystemConfigsFactory(systemConfigs, homeDir) {
+function createDefaultConfigsFactory(defaultConfigs, homeDir) {
   /**
-   * @typedef {createSystemConfigs}
+   * @typedef {createDefaultConfigs}
    * @returns {ConfigFile}
    */
-  function createSystemConfigs() {
+  function createDefaultConfigs() {
     const projectId = getShortHash(homeDir.getPath());
 
     return new ConfigFile(
-      systemConfigs.getAll(),
+      defaultConfigs.getAll(),
       packageJson.version,
       projectId,
       null,
@@ -25,7 +25,7 @@ function createSystemConfigsFactory(systemConfigs, homeDir) {
     );
   }
 
-  return createSystemConfigs;
+  return createDefaultConfigs;
 }
 
-module.exports = createSystemConfigsFactory;
+module.exports = createDefaultConfigsFactory;
