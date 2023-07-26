@@ -172,12 +172,27 @@ class DockerCompose {
    * Build docker compose images
    *
    * @param {Config} config
-   * @param {string} [serviceName]
-   * @param {Array} [options]
+   * @param {Object} [options]
+   * @param {string} [options.serviceName]
    * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
-  async build(config, serviceName = undefined, options = []) {
+  async build(config, options = {}) {
+    const envs = this.#generateEnvs(config);
+
+    return this.buildWithEnvs(envs, options);
+  }
+
+  /**
+   * Build docker compose images
+   *
+   * @param {Object} envs
+   * @param {Object} [options]
+   * @param {string} [options.serviceName]
+   * @return {Observable<{string}>}
+   */
+  // eslint-disable-next-line no-unused-vars
+  async buildWithEnvs(envs, options = {}) {
     try {
       return new Observable(async (observer) => {
         await this.throwErrorIfNotInstalled();
@@ -186,17 +201,15 @@ class DockerCompose {
           observer.next(e.toString());
         };
 
-        if (serviceName) {
-          await dockerCompose.buildOne(serviceName, {
-            ...this.#createOptions(config),
+        if (options.serviceName) {
+          await dockerCompose.buildOne(options.serviceName, {
+            ...this.#createOptionsWithEnvs(envs),
             callback,
-            commandOptions: options,
           });
         } else {
           await dockerCompose.buildAll({
-            ...this.#createOptions(config),
+            ...this.#createOptionsWithEnvs(envs),
             callback,
-            commandOptions: options,
           });
         }
 
@@ -499,9 +512,21 @@ class DockerCompose {
    * @return {{cwd: string, env: Object}}
    */
   #createOptions(config, options = {}) {
+    const envs = this.#generateEnvs(config);
+
+    return this.#createOptionsWithEnvs(envs, options);
+  }
+
+  /**
+   * @private
+   * @param {Object} envs
+   * @param {Object} [options]
+   * @return {{cwd: string, env: Object}}
+   */
+  #createOptionsWithEnvs(envs, options = {}) {
     const env = {
       ...process.env,
-      ...this.#generateEnvs(config),
+      ...envs,
     };
 
     if (isWsl) {

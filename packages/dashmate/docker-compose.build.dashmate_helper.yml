@@ -6,4 +6,14 @@ services:
       context: ${DASHMATE_HELPER_DOCKER_BUILD_CONTEXT:?err}
       dockerfile: ${DASHMATE_HELPER_DOCKER_BUILD_DOCKER_FILE:?err}
       target: ${DASHMATE_HELPER_DOCKER_BUILD_TARGET}
+      args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_DASHMATE_HELPER_FROM:-${DASHMATE_HELPER_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_DASHMATE_HELPER_TO:-type=inline}
     image: dashmate_helper:local

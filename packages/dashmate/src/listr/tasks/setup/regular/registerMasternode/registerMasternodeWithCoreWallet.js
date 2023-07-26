@@ -108,7 +108,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
           ],
           validate: ({
             txId,
-            outputIndex
+            outputIndex,
           }) => validateTxHex(txId)
             && validatePositiveInteger(outputIndex),
         },
@@ -142,7 +142,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
           validate: ({
             ownerAddress,
             votingAddress,
-            payoutAddress
+            payoutAddress,
           }) => {
             if (!validateAddressWithNetwork(ownerAddress)
               || !validateAddressWithNetwork(votingAddress)
@@ -187,7 +187,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
           ],
           validate: ({
             privateKey,
-            rewardShare
+            rewardShare,
           }) => (
             validateBLSPrivateKey(privateKey) === true && validatePercentage(rewardShare)),
         },
@@ -252,7 +252,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
         command = command.replace(/\\/g, '');
         command = wrapAnsi(command, process.stdout.columns - 3, {
           hard: true,
-          trim: false
+          trim: false,
         });
         command = command.replace(/\n/g, '\\\n');
       }

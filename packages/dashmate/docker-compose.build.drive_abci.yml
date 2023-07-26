@@ -6,4 +6,14 @@ services:
       context: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_CONTEXT:?err}
       dockerfile: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_DOCKER_FILE:?err}
       target: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_TARGET}
+      args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_DRIVE_ABCI_FROM:-${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_DRIVE_ABCI_TO:-type=inline}
     image: drive:local

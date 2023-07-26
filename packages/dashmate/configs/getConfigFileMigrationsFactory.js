@@ -98,6 +98,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.24.17': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.docker.baseImage = base.get('docker.baseImage');
+          });
+
+        return configFile;
+      },
     };
   }
 
