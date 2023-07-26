@@ -147,17 +147,11 @@ jobs:
         with:
           name: dashpay/dashmate-helper
 
-      - name: Configure Deps layer cache
+      - name: Configure Base image layer cache
         uses: ./.github/actions/s3-layer-cache-settings
-        id: envoy_layer_cache_settings
+        id: base_layer_cache_settings
         with:
-          name: dashpay/envoy
-
-      - name: Configure Envoy layer cache
-        uses: ./.github/actions/s3-layer-cache-settings
-        id: deps_layer_cache_settings
-        with:
-          name: dashpay/deps
+          name: dashpay/base
 
       - name: Start local network
         if: ${{ inputs.start-local-network }}
@@ -169,8 +163,6 @@ jobs:
           CACHE_DAPI_API_TO: ${{ steps.dapi_layer_cache_settings.outputs.cache_to }}
           CACHE_DASHMATE_HELPER_FROM: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_from }}
           CACHE_DASHMATE_HELPER_TO: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_to }}
-          CACHE_ENVOY_FROM: ${{ steps.envoy_layer_cache_settings.outputs.cache_from }}
-          CACHE_ENVOY_TO: ${{ steps.envoy_layer_cache_settings.outputs.cache_to }}
           CACHE_BASE_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
           CACHE_BASE_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
 
