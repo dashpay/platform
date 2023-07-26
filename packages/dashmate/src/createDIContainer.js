@@ -12,9 +12,9 @@ const getServiceListFactory = require('./docker/getServiceListFactory');
 const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
-const createDefaultConfigsFactory = require('./config/defaults/createDefaultConfigsFactory');
+const createConfigFileFactory = require('./config/configFile/createConfigFileFactory');
 const migrateConfigFileFactory = require('./config/configFile/migrateConfigFileFactory');
-const DefaultConfigs = require('./config/defaults/DefaultConfigs');
+const DefaultConfigs = require('./config/DefaultConfigs');
 
 const renderTemplateFactory = require('./templates/renderTemplateFactory');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
@@ -140,7 +140,7 @@ async function createDIContainer(options = {}) {
       getTestnetConfig,
       getMainnetConfig,
     ])).singleton(),
-    createDefaultConfigs: asFunction(createDefaultConfigsFactory).singleton(),
+    createConfigFile: asFunction(createConfigFileFactory).singleton(),
     getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
     migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
