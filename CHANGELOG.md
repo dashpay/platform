@@ -1,3 +1,21 @@
+### [0.24.17](https://github.com/dashpay/platform/compare/v0.24.16...v0.24.17) (2023-07-26)
+
+
+### Features
+
+* **dashmate:** pre-build image ([#1259](https://github.com/dashpay/platform/issues/1259))
+
+
+### Bug Fixes
+
+* **dashmate:** undefined createIpAndPortsForm factory ([#1258](https://github.com/dashpay/platform/issues/1258))
+* **dashmate:** version color is red ([#1255](https://github.com/dashpay/platform/issues/1255))
+
+
+### Code Refactoring
+
+* **dashmate:** default configuration ([#1257](https://github.com/dashpay/platform/issues/1257))
+
 ### [0.24.16](https://github.com/dashpay/platform/compare/v0.24.15...v0.24.16) (2023-07-25)
 
 
