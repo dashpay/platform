@@ -1,5 +1,5 @@
 const ConfigSetCommand = require('../../../../src/commands/config/set');
-const getBaseConfigFactory = require('../../../../src/config/system/configs/getBaseConfigFactory');
+const getBaseConfigFactory = require('../../../../configs/defaults/getBaseConfigFactory');
 const HomeDir = require('../../../../src/config/HomeDir');
 
 describe('Config set command', () => {
