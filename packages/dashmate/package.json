@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.17",
+  "version": "0.24.18",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
