@@ -273,7 +273,7 @@ impl PlatformVersionEncode for SocketAddr {
 }
 
 impl PlatformVersionedDecode for SocketAddr {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
@@ -286,7 +286,7 @@ impl PlatformVersionEncode for SocketAddrV4 {
 }
 
 impl PlatformVersionedDecode for SocketAddrV4 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }
@@ -299,7 +299,7 @@ impl PlatformVersionEncode for SocketAddrV6 {
 }
 
 impl PlatformVersionedDecode for SocketAddrV6 {
-    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+    fn platform_versioned_decode<D: Decoder>(decoder: &mut D, _: &PlatformVersion) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
 }

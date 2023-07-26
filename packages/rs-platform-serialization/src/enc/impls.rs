@@ -358,20 +358,6 @@ impl PlatformVersionEncode for str {
     }
 }
 
-impl<K, V> PlatformVersionEncode for BTreeMap<K, V>
-    where
-        K: PlatformVersionEncode,
-        V: PlatformVersionEncode,
-{
-    fn platform_encode<E: Encoder>(
-        &self,
-        encoder: &mut E,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), EncodeError> {
-        PlatformVersionEncode::platform_encode(self, encoder, platform_version)
-    }
-}
-
 impl<T, const N: usize> PlatformVersionEncode for [T; N]
 where
     T: PlatformVersionEncode,
