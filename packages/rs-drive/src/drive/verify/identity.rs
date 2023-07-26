@@ -566,13 +566,18 @@ impl Drive {
         };
         let mut proved_key_values_hm: HashMap<[u8; 20], PathKeyOptionalElementTrio> = HashMap::new();
         for elem in proved_key_values {
-            proved_key_values_hm.insert(elem.1.to_vec(), elem.clone());
+            let key = elem
+                .1
+                .clone()
+                .try_into()
+                .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("key size is incorrect")))?;
+            proved_key_values_hm.insert(key, elem.clone());
         }
         let values = public_key_hashes
-            .iter()
+            .into_iter()
             .map(|public_key_hash| {
                 let key: [u8; 20] = *public_key_hash;
-                let maybe_element = proved_key_values_hm.get(&key.to_vec()).map(|elem| elem.2.clone());
+                let maybe_element = proved_key_values_hm.get(&key).map(|elem| elem.2.clone());
                 match maybe_element {
                     None => Ok((key, None)),
                     Some(element) => match element {
