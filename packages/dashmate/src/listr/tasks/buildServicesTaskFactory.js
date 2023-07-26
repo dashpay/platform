@@ -23,6 +23,7 @@ function buildServicesTaskFactory(
         const envs = {
           ...generateEnvs(config),
           COMPOSE_FILE: 'docker-compose.build.base.yml',
+          COMPOSE_PROFILES: '',
         };
 
         const obs = await dockerCompose.buildWithEnvs(
