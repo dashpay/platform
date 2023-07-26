@@ -1,4 +1,5 @@
 const path = require('path');
+const { version } = require('../package.json');
 
 const networks = {
   NETWORK_LOCAL: 'local',
@@ -32,6 +33,8 @@ const HPMN_COLLATERAL_AMOUNT = 4000;
 const PACKAGE_ROOT_DIR = path.join(__dirname, '..');
 const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
+const DASHMATE_HELPER_DOCKER_IMAGE = `dashpay/dashmate-helper:${version}`;
+
 const OUTPUT_FORMATS = {
   JSON: 'json',
   PLAIN: 'plain',
@@ -59,5 +62,6 @@ module.exports = {
   TEMPLATES_DIR,
   OUTPUT_FORMATS,
   SSL_PROVIDERS,
+  DASHMATE_HELPER_DOCKER_IMAGE,
   SSL_PROVIDERS_LIST: Object.values(SSL_PROVIDERS),
 };
