@@ -2,14 +2,14 @@ const { Listr } = require('listr2');
 
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
-const registerMasternodeWithCoreWallet = require('./registerMasternode/registerMasternodeWithCoreWallet');
 const registerMasternodeWithDMT = require('./registerMasternode/registerMasternodeWithDMT');
 
 /**
+ * @param {registerMasternodeWithCoreWallet} registerMasternodeWithCoreWallet
  * @param {DefaultConfigs} defaultConfigs
  * @return {registerMasternodeGuideTask}
  */
-function registerMasternodeGuideTaskFactory(defaultConfigs) {
+function registerMasternodeGuideTaskFactory(defaultConfigs, registerMasternodeWithCoreWallet) {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}

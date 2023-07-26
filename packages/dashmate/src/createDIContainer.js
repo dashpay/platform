@@ -105,6 +105,8 @@ const getConfigFileMigrationsFactory = require('../configs/getConfigFileMigratio
 const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
 const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const generateEnvsFactory = require('./config/generateEnvsFactory');
+const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
+const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
 
 /**
  * @param {Object} [options]
@@ -251,6 +253,13 @@ async function createDIContainer(options = {}) {
   });
 
   /**
+   * Prompts
+   */
+  container.register({
+    createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
+  });
+
+  /**
    * Tasks
    */
   container.register({
@@ -282,6 +291,8 @@ async function createDIContainer(options = {}) {
     getHostScope: asFunction(getHostScopeFactory).singleton(),
     configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
     configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
+    registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
+      .singleton(),
   });
 
   /**
