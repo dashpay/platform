@@ -1,1 +1,13 @@
 site_name: Dash Platform
+plugins:
+    - redirects:
+        redirect_maps:
+            'SDK/README.md': 'https://dashplatform.readme.io/docs/dash-sdk-overview'
+            'SDK/Overview.md': 'https://dashplatform.readme.io/docs/dash-sdk-overview'
+            'SDK/examples/fetch-an-identity-from-its-name.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-fetch-an-identity-from-its-name'
+            'SDK/examples/generate-a-new-mnemonic.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-generate-a-new-mnemonic'
+            'SDK/examples/pay-to-another-address.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-paying-to-another-address'
+            'SDK/examples/receive-money-and-check-balance.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-receive-money-and-check-balance'
+            'SDK/examples/sign-and-verify-messages.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-sign-and-verify-messages'
+            'SDK/examples/use-different-account.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-use-different-account'
+
