@@ -1,7 +1,7 @@
 const nodePath = require('path');
 const os = require('os');
 const convertObjectToEnvs = require('./convertObjectToEnvs');
-const { version } = require('../../package.json');
+const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
 
 /**
  * @param {ConfigFile} configFile
@@ -68,7 +68,7 @@ function generateEnvsFactory(configFile, homeDir) {
       CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
         config.get('core.log.file.path'),
       ),
-      DASHMATE_HELPER_DOCKER_IMAGE: `dashpay/dashmate-helper:${version}`,
+      DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
         config.get('platform.drive.abci.log.prettyFile.path'),
       ),
