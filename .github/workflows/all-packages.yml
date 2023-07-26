@@ -156,8 +156,8 @@ jobs:
           CACHE_DASHMATE_HELPER_TO: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_to }}
           CACHE_ENVOY_FROM: ${{ steps.envoy_layer_cache_settings.outputs.cache_from }}
           CACHE_ENVOY_TO: ${{ steps.envoy_layer_cache_settings.outputs.cache_to }}
-          CACHE_DEPS_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
-          CACHE_DEPS_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
+          CACHE_BASE_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
+          CACHE_BASE_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
 
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
@@ -272,8 +272,8 @@ jobs:
           CACHE_DASHMATE_HELPER_TO: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_to }}
           CACHE_ENVOY_FROM: ${{ steps.envoy_layer_cache_settings.outputs.cache_from }}
           CACHE_ENVOY_TO: ${{ steps.envoy_layer_cache_settings.outputs.cache_to }}
-          CACHE_DEPS_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
-          CACHE_DEPS_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
+          CACHE_BASE_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
+          CACHE_BASE_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
 
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
