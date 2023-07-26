@@ -116,13 +116,9 @@ module.exports = {
           additionalProperties: false,
           required: ['subnet', 'bindIp'],
         },
-        preBuild: {
-          $ref: '#/definitions/dockerBuild',
-          $comment: 'build an image before building services',
-        },
       },
       additionalProperties: false,
-      required: ['network', 'preBuild'],
+      required: ['network'],
     },
     core: {
       type: 'object',
