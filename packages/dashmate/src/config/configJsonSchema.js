@@ -117,11 +117,11 @@ module.exports = {
           required: ['subnet', 'bindIp'],
         },
         baseImage: {
+          type: 'object',
           properties: {
             build: {
               $ref: '#/definitions/dockerBuild',
             },
-            $comment: 'build an image before building services',
           },
           additionalProperties: false,
           required: ['build'],
