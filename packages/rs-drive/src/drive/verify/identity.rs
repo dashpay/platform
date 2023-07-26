@@ -564,7 +564,7 @@ impl Drive {
         } else {
             GroveDb::verify_query(proof, &path_query)?
         };
-        let mut proved_key_values_hm: HashMap<Vec<u8>, PathKeyOptionalElementTrio> = HashMap::new();
+        let mut proved_key_values_hm: HashMap<[u8; 20], PathKeyOptionalElementTrio> = HashMap::new();
         for elem in proved_key_values {
             proved_key_values_hm.insert(elem.1.to_vec(), elem.clone());
         }
