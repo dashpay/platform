@@ -13,6 +13,7 @@ use core::{
     ops::{Bound, Range, RangeInclusive},
     time::Duration,
 };
+use std::collections::BTreeMap;
 use platform_version::version::PlatformVersion;
 
 impl PlatformVersionEncode for () {
@@ -354,6 +355,20 @@ impl PlatformVersionEncode for str {
         _: &PlatformVersion,
     ) -> Result<(), EncodeError> {
         Encode::encode(self, encoder)
+    }
+}
+
+impl<K, V> PlatformVersionEncode for BTreeMap<K, V>
+    where
+        K: PlatformVersionEncode,
+        V: PlatformVersionEncode,
+{
+    fn platform_encode<E: Encoder>(
+        &self,
+        encoder: &mut E,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), EncodeError> {
+        PlatformVersionEncode::platform_encode(self, encoder, platform_version)
     }
 }
 

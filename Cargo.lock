@@ -2670,6 +2670,8 @@ dependencies = [
  "ciborium",
  "hex",
  "lazy_static",
+ "platform-serialization",
+ "platform-version",
  "rand",
  "regex",
  "serde",

@@ -5,8 +5,12 @@ use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use crate::ProtocolError;
 
-#[derive(Serialize, Deserialize, Encode, Decode)]
+#[derive(Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
+#[platform_error_type(ProtocolError)]
+#[platform_serialize(derive_bincode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractSerializationFormatV0 {
     /// A unique identifier for the data contract.

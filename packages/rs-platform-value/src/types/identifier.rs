@@ -3,6 +3,8 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
+use bincode::enc::Encoder;
+use bincode::error::EncodeError;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
@@ -33,6 +35,12 @@ pub struct IdentifierBytes32(pub [u8; 32]);
     Decode,
 )]
 pub struct Identifier(pub IdentifierBytes32);
+
+impl platform_serialization::PlatformVersionEncode for Identifier {
+    fn platform_encode<E: Encoder>(&self, encoder: &mut E, _: &platform_version::version::PlatformVersion) -> Result<(), EncodeError> {
+        self.0.0.encode(encoder)
+    }
+}
 
 impl AsRef<[u8]> for Identifier {
     fn as_ref(&self) -> &[u8] {
