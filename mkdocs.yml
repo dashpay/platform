@@ -10,4 +10,10 @@ plugins:
             'SDK/examples/receive-money-and-check-balance.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-receive-money-and-check-balance'
             'SDK/examples/sign-and-verify-messages.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-sign-and-verify-messages'
             'SDK/examples/use-different-account.md': 'https://dashplatform.readme.io/docs/dash-sdk-examples-use-different-account'
+            'SDK/getting-started/about-schemas.md': 'https://dashplatform.readme.io/docs/dash-sdk-getting-started-about-schemas'
+            'SDK/getting-started/core-concepts.md': 'https://dashplatform.readme.io/docs/dash-sdk-getting-started-core-concepts'
+            'SDK/getting-started/dash-platform-applications.md': 'https://dashplatform.readme.io/docs/dash-sdk-getting-started-dash-platform-applications'
+            'SDK/getting-started/multiple-apps.md': 'https://dashplatform.readme.io/docs/dash-sdk-getting-started-working-with-multiple-apps'
+            'SDK/getting-started/quickstart.md': 'https://dashplatform.readme.io/docs/dash-sdk-getting-started-quick-start'
+            'SDK/getting-started/with-typescript.md': 'https://dashplatform.readme.io/docs/dash-sdk-getting-started-with-typescript'
 
