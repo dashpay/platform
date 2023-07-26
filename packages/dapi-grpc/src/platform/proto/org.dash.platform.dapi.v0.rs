@@ -319,6 +319,7 @@ pub mod security_level_map {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub identity_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub request_type: ::core::option::Option<KeyRequestType>,
@@ -513,6 +514,7 @@ pub mod get_proofs_request {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityRequest {
         #[prost(bytes = "vec", tag = "1")]
+        #[serde(with = "crate::deserialization::base64string")]
         pub identity_id: ::prost::alloc::vec::Vec<u8>,
         #[prost(enumeration = "identity_request::Type", tag = "2")]
         pub request_type: i32,

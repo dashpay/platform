@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use crate::Error;
 use dapi_grpc::platform::v0::{self as platform};
 use dpp::document::Document;
+use dpp::identity::PartialIdentity;
 use dpp::prelude::{DataContract, Identifier, Identity, Revision};
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
@@ -238,6 +239,50 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
             .collect::<Result<Identities, Error>>()?;
 
         Ok(Some(maybe_identities))
+    }
+}
+
+#[cfg_attr(feature = "mock", mockall::automock)]
+impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysResponse>
+    for PartialIdentity
+{
+    fn maybe_from_proof(
+        request: &platform::GetIdentityKeysRequest,
+        response: &platform::GetIdentityKeysResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error> {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_identity_keys_response::Result::Proof(p) => p,
+            platform::get_identity_keys_response::Result::Keys(_) => {
+                return Err(Error::EmptyResponseProof)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        // Load some info from request
+        let id =
+            Identifier::from_bytes(&request.identity_id).map_err(|e| Error::ProtocolError {
+                error: e.to_string(),
+            })?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_identity) = Drive::verify_identity_keys_by_identity_id(
+            &proof.grovedb_proof,
+            false,
+            id.into_buffer(),
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+
+        Ok(maybe_identity)
     }
 }
 

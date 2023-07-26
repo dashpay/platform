@@ -1,12 +1,11 @@
 use dapi_grpc::platform::v0 as grpc;
-use dpp::prelude::{DataContract, Identity};
-use drive::query::DriveQuery;
-use drive_light_client::{
-    proof::from_proof::{
-        DataContracts, Documents, FromProof, Identities, IdentitiesByPublicKeyHashes,
-        IdentityBalance, IdentityBalanceAndRevision,
-    },
-    Error,
+use dpp::{
+    identity::PartialIdentity,
+    prelude::{DataContract, Identity},
+};
+use drive_light_client::proof::from_proof::{
+    DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes, IdentityBalance,
+    IdentityBalanceAndRevision,
 };
 
 include!("utils.rs");
@@ -163,6 +162,15 @@ test_maybe_from_proof! {
     grpc::GetIdentityBalanceAndRevisionResponse,
     IdentityBalanceAndRevision,
     "vectors/TODO.json",
+    Ok(None)
+}
+
+test_maybe_from_proof! {
+    get_identity_keys_not_found,
+    grpc::GetIdentityKeysRequest,
+    grpc::GetIdentityKeysResponse,
+    PartialIdentity,
+    "vectors/identity_keys_not_found.json",
     Ok(None)
 }
 

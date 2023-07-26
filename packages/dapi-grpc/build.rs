@@ -43,6 +43,10 @@ pub fn generate() -> Result<(), std::io::Error> {
             r#"#[serde(with = "crate::deserialization::base64string")]"#,
         )
         .field_attribute(
+            "identity_id",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
             "ids",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
