@@ -17,7 +17,7 @@ function buildServicesTaskFactory(
    */
   function buildServicesTask(config) {
     return new Listr([{
-      title: 'Build dependencies',
+      title: 'Build base image',
       enabled: () => config.get('docker.baseImage.build.enabled'),
       task: async (ctx, task) => {
         const envs = {
