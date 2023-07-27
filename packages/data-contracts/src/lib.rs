@@ -4,6 +4,7 @@ pub use dashpay_contract;
 pub use dpns_contract;
 pub use feature_flags_contract;
 pub use masternode_reward_shares_contract;
+use platform_value::Identifier;
 pub use withdrawals_contract;
 
 #[repr(u8)]
@@ -24,6 +25,7 @@ pub struct DataContractSource {
 }
 
 impl SystemDataContract {
+    /// Returns [DataContractSource]
     pub fn source(self) -> Result<DataContractSource, Error> {
         let data = match self {
             SystemDataContract::Withdrawals => DataContractSource {

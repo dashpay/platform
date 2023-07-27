@@ -17,7 +17,6 @@ use serde_json::Value as JsonValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryInto;
 
-use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
 use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
@@ -25,6 +24,7 @@ use crate::{
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     ProtocolError,
 };
+use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 
 use crate::serialization::PlatformSerializable;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

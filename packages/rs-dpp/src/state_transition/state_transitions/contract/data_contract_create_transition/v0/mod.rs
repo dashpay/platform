@@ -3,7 +3,7 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
-pub(super) mod v0_methods;
+pub(crate) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -30,6 +30,7 @@ use crate::state_transition::state_transitions::contract::data_contract_create_t
 
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
+pub use v0_methods::DataContractCreateTransitionV0Methods;
 
 ///DataContractCreateTransitionV0 has the same encoding structure
 
@@ -41,6 +42,7 @@ use crate::version::PlatformVersion;
 )]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransitionV0 {
+    #[platform_serialize(versioned)]
     pub data_contract: DataContract,
     pub entropy: Bytes32,
     #[platform_signable(exclude_from_sig_hash)]

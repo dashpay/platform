@@ -14,6 +14,7 @@ use core::{
     time::Duration,
 };
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 impl PlatformVersionEncode for () {
     fn platform_encode<E: Encoder>(

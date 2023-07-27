@@ -12,3 +12,4 @@ masternode-reward-shares-contract = { path = "../masternode-reward-shares-contra
 dpns-contract = { path = "../dpns-contract" }
 dashpay-contract = { path = "../dashpay-contract" }
 feature-flags-contract = { path = "../feature-flags-contract" }
+platform-value = { path = "../rs-platform-value" }

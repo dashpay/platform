@@ -93,11 +93,12 @@ impl FromAttribute for ContainerAttributes {
 #[derive(Default)]
 pub struct FieldAttributes {
     pub with_serde: bool,
+    pub with_platform_version: bool,
 }
 
 impl FromAttribute for FieldAttributes {
     fn parse(group: &Group) -> Result<Option<Self>> {
-        let attributes = match parse_tagged_attribute(group, "bincode")? {
+        let attributes = match parse_tagged_attribute(group, "platform_serialize")? {
             Some(body) => body,
             None => return Ok(None),
         };
@@ -105,6 +106,9 @@ impl FromAttribute for FieldAttributes {
         for attribute in attributes {
             match attribute {
                 ParsedAttribute::Tag(i) if i.to_string() == "with_serde" => {
+                    result.with_serde = true;
+                }
+                ParsedAttribute::Tag(i) if i.to_string() == "versioned" => {
                     result.with_serde = true;
                 }
                 ParsedAttribute::Tag(i) => {

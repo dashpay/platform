@@ -2,7 +2,7 @@ use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use crate::data_contract::serialized_version::v0::DataContractSerializationFormatV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
-use crate::version::PlatformVersion;
+use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 use platform_value::Value;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

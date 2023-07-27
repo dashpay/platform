@@ -1,3 +1,4 @@
+use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::ProtocolError;
@@ -14,4 +15,20 @@ mod v0_methods;
 #[platform_error_type(ProtocolError)]
 pub enum IdentityPublicKeyInCreation {
     V0(IdentityPublicKeyInCreationV0),
+}
+
+impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
+    fn from(val: &IdentityPublicKeyInCreation) -> Self {
+        match val {
+            val => val.into(),
+        }
+    }
+}
+
+impl From<IdentityPublicKey> for IdentityPublicKeyInCreation {
+    fn from(val: IdentityPublicKey) -> Self {
+        match val {
+            IdentityPublicKey::V0(v0) => v0.into(),
+        }
+    }
 }

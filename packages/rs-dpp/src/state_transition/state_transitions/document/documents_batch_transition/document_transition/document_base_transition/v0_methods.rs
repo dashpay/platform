@@ -43,22 +43,4 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
             DocumentBaseTransition::V0(v0) => v0.set_data_contract_id(data_contract_id),
         }
     }
-
-    fn data_contract(&self) -> &DataContract {
-        match self {
-            DocumentBaseTransition::V0(v0) => v0.data_contract(),
-        }
-    }
-
-    fn data_contract_owned(self) -> DataContract {
-        match self {
-            DocumentBaseTransition::V0(v0) => v0.data_contract_owned(),
-        }
-    }
-
-    fn set_data_contract(&mut self, data_contract: DataContract) {
-        match self {
-            DocumentBaseTransition::V0(v0) => v0.set_data_contract(data_contract),
-        }
-    }
 }

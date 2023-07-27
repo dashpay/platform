@@ -9,8 +9,8 @@ use dashcore_rpc::dashcore::{
 };
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
-use drive::dpp::contracts::withdrawals_contract;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_duffs;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
@@ -46,7 +46,7 @@ where
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
                 .properties
-                .get_bytes(withdrawals_contract::property_names::OUTPUT_SCRIPT)
+                .get_bytes(withdrawal::properties::OUTPUT_SCRIPT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get outputScript from withdrawal document",
@@ -55,7 +55,7 @@ where
 
             let amount = document
                 .properties
-                .get_integer(withdrawals_contract::property_names::AMOUNT)
+                .get_integer(withdrawal::properties::AMOUNT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get amount from withdrawal document",
@@ -64,7 +64,7 @@ where
 
             let core_fee_per_byte: u32 = document
                 .properties
-                .get_integer(withdrawals_contract::property_names::CORE_FEE_PER_BYTE)
+                .get_integer(withdrawal::properties::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't get coreFeePerByte from withdrawal document",
@@ -123,6 +123,7 @@ mod tests {
         use dpp::block::extended_block_info::BlockInfo;
 
         use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;
@@ -171,7 +172,7 @@ mod tests {
             .expect("expected withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(

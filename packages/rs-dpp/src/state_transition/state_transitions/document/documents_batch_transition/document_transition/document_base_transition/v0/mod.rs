@@ -32,9 +32,6 @@ pub struct DocumentBaseTransitionV0 {
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
-
-    #[serde(skip)]
-    pub data_contract: DataContract,
 }
 
 impl DocumentBaseTransitionV0 {
@@ -69,8 +66,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
     ) -> Result<Self, ProtocolError> {
         let mut document: DocumentBaseTransitionV0 = serde_json::from_value(json_value)?;
 
-        document.data_contract_id = data_contract.id;
-        document.data_contract = data_contract;
+        document.data_contract_id = data_contract.id();
         Ok(document)
     }
 

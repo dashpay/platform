@@ -1,13 +1,11 @@
-use dpp::consensus::basic::BasicError;
+use crate::error::Error;
 use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+use dpp::consensus::basic::BasicError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::generate_data_contract_id;
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0Methods;
 use dpp::validation::SimpleConsensusValidationResult;
-use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 
 pub(crate) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
@@ -50,7 +48,7 @@ impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
             ));
         }
 
-        self.data_contract
+        self.data_contract()
             .validate_structure()
             .map_err(Error::Protocol)
     }

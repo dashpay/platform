@@ -122,7 +122,7 @@ pub(super) fn derive_platform_deserialize_enum(
                 impl #impl_generics #crate_name::serialization::PlatformDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
                     fn versioned_deserialize(
                         data: &[u8],
-                        platform_version: &PlatformVersion,
+                        platform_version: &platform_version::version::PlatformVersion,
                     ) -> Result<Self, ProtocolError>
                     where
                         Self: Sized {
@@ -166,7 +166,7 @@ pub(super) fn derive_platform_deserialize_enum(
                     impl #impl_generics #crate_name::serialization::PlatformLimitDeserializableFromVersionedStructure for #name #ty_generics #where_clause {
                         fn versioned_limit_deserialize(
                             data: &[u8],
-                            platform_version: &PlatformVersion,
+                            platform_version: &platform_version::version::PlatformVersion,
                         ) -> Result<Self, ProtocolError>
                         where
                             Self: Sized {

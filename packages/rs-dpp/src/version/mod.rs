@@ -1,24 +1,64 @@
-// use std::collections::HashMap;
-//
-// use lazy_static::lazy_static;
-//
-// mod protocol_version;
-// pub use protocol_version::*;
-// pub mod dpp_versions;
-// pub mod drive_abci_versions;
-// pub mod drive_versions;
-// mod v0;
-// #[cfg(feature = "validation")]
-// mod validation;
-//
-// pub const LATEST_VERSION: u32 = 1;
-//
-// lazy_static! {
-//     pub static ref COMPATIBILITY_MAP: HashMap<u32, u32> = {
-//         let mut m = HashMap::new();
-//         m.insert(1, 1);
-//         m
-//     };
-// }
-
+use crate::ProtocolError;
+use lazy_static::lazy_static;
 pub use platform_version::version::*;
+use std::sync::{RwLock, RwLockReadGuard};
+
+lazy_static! {
+    static ref CURRENT_PLATFORM_VERSION: RwLock<Option<&'static PlatformVersion>> =
+        RwLock::new(None);
+}
+
+pub trait PlatformVersionCurrentVersion {
+    fn set_current(platform_version: &'static PlatformVersion);
+    fn get_current<'a>() -> Result<&'a Self, ProtocolError>;
+    fn get_maybe_current<'a>() -> Option<&'a Self>;
+    fn get_version_or_current_or_latest<'a>(
+        version: Option<u32>,
+    ) -> Result<&'a Self, ProtocolError>;
+}
+
+impl PlatformVersionCurrentVersion for PlatformVersion {
+    fn set_current(platform_version: &'static PlatformVersion) {
+        let mut context = CURRENT_PLATFORM_VERSION.write().unwrap();
+        *context = Some(platform_version);
+    }
+
+    fn get_current<'a>() -> Result<&'a Self, ProtocolError> {
+        CURRENT_PLATFORM_VERSION
+            .read()
+            .unwrap()
+            .ok_or(ProtocolError::CurrentProtocolVersionNotInitialized)
+    }
+
+    fn get_maybe_current<'a>() -> Option<&'a Self> {
+        let lock_guard = CURRENT_PLATFORM_VERSION.read().unwrap();
+
+        if lock_guard.is_some() {
+            Some(lock_guard.unwrap())
+        } else {
+            None
+        }
+    }
+
+    fn get_version_or_current_or_latest<'a>(
+        version: Option<u32>,
+    ) -> Result<&'a Self, ProtocolError> {
+        if let Some(version) = version {
+            if version > 0 {
+                PLATFORM_VERSIONS.get(version as usize - 1).ok_or(
+                    ProtocolError::UnknownProtocolVersionError(format!(
+                        "no platform version {version}"
+                    )),
+                )
+            } else {
+                Err(ProtocolError::UnknownProtocolVersionError(format!(
+                    "no platform version {version}"
+                )))
+            }
+        } else if let Some(current_version) = Self::get_maybe_current() {
+            Ok(current_version)
+        } else {
+            Ok(Self::latest())
+        }
+    }
+}

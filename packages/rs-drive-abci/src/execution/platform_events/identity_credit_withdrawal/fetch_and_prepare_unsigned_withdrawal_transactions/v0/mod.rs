@@ -11,7 +11,8 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
-use drive::dpp::contracts::withdrawals_contract;
+use drive::dpp::system_data_contracts::withdrawals_contract;
+use drive::dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
 use drive::dpp::util::hash;
 
@@ -51,7 +52,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = *withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
@@ -115,12 +116,12 @@ where
                     )?;
 
                     document.set_bytes(
-                        withdrawals_contract::property_names::TRANSACTION_ID,
+                        withdrawal::properties::TRANSACTION_ID,
                         update_transaction_id,
                     );
 
                     document.set_i64(
-                        withdrawals_contract::property_names::UPDATED_AT,
+                        withdrawal::properties::UPDATED_AT,
                         block_info.time_ms.try_into().map_err(|_| {
                             Error::Execution(ExecutionError::CorruptedCodeExecution(
                                 "Can't convert u64 block time to i64 updated_at",
@@ -145,7 +146,7 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "could not get document type",

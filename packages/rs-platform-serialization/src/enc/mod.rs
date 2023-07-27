@@ -43,22 +43,6 @@ pub trait PlatformVersionEncode {
     ) -> Result<(), EncodeError>;
 }
 
-pub fn platform_encode_to_vec<E: PlatformVersionEncode, C: Config>(
-    val: E,
-    config: C,
-    platform_version: &PlatformVersion,
-) -> Result<Vec<u8>, EncodeError> {
-    let size = {
-        let mut size_writer = enc::EncoderImpl::<_, C>::new(SizeWriter::default(), config);
-        val.platform_encode(&mut size_writer, platform_version)?;
-        size_writer.into_writer().bytes_written
-    };
-    let writer = VecWriter::with_capacity(size);
-    let mut encoder = enc::EncoderImpl::<_, C>::new(writer, config);
-    val.platform_encode(&mut encoder, platform_version)?;
-    Ok(encoder.into_writer().inner)
-}
-
 /// Encode the variant of the given option. Will not encode the option itself.
 #[inline]
 pub(crate) fn encode_option_variant<E: Encoder, T>(

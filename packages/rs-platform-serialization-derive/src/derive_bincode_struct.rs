@@ -47,12 +47,17 @@ impl DeriveStruct {
                             .unwrap_or_default();
                         if attributes.with_serde {
                             fn_body.push_parsed(format!(
-                                "{0}::PlatformVersionEncode::platform_encode(&{0}::serde::Compat(&self.{1}), encoder, platform_version)?;",
+                                "{0}::Encode::encode(&bincode::serde::Compat(&self.{1}), encoder)?;",
+                                crate_name, field
+                            ))?;
+                        } else if attributes.with_platform_version {
+                            fn_body.push_parsed(format!(
+                                "{}::PlatformVersionEncode::platform_encode(&self.{}, encoder, platform_version)?;",
                                 crate_name, field
                             ))?;
                         } else {
                             fn_body.push_parsed(format!(
-                                "{}::PlatformVersionEncode::platform_encode(&self.{}, encoder, platform_version)?;",
+                                "{}::Encode::encode(&self.{}, encoder)?;",
                                 crate_name, field
                             ))?;
                         }
@@ -66,7 +71,8 @@ impl DeriveStruct {
 
     pub fn generate_decode(self, generator: &mut Generator) -> Result<()> {
         // Remember to keep this mostly in sync with generate_borrow_decode
-        let crate_name = &self.attributes.crate_name;
+        //let crate_name = &self.attributes.crate_name;
+        let crate_name = "platform_serialization";
 
         generator
             .impl_for(format!("{}::Decode", crate_name))
@@ -103,7 +109,14 @@ impl DeriveStruct {
                                 if attributes.with_serde {
                                     struct_body
                                         .push_parsed(format!(
-                                            "{1}: (<{0}::serde::Compat<_> as {0}::Decode>::decode(decoder)?).0,",
+                                            "{1}: (<bincode::serde::Compat<_> as {0}::Decode>::decode(decoder)?).0,",
+                                            crate_name,
+                                            field
+                                        ))?;
+                                } else if attributes.with_platform_version {
+                                    struct_body
+                                        .push_parsed(format!(
+                                            "{1}: (<bincode::serde::Compat<_> as {0}::PlatformVersionedDecode>::decode(decoder, platform_version)?),",
                                             crate_name,
                                             field
                                         ))?;
@@ -129,7 +142,8 @@ impl DeriveStruct {
 
     pub fn generate_borrow_decode(self, generator: &mut Generator) -> Result<()> {
         // Remember to keep this mostly in sync with generate_decode
-        let crate_name = self.attributes.crate_name;
+        //let crate_name = self.attributes.crate_name;
+        let crate_name = "platform_serialization";
 
         generator
             .impl_for_with_lifetimes(format!("{}::BorrowDecode", crate_name), ["__de"])
@@ -163,7 +177,14 @@ impl DeriveStruct {
                                 if attributes.with_serde {
                                     struct_body
                                         .push_parsed(format!(
-                                            "{1}: (<{0}::serde::BorrowCompat<_> as {0}::BorrowDecode>::borrow_decode(decoder)?).0,",
+                                            "{1}: (<bincode::serde::BorrowCompat<_> as {0}::BorrowDecode>::borrow_decode(decoder)?).0,",
+                                            crate_name,
+                                            field
+                                        ))?;
+                                } else if attributes.with_platform_version {
+                                    struct_body
+                                        .push_parsed(format!(
+                                            "{1}: {0}::PlatformVersionedBorrowDecode::platform_versioned_borrow_decode(decoder, platform_version)?,",
                                             crate_name,
                                             field
                                         ))?;
