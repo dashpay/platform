@@ -14,8 +14,8 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     139, 113, 170, 202, 91, 69, 135, 242, 242, 219, 97, 152,
 ];
 
-pub static ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
-pub static OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
+pub const ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
+pub const OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!(

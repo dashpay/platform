@@ -57,8 +57,8 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     188, 82, 144, 69, 234, 198, 106, 35, 245, 167, 46, 192,
 ];
 
-pub static ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
-pub static OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
+pub const ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
+pub const OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../schema/withdrawals-documents.json"))

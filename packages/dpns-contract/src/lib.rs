@@ -13,8 +13,8 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     67, 4, 181, 246, 153, 65, 68, 40, 110, 253, 172,
 ];
 
-pub static ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
-pub static OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
+pub const ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
+pub const OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../schema/dpns-contract-documents.json"))

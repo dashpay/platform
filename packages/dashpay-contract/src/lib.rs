@@ -14,8 +14,8 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     215, 90, 101, 229, 15, 115, 5, 44, 117, 182, 217,
 ];
 
-pub static ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
-pub static OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
+pub const ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
+pub const OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../schema/dashpay.schema.json"))
