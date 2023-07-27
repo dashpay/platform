@@ -1,7 +1,10 @@
 use lazy_static::__Deref;
 
+use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::system_data_contracts::{
-    feature_flags_contract, withdrawals_contract, SystemDataContract,
+    dashpay_contract, dpns_contract, feature_flags_contract, withdrawals_contract,
+    SystemDataContract,
 };
 use dpp::{errors::ProtocolError, prelude::Identifier};
 
@@ -37,78 +40,74 @@ pub fn get_data_triggers<'a>(
 pub fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
     let data_triggers = vec![
         DataTrigger {
-            data_contract_id: SystemDataContract::DPNS.id(),
+            data_contract_id: dpns_contract::ID,
             document_type: "domain".to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::DataTriggerCreateDomain,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::DPNS.id(),
+            data_contract_id: dpns_contract::ID,
             document_type: "domain".to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::DPNS.id(),
+            data_contract_id: dpns_contract::ID,
             document_type: "domain".to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::DPNS.id(),
+            data_contract_id: dpns_contract::ID,
             document_type: "preorder".to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::DPNS.id(),
+            data_contract_id: dpns_contract::ID,
             document_type: "preorder".to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::Dashpay.id(),
+            data_contract_id: dashpay_contract::ID,
             document_type: "contactRequest".to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::CreateDataContractRequest,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::Dashpay.id(),
+            data_contract_id: dashpay_contract::ID,
             document_type: "contactRequest".to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::Dashpay.id(),
+            data_contract_id: dashpay_contract::ID,
             document_type: "contactRequest".to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
-            data_contract_id: SystemDataContract::FeatureFlags.id(),
-            document_type: feature_flags_contract::document_types::
-                .to_string(),
+            data_contract_id: dashpay_contract::ID,
+            document_type: update_consensus_params::NAME.to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::CrateFeatureFlag,
         },
         DataTrigger {
             data_contract_id: SystemDataContract::FeatureFlags.id(),
-            document_type: feature_flags_contract::document_types::update_consensus_params::NAME
-                .to_string(),
+            document_type: update_consensus_params::NAME.to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
             data_contract_id: SystemDataContract::FeatureFlags.id(),
-            document_type: feature_flags_contract::document_types::update_consensus_params::NAME
-                .to_string(),
+            document_type: update_consensus_params::NAME.to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
             data_contract_id: SystemDataContract::MasternodeRewards.id(),
-            document_type: feature_flags_contract::document_types::update_consensus_params::NAME
-                .to_string(),
+            document_type: update_consensus_params::NAME.to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::DataTriggerRewardShare,
         },
@@ -120,19 +119,19 @@ pub fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
         },
         DataTrigger {
             data_contract_id: SystemDataContract::Withdrawals.id(),
-            document_type: withdrawals_contract::document_types::withdrawal::NAME.to_string(),
+            document_type: withdrawal::NAME.to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
             data_contract_id: SystemDataContract::Withdrawals.id(),
-            document_type: withdrawals_contract::document_types::withdrawal::NAME.to_string(),
+            document_type: withdrawal::NAME.to_string(),
             transition_action: Action::Replace,
             data_trigger_kind: DataTriggerKind::DataTriggerReject,
         },
         DataTrigger {
             data_contract_id: SystemDataContract::Withdrawals.id(),
-            document_type: withdrawals_contract::document_types::withdrawal::NAME.to_string(),
+            document_type: withdrawal::NAME.to_string(),
             transition_action: Action::Delete,
             data_trigger_kind: DataTriggerKind::DeleteWithdrawal,
         },

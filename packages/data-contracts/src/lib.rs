@@ -25,28 +25,6 @@ pub struct DataContractSource {
 }
 
 impl SystemDataContract {
-    /// Returns Data Contract ID
-    pub fn id(&self) -> Identifier {
-        match self {
-            SystemDataContract::Withdrawals => *withdrawals_contract::ID,
-            SystemDataContract::MasternodeRewards => *masternode_reward_shares_contract::ID,
-            SystemDataContract::FeatureFlags => *feature_flags_contract::ID,
-            SystemDataContract::DPNS => *dpns_contract::ID,
-            SystemDataContract::Dashpay => *dashpay_contract::ID,
-        }
-    }
-
-    /// Returns Data Contract's Owner ID
-    pub fn owner_id(&self) -> Identifier {
-        match self {
-            SystemDataContract::Withdrawals => *withdrawals_contract::OWNER_ID,
-            SystemDataContract::MasternodeRewards => *masternode_reward_shares_contract::OWNER_ID,
-            SystemDataContract::FeatureFlags => *feature_flags_contract::OWNER_ID,
-            SystemDataContract::DPNS => *dpns_contract::OWNER_ID,
-            SystemDataContract::Dashpay => *dashpay_contract::OWNER_ID,
-        }
-    }
-
     /// Returns [DataContractSource]
     pub fn source(self) -> Result<DataContractSource, Error> {
         let data = match self {

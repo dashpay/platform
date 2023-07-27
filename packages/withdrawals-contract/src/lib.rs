@@ -1,7 +1,5 @@
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-// TODO: Use std when Lazy is stabilized
-use once_cell::sync::Lazy;
-use platform_value::Identifier;
+use platform_value::{Identifier, IdentifierBytes32};
 use serde_json::Error;
 use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -57,8 +55,8 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     188, 82, 144, 69, 234, 198, 106, 35, 245, 167, 46, 192,
 ];
 
-pub const ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
-pub const OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
+pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
+pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../schema/withdrawals-documents.json"))

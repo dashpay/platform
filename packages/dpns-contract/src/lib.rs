@@ -1,6 +1,4 @@
-// TODO: Use std when Lazy is stabilized
-use once_cell::sync::Lazy;
-use platform_value::Identifier;
+use platform_value::{Identifier, IdentifierBytes32};
 use serde_json::{Error, Value};
 
 pub const ID_BYTES: [u8; 32] = [
@@ -13,8 +11,8 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     67, 4, 181, 246, 153, 65, 68, 40, 110, 253, 172,
 ];
 
-pub const ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
-pub const OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
+pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
+pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../schema/dpns-contract-documents.json"))
