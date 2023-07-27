@@ -4,8 +4,9 @@ use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::system_data_contracts::withdrawal::NAME;
+use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
-use drive::dpp::contracts::withdrawals_contract;
 
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
@@ -43,7 +44,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = &withdrawals_contract::CONTRACT_ID;
+        let data_contract_id = *withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
@@ -79,7 +80,7 @@ where
             .map(|mut document| {
                 let transaction_sign_height: u32 = document
                     .properties
-                    .get_integer(withdrawals_contract::property_names::TRANSACTION_SIGN_HEIGHT)
+                    .get_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionSignHeight from withdrawal document",
@@ -88,7 +89,7 @@ where
 
                 let transaction_id_bytes = document
                     .properties
-                    .get_bytes(withdrawals_contract::property_names::TRANSACTION_ID)
+                    .get_bytes(withdrawal::properties::TRANSACTION_ID)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionId from withdrawal document",
@@ -97,7 +98,7 @@ where
 
                 let transaction_index = document
                     .properties
-                    .get_integer(withdrawals_contract::property_names::TRANSACTION_INDEX)
+                    .get_integer(withdrawal::properties::TRANSACTION_INDEX)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "Can't get transactionIdex from withdrawal document",
@@ -121,12 +122,9 @@ where
                     return Ok(None);
                 };
 
-                document.set_u8(withdrawals_contract::property_names::STATUS, status.into());
+                document.set_u8(withdrawal::properties::STATUS, status.into());
 
-                document.set_u64(
-                    withdrawals_contract::property_names::UPDATED_AT,
-                    block_info.time_ms,
-                );
+                document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
 
                 document.increment_revision().map_err(Error::Protocol)?;
 
@@ -149,7 +147,7 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -331,7 +329,7 @@ mod tests {
             ).expect("expected withdrawal document");
 
         let document_type = data_contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get document type");
 
         setup_document(

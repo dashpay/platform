@@ -5,6 +5,8 @@ use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
+use dpp::system_data_contracts::withdrawals_contract;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
@@ -25,7 +27,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = withdrawals_contract::ID.deref();
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_fee(
@@ -44,15 +46,15 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
+            .document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
         //todo: make this lazy loaded or const
         where_clauses.insert(
-            withdrawals_contract::property_names::STATUS.to_string(),
+            withdrawal::properties::STATUS.to_string(),
             WhereClause {
-                field: withdrawals_contract::property_names::STATUS.to_string(),
+                field: withdrawal::properties::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: Value::U8(status),
             },
@@ -61,9 +63,9 @@ impl Drive {
         let mut order_by = IndexMap::new();
 
         order_by.insert(
-            withdrawals_contract::property_names::UPDATED_AT.to_string(),
+            withdrawal::properties::UPDATED_AT.to_string(),
             OrderClause {
-                field: withdrawals_contract::property_names::UPDATED_AT.to_string(),
+                field: withdrawal::properties::UPDATED_AT.to_string(),
                 ascending: true,
             },
         );
@@ -104,7 +106,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = withdrawals_contract::ID.deref();
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_fee(
@@ -123,23 +125,23 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
+            .document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
         where_clauses.insert(
-            withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
+            withdrawal::properties::TRANSACTION_ID.to_string(),
             WhereClause {
-                field: withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
+                field: withdrawal::properties::TRANSACTION_ID.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: Value::Bytes(original_transaction_id.to_vec()),
             },
         );
 
         where_clauses.insert(
-            withdrawals_contract::property_names::STATUS.to_string(),
+            withdrawal::properties::STATUS.to_string(),
             WhereClause {
-                field: withdrawals_contract::property_names::STATUS.to_string(),
+                field: withdrawal::properties::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: Value::U8(withdrawals_contract::WithdrawalStatus::POOLED as u8),
             },
@@ -242,7 +244,7 @@ mod tests {
             .expect("expected withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(
@@ -346,7 +348,7 @@ mod tests {
             .expect("expected to get withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(

@@ -92,8 +92,6 @@ pub struct DataTrigger {
     pub data_trigger_kind: DataTriggerKind,
     /// The action that triggered the trigger.
     pub transition_action: Action,
-    /// An optional identifier for the top-level identity associated with the document.
-    pub top_level_identity: Option<Identifier>,
 }
 
 impl DataTrigger {

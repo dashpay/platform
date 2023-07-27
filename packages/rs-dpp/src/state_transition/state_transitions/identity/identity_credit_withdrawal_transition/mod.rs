@@ -11,12 +11,12 @@ mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::contracts::withdrawals_contract::property_names::OUTPUT_SCRIPT;
 use crate::serialization::Signable;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
+use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};

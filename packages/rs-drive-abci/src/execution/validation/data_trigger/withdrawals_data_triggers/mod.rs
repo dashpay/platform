@@ -1,6 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::contracts::withdrawals_contract;
 
 use crate::execution::validation::data_trigger::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
@@ -11,6 +10,8 @@ use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::system_data_contracts::withdrawal::NAME;
+use dpp::system_data_contracts::withdrawals_contract;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
@@ -46,7 +47,7 @@ pub fn delete_withdrawal_data_trigger(
 
     let document_type = context
         .data_contract
-        .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
+        .document_type_for_name(withdrawal::NAME::NAME)?;
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
@@ -179,7 +180,7 @@ mod tests {
         let platform_version = PlatformVersion::first();
 
         let document_type = data_contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get withdrawal document type");
         let document = get_withdrawal_document_fixture(
             &data_contract,
@@ -225,7 +226,7 @@ mod tests {
         let owner_id = data_contract.owner_id;
 
         let document_type = data_contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get withdrawal document type");
 
         let document = get_withdrawal_document_fixture(

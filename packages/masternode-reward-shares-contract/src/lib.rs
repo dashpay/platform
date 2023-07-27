@@ -1,3 +1,4 @@
+use platform_value::{Identifier, IdentifierBytes32};
 use serde_json::Error;
 use serde_json::Value;
 
@@ -10,6 +11,9 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     159, 101, 165, 10, 103, 89, 107, 118, 134, 35, 62, 205, 14, 245, 130, 168, 86, 190, 41, 247,
     139, 113, 170, 202, 91, 69, 135, 242, 242, 219, 97, 152,
 ];
+
+pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
+pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!(
