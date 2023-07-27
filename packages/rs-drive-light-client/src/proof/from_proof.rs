@@ -366,10 +366,10 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
         })?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
+        let (root_hash, maybe_identity) = Drive::verify_identity_balance_for_identity_id(
             &proof.grovedb_proof,
-            false,
             id.into_buffer(),
+            false,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -377,7 +377,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-        Ok(maybe_identity.map(|i| i.balance))
+        Ok(maybe_identity)
     }
 }
 
