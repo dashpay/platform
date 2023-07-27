@@ -415,7 +415,9 @@ impl Drive {
         } else {
             GroveDb::verify_query(proof, &path_query)?
         };
-        if proved_key_values.len() == 1 {
+        if proved_key_values.len() == 0 {
+            Ok((root_hash, None))
+        } else if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = &proved_key_values.remove(0);
             if path != &balance_path() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
