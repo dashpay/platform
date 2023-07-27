@@ -8,3 +8,5 @@ license = "MIT"
 [dependencies]
 lazy_static = "1.4.0"
 serde_json = { version = "1.0" }
+platform-value = { path = "../rs-platform-value" }
+once_cell = "1.18.0"

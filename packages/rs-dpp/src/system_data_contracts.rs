@@ -2,11 +2,8 @@ use crate::data_contract::DataContractFactory;
 use crate::prelude::*;
 use crate::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
-use crate::version::PlatformVersion;
-pub use data_contracts::DataContractSource;
-pub use data_contracts::SystemDataContract;
+pub use data_contracts::*;
 
 fn create_data_contract(
     factory: &DataContractFactory,

@@ -1,3 +1,6 @@
+// TODO: Use std when Lazy is stabilized
+use once_cell::sync::Lazy;
+use platform_value::Identifier;
 use serde_json::Error;
 use serde_json::Value;
 
@@ -10,6 +13,9 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     65, 63, 57, 243, 204, 9, 106, 71, 187, 2, 94, 221, 190, 127, 141, 114, 137, 209, 243, 50, 60,
     215, 90, 101, 229, 15, 115, 5, 44, 117, 182, 217,
 ];
+
+pub static ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(ID_BYTES));
+pub static OWNER_ID: Lazy<Identifier> = Lazy::new(|| Identifier::from(OWNER_ID_BYTES));
 
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!("../schema/dashpay.schema.json"))

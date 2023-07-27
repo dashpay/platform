@@ -4,19 +4,18 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
     use std::collections::BTreeMap;
 
-    use crate::contracts::withdrawals_contract::property_names::{
-        AMOUNT, CORE_FEE_PER_BYTE, OUTPUT_SCRIPT, POOLING, STATUS,
-    };
     use crate::document::ExtendedDocument;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
-        contracts::withdrawals_contract,
         identity::state_transition::identity_credit_withdrawal_transition::{
             apply_identity_credit_withdrawal_transition_factory::ApplyIdentityCreditWithdrawalTransition,
             IdentityCreditWithdrawalTransition, Pooling,
         },
         state_repository::MockStateRepositoryLike,
         tests::fixtures::get_data_contract_fixture,
+    };
+    use data_contracts::withdrawals_contract::document_types::withdrawal::properties::{
+        AMOUNT, CORE_FEE_PER_BYTE, OUTPUT_SCRIPT, POOLING, STATUS,
     };
     use mockall::predicate::{always, eq};
     use platform_value::Value;

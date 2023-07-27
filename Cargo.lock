@@ -1007,6 +1007,8 @@ name = "dashpay-contract"
 version = "0.24.0-dev.1"
 dependencies = [
  "lazy_static",
+ "once_cell",
+ "platform-value",
  "serde_json",
 ]
 
@@ -1018,6 +1020,7 @@ dependencies = [
  "dpns-contract",
  "feature-flags-contract",
  "masternode-reward-shares-contract",
+ "platform-value",
  "serde_json",
  "withdrawals-contract",
 ]
@@ -1095,6 +1098,8 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 name = "dpns-contract"
 version = "0.24.0-dev.1"
 dependencies = [
+ "once_cell",
+ "platform-value",
  "serde_json",
 ]
 
@@ -1423,6 +1428,8 @@ dependencies = [
 name = "feature-flags-contract"
 version = "0.24.0-dev.1"
 dependencies = [
+ "once_cell",
+ "platform-value",
  "serde_json",
 ]
 
@@ -2143,6 +2150,8 @@ dependencies = [
 name = "masternode-reward-shares-contract"
 version = "0.24.0-dev.1"
 dependencies = [
+ "once_cell",
+ "platform-value",
  "serde_json",
 ]
 
@@ -4484,7 +4493,12 @@ dependencies = [
 name = "withdrawals-contract"
 version = "0.24.0-dev.1"
 dependencies = [
+ "num_enum",
+ "once_cell",
+ "platform-value",
+ "serde",
  "serde_json",
+ "serde_repr",
 ]
 
 [[package]]
