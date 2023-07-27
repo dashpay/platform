@@ -1,0 +1,16 @@
+[package]
+name = "drive-proof-verifier-bindings"
+version = "0.1.0"
+edition = "2021"
+description = "This crate is only used to build bindings (using build.rs) for rs-drive-proof-verifier and save them into bindings/"
+
+[dependencies]
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", features = [
+    "bindgen",
+] }
+
+[build-dependencies]
+
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", features = [
+    "bindgen",
+] }

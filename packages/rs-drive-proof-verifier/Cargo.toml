@@ -1,5 +1,5 @@
 [package]
-name = "drive-light-client"
+name = "drive-proof-verifier"
 version = "0.25.0-dev"
 edition = "2021"
 rust-version = "1.70"

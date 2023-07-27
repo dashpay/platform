@@ -3,7 +3,7 @@ use dpp::{
     identity::PartialIdentity,
     prelude::{DataContract, Identity},
 };
-use drive_light_client::proof::from_proof::{
+use drive_proof_verifier::proof::from_proof::{
     DataContractHistory, DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes,
     IdentityBalance, IdentityBalanceAndRevision,
 };

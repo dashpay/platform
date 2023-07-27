@@ -1376,7 +1376,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "drive-light-client"
+name = "drive-proof-verifier"
 version = "0.25.0-dev"
 dependencies = [
  "bytes",
@@ -1392,13 +1392,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uniffi",
-]
-
-[[package]]
-name = "drive-light-client-bindings"
-version = "0.1.0"
-dependencies = [
- "drive-light-client",
 ]
 
 [[package]]
