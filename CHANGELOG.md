@@ -1,3 +1,10 @@
+### [0.24.18](https://github.com/dashpay/platform/compare/v0.24.17...v0.24.18) (2023-07-26)
+
+
+### Bug Fixes
+
+* **dashmate:** the update command expects helper image option ([#1264](https://github.com/dashpay/platform/issues/1264))
+
 ### [0.24.17](https://github.com/dashpay/platform/compare/v0.24.16...v0.24.17) (2023-07-26)
 
 
