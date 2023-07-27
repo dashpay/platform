@@ -1,11 +1,11 @@
-use dapi_grpc::platform::v0 as grpc;
+use dapi_grpc::platform::v0::{self as grpc};
 use dpp::{
     identity::PartialIdentity,
     prelude::{DataContract, Identity},
 };
 use drive_light_client::proof::from_proof::{
-    DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes, IdentityBalance,
-    IdentityBalanceAndRevision,
+    DataContractHistory, DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes,
+    IdentityBalance, IdentityBalanceAndRevision,
 };
 
 include!("utils.rs");
@@ -120,7 +120,7 @@ test_maybe_from_proof! {
 }
 
 test_maybe_from_proof! {
-    get_identity_by_pubkeys_not_found,
+    identity_by_pubkeys_not_found,
     grpc::GetIdentityByPublicKeyHashesRequest,
     grpc::GetIdentityByPublicKeyHashesResponse,
     Identity,
@@ -129,7 +129,7 @@ test_maybe_from_proof! {
 }
 
 test_maybe_from_proof! {
-    get_identities_not_found,
+    identities_not_found,
     grpc::GetIdentitiesRequest,
     grpc::GetIdentitiesResponse,
     Identities,
@@ -138,7 +138,7 @@ test_maybe_from_proof! {
 }
 
 test_maybe_from_proof! {
-    get_identities_by_hashes_not_found,
+    identities_by_hashes_not_found,
     grpc::GetIdentitiesByPublicKeyHashesRequest,
     grpc::GetIdentitiesByPublicKeyHashesResponse,
     IdentitiesByPublicKeyHashes,
@@ -148,25 +148,25 @@ test_maybe_from_proof! {
 
 // todo continue from here
 test_maybe_from_proof! {
-    get_identity_balance_not_found,
+    identity_balance_not_found,
     grpc::GetIdentityRequest,
     grpc::GetIdentityBalanceResponse,
     IdentityBalance,
-    "vectors/TODO.json",
+    "vectors/identity_balance_not_found.json",
     Ok(None)
 }
 
 test_maybe_from_proof! {
-    get_identity_balance_and_revision_not_found,
+    identity_balance_and_revision_not_found,
     grpc::GetIdentityRequest,
     grpc::GetIdentityBalanceAndRevisionResponse,
     IdentityBalanceAndRevision,
-    "vectors/TODO.json",
+    "vectors/identity_balance_and_revision_not_found.json",
     Ok(None)
 }
 
 test_maybe_from_proof! {
-    get_identity_keys_not_found,
+    identity_keys_not_found,
     grpc::GetIdentityKeysRequest,
     grpc::GetIdentityKeysResponse,
     PartialIdentity,
@@ -175,21 +175,30 @@ test_maybe_from_proof! {
 }
 
 test_maybe_from_proof! {
-    get_data_contract_not_found,
+    data_contract_not_found,
     grpc::GetDataContractRequest,
     grpc::GetDataContractResponse,
     DataContract,
-    "vectors/TODO.json",
+    "vectors/data_contract_not_found.json",
     Ok(None)
 }
 
 test_maybe_from_proof! {
-    get_data_contracts_not_found,
+    data_contracts_not_found,
     grpc::GetDataContractsRequest,
     grpc::GetDataContractsResponse,
     DataContracts,
-    "vectors/TODO.json",
-    Ok(None)
+    "vectors/data_contracts_not_found.json",
+    Ok(Some(_)) // can't write a match like Ok(Some([None]))
+}
+
+test_maybe_from_proof! {
+    data_contract_history_not_found,
+    grpc::GetDataContractHistoryRequest,
+    grpc::GetDataContractHistoryResponse,
+    DataContractHistory,
+    "vectors/data_contract_history_not_found.json",
+    Ok(Some(_)) // can't write a match like Ok(Some([None]))
 }
 
 // test_maybe_from_proof! {

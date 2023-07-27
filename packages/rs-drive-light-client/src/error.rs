@@ -25,8 +25,8 @@ pub enum Error {
     EmptyResponseMetadata,
 
     /// No proof in response
-    #[error("no proof in response")]
-    EmptyResponseProof,
+    #[error("no proof in result")]
+    NoProofInResult,
 
     /// Document not in proof
     #[error("requested document missing in proof")]

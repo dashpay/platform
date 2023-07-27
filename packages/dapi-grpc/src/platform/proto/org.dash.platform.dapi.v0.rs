@@ -689,6 +689,7 @@ pub struct GetDataContractHistoryRequest {
     #[prost(uint32, tag = "3")]
     pub offset: u32,
     #[prost(uint64, tag = "4")]
+    #[serde(with = "crate::deserialization::from_to_string")]
     pub start_at_ms: u64,
     #[prost(bool, tag = "5")]
     pub prove: bool,

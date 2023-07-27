@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use crate::Error;
@@ -13,6 +14,7 @@ use super::verify::verify_tenderdash_proof;
 
 pub type Identities = Vec<Option<Identity>>;
 pub type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
+pub type DataContractHistory = BTreeMap<u64, DataContract>;
 pub type DataContracts = Vec<Option<DataContract>>;
 pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
@@ -111,7 +113,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identity_response::Result::Proof(p) => p,
             platform::get_identity_response::Result::Identity(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -157,7 +159,7 @@ impl
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identity_by_public_key_hashes_response::Result::Proof(p) => p,
             platform::get_identity_by_public_key_hashes_response::Result::Identity(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -200,7 +202,7 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identities_response::Result::Proof(p) => p,
             platform::get_identities_response::Result::Identities(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -255,7 +257,7 @@ impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysRespon
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identity_keys_response::Result::Proof(p) => p,
             platform::get_identity_keys_response::Result::Keys(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -302,7 +304,7 @@ impl
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identities_by_public_key_hashes_response::Result::Proof(p) => p,
             platform::get_identities_by_public_key_hashes_response::Result::Identities(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -316,7 +318,7 @@ impl
             .iter()
             .map(|pk_hash| {
                 pk_hash.to_vec().try_into().map_err(|_| Error::DriveError {
-                    error: "Ivalid public key hash length".to_string(),
+                    error: "Invalid public key hash length".to_string(),
                 })
             })
             .collect::<Result<Vec<[u8; 20]>, Error>>()?;
@@ -349,7 +351,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identity_balance_response::Result::Proof(p) => p,
             platform::get_identity_balance_response::Result::Balance(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -392,7 +394,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_identity_balance_and_revision_response::Result::Proof(p) => p,
             platform::get_identity_balance_and_revision_response::Result::BalanceAndRevision(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -435,7 +437,7 @@ impl FromProof<platform::GetDataContractRequest, platform::GetDataContractRespon
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_data_contract_response::Result::Proof(p) => p,
             platform::get_data_contract_response::Result::DataContract(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -476,7 +478,7 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_data_contracts_response::Result::Proof(p) => p,
             platform::get_data_contracts_response::Result::DataContracts(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -515,6 +517,56 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
     }
 }
 
+impl FromProof<platform::GetDataContractHistoryRequest, platform::GetDataContractHistoryResponse>
+    for DataContractHistory
+{
+    fn maybe_from_proof(
+        request: &platform::GetDataContractHistoryRequest,
+        response: &platform::GetDataContractHistoryResponse,
+        provider: Box<dyn QuorumInfoProvider>,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized,
+    {
+        // Parse response to read proof and metadata
+        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+            platform::get_data_contract_history_response::Result::Proof(p) => p,
+            platform::get_data_contract_history_response::Result::DataContractHistory(_) => {
+                return Err(Error::NoProofInResult)
+            }
+        };
+
+        let mtd = response
+            .metadata
+            .as_ref()
+            .ok_or(Error::EmptyResponseMetadata)?;
+
+        // Load some info from request
+        let id = Identifier::from_bytes(&request.id).map_err(|e| Error::ProtocolError {
+            error: e.to_string(),
+        })?;
+
+        let limit = u32_to_u16_opt(request.limit)?;
+        let offset = u32_to_u16_opt(request.offset)?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_history) = Drive::verify_contract_history(
+            &proof.grovedb_proof,
+            id.into_buffer(),
+            request.start_at_ms,
+            limit,
+            offset,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+
+        Ok(maybe_history)
+    }
+}
+
 // #[cfg_attr(feature = "mock", mockall::automock)]
 impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documents {
     fn maybe_from_proof(
@@ -526,7 +578,7 @@ impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documen
         let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
             platform::get_documents_response::Result::Proof(p) => p,
             platform::get_documents_response::Result::Documents(_) => {
-                return Err(Error::EmptyResponseProof)
+                return Err(Error::NoProofInResult)
             }
         };
 
@@ -550,4 +602,21 @@ impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documen
             Ok(Some(documents))
         }
     }
+}
+
+/// Convert u32, if 0 return None, otherwise return Some(u16).
+/// Errors when value is out of range.
+fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
+    let i: Option<u16> = if i != 0 {
+        let i: u16 =
+            i.try_into()
+                .map_err(|e: std::num::TryFromIntError| Error::RequestDecodeError {
+                    error: format!("value {} out of range: {}", i, e.to_string()),
+                })?;
+        Some(i)
+    } else {
+        None
+    };
+
+    Ok(i)
 }
