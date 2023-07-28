@@ -22,15 +22,15 @@ module.exports = {
           type: 'boolean',
         },
         context: {
-          type: 'string',
+          type: ['string', 'null'],
           minLength: 1,
         },
         dockerFile: {
-          type: 'string',
+          type: ['string', 'null'],
           minLength: 1,
         },
         target: {
-          type: 'string',
+          type: ['string', 'null'],
         },
       },
       required: ['enabled', 'context', 'dockerFile', 'target'],
