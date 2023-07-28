@@ -41,7 +41,7 @@ jobs:
 
   wasm-errors:
     name: WASM compilation
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
