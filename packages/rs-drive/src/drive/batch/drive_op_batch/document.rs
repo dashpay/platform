@@ -10,6 +10,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
+use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
@@ -300,9 +301,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             } => {
                 let contract = &drive.system_contracts.withdrawal_contract;
 
-                let document_type = contract.document_type_for_name(
-                    dpp::contracts::withdrawals_contract::document_types::WITHDRAWAL,
-                )?;
+                let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,

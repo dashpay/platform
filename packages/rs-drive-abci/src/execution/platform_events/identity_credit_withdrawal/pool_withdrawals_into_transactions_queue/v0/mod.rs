@@ -7,11 +7,12 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Setters;
 use dpp::version::PlatformVersion;
 
-use drive::dpp::contracts::withdrawals_contract;
-
 use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
+
+use dpp::system_data_contracts::withdrawals_contract;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
@@ -43,7 +44,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = *withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
@@ -84,17 +85,17 @@ where
             let transaction_id = hash::hash_to_vec(transaction_bytes);
 
             document.set_bytes(
-                withdrawals_contract::property_names::TRANSACTION_ID,
+                withdrawal::properties::TRANSACTION_ID,
                 transaction_id.clone(),
             );
 
             document.set_u8(
-                withdrawals_contract::property_names::STATUS,
+                withdrawal::properties::STATUS,
                 withdrawals_contract::WithdrawalStatus::POOLED as u8,
             );
 
             document.set_i64(
-                withdrawals_contract::property_names::UPDATED_AT,
+                withdrawal::properties::UPDATED_AT,
                 block_info.time_ms.try_into().map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't convert u64 block time to i64 updated_at",
@@ -114,7 +115,7 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -147,11 +148,13 @@ where
 #[cfg(test)]
 mod tests {
 
+    use super::*;
+
     use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
-    use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
+    use dpp::tests::fixtures::get_withdrawal_document_fixture;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
@@ -243,7 +246,7 @@ mod tests {
         .expect("expected withdrawal document");
 
         let document_type = data_contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get document type");
 
         setup_document(
