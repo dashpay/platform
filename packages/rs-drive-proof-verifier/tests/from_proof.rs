@@ -162,7 +162,7 @@ test_maybe_from_proof! {
     Ok(1)
 }
 
-// TODO: Fails with:
+// TODO: GRPC request fails with:
 // drive error: grovedb: path key not found: key not found in Merk for get
 test_maybe_from_proof! {
     identity_by_pubkey_not_found,

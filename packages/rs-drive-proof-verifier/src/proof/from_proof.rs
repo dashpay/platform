@@ -239,7 +239,7 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
             })
             .collect::<Result<Identities, Error>>()?;
 
-        todo!("We need verify_full_identities_by_identity_ids in Drive to implement this method");
+        todo!("Needs Drive::verify_full_identities_by_identity_ids()");
 
         Ok(Some(maybe_identities))
     }
@@ -423,7 +423,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-        todo!("we need Drive to implement verify_identity_balance_and_revision_for_identity_id");
+        todo!("Needs Drive::verify_identity_balance_and_revision_for_identity_id()");
         #[allow(unreachable_code)]
         Ok(maybe_identity.map(|i| (i.balance, i.revision)))
     }
@@ -518,6 +518,8 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
             })
             .collect::<Result<DataContracts, Error>>()?;
 
+        todo!("Need to implement Drive::verify_contracts()");
+        #[allow(unreachable_code)]
         Ok(Some(maybe_contracts))
     }
 }
