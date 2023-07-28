@@ -32,8 +32,7 @@ use crate::{
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
+
 pub struct DataContractUpdateTransitionV0 {
     #[platform_serialize(versioned)]
     pub data_contract: DataContract,

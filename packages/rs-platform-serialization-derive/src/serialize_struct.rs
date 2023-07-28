@@ -19,7 +19,6 @@ pub(super) fn derive_platform_serialize_struct(
         crate_name,
         platform_serialize_limit,
         platform_serialize_into,
-        derive_bincode,
         ..
     } = version_attributes;
 

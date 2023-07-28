@@ -104,7 +104,6 @@ macro_rules! call_static_method {
     derive(Serialize, Deserialize),
     serde(untagged)
 )]
-#[platform_error_type(ProtocolError)]
 #[platform_serialize(limit = 100000)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),

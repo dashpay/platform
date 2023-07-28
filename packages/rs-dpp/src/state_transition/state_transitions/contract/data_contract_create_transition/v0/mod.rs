@@ -39,7 +39,7 @@ use crate::version::PlatformVersion;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_error_type(ProtocolError)]
+
 pub struct DataContractCreateTransitionV0 {
     #[platform_serialize(versioned)]
     pub data_contract: DataContract,

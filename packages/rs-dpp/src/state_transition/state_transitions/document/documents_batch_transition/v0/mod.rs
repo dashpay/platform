@@ -30,8 +30,7 @@ use std::collections::{BTreeMap, HashMap};
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
+
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,

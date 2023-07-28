@@ -45,8 +45,7 @@ mod property_names {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_serialize(derive_bincode)]
-#[platform_error_type(ProtocolError)]
+
 pub struct IdentityTopUpTransitionV0 {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,

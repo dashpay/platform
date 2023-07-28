@@ -42,8 +42,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_serialize(derive_bincode)]
-#[platform_error_type(ProtocolError)]
+
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,

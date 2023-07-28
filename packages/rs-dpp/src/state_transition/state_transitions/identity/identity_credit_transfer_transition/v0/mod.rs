@@ -30,8 +30,7 @@ use std::convert::TryInto;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_serialize(derive_bincode)]
-#[platform_error_type(ProtocolError)]
+
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,

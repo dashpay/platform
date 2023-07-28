@@ -16,7 +16,7 @@ pub use de::PlatformVersionedDecode;
 pub use bincode::de::BorrowDecode;
 pub use bincode::de::Decode;
 pub use bincode::enc::Encode;
-use bincode::error;
+pub use bincode::error;
 use platform_version::version::PlatformVersion;
 
 extern crate alloc;
@@ -59,7 +59,7 @@ pub fn encode_into_writer<E: PlatformVersionEncode, W: Writer, C: Config>(
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
-pub fn decode_from_slice<D: PlatformVersionedDecode, C: Config>(
+pub fn platform_versioned_decode_from_slice<D: PlatformVersionedDecode, C: Config>(
     src: &[u8],
     config: C,
     platform_version: &PlatformVersion,
@@ -74,7 +74,11 @@ pub fn decode_from_slice<D: PlatformVersionedDecode, C: Config>(
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
-pub fn borrow_decode_from_slice<'a, D: PlatformVersionedBorrowDecode<'a>, C: Config>(
+pub fn platform_versioned_borrow_decode_from_slice<
+    'a,
+    D: PlatformVersionedBorrowDecode<'a>,
+    C: Config,
+>(
     src: &'a [u8],
     config: C,
     platform_version: &PlatformVersion,
@@ -89,7 +93,7 @@ pub fn borrow_decode_from_slice<'a, D: PlatformVersionedBorrowDecode<'a>, C: Con
 /// See the [config] module for more information on configurations.
 ///
 /// [config]: config/index.html
-pub fn decode_from_reader<D: PlatformVersionedDecode, R: Reader, C: Config>(
+pub fn platform_versioned_decode_from_reader<D: PlatformVersionedDecode, R: Reader, C: Config>(
     reader: R,
     config: C,
     platform_version: &PlatformVersion,

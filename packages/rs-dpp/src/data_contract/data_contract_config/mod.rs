@@ -6,7 +6,7 @@ use crate::data_contract::data_contract_config::v0::{
 };
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
-use bincode::Decode;
+use bincode::{Decode, Encode};
 use derive_more::From;
 pub use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -14,21 +14,9 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(
-    Serialize,
-    Deserialize,
-    PlatformSerialize,
-    PlatformDeserialize,
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    From,
-)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
 #[serde(untagged)]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
+
 pub enum DataContractConfig {
     V0(DataContractConfigV0),
 }

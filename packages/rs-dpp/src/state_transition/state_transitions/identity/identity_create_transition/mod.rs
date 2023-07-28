@@ -39,8 +39,6 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_create_state_transition"
 )]

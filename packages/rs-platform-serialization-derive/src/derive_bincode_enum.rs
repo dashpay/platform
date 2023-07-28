@@ -43,7 +43,7 @@ impl DeriveEnum {
             .with_generic_deps("__E", ["bincode::enc::Encoder"])
             .with_self_arg(FnSelfArg::RefSelf)
             .with_arg("encoder", "&mut __E")
-            .with_arg("platform_version", "&crate::version::PlatformVersion")
+            .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(
                 "core::result::Result<(), bincode::error::EncodeError>",
             )
@@ -91,7 +91,7 @@ impl DeriveEnum {
                         // }
                         match_body.group(Delimiter::Brace, |body| {
                             // variant index
-                            body.push_parsed(format!("<u32 as {}::PlatformVersionEncode>::platform_encode", crate_name))?;
+                            body.push_parsed("<u32 as bincode::Encode>::encode")?;
                             body.group(Delimiter::Parenthesis, |args| {
                                 args.punct('&');
                                 args.group(Delimiter::Parenthesis, |num| {
@@ -333,8 +333,7 @@ impl DeriveEnum {
     }
 
     pub fn generate_borrow_decode(self, generator: &mut Generator) -> Result<()> {
-        //let crate_name = &self.attributes.crate_name;
-        let crate_name = "platform_serialization";
+        let crate_name = &self.attributes.crate_name;
 
         // Remember to keep this mostly in sync with generate_decode
         let enum_name = generator.target_name().to_string();

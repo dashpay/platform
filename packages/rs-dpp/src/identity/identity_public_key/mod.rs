@@ -40,8 +40,7 @@ pub type TimestampMillis = u64;
     PlatformSerialize,
     From,
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(limit = 2000, derive_bincode)]
+#[platform_serialize(limit = 2000)]
 pub enum IdentityPublicKey {
     V0(IdentityPublicKeyV0),
 }

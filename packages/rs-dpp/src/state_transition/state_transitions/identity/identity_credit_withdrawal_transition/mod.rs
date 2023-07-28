@@ -40,8 +40,6 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition"
 )]

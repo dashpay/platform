@@ -8,9 +8,7 @@ use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
+#[derive(Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractSerializationFormatV0 {
     /// A unique identifier for the data contract.
@@ -18,7 +16,6 @@ pub struct DataContractSerializationFormatV0 {
     pub id: Identifier,
 
     /// Internal configuration for the contract.
-    #[platform_serialize(versioned)]
     pub config: DataContractConfig,
 
     //todo: we should just store a schema number

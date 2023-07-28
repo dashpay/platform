@@ -45,7 +45,6 @@ use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
-#[platform_error_type(ProtocolError)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyInCreationV0 {
     pub id: KeyID,

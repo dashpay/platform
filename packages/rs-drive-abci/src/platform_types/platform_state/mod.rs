@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, HashMap};
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]
 #[platform_serialize_into(PlatformStateForSaving)]
 #[platform_deserialize_from(PlatformStateForSaving)]
-#[platform_error_type(ProtocolError)]
+
 pub enum PlatformState {
     /// Version 0
     V0(PlatformStateV0),

@@ -10,7 +10,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::ProtocolError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
-#[platform_error_type(ProtocolError)]
+
 pub struct DocumentBaseTransitionActionV0 {
     /// The document Id
     pub id: Identifier,

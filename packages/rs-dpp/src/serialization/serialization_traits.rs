@@ -4,6 +4,7 @@ use bincode::enc;
 use bincode::enc::write::SizeWriter;
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
+use serde::Serialize;
 
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
@@ -109,7 +110,7 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
-pub trait ValueConvertible {
+pub trait ValueConvertible: Serialize {
     fn to_object(&self) -> Result<Value, ProtocolError>
     where
         Self: Sized + Clone,

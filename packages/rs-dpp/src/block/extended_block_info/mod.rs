@@ -25,8 +25,6 @@ pub mod v0;
     PlatformDeserialize,
     From,
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
 pub enum ExtendedBlockInfo {
     V0(ExtendedBlockInfoV0),
 }
