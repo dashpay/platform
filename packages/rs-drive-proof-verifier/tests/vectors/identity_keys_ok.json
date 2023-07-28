@@ -1,0 +1,40 @@
+[
+    {
+        "identity_id": "RS3IUQrmd79+PRfWSfGkBteL9FQtk6HaR2rlTo8kDFk=",
+        "limit": 11,
+        "offset": 0,
+        "prove": true,
+        "request_type": {
+            "specific_keys": {
+                "key_ids": [
+                    447312228,
+                    2681938691,
+                    2811793709,
+                    460355827
+                ]
+            }
+        }
+    },
+    {
+        "metadata": {
+            "height": "259",
+            "core_chain_locked_height": 1637,
+            "time_ms": "1690535343679",
+            "protocol_version": 1,
+            "chain_id": "dashmate_local_18"
+        },
+        "result": {
+            "proof": {
+                "grovedb_proof": "AkUBDvpUJktccU/NYNOeVAkS40ShgXPkFogQ5W+r1dS2u5IFAQFCktulF+JjNncsK9OcBNa+0wa0WjsM8cz4I1uz3mD2nBABkAEByBSnRARdTPC4j63X8U/4pFCuPZHxm2jsPS34LIDK5ggEAQEABQIBAQEANQDyukP6OTIVvounup5rnLGik8GzbB9zA2ACLV7JSJAQAp5cEJZ3Zfe5Qe5/CoYwdKF2OhvUxZ00H7WeFStGDITzEAFGGXui0dia5l8OOLQgcWbSttUgFMxwTFZwgr8dvWX53xEB3QIBoJ+JRRaW/kT6JvQ/eRgNxT7XQviTv/gyfCOaxdm1viMCZbAIuGotRXs6wVJW4BzO2fisgSG4eEHdhfrjCRg9sWgQBCBFLchRCuZ3v349F9ZJ8aQG14v0VC2TodpHauVOjyQMWQAJAgEBAgEDAAAAIFDqz+olyujFuvP/B/Fw1KxLONvOMmHBWP0eJNvp/QICdWVjPvYhCZd+kY69IN1rOmyD8p/ro+rxUlNmDzDPH94QAV6XQ6UR40kNYeDHF7OpaZt1bIJ6+ymL4RZbTM7P598LEQJKBIu5kk0RCgd3ZO+/WIufVLV5bzDYX3q6f3Xz5M8q2hABU0RNVHZi7joCnJehsAY6nQcF3LaFcUTRFXx5LchbpLUREQKJt1/5+Btq5NXYCtOyn3JE7H0COmNz/JzOOiyBG5anqBAB2ZJzHuqLC0eqJP07wipKVmlT3jVDMIjicNucmkgpuFoRAdEBAVywoHIecEyRTd9cCwR6e5u9ske+vQPE65mKVa6UW7U9BAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmAB9d/OzGj54bAROQwssIlwAKnpitGN1nN9uyzzMy8qx/hABb+aKPr865AmmGXYBeZpADoNW0y0xb4cjkJcXOORigocRAlrypee9Ac7geyOmINYxtpM8Q+9VIa+RPNwTE7/DJmspEAGeBZfolTVD0BIZi6Y82aLrMb1K99yF9RCQNmuiY07N6hE=",
+                "quorum_hash": "LaO/TSJEXVQBcbfNOQVaVDOCRz5SyuisdF/xmSZVtZo=",
+                "signature": "mAfiocUepmOG3f0f3yFIkxbMyMe/Xenafw70yocCMX/jQc6/jwzy5hdu+Mkef2pHGHTpF3jdTqVTfdyWK6lfhUWB26r6fHVwXDNThxEUQ7UoQrTGS0RKIJzaqNvETFYu",
+                "round": 0,
+                "block_id_hash": "5BsSEieFqbCatz6PWgdvW4KMW9x401evii3tOI78D8M=",
+                "quorum_type": 106
+            }
+        }
+    },
+    {
+        "quorum_public_key": "913612b58103720ac6a339a7fc03476fbccdfd39df345d63ded195fd4cc74c3162bb9a4933c24e7f75dc413bed3ef568"
+    }
+]

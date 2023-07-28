@@ -193,6 +193,8 @@ test_maybe_from_proof! {
     Ok(0)
 }
 
+// Identity keys
+
 test_maybe_from_proof! {
     identity_keys_not_found,
     grpc::GetIdentityKeysRequest,
@@ -200,6 +202,15 @@ test_maybe_from_proof! {
     PartialIdentity,
     "vectors/identity_keys_not_found.json",
     Ok(0)
+}
+
+test_maybe_from_proof! {
+    identity_keys_ok,
+    grpc::GetIdentityKeysRequest,
+    grpc::GetIdentityKeysResponse,
+    PartialIdentity,
+    "vectors/identity_keys_ok.json",
+    Ok(1)
 }
 
 test_maybe_from_proof! {
