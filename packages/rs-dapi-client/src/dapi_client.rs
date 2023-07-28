@@ -75,7 +75,8 @@ impl DapiClient {
             // Get a transport client requried by the DAPI request from this DAPI client.
             // It stays wrapped in `Result` since we want to return
             // `impl Future<Output = Result<...>`, not a `Result` itself.
-            let transport_client = address.map(|addr| R::Client::with_uri(addr.uri().clone()));
+            let transport_client =
+                address.map(|addr| R::Client::with_uri(addr.uri().clone(), addr.allow_insecure()));
 
             let transport_request = request.clone();
 

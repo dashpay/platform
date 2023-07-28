@@ -14,6 +14,7 @@ pub struct Address {
     ban_count: usize,
     banned_until: Option<time::Instant>,
     uri: Uri,
+    allow_insecure: bool,
 }
 
 impl Address {
@@ -36,6 +37,11 @@ impl Address {
     /// Get [Uri] of a peer.
     pub fn uri(&self) -> &Uri {
         &self.uri
+    }
+
+    /// Return a flag that indicates if client can bypass HTTPS security checks for this address.
+    pub fn allow_insecure(&self) -> bool {
+        self.allow_insecure
     }
 }
 
@@ -65,12 +71,13 @@ impl AddressList {
     // however we need to support bulk loading (e.g. providing a network name)
     // and also fetch updated from SML.
     /// Manually add a peer to [AddressList].
-    pub fn add_uri(&mut self, uri: Uri) {
+    pub fn add_uri(&mut self, uri: Uri, allow_insecure: bool) {
         self.addresses.push(Address {
             ban_count: 0,
             banned_until: None,
             base_ban_period: self.base_ban_period,
             uri,
+            allow_insecure,
         });
     }
 
