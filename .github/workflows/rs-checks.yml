@@ -11,7 +11,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -30,7 +30,7 @@ jobs:
 
   formatting:
     name: Formatting
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -46,7 +46,7 @@ jobs:
 
   compile:
     name: Compilation errors
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -107,7 +107,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo
