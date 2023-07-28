@@ -39,7 +39,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let state_transition_execution_context = StateTransitionExecutionContext::default();
 
-        let validation_result = validate_document_batch_transition_state(
+        let mut validation_result = validate_document_batch_transition_state(
             false,
             &platform.into(),
             self,
@@ -47,6 +47,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
             state_transition_execution_context,
         )?;
 
+        // Do not execute data triggers if there are already any state-based errors
         if !validation_result.is_valid() {
             return Ok(validation_result.map(Into::into));
         }
@@ -61,10 +62,13 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
 
         let document_transition_actions = validation_result.into_data()?;
 
-        let validation_result = execute_data_triggers(
+        let data_triggers_validation_result = execute_data_triggers(
             document_transition_actions.transitions(),
-            data_trigger_execution_context,
+            &data_trigger_execution_context,
+            platform.state.current_platform_version()?,
         )?;
+
+        validation_result.add_errors(data_triggers_validation_result.errors());
 
         Ok(validation_result.map(Into::into))
     }

@@ -1,18 +1,17 @@
 ///! The `feature_flags_data_triggers` module contains data triggers related to feature flags.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::validation::data_trigger::create_error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 
-use dpp::get_from_transition_action;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::system_data_contracts::feature_flags_contract;
+use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params::properties::PROPERTY_ENABLE_AT_HEIGHT;
 use dpp::version::PlatformVersion;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-
-const PROPERTY_BLOCK_HEIGHT: &str = "height";
-const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 
 /// Creates a data trigger for handling feature flag documents.
 ///
@@ -23,7 +22,7 @@ const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 ///
 /// * `document_transition` - A reference to the document transition that triggered the data trigger.
 /// * `context` - A reference to the data trigger execution context.
-/// * `top_level_identity` - An optional identifier for the top-level identity associated with the feature flag
+/// * `feature_flags_contract::OWNER_ID` - An optional identifier for the top-level identity associated with the feature flag
 ///   document (if one exists).
 ///
 /// # Returns
@@ -45,17 +44,13 @@ pub fn create_feature_flag_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    get_from_transition_action!(document_transition, id)
+                    document_transition.base().id()
                 ),
             )))
         }
     };
 
     let data = &document_create_transition.data;
-
-    let top_level_identity = top_level_identity.ok_or(Error::Execution(
-        ExecutionError::DataTriggerExecutionError("top level identity isn't provided".to_string()),
-    ))?;
 
     let enable_at_height: u64 = data.get_integer(PROPERTY_ENABLE_AT_HEIGHT).map_err(|_| {
         Error::Execution(ExecutionError::DataTriggerExecutionError(format!(
@@ -67,21 +62,24 @@ pub fn create_feature_flag_data_trigger_v0(
     let latest_block_height = context.platform.state.height();
 
     if enable_at_height < latest_block_height {
-        let err = create_error(
-            context,
-            document_create_transition,
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            document_transition.base().id(),
             "This identity can't activate selected feature flag".to_string(),
         );
+
         result.add_error(err);
+
         return Ok(result);
     }
 
-    if context.owner_id != top_level_identity {
-        let err = create_error(
-            context,
-            document_create_transition,
-            "This Identity can't activate selected feature flag".to_string(),
+    if context.owner_id != feature_flags_contract::OWNER_ID {
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            document_transition.base().id(),
+            "This identity can't activate selected feature flag".to_string(),
         );
+
         result.add_error(err);
     }
 
@@ -91,11 +89,11 @@ pub fn create_feature_flag_data_trigger_v0(
 #[cfg(test)]
 mod test {
     use super::create_feature_flag_data_trigger_v0;
-    use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
 
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -114,7 +112,11 @@ mod test {
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let data_contract = get_data_contract_fixture(None).data_contract;
+        let data_contract = get_data_contract_fixture(
+            None,
+            state_read_guard.current_protocol_version_in_consensus(),
+        )
+        .data_contract;
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransitionAction::CreateAction(Default::default());
@@ -133,7 +135,7 @@ mod test {
             &data_trigger_context,
             PlatformVersion::first(),
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
 
         assert!(result.is_valid());
     }

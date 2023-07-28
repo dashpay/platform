@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::block::epoch::Epoch;
 use dpp::document::Document;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use grovedb::TransactionArg;
 
 mod v0;

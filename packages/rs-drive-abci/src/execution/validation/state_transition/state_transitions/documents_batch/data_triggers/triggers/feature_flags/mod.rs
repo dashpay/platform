@@ -10,7 +10,7 @@ mod v0;
 pub fn create_feature_flag_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    _platform_version: &PlatformVersion,
+    platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     match platform_version
         .drive_abci

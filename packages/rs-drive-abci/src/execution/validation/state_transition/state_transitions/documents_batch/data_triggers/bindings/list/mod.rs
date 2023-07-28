@@ -4,8 +4,6 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 
 mod v0;
 
-// TODO: This function will be updated frequently
-//  But we can't separate them because we depends on DataTriggerBinding params
 pub fn data_trigger_bindings_list(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<DataTriggerBinding>, ProtocolError> {
@@ -24,4 +22,7 @@ pub fn data_trigger_bindings_list(
             received: version,
         }),
     }
+    .into_iter()
+    .map(|binding| Ok(binding.into()))
+    .collect()
 }

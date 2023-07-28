@@ -1,4 +1,3 @@
-use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::DataTriggerBinding;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
@@ -11,29 +10,41 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers<'a>(
         &self,
-        document_transitions: &'a [DocumentTransitionAction],
+        data_trigger_bindings: &Vec<DataTriggerBinding>,
         context: &DataTriggerExecutionContext<'a>,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError>;
+    ) -> Result<DataTriggerExecutionResult, ProtocolError>;
 }
 
 impl DataTriggerExecutor for DocumentTransitionAction {
     fn validate_with_data_triggers(
         &self,
-        data_trigger_bindings: Vec<DataTriggerBinding>,
+        data_trigger_bindings: &Vec<DataTriggerBinding>,
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
+    ) -> Result<DataTriggerExecutionResult, ProtocolError> {
         let data_contract_id = &context.data_contract.id();
         let document_type_name = self.base().document_type_name();
         let transition_action = self.action();
 
-        data_trigger_bindings
-            .into_iter()
-            .filter(|data_trigger| {
-                data_trigger.is_matching(data_contract_id, document_type_name, transition_action)
-            })
-            .map(|data_trigger| data_trigger.execute(self, context, platform_version))
-            .collect()
+        // Match data triggers by action type, contract ID and document type name
+        // and then execute matched triggers until one of them returns invalid result
+        for data_trigger_binding in data_trigger_bindings {
+            if !data_trigger_binding.is_matching(
+                data_contract_id,
+                document_type_name,
+                transition_action,
+            ) {
+                continue;
+            }
+
+            let result = data_trigger_binding.execute(self, context, platform_version)?;
+
+            if !result.is_valid() {
+                return Ok(result);
+            }
+        }
+
+        Ok(DataTriggerExecutionResult::default())
     }
 }

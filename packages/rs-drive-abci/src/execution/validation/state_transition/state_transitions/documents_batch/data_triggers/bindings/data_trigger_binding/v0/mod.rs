@@ -1,18 +1,18 @@
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
-use dpp::get_from_transition_action;
 use dpp::identifier::Identifier;
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::state_transition_action::document::documents_batch::document_transition::{DocumentTransitionAction, DocumentTransitionActionType};
 use dpp::version::PlatformVersion;
+use crate::error::Error;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 
 /// A struct representing a data trigger on the blockchain.
 ///
 /// The `DataTrigger` struct contains information about a data trigger, including the data contract ID, the document
 /// type that the trigger handles, the kind of trigger, the action that triggered the trigger, and an optional
 /// identifier for the top-level identity associated with the document.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct DataTriggerBindingV0 {
     /// The identifier of the data contract associated with the trigger.
     pub data_contract_id: Identifier,
@@ -21,7 +21,13 @@ pub struct DataTriggerBindingV0 {
     /// The kind of data trigger.
     pub data_trigger: DataTrigger,
     /// The action that triggered the trigger.
-    pub transition_action: Action,
+    pub transition_action_type: DocumentTransitionActionType,
+}
+
+impl Into<DataTriggerBinding> for DataTriggerBindingV0 {
+    fn into(self) -> DataTriggerBinding {
+        DataTriggerBinding::V0(self)
+    }
 }
 
 pub trait DataTriggerBindingV0Getters {
@@ -47,7 +53,7 @@ pub trait DataTriggerBindingV0Getters {
         document_transition: &DocumentTransitionAction,
         context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> DataTriggerExecutionResult;
+    ) -> Result<DataTriggerExecutionResult, Error>;
 
     /// Checks whether the data trigger matches the specified data contract ID, document type, and action.
     ///
@@ -67,7 +73,7 @@ pub trait DataTriggerBindingV0Getters {
         &self,
         data_contract_id: &Identifier,
         document_type: &str,
-        transition_action: Action,
+        transition_action: DocumentTransitionAction,
     ) -> bool;
 }
 
@@ -77,38 +83,18 @@ impl DataTriggerBindingV0Getters for DataTriggerBindingV0 {
         document_transition: &DocumentTransitionAction,
         context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> DataTriggerExecutionResult {
-        let mut result = DataTriggerExecutionResult::default();
-
-        match self.data_trigger(document_transition, context, platform_version) {
-            Err(err) => {
-                let consensus_error = DataTriggerActionError::DataTriggerExecutionError {
-                    // TODO remove the clone
-                    data_contract_id: context.data_contract.id.to_owned(),
-                    document_transition_id: *get_from_transition_action!(document_transition, id),
-                    message: err.to_string(),
-                    execution_error: err.to_string(),
-                    document_transition: None,
-                    owner_id: None,
-                };
-
-                result.add_error(consensus_error);
-
-                result
-            }
-
-            Ok(execution_result) => execution_result,
-        }
+    ) -> Result<DataTriggerExecutionResult, Error> {
+        self.data_trigger(document_transition, context, platform_version)
     }
 
     fn is_matching(
         &self,
         data_contract_id: &Identifier,
         document_type: &str,
-        transition_action: Action,
+        transition_action: DocumentTransitionAction,
     ) -> bool {
         &self.data_contract_id == data_contract_id
             && self.document_type == document_type
-            && self.transition_action == transition_action
+            && self.transition_action_type == transition_action.action_type()
     }
 }

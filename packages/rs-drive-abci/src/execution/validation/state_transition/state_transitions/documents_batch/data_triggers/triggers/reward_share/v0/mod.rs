@@ -5,20 +5,20 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
-use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::ProtocolError;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::system_data_contracts::masternode_reward_shares_contract::document_types::reward_share::properties::{PAY_TO_ID, PERCENTAGE};
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::validation::data_trigger::create_error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 const MAX_PERCENTAGE: u64 = 10000;
-const PROPERTY_PAY_TO_ID: &str = "payToId";
-const PROPERTY_PERCENTAGE: &str = "percentage";
 const MAX_DOCUMENTS: usize = 16;
 
 /// Creates a data trigger for handling masternode reward share documents.
@@ -49,7 +49,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    get_from_transition_action!(document_transition, id)
+                    document_transition.base().id()
                 ),
             )))
         }
@@ -58,10 +58,10 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     let properties = &document_create_transition.data;
 
     let pay_to_id = properties
-        .get_hash256_bytes(PROPERTY_PAY_TO_ID)
+        .get_hash256_bytes(PAY_TO_ID)
         .map_err(ProtocolError::ValueError)?;
     let percentage = properties
-        .get_integer(PROPERTY_PERCENTAGE)
+        .get_integer(PERCENTAGE)
         .map_err(ProtocolError::ValueError)?;
 
     if !is_dry_run {
@@ -72,11 +72,12 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
             .is_some();
 
         if !owner_id_in_sml {
-            let err = create_error(
-                context,
-                document_create_transition,
+            let err = DataTriggerConditionError::new(
+                context.data_contract.id(),
+                document_transition.base().id(),
                 "Only masternode identities can share rewards".to_string(),
             );
+
             result.add_error(err);
         }
     }
@@ -88,15 +89,18 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     )?;
 
     if !is_dry_run && maybe_identity.is_none() {
-        let err = create_error(
-            context,
-            document_create_transition,
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            document_transition.base().id(),
             format!(
                 "Identity '{}' doesn't exist",
                 bs58::encode(pay_to_id).into_string()
             ),
         );
+
         result.add_error(err);
+
+        return Ok(result);
     }
 
     let document_type = context
@@ -105,7 +109,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
-        document_type: &document_type,
+        document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: None,
@@ -145,15 +149,17 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     }
 
     if documents.len() >= MAX_DOCUMENTS {
-        let err = create_error(
-            context,
-            document_create_transition,
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            document_transition.base().id(),
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
             ),
         );
+
         result.add_error(err);
+
         return Ok(result);
     }
 
@@ -161,16 +167,17 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     for d in documents.iter() {
         total_percent += d
             .properties
-            .get_integer::<u64>(PROPERTY_PERCENTAGE)
+            .get_integer::<u64>(PERCENTAGE)
             .map_err(ProtocolError::ValueError)?;
     }
 
     if total_percent > MAX_PERCENTAGE {
-        let err = create_error(
-            context,
-            document_create_transition,
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            document_transition.base().id(),
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
+
         result.add_error(err);
     }
 
@@ -189,24 +196,23 @@ mod test {
     use dpp::block::extended_block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
-    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::document::{Document, ExtendedDocument};
     use dpp::identity::Identity;
 
     use dpp::platform_value::Value;
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_extended_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
     use crate::platform_types::platform_state::v0::PlatformStateV0;
-    use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
     use std::str::FromStr;
+    use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+    use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
 
     struct TestData {
         top_level_identifier: Identifier,
@@ -277,8 +283,10 @@ mod test {
         });
 
         let (documents, data_contract) = get_masternode_reward_shares_extended_documents_fixture(1);
-        let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+        let document_transitions = get_document_transitions_fixture([(
+            DocumentTransitionActionType::Create,
+            vec![documents[0].clone()],
+        )]);
 
         let document_create_transition = document_transitions[0]
             .as_transition_create()
@@ -295,7 +303,7 @@ mod test {
     fn get_data_trigger_error(
         result: &Result<DataTriggerExecutionResult, Error>,
         error_number: usize,
-    ) -> &DataTriggerActionError {
+    ) -> &DataTriggerError {
         let execution_result = result.as_ref().expect("it should return execution result");
         execution_result
             .get_error(error_number)
@@ -338,12 +346,19 @@ mod test {
                     platform_version,
                 )
                 .expect("expected to apply contract");
-            let mut identity = Identity::random_identity(2, Some(i as u64), platform_version);
+            let mut identity = Identity::random_identity(2, Some(i as u64), platform_version)?;
+
             identity.id = document.owner_id();
 
             platform_ref
                 .drive
-                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .add_new_identity(
+                    identity,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    state_write_guard.current_platform_version()?,
+                )
                 .expect("expected to add an identity");
 
             let mut identity = Identity::random_identity(2, Some(100 - i as u64), platform_version)
@@ -355,7 +370,13 @@ mod test {
 
             platform_ref
                 .drive
-                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .add_new_identity(
+                    identity,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    state_write_guard.current_platform_version()?,
+                )
                 .expect("expected to add an identity");
 
             platform_ref
@@ -439,7 +460,7 @@ mod test {
         };
         let pay_to_id_bytes = document_create_transition
             .data
-            .get_hash256_bytes(PROPERTY_PAY_TO_ID)
+            .get_hash256_bytes(PAY_TO_ID)
             .expect("expected to be able to get a hash");
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
@@ -516,8 +537,9 @@ mod test {
             config: &platform.config,
         };
 
-        let mut identity = Identity::random_identity(2, Some(9), platform_version)
-            .expect("expected a platform identity");
+        let mut identity =
+            Identity::random_identity(2, Some(9), state_write_guard.current_platform_version()?)
+                .expect("expected a platform identity");
         identity.id = document_create_transition
             .data
             .get_identifier("payToId")
@@ -525,7 +547,13 @@ mod test {
 
         platform_ref
             .drive
-            .add_new_identity(identity, &BlockInfo::default(), true, None)
+            .add_new_identity(
+                identity,
+                &BlockInfo::default(),
+                true,
+                None,
+                state_write_guard.current_platform_version()?,
+            )
             .expect("expected to add an identity");
 
         let execution_context = StateTransitionExecutionContext::default();
@@ -541,7 +569,7 @@ mod test {
             &context,
             PlatformVersion::first(),
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
         assert!(result.is_valid(), "{}", result.errors.first().unwrap())
     }
 
@@ -557,6 +585,9 @@ mod test {
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return platform version");
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -582,6 +613,7 @@ mod test {
 
         let mut main_identity = Identity::random_identity(2, Some(1000_u64), platform_version)
             .expect("expected a platform identity");
+
         main_identity.id = document_create_transition
             .data
             .get_identifier("payToId")
@@ -589,11 +621,19 @@ mod test {
 
         platform_ref
             .drive
-            .add_new_identity(main_identity, &BlockInfo::default(), true, None)
+            .add_new_identity(
+                main_identity,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
             .expect("expected to add an identity");
 
         for i in 0..16 {
-            let mut document = document_type.random_document(Some(i));
+            let mut document = document_type
+                .random_document(Some(i), platform_version)
+                .expect("should generate a document");
 
             document.owner_id = top_level_identifier;
 
@@ -606,7 +646,13 @@ mod test {
 
             platform_ref
                 .drive
-                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .add_new_identity(
+                    identity,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to add an identity");
 
             platform
@@ -618,7 +664,7 @@ mod test {
                             owner_id: Some(top_level_identifier.to_buffer()),
                         },
                         contract: &data_contract,
-                        document_type: &document_type,
+                        document_type,
                     },
                     false,
                     BlockInfo::genesis(),
@@ -685,7 +731,7 @@ mod test {
             &context,
             PlatformVersion::first(),
         )
-            .expect("the execution result should be returned");
+        .expect("the execution result should be returned");
         assert!(result.is_valid());
     }
 }

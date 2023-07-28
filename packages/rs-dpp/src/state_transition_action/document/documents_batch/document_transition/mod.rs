@@ -20,6 +20,13 @@ pub enum DocumentTransitionAction {
     DeleteAction(DocumentDeleteTransitionAction),
 }
 
+// @append-only
+pub enum DocumentTransitionActionType {
+    Create,
+    Replace,
+    Delete,
+}
+
 impl DocumentTransitionAction {
     pub fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
@@ -29,11 +36,11 @@ impl DocumentTransitionAction {
         }
     }
 
-    // pub fn action(&self) -> Action {
-    //     match self {
-    //         DocumentTransitionAction::CreateAction(_) => Action::Create,
-    //         DocumentTransitionAction::DeleteAction(_) => Action::Delete,
-    //         DocumentTransitionAction::ReplaceAction(_) => Action::Replace,
-    //     }
-    // }
+    pub fn action_type(&self) -> DocumentTransitionActionType {
+        match self {
+            DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,
+            DocumentTransitionAction::DeleteAction(_) => DocumentTransitionActionType::Delete,
+            DocumentTransitionAction::ReplaceAction(_) => DocumentTransitionActionType::Replace,
+        }
+    }
 }

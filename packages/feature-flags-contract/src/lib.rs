@@ -15,6 +15,11 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
 pub mod document_types {
     pub mod update_consensus_params {
         pub const NAME: &str = "updateConsensusParams";
+
+        pub mod properties {
+            pub const PROPERTY_BLOCK_HEIGHT: &str = "height";
+            pub const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
+        }
     }
 }
 

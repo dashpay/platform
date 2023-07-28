@@ -6,19 +6,21 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
-pub fn execute_data_triggers(
-    document_transition_actions: Vec<DocumentTransitionAction>,
+pub(super) fn execute_data_triggers(
+    document_transition_actions: &Vec<DocumentTransitionAction>,
     context: &DataTriggerExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, ProtocolError> {
     let data_trigger_bindings = data_trigger_bindings_list(platform_version)?;
 
     for document_transition_action in document_transition_actions {
-        let data_trigger_execution_result =
-            document_transition_action.validate_with_data_triggers(context, data_trigger_bindings);
+        let data_trigger_execution_result = document_transition_action
+            .validate_with_data_triggers(&data_trigger_bindings, context, platform_version)?;
 
         if !data_trigger_execution_result.is_valid() {
             return Ok(data_trigger_execution_result);
         }
     }
+
+    Ok(DataTriggerExecutionResult::default())
 }
