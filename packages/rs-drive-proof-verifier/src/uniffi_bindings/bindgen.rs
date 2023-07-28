@@ -3,7 +3,7 @@ use uniffi::TargetLanguage;
 
 /// Generate UniFFI bindings for all available languages
 ///
-/// It is intended to be called from build.rs in external crate (eg. rs-drive-light-client-bindings), in order
+/// It is intended to be called from build.rs in external crate (eg. rs-drive-proof-verifier-bindings), in order
 /// to rebuild bindings. External crate must have this crate as build-dependencies.
 pub fn generate_uniffi_bindings(destination: Option<&str>) {
     let cargo_dir = Utf8Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -43,9 +43,9 @@ fn drive_library_path() -> Utf8PathBuf {
         .parent()
         .expect("cannot get parent of .../out/ dir")
         .parent()
-        .expect("cannot get parrent of .../rs-drive-light-client-... dir")
+        .expect("cannot get parrent of .../rs-drive-proof-verifier-... dir")
         .parent()
         .expect("cannot get parrent of .../build/ dir");
 
-    artifacts_dir.join("libdrive_light_client.rlib")
+    artifacts_dir.join("libdrive_proof_verifier.rlib")
 }

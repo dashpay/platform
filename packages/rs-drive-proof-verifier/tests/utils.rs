@@ -11,7 +11,7 @@ pub fn load<Req, Resp>(
 ) -> (
     Req,
     Resp,
-    drive_light_client::proof::from_proof::MockQuorumInfoProvider,
+    drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider,
 )
 where
     Req: serde::de::DeserializeOwned, // dapi_grpc::Message
@@ -27,7 +27,7 @@ where
     // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
 
     let pubkey = quorum.quorum_public_key;
-    let mut provider = drive_light_client::proof::from_proof::MockQuorumInfoProvider::new();
+    let mut provider = drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider::new();
     provider
         .expect_get_quorum_public_key()
         .return_once(|_, _, _| Ok(pubkey));

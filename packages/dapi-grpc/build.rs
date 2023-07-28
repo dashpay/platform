@@ -43,6 +43,10 @@ pub fn generate() -> Result<(), std::io::Error> {
             r#"#[serde(with = "crate::deserialization::base64string")]"#,
         )
         .field_attribute(
+            "identity_id",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
             "ids",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
@@ -55,7 +59,15 @@ pub fn generate() -> Result<(), std::io::Error> {
             r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
         )
         .field_attribute(
-            "GetIdentitiesByPublicKeyHashesRequest.public_key_hashes",
+            "start_at_ms",
+            r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
+        )
+        .field_attribute(
+            "public_key_hash",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
+            "public_key_hashes",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
         // Proof fields

@@ -117,6 +117,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
+          bucket: platform-runner-cache
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -178,6 +179,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
+          bucket: platform-runner-cache
           mounts: |
             cargo_registry_index
             cargo_registry_cache
