@@ -1382,6 +1382,7 @@ dependencies = [
  "bytes",
  "camino",
  "dapi-grpc",
+ "derive_more",
  "dpp",
  "drive",
  "mockall",

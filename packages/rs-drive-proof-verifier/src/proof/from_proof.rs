@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Debug;
 
 use crate::Error;
 use dapi_grpc::platform::v0::{self as platform};

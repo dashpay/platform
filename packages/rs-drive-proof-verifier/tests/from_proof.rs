@@ -1,4 +1,6 @@
-use dapi_grpc::platform::v0::{self as grpc};
+use std::collections::BTreeMap;
+
+use dapi_grpc::platform::v0::{self as grpc, get_documents_response::Documents};
 use dpp::{
     identity::PartialIdentity,
     prelude::{DataContract, Identity},
@@ -19,7 +21,7 @@ include!("utils.rs");
 /// * `$resp`: The type of the response object.
 /// * `$object`: The type of object from which the proof may be derived.
 /// * `$vector`: File containing request and response data, relative to `$CARGO_MANIFEST_DIR/tests`
-/// * `$result`: The expected result pattern of the test.
+/// * `$expected`: expected result of the test, either Ok(number or records) OR Err(Error)
 ///
 /// # Usage
 ///
@@ -95,20 +97,37 @@ include!("utils.rs");
 /// }
 /// ```
 macro_rules! test_maybe_from_proof {
-    ($name:ident,$req:ty,$resp:ty,$object:ty,$vector:expr,$result:pat) => {
+    ($name:ident,$req:ty,$resp:ty,$object:ty,$vector:expr,$expected:expr) => {
         #[test]
         fn $name() {
             enable_logs();
 
+            let expected: Result<usize, drive_proof_verifier::Error> = $expected;
             let (request, response, quorum_info_callback) = load::<$req, $resp>($vector);
 
             let ret =
                 <$object>::maybe_from_proof(&request, &response, Box::new(quorum_info_callback));
             println!("Result: {:?}", ret);
-            assert!(matches!(ret, $result));
+
+            match ret {
+                Err(e) => assert_eq!(
+                    expected.expect_err("Expected Ok, got error").to_string(),
+                    e.to_string()
+                ), // Note: not tested
+                Ok(None) => assert!(expected.expect("Expected error, got None") == 0),
+                Ok(Some(o)) => {
+                    let object: TestedObject = o.into();
+                    assert_eq!(
+                        expected.expect("Expected error, got Some"),
+                        object.count_some()
+                    );
+                }
+            }
         }
     };
 }
+
+// ==== IDENTITY TESTS ==== //
 
 test_maybe_from_proof! {
     identity_not_found,
@@ -116,7 +135,16 @@ test_maybe_from_proof! {
     grpc::GetIdentityResponse,
     Identity,
     "vectors/identity_not_found.json",
-    Ok(None)
+    Result::Ok(0)
+}
+
+test_maybe_from_proof! {
+    identity_ok,
+    grpc::GetIdentityRequest,
+    grpc::GetIdentityResponse,
+    Identity,
+    "vectors/identity_ok.json",
+    Ok(1)
 }
 
 test_maybe_from_proof! {
@@ -125,7 +153,7 @@ test_maybe_from_proof! {
     grpc::GetIdentityByPublicKeyHashesResponse,
     Identity,
     "vectors/TODO.json",
-    Ok(None)
+    Ok(0)
 }
 
 test_maybe_from_proof! {
@@ -134,7 +162,7 @@ test_maybe_from_proof! {
     grpc::GetIdentitiesResponse,
     Identities,
     "vectors/identities_not_found.json",
-    Ok(Some(_)) // cannot write a match like `Ok(Some(Vec[None]))`
+    Ok(0) // cannot write a match like `Ok(Some(Vec[None]))`
 }
 
 test_maybe_from_proof! {
@@ -143,7 +171,7 @@ test_maybe_from_proof! {
     grpc::GetIdentitiesByPublicKeyHashesResponse,
     IdentitiesByPublicKeyHashes,
     "vectors/identities_by_pubkeys_not_found.json",
-    Ok(None)
+    Ok(0)
 }
 
 // todo continue from here
@@ -153,7 +181,7 @@ test_maybe_from_proof! {
     grpc::GetIdentityBalanceResponse,
     IdentityBalance,
     "vectors/identity_balance_not_found.json",
-    Ok(None)
+    Ok(0)
 }
 
 test_maybe_from_proof! {
@@ -162,7 +190,7 @@ test_maybe_from_proof! {
     grpc::GetIdentityBalanceAndRevisionResponse,
     IdentityBalanceAndRevision,
     "vectors/identity_balance_and_revision_not_found.json",
-    Ok(None)
+    Ok(0)
 }
 
 test_maybe_from_proof! {
@@ -171,7 +199,7 @@ test_maybe_from_proof! {
     grpc::GetIdentityKeysResponse,
     PartialIdentity,
     "vectors/identity_keys_not_found.json",
-    Ok(None)
+    Ok(0)
 }
 
 test_maybe_from_proof! {
@@ -180,7 +208,7 @@ test_maybe_from_proof! {
     grpc::GetDataContractResponse,
     DataContract,
     "vectors/data_contract_not_found.json",
-    Ok(None)
+    Ok(0)
 }
 
 test_maybe_from_proof! {
@@ -189,7 +217,7 @@ test_maybe_from_proof! {
     grpc::GetDataContractsResponse,
     DataContracts,
     "vectors/data_contracts_not_found.json",
-    Ok(Some(_)) // can't write a match like Ok(Some([None]))
+    Ok(0) // can't write a match like Ok(Some([None]))
 }
 
 test_maybe_from_proof! {
@@ -198,7 +226,7 @@ test_maybe_from_proof! {
     grpc::GetDataContractHistoryResponse,
     DataContractHistory,
     "vectors/data_contract_history_not_found.json",
-    Ok(Some(_)) // can't write a match like Ok(Some([None]))
+    Ok(0) // can't write a match like Ok(Some([None]))
 }
 
 // test_maybe_from_proof! {
@@ -209,3 +237,51 @@ test_maybe_from_proof! {
 //     "vectors/TODO.json",
 //     Ok(None)
 // }
+
+// ==== UTILS ==== //
+
+#[derive(derive_more::From)]
+enum TestedObject {
+    DataContract(DataContract),
+    DataContractHistory(DataContractHistory),
+    DataContracts(DataContracts),
+    Documents(Documents),
+    Identity(Identity),
+    IdentityBalance(IdentityBalance),
+    IdentityBalanceAndRevision(IdentityBalanceAndRevision),
+    Identities(Identities),
+    IdentitiesByPublicKeyHashes(IdentitiesByPublicKeyHashes),
+    PartialIdentity(PartialIdentity),
+}
+/// Determine number of non-None elements
+trait Length {
+    /// Return number of non-None elements in the data structure
+    fn count_some(&self) -> usize;
+}
+
+impl<T: Length> Length for Option<T> {
+    fn count_some(&self) -> usize {
+        match self {
+            None => 0,
+            Some(i) => i.count_some(),
+        }
+    }
+}
+
+impl Length for TestedObject {
+    fn count_some(&self) -> usize {
+        1
+    }
+}
+
+impl<T: Length> Length for Vec<T> {
+    fn count_some(&self) -> usize {
+        self.iter().map(|item| item.count_some()).sum()
+    }
+}
+
+impl<K, V: Length> Length for BTreeMap<K, V> {
+    fn count_some(&self) -> usize {
+        self.iter().map(|(k, v)| v.count_some()).sum()
+    }
+}
