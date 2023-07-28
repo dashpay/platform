@@ -4,6 +4,7 @@ use virtue::utils::{parse_tagged_attribute, ParsedAttribute};
 
 pub struct ContainerAttributes {
     pub crate_name: String,
+    pub untagged: bool,
     pub bounds: Option<(String, Literal)>,
     pub decode_bounds: Option<(String, Literal)>,
     pub borrow_decode_bounds: Option<(String, Literal)>,
@@ -13,7 +14,8 @@ pub struct ContainerAttributes {
 impl Default for ContainerAttributes {
     fn default() -> Self {
         Self {
-            crate_name: "::bincode".to_string(),
+            crate_name: "::platform_serialization".to_string(),
+            untagged: false,
             bounds: None,
             decode_bounds: None,
             encode_bounds: None,
@@ -24,7 +26,7 @@ impl Default for ContainerAttributes {
 
 impl FromAttribute for ContainerAttributes {
     fn parse(group: &Group) -> Result<Option<Self>> {
-        let attributes = match parse_tagged_attribute(group, "bincode")? {
+        let attributes = match parse_tagged_attribute(group, "platform_serialize")? {
             Some(body) => body,
             None => return Ok(None),
         };
@@ -38,6 +40,9 @@ impl FromAttribute for ContainerAttributes {
                     } else {
                         return Err(Error::custom_at("Should be a literal str", val.span()));
                     }
+                }
+                ParsedAttribute::Tag(i) if i.to_string() == "untagged" => {
+                    result.untagged = true;
                 }
                 ParsedAttribute::Property(key, val) if key.to_string() == "bounds" => {
                     let val_string = val.to_string();
@@ -77,8 +82,15 @@ impl FromAttribute for ContainerAttributes {
                         return Err(Error::custom_at("Should be a literal str", val.span()));
                     }
                 }
+                ParsedAttribute::Property(key, _)
+                    if ["limit"].contains(&key.to_string().as_str()) => {}
+                ParsedAttribute::Tag(i) if ["derive_bincode"].contains(&i.to_string().as_str()) => {
+                }
                 ParsedAttribute::Tag(i) => {
-                    return Err(Error::custom_at("Unknown field attribute", i.span()))
+                    return Err(Error::custom_at(
+                        "Unknown field attribute for tag",
+                        i.span(),
+                    ))
                 }
                 ParsedAttribute::Property(key, _) => {
                     return Err(Error::custom_at("Unknown field attribute", key.span()))
@@ -109,7 +121,7 @@ impl FromAttribute for FieldAttributes {
                     result.with_serde = true;
                 }
                 ParsedAttribute::Tag(i) if i.to_string() == "versioned" => {
-                    result.with_serde = true;
+                    result.with_platform_version = true;
                 }
                 ParsedAttribute::Tag(i) => {
                     return Err(Error::custom_at("Unknown field attribute", i.span()))

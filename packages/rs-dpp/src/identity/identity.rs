@@ -28,8 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
     PlatformSerialize,
     From,
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(limit = 15000, derive_bincode)]
+#[platform_serialize(limit = 15000)]
 #[platform_version_path("dpp.identity_versions.identity_structure_version")]
 #[serde(untagged)]
 pub enum Identity {

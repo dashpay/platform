@@ -13,14 +13,12 @@ use crate::consensus::signature::SignatureError;
 use crate::consensus::test_consensus_error::TestConsensusError;
 
 use crate::errors::consensus::basic::BasicError;
-use crate::serialization::PlatformDeserializable;
 use crate::ProtocolError;
 
 // TODO It must be versioned as all other serializable types
 
 #[derive(Error, Debug, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(limit = 2000, derive_bincode)]
+#[platform_serialize(limit = 2000)]
 pub enum ConsensusError {
     /*
 

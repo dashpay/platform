@@ -4,9 +4,9 @@ mod impl_core;
 mod impl_tuples;
 mod impls;
 
-use bincode::de::{BorrowDecoder, Decoder};
-use bincode::error::DecodeError;
-use bincode::Decode;
+pub use bincode::de::{BorrowDecoder, Decoder};
+pub use bincode::error::DecodeError;
+pub use bincode::Decode;
 use platform_version::version::PlatformVersion;
 
 /// Trait that makes a type able to be decoded, akin to serde's `DeserializeOwned` trait.

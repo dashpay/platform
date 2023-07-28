@@ -23,7 +23,10 @@ pub fn derive_platform_convert(input: TokenStream) -> TokenStream {
                 None
             }
         })
-        .expect("Missing platform_error_type attribute");
+        .unwrap_or_else(|| {
+            syn::parse_str::<syn::Path>("ProtocolError")
+                .expect("Failed to parse default error type")
+        });
 
     let platform_convert_into: Option<syn::Path> = input.attrs.iter().find_map(|attr| {
         if attr.path().is_ident("platform_convert_into") {

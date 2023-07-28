@@ -36,8 +36,6 @@ use serde::Serialize;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]

@@ -12,7 +12,7 @@ pub mod v0;
 mod v0_methods;
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
-#[platform_error_type(ProtocolError)]
+
 pub enum IdentityPublicKeyInCreation {
     V0(IdentityPublicKeyInCreationV0),
 }

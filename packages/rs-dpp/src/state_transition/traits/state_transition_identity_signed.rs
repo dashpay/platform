@@ -258,7 +258,7 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 //         PlatformSerialize,
 //         PlatformSignable,
 //     )]
-//     #[platform_error_type(ProtocolError)]
+//
 //     #[serde(rename_all = "camelCase")]
 //     struct ExampleStateTransition {
 //         pub protocol_version: u32,

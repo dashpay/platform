@@ -52,7 +52,6 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_error_type(ProtocolError)]
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]

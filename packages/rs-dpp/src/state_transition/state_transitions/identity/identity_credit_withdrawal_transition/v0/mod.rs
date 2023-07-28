@@ -39,8 +39,7 @@ use crate::withdrawal::Pooling;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-#[platform_serialize(derive_bincode)]
-#[platform_error_type(ProtocolError)]
+
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,
@@ -86,14 +85,14 @@ mod test {
 
     // Structure with 1 property
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV01 {
         pub protocol_version: u32,
     }
 
     // Structure with 2 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV02 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -101,7 +100,7 @@ mod test {
 
     // Structure with 3 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV03 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -110,7 +109,7 @@ mod test {
 
     // Structure with 4 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV04 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -120,7 +119,7 @@ mod test {
 
     // Structure with 5 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV05 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -131,7 +130,7 @@ mod test {
 
     // Structure with 6 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV06 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -143,7 +142,7 @@ mod test {
 
     // Structure with 7 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV07 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -156,7 +155,7 @@ mod test {
 
     // Structure with 8 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV08 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -170,7 +169,7 @@ mod test {
 
     // Structure with 9 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV09 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -185,7 +184,7 @@ mod test {
 
     // Structure with 10 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-    #[platform_error_type(ProtocolError)]
+
     struct IdentityCreditWithdrawalTransitionV010 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,

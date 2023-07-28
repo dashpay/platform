@@ -42,8 +42,7 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
     serde(rename_all = "camelCase"),
     serde(try_from = "IdentityCreateTransitionV0Inner")
 )]
-#[platform_serialize(derive_bincode)]
-#[platform_error_type(ProtocolError)]
+
 pub struct IdentityCreateTransitionV0 {
     // The signable
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]

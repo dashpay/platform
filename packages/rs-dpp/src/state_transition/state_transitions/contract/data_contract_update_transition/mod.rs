@@ -48,8 +48,6 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_error_type(ProtocolError)]
-#[platform_serialize(derive_bincode)]
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]

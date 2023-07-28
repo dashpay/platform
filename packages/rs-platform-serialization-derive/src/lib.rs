@@ -24,9 +24,9 @@ use syn::{
 struct VersionAttributes {
     crate_name: Ident,
     passthrough: bool,
-    derive_bincode: bool,
     platform_serialize_limit: Option<usize>,
     untagged: bool,
+    unversioned: bool,
     platform_serialize_into: Option<Path>,
     platform_version_path: Option<LitStr>,
     allow_prepend_version: bool,
@@ -116,12 +116,15 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                 None
             }
         })
-        .expect("Missing platform_error_type attribute");
+        .unwrap_or_else(|| {
+            syn::parse_str::<syn::Path>("ProtocolError")
+                .expect("Failed to parse default error type")
+        });
 
     let mut passthrough = false;
-    let mut derive_bincode = false;
     let mut platform_serialize_limit = None;
     let mut untagged = false;
+    let mut unversioned = false;
     let mut platform_serialize_into = None;
     let mut platform_version_path = None;
     let mut crate_name: Ident = Ident::new("crate", Span::call_site()); // default value is "crate"
@@ -141,8 +144,8 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                     crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
                 } else if meta.path.is_ident("passthrough") {
                     passthrough = true;
-                } else if meta.path.is_ident("derive_bincode") {
-                    derive_bincode = true;
+                } else if meta.path.is_ident("unversioned") {
+                    unversioned = true;
                 } else if meta.path.is_ident("allow_prepend_version") {
                     allow_prepend_version = true;
                 } else if meta.path.is_ident("force_prepend_version") {
@@ -191,9 +194,9 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let version_attributes = VersionAttributes {
         crate_name,
         passthrough,
-        derive_bincode,
         platform_serialize_limit,
         untagged,
+        unversioned,
         platform_serialize_into,
         platform_version_path,
         allow_prepend_version,
@@ -250,10 +253,13 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
                 None
             }
         })
-        .expect("Missing platform_error_type attribute");
+        .unwrap_or_else(|| {
+            syn::parse_str::<syn::Path>("ProtocolError")
+                .expect("Failed to parse default error type")
+        });
 
     let mut passthrough = false;
-    let mut nested = false;
+    let mut unversioned = false;
     let mut platform_serialize_limit = None;
     let mut untagged = false;
     let mut platform_serialize_into = None;
@@ -275,8 +281,8 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
                     crate_name = syn::parse_str(&crate_name_str.value()).unwrap();
                 } else if meta.path.is_ident("passthrough") {
                     passthrough = true;
-                } else if meta.path.is_ident("derive_bincode") {
-                    nested = true;
+                } else if meta.path.is_ident("unversioned") {
+                    unversioned = true;
                 } else if meta.path.is_ident("allow_prepend_version") {
                     allow_prepend_version = true;
                 } else if meta.path.is_ident("force_prepend_version") {
@@ -325,9 +331,9 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     let version_attributes = VersionAttributes {
         crate_name,
         passthrough,
-        derive_bincode: nested,
         platform_serialize_limit,
         untagged,
+        unversioned,
         platform_serialize_into,
         platform_version_path,
         allow_prepend_version,
@@ -378,7 +384,10 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                 None
             }
         })
-        .expect("Missing platform_error_type attribute");
+        .unwrap_or_else(|| {
+            syn::parse_str::<syn::Path>("ProtocolError")
+                .expect("Failed to parse default error type")
+        });
 
     let expanded = match &input.data {
         Data::Struct(data) => {

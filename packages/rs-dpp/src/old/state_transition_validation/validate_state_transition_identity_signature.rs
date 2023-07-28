@@ -188,7 +188,7 @@ mod test {
         PlatformSerialize,
         PlatformSignable,
     )]
-    #[platform_error_type(ProtocolError)]
+
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
