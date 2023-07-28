@@ -16,9 +16,11 @@ use dpp::ProtocolError;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::dpns_contract;
-use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{MAX_PRINTABLE_DOMAIN_NAME_LENGTH, PROPERTY_ALLOW_SUBDOMAINS, PROPERTY_DASH_ALIAS_IDENTITY_ID, PROPERTY_DASH_UNIQUE_IDENTITY_ID, PROPERTY_LABEL, PROPERTY_NORMALIZED_LABEL, PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME, PROPERTY_PREORDER_SALT, PROPERTY_RECORDS};
+use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{ALLOW_SUBDOMAINS, DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
 use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+
+pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 
 /// Creates a data trigger for handling domain documents.
 ///
@@ -57,30 +59,28 @@ pub fn create_domain_data_trigger_v0(
     let data = &document_create_transition.data;
 
     let owner_id = context.owner_id;
-    let label = data
-        .get_string(PROPERTY_LABEL)
-        .map_err(ProtocolError::ValueError)?;
+    let label = data.get_string(LABEL).map_err(ProtocolError::ValueError)?;
     let normalized_label = data
-        .get_str(PROPERTY_NORMALIZED_LABEL)
+        .get_str(NORMALIZED_LABEL)
         .map_err(ProtocolError::ValueError)?;
     let normalized_parent_domain_name = data
-        .get_string(PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME)
+        .get_string(NORMALIZED_PARENT_DOMAIN_NAME)
         .map_err(ProtocolError::ValueError)?;
 
     let preorder_salt = data
-        .get_hash256_bytes(PROPERTY_PREORDER_SALT)
+        .get_hash256_bytes(PREORDER_SALT)
         .map_err(ProtocolError::ValueError)?;
     let records = data
-        .get(PROPERTY_RECORDS)
+        .get(RECORDS)
         .ok_or(ExecutionError::DataTriggerExecutionError(format!(
             "property '{}' doesn't exist",
-            PROPERTY_RECORDS
+            RECORDS
         )))?
         .to_btree_ref_string_map()
         .map_err(ProtocolError::ValueError)?;
 
     let rule_allow_subdomains = data
-        .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
+        .get_bool_at_path(ALLOW_SUBDOMAINS)
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
@@ -119,7 +119,7 @@ pub fn create_domain_data_trigger_v0(
         }
 
         if let Some(id) = records
-            .get_optional_identifier(PROPERTY_DASH_UNIQUE_IDENTITY_ID)
+            .get_optional_identifier(DASH_UNIQUE_IDENTITY_ID)
             .map_err(ProtocolError::ValueError)?
         {
             if id != owner_id {
@@ -128,7 +128,7 @@ pub fn create_domain_data_trigger_v0(
                     document_transition.base().id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
+                        owner_id, DASH_UNIQUE_IDENTITY_ID, id
                     ),
                 );
 
@@ -137,7 +137,7 @@ pub fn create_domain_data_trigger_v0(
         }
 
         if let Some(id) = records
-            .get_optional_identifier(PROPERTY_DASH_ALIAS_IDENTITY_ID)
+            .get_optional_identifier(DASH_ALIAS_IDENTITY_ID)
             .map_err(ProtocolError::ValueError)?
         {
             if id != owner_id {
@@ -146,7 +146,7 @@ pub fn create_domain_data_trigger_v0(
                     document_transition.base().id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
+                        owner_id, DASH_ALIAS_IDENTITY_ID, id
                     ),
                 );
 
@@ -250,7 +250,7 @@ pub fn create_domain_data_trigger_v0(
 
             if (!parent_domain
                 .properties
-                .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
+                .get_bool_at_path(ALLOW_SUBDOMAINS)
                 .map_err(ProtocolError::ValueError)?)
                 && context.owner_id != &parent_domain.owner_id
             {
