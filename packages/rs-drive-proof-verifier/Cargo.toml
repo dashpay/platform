@@ -28,6 +28,7 @@ serde_json = { version = "1.0.103", features = [
 tracing-subscriber = { version = "0.3.16" }
 serde_json = { version = "1.0.103" }
 derive_more = { version = "0.99.16" }
+base64 = { version = "0.21.0" }
 
 [build-dependencies]
 

@@ -63,6 +63,10 @@ pub fn generate() -> Result<(), std::io::Error> {
             r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
         )
         .field_attribute(
+            "public_key_hash",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
             "public_key_hashes",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )

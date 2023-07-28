@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use dapi_grpc::platform::v0::{self as grpc, get_documents_response::Documents};
+use dapi_grpc::platform::v0::{self as grpc, GetIdentityRequest, GetIdentityResponse};
 use dpp::{
     identity::PartialIdentity,
     prelude::{DataContract, Identity},
@@ -67,8 +65,13 @@ include!("utils.rs");
 /// `result` should contain `proof` structure.
 /// `metadata` should directly contain returned metadata.
 ///
-/// Note that, when retrieveing response using a tool like grpcui, the `result` element is missing
+/// ### Warning
+///
+/// 1. when retrieveing response using a tool like grpcui, the `result` element is missing
 /// and must be added manually.
+/// 2. chain_id is usually invalid, you need to replace it with the one from Tenderdash's genesis.json
+/// 3. Fields like `limit` should contain int; sometimes they contain `"value"` field and must be flattened.
+///
 ///
 /// ## Quorum public key
 ///
@@ -107,7 +110,8 @@ macro_rules! test_maybe_from_proof {
 
             let ret =
                 <$object>::maybe_from_proof(&request, &response, Box::new(quorum_info_callback));
-            println!("Result: {:?}", ret);
+
+            tracing::info!(?ret, "object retrieved from proof");
 
             match ret {
                 Err(e) => assert_eq!(
@@ -127,7 +131,7 @@ macro_rules! test_maybe_from_proof {
     };
 }
 
-// ==== IDENTITY TESTS ==== //
+// Identity
 
 test_maybe_from_proof! {
     identity_not_found,
@@ -147,13 +151,46 @@ test_maybe_from_proof! {
     Ok(1)
 }
 
+// Identity by pubkey
+
 test_maybe_from_proof! {
-    identity_by_pubkeys_not_found,
+    identity_by_pubkey_ok,
     grpc::GetIdentityByPublicKeyHashesRequest,
     grpc::GetIdentityByPublicKeyHashesResponse,
     Identity,
-    "vectors/TODO.json",
+    "vectors/identity_by_pubkey_ok.json",
+    Ok(1)
+}
+
+// TODO: Fails with:
+// drive error: grovedb: path key not found: key not found in Merk for get
+test_maybe_from_proof! {
+    identity_by_pubkey_not_found,
+    grpc::GetIdentityByPublicKeyHashesRequest,
+    grpc::GetIdentityByPublicKeyHashesResponse,
+    Identity,
+    "vectors/identity_by_pubkey_not_found.json",
     Ok(0)
+}
+
+// get identities
+test_maybe_from_proof! {
+    identities_1_ok,
+    grpc::GetIdentitiesRequest,
+    grpc::GetIdentitiesResponse,
+    Identities,
+    "vectors/identities_1_ok.json",
+    Ok(1) // cannot write a match like `Ok(Some(Vec[None]))`
+}
+
+// One of two identities exists
+test_maybe_from_proof! {
+    identities_1_of_2,
+    grpc::GetIdentitiesRequest,
+    grpc::GetIdentitiesResponse,
+    Identities,
+    "vectors/identities_1_of_2.json",
+    Ok(1) // cannot write a match like `Ok(Some(Vec[None]))`
 }
 
 test_maybe_from_proof! {
@@ -165,8 +202,20 @@ test_maybe_from_proof! {
     Ok(0) // cannot write a match like `Ok(Some(Vec[None]))`
 }
 
+// identities by pubkeys
+
+// Two pubkeys provided, both point to the same object
 test_maybe_from_proof! {
-    identities_by_hashes_not_found,
+    identities_by_pubkeys_2_of_2_same_id,
+    grpc::GetIdentitiesByPublicKeyHashesRequest,
+    grpc::GetIdentitiesByPublicKeyHashesResponse,
+    IdentitiesByPublicKeyHashes,
+    "vectors/identities_by_pubkeys_2_of_2_same_id.json",
+    Ok(2)
+}
+
+test_maybe_from_proof! {
+    identities_by_pubkeys_not_found,
     grpc::GetIdentitiesByPublicKeyHashesRequest,
     grpc::GetIdentitiesByPublicKeyHashesResponse,
     IdentitiesByPublicKeyHashes,
@@ -174,7 +223,17 @@ test_maybe_from_proof! {
     Ok(0)
 }
 
-// todo continue from here
+// Identity Balance
+
+test_maybe_from_proof! {
+    identity_balance_ok,
+    grpc::GetIdentityRequest,
+    grpc::GetIdentityBalanceResponse,
+    IdentityBalance,
+    "vectors/identity_balance_ok.json",
+    Ok(1)
+}
+
 test_maybe_from_proof! {
     identity_balance_not_found,
     grpc::GetIdentityRequest,
@@ -182,6 +241,17 @@ test_maybe_from_proof! {
     IdentityBalance,
     "vectors/identity_balance_not_found.json",
     Ok(0)
+}
+
+// Identity balance and revision
+
+test_maybe_from_proof! {
+    identity_balance_and_revision_ok,
+    grpc::GetIdentityRequest,
+    grpc::GetIdentityBalanceAndRevisionResponse,
+    IdentityBalanceAndRevision,
+    "vectors/identity_balance_and_revision_ok.json",
+    Ok(1)
 }
 
 test_maybe_from_proof! {
@@ -214,6 +284,26 @@ test_maybe_from_proof! {
 }
 
 test_maybe_from_proof! {
+    identity_keys_good_id_wrong_keys,
+    grpc::GetIdentityKeysRequest,
+    grpc::GetIdentityKeysResponse,
+    PartialIdentity,
+    "vectors/identity_keys_good_id_wrong_keys.json",
+    Ok(0)
+}
+
+// Data Contract
+
+test_maybe_from_proof! {
+    data_contract_ok,
+    grpc::GetDataContractRequest,
+    grpc::GetDataContractResponse,
+    DataContract,
+    "vectors/data_contract_ok.json",
+    Ok(1)
+}
+
+test_maybe_from_proof! {
     data_contract_not_found,
     grpc::GetDataContractRequest,
     grpc::GetDataContractResponse,
@@ -222,13 +312,15 @@ test_maybe_from_proof! {
     Ok(0)
 }
 
+// Data contract history
+
 test_maybe_from_proof! {
-    data_contracts_not_found,
-    grpc::GetDataContractsRequest,
-    grpc::GetDataContractsResponse,
-    DataContracts,
-    "vectors/data_contracts_not_found.json",
-    Ok(0) // can't write a match like Ok(Some([None]))
+    data_contract_history_ok,
+    grpc::GetDataContractHistoryRequest,
+    grpc::GetDataContractHistoryResponse,
+    DataContractHistory,
+    "vectors/data_contract_history_ok.json",
+    Ok(2)
 }
 
 test_maybe_from_proof! {
@@ -237,7 +329,38 @@ test_maybe_from_proof! {
     grpc::GetDataContractHistoryResponse,
     DataContractHistory,
     "vectors/data_contract_history_not_found.json",
-    Ok(0) // can't write a match like Ok(Some([None]))
+    Ok(0)
+}
+
+// Multiple data contracts
+
+// One contract requested and found
+test_maybe_from_proof! {
+    data_contracts_1_ok,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_1_ok.json",
+    Ok(1)
+}
+
+// One contract out of 2 requested exists
+test_maybe_from_proof! {
+    data_contracts_1_of_2,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_1_of_2.json",
+    Ok(1)
+}
+
+test_maybe_from_proof! {
+    data_contracts_not_found,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_not_found.json",
+    Ok(0)
 }
 
 // test_maybe_from_proof! {
@@ -256,7 +379,7 @@ enum TestedObject {
     DataContract(DataContract),
     DataContractHistory(DataContractHistory),
     DataContracts(DataContracts),
-    Documents(Documents),
+    // Documents(Documents),
     Identity(Identity),
     IdentityBalance(IdentityBalance),
     IdentityBalanceAndRevision(IdentityBalanceAndRevision),
@@ -281,18 +404,33 @@ impl<T: Length> Length for Option<T> {
 
 impl Length for TestedObject {
     fn count_some(&self) -> usize {
-        1
+        use TestedObject::*;
+        match self {
+            DataContract(_d) => 1,
+            DataContractHistory(d) => d.len(),
+            DataContracts(d) => d.count_some(),
+            Identity(_d) => 1,
+            IdentityBalance(_d) => 1,
+            IdentityBalanceAndRevision(_d) => 1,
+            Identities(d) => d.count_some(),
+            IdentitiesByPublicKeyHashes(d) => d.count_some(),
+            PartialIdentity(_d) => 1,
+        }
     }
 }
 
-impl<T: Length> Length for Vec<T> {
+impl<T> Length for Vec<Option<T>> {
     fn count_some(&self) -> usize {
-        self.iter().map(|item| item.count_some()).sum()
+        self.into_iter()
+            .map(|v| v.as_ref().map(|_t| 1).unwrap_or(0))
+            .sum()
     }
 }
 
-impl<K, V: Length> Length for BTreeMap<K, V> {
+impl<K, T> Length for Vec<(K, Option<T>)> {
     fn count_some(&self) -> usize {
-        self.iter().map(|(k, v)| v.count_some()).sum()
+        self.into_iter()
+            .map(|(_k, v)| v.as_ref().map(|_t| 1).unwrap_or(0))
+            .sum()
     }
 }

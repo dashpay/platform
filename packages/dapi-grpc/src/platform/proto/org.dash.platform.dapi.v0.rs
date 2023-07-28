@@ -852,6 +852,7 @@ pub mod get_identities_by_public_key_hashes_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashesRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub public_key_hash: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,

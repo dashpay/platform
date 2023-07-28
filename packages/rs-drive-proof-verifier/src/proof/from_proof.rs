@@ -109,7 +109,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_response::Result::Proof(p) => p,
             platform::get_identity_response::Result::Identity(_) => {
                 return Err(Error::NoProofInResult)
@@ -155,7 +155,7 @@ impl
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_by_public_key_hashes_response::Result::Proof(p) => p,
             platform::get_identity_by_public_key_hashes_response::Result::Identity(_) => {
                 return Err(Error::NoProofInResult)
@@ -198,7 +198,7 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identities_response::Result::Proof(p) => p,
             platform::get_identities_response::Result::Identities(_) => {
                 return Err(Error::NoProofInResult)
@@ -239,6 +239,8 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
             })
             .collect::<Result<Identities, Error>>()?;
 
+        todo!("We need verify_full_identities_by_identity_ids in Drive to implement this method");
+
         Ok(Some(maybe_identities))
     }
 }
@@ -253,7 +255,7 @@ impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysRespon
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_keys_response::Result::Proof(p) => p,
             platform::get_identity_keys_response::Result::Keys(_) => {
                 return Err(Error::NoProofInResult)
@@ -270,6 +272,8 @@ impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysRespon
             Identifier::from_bytes(&request.identity_id).map_err(|e| Error::ProtocolError {
                 error: e.to_string(),
             })?;
+
+        tracing::debug!(?id, "checking proof of identity keys");
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_keys_by_identity_id(
@@ -300,7 +304,7 @@ impl
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identities_by_public_key_hashes_response::Result::Proof(p) => p,
             platform::get_identities_by_public_key_hashes_response::Result::Identities(_) => {
                 return Err(Error::NoProofInResult)
@@ -347,7 +351,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_balance_response::Result::Proof(p) => p,
             platform::get_identity_balance_response::Result::Balance(_) => {
                 return Err(Error::NoProofInResult)
@@ -390,7 +394,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_balance_and_revision_response::Result::Proof(p) => p,
             platform::get_identity_balance_and_revision_response::Result::BalanceAndRevision(_) => {
                 return Err(Error::NoProofInResult)
@@ -419,6 +423,8 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
+        todo!("we need Drive to implement verify_identity_balance_and_revision_for_identity_id");
+        #[allow(unreachable_code)]
         Ok(maybe_identity.map(|i| (i.balance, i.revision)))
     }
 }
@@ -433,7 +439,7 @@ impl FromProof<platform::GetDataContractRequest, platform::GetDataContractRespon
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contract_response::Result::Proof(p) => p,
             platform::get_data_contract_response::Result::DataContract(_) => {
                 return Err(Error::NoProofInResult)
@@ -474,7 +480,7 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contracts_response::Result::Proof(p) => p,
             platform::get_data_contracts_response::Result::DataContracts(_) => {
                 return Err(Error::NoProofInResult)
@@ -528,7 +534,7 @@ impl FromProof<platform::GetDataContractHistoryRequest, platform::GetDataContrac
         Self: Sized,
     {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contract_history_response::Result::Proof(p) => p,
             platform::get_data_contract_history_response::Result::DataContractHistory(_) => {
                 return Err(Error::NoProofInResult)
@@ -574,7 +580,7 @@ impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documen
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::EmptyResponse)? {
+        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_documents_response::Result::Proof(p) => p,
             platform::get_documents_response::Result::Documents(_) => {
                 return Err(Error::NoProofInResult)
