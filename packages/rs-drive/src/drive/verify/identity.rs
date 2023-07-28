@@ -372,7 +372,7 @@ impl Drive {
             Ok((root_hash, identity_id))
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
-                "expected one identity id",
+                "expected maximum one identity id",
             )))
         }
     }

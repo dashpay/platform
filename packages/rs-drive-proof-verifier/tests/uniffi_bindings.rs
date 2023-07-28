@@ -3,7 +3,7 @@ pub mod uniffi_test {
 
     use bytes::Bytes;
 
-    use drive_light_client::{
+    use drive_proof_verifier::{
         uniffi_bindings::codec::{json::JsonCodec, Codec},
         Error,
     };
@@ -57,7 +57,7 @@ pub mod uniffi_test {
             #[test]
             fn $name() {
                 use dapi_grpc::platform::v0::{$req, $resp};
-                use drive_light_client::uniffi_bindings::json::proof::*;
+                use drive_proof_verifier::uniffi_bindings::json::proof::*;
 
                 let (request, response, quorum_info_callback) = load::<$req, $resp>($vector);
                 let req = $codec.encode(&request).unwrap();

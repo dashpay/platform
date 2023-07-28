@@ -1,5 +1,5 @@
 [package]
-name = "drive-light-client"
+name = "drive-proof-verifier"
 version = "0.25.0-dev"
 edition = "2021"
 rust-version = "1.70"
@@ -27,6 +27,8 @@ serde_json = { version = "1.0.103", features = [
 [dev-dependencies]
 tracing-subscriber = { version = "0.3.16" }
 serde_json = { version = "1.0.103" }
+derive_more = { version = "0.99.16" }
+base64 = { version = "0.21.0" }
 
 [build-dependencies]
 

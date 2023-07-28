@@ -319,6 +319,7 @@ pub mod security_level_map {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub identity_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub request_type: ::core::option::Option<KeyRequestType>,
@@ -513,6 +514,7 @@ pub mod get_proofs_request {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityRequest {
         #[prost(bytes = "vec", tag = "1")]
+        #[serde(with = "crate::deserialization::base64string")]
         pub identity_id: ::prost::alloc::vec::Vec<u8>,
         #[prost(enumeration = "identity_request::Type", tag = "2")]
         pub request_type: i32,
@@ -687,6 +689,7 @@ pub struct GetDataContractHistoryRequest {
     #[prost(uint32, tag = "3")]
     pub offset: u32,
     #[prost(uint64, tag = "4")]
+    #[serde(with = "crate::deserialization::from_to_string")]
     pub start_at_ms: u64,
     #[prost(bool, tag = "5")]
     pub prove: bool,
@@ -849,6 +852,7 @@ pub mod get_identities_by_public_key_hashes_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashesRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub public_key_hash: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
