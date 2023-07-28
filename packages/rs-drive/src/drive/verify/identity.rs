@@ -15,8 +15,7 @@ use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
 use grovedb::GroveDb;
-use std::collections::{BTreeMap, HashMap};
-use grovedb::query_result_type::{Key, PathKeyOptionalElementTrio};
+use std::collections::BTreeMap;
 
 impl Drive {
     /// Verifies the full identity of a user by their public key hash.
@@ -415,6 +414,7 @@ impl Drive {
         } else {
             GroveDb::verify_query(proof, &path_query)?
         };
+
         if proved_key_values.len() == 0 {
             Ok((root_hash, None))
         } else if proved_key_values.len() == 1 {
@@ -566,23 +566,16 @@ impl Drive {
         } else {
             GroveDb::verify_query(proof, &path_query)?
         };
-        let mut proved_key_values_hm: HashMap<[u8; 20], PathKeyOptionalElementTrio> = HashMap::new();
-        for elem in proved_key_values {
-            let key = elem
-                .1
-                .clone()
-                .try_into()
-                .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("key size is incorrect")))?;
-            proved_key_values_hm.insert(key, elem.clone());
-        }
-        let values = public_key_hashes
-            .into_iter()
-            .map(|public_key_hash| {
-                let key: [u8; 20] = *public_key_hash;
-                let maybe_element = proved_key_values_hm.get(&key).map(|elem| elem.2.clone());
-                match maybe_element {
-                    None => Ok((key, None)),
-                    Some(element) => match element {
+        if proved_key_values.len() == public_key_hashes.len() {
+            let values = proved_key_values
+                .into_iter()
+                .map(|proved_key_value| {
+                    let key: [u8; 20] = proved_key_value
+                        .1
+                        .try_into()
+                        .map_err(|_| Error::Proof(ProofError::IncorrectValueSize("value size")))?;
+                    let maybe_element = proved_key_value.2;
+                    match maybe_element {
                         None => Ok((key, None)),
                         Some(element) => {
                             let identity_id = element
@@ -597,9 +590,13 @@ impl Drive {
                             Ok((key, Some(identity_id)))
                         }
                     }
-                }
-            })
-            .collect::<Result<T, Error>>()?;
-        Ok((root_hash, values))
+                })
+                .collect::<Result<T, Error>>()?;
+            Ok((root_hash, values))
+        } else {
+            Err(Error::Proof(ProofError::WrongElementCount(
+                "expected one identity id",
+            )))
+        }
     }
 }
