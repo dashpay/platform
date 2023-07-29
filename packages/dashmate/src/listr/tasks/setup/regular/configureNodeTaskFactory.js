@@ -10,13 +10,17 @@ const {
 
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
-const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 
-function configureNodeTaskFactory() {
+/**
+ *
+ * @param {createIpAndPortsForm} createIpAndPortsForm
+ * @return {configureNodeTask}
+ */
+function configureNodeTaskFactory(createIpAndPortsForm) {
   /**
-   * @typedef configureNodeTask
+   * @typedef {function} configureNodeTask
    * @returns {Listr}
    */
   async function configureNodeTask() {

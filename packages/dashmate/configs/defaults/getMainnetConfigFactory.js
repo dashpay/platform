@@ -2,8 +2,8 @@ const lodashMerge = require('lodash/merge');
 
 const {
   NETWORK_MAINNET,
-} = require('../../../constants');
-const Config = require('../../Config');
+} = require('../../src/constants');
+const Config = require('../../src/config/Config');
 
 /**
  * @param {HomeDir} homeDir

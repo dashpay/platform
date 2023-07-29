@@ -9,7 +9,7 @@ const {
 
 const wait = require('../../util/wait');
 
-function createIpAndPortsFormFactory(systemConfigs) {
+function createIpAndPortsFormFactory(defaultConfigs) {
   /**
    * @typedef {function} createIpAndPortsForm
    * @param {string} network
@@ -22,7 +22,7 @@ function createIpAndPortsFormFactory(systemConfigs) {
    * @returns {Object}
    */
   async function createIpAndPortsForm(network, options = {}) {
-    const mainnetCfg = systemConfigs.get(PRESET_MAINNET);
+    const mainnetCfg = defaultConfigs.get(PRESET_MAINNET);
 
     function validateCoreP2PPort(value) {
       if (!validatePort(value)) {
@@ -72,7 +72,7 @@ function createIpAndPortsFormFactory(systemConfigs) {
     if (options.initialCoreP2PPort === undefined
       || options.initialCoreP2PPort === null
       || network === PRESET_MAINNET) {
-      initialCoreP2PPort = systemConfigs.get(network).get('core.p2p.port').toString();
+      initialCoreP2PPort = defaultConfigs.get(network).get('core.p2p.port').toString();
     }
 
     const fields = [
@@ -97,7 +97,7 @@ function createIpAndPortsFormFactory(systemConfigs) {
       if (options.initialPlatformP2PPort === null
         || options.initialPlatformP2PPort === undefined
         || network === PRESET_MAINNET) {
-        initialPlatformP2PPort = systemConfigs.get(network).get('platform.drive.tenderdash.p2p.port').toString();
+        initialPlatformP2PPort = defaultConfigs.get(network).get('platform.drive.tenderdash.p2p.port').toString();
       }
 
       fields.push({
@@ -112,7 +112,7 @@ function createIpAndPortsFormFactory(systemConfigs) {
       if (options.initialPlatformHTTPPort === null
         || options.initialPlatformHTTPPort === undefined
         || network === PRESET_MAINNET) {
-        initialPlatformHTTPPort = systemConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
+        initialPlatformHTTPPort = defaultConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
       }
 
       fields.push({

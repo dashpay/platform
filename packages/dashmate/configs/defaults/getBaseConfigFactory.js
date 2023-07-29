@@ -27,11 +27,11 @@ const semver = require('semver');
 const {
   NETWORK_TESTNET,
   PACKAGE_ROOT_DIR,
-} = require('../../../constants');
+} = require('../../src/constants');
 
-const { version } = require('../../../../package.json');
+const { version } = require('../../package.json');
 
-const Config = require('../../Config');
+const Config = require('../../src/config/Config');
 
 /**
  * @param {HomeDir} homeDir
@@ -51,8 +51,16 @@ function getBaseConfigFactory(homeDir) {
       group: null,
       docker: {
         network: {
-          subnet: '172.24.24.0/24',
+          subnet: '0.0.0.0/0',
           bindIp: '0.0.0.0',
+        },
+        baseImage: {
+          build: {
+            enabled: false,
+            context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
+            dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
+            target: '',
+          },
         },
       },
       core: {

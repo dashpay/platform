@@ -25,7 +25,7 @@ class BaseCommand extends Command {
     this.parsedArgs = args;
     this.parsedFlags = flags;
 
-    this.container = await createDIContainer();
+    this.container = await createDIContainer(process.env);
 
     // Load configs
     /**
@@ -46,11 +46,11 @@ class BaseCommand extends Command {
       }
 
       /**
-       * @type {createSystemConfigs}
+       * @type {createConfigFile}
        */
-      const createSystemConfigs = this.container.resolve('createSystemConfigs');
+      const createConfigFile = this.container.resolve('createConfigFile');
 
-      configFile = createSystemConfigs();
+      configFile = createConfigFile();
     }
 
     // Register config collection in the container

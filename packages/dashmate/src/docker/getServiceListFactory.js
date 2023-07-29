@@ -1,14 +1,23 @@
+const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
+
 /**
  * @return {getServiceList}
  */
 function getServiceListFactory() {
   /**
    * Returns list of services and corresponding docker images from the config
+   *
    * @typedef {getServiceList}
-   * @return {Config} config
+   * @param {Config} config
+   * @return {Object[]}
    */
   function getServiceList(config) {
     const services = [
+      {
+        name: 'dashmate_helper',
+        title: 'Dashmate Helper',
+        image: DASHMATE_HELPER_DOCKER_IMAGE,
+      },
       {
         name: 'core',
         title: 'Core',
@@ -29,8 +38,7 @@ function getServiceListFactory() {
         name: 'drive_abci',
         title: 'Drive ABCI',
         image: config.get('platform.drive.abci.docker.image'),
-      },
-      {
+      }, {
         name: 'drive_tenderdash',
         title: 'Drive Tenderdash',
         image: config.get('platform.drive.tenderdash.docker.image'),
@@ -46,10 +54,6 @@ function getServiceListFactory() {
         name: 'dapi_envoy',
         title: 'DAPI Envoy',
         image: config.get('platform.dapi.envoy.docker.image'),
-      }, {
-        name: 'dashmate_helper',
-        title: 'Dashmate Helper',
-        image: config.get('dashmate.helper.docker.image'),
       });
     }
 

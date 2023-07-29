@@ -1,3 +1,70 @@
+### [0.24.19](https://github.com/dashpay/platform/compare/v0.24.18...v0.24.19) (2023-07-28)
+
+
+### Bug Fixes
+
+* **dashmate:** `baseImage/build/context` invalid json schema ([#1269](https://github.com/dashpay/platform/issues/1269))
+
+### [0.24.18](https://github.com/dashpay/platform/compare/v0.24.17...v0.24.18) (2023-07-26)
+
+
+### Bug Fixes
+
+* **dashmate:** the update command expects helper image option ([#1264](https://github.com/dashpay/platform/issues/1264))
+
+### [0.24.17](https://github.com/dashpay/platform/compare/v0.24.16...v0.24.17) (2023-07-26)
+
+
+### Features
+
+* **dashmate:** pre-build image ([#1259](https://github.com/dashpay/platform/issues/1259))
+
+
+### Bug Fixes
+
+* **dashmate:** undefined createIpAndPortsForm factory ([#1258](https://github.com/dashpay/platform/issues/1258))
+* **dashmate:** version color is red ([#1255](https://github.com/dashpay/platform/issues/1255))
+
+
+### Code Refactoring
+
+* **dashmate:** default configuration ([#1257](https://github.com/dashpay/platform/issues/1257))
+
+### [0.24.16](https://github.com/dashpay/platform/compare/v0.24.15...v0.24.16) (2023-07-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** Removed `dashmate.helper.docker.image` configuration option (#1231)
+
+### Features
+
+* **dashmate:** allow separation of a service build ([#1206](https://github.com/dashpay/platform/issues/1206))
+* **dashmate:** reindex reworked ([#1212](https://github.com/dashpay/platform/issues/1212))
+
+
+### Bug Fixes
+
+* **dashmate:** invalid testnet chain id ([#1233](https://github.com/dashpay/platform/issues/1233))
+* **dashmate:** runs invalid helper version ([#1231](https://github.com/dashpay/platform/issues/1231))
+* word wrap audit fail ([#1235](https://github.com/dashpay/platform/issues/1235))
+
+
+### Miscellaneous Chores
+
+* remove envoy build from dashmate and release ([#1232](https://github.com/dashpay/platform/issues/1232))
+
+
+### Code Refactoring
+
+* **dashmate:** dynamic home dir path ([#1237](https://github.com/dashpay/platform/issues/1237))
+* **dashmate:** move all envs definition to `generateEnvs` ([#1246](https://github.com/dashpay/platform/issues/1246))
+
+
+### Tests
+
+* **dashmate:** increase the reliability of e2e tests ([#1204](https://github.com/dashpay/platform/issues/1204))
+
 ### [0.24.15](https://github.com/dashpay/platform/compare/v0.24.14...v0.24.15) (2023-07-10)
 
 

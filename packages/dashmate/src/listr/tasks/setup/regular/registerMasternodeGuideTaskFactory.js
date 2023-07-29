@@ -2,14 +2,14 @@ const { Listr } = require('listr2');
 
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
-const registerMasternodeWithCoreWallet = require('./registerMasternode/registerMasternodeWithCoreWallet');
 const registerMasternodeWithDMT = require('./registerMasternode/registerMasternodeWithDMT');
 
 /**
- * @param {SystemConfigs} systemConfigs
+ * @param {registerMasternodeWithCoreWallet} registerMasternodeWithCoreWallet
+ * @param {DefaultConfigs} defaultConfigs
  * @return {registerMasternodeGuideTask}
  */
-function registerMasternodeGuideTaskFactory(systemConfigs) {
+function registerMasternodeGuideTaskFactory(defaultConfigs, registerMasternodeWithCoreWallet) {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}
@@ -56,7 +56,7 @@ function registerMasternodeGuideTaskFactory(systemConfigs) {
           // TODO: Refactor. It should be done as a separate tasks
           let state;
           if (registrar === REGISTRARS.CORE) {
-            state = await registerMasternodeWithCoreWallet(ctx, task, systemConfigs);
+            state = await registerMasternodeWithCoreWallet(ctx, task, defaultConfigs);
           } else if (registrar === REGISTRARS.DMT) {
             state = await registerMasternodeWithDMT(ctx, task);
           }
