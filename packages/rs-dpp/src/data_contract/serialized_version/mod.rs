@@ -3,17 +3,34 @@ use crate::data_contract::serialized_version::v0::DataContractInSerializationFor
 use crate::data_contract::DataContract;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::From;
+use platform_value::Identifier;
 use platform_version::TryFromPlatformVersioned;
 
 pub(in crate::data_contract) mod v0;
 
 pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 
-#[derive(Debug, Clone, Encode, Decode, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, From)]
 pub enum DataContractInSerializationFormat {
     V0(DataContractInSerializationFormatV0),
+}
+
+impl DataContractInSerializationFormat {
+    /// Returns the unique identifier for the data contract.
+    pub fn id(&self) -> Identifier {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => v0.id,
+        }
+    }
+
+    /// Returns the owner identifier for the data contract.
+    pub fn owner_id(&self) -> Identifier {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => v0.owner_id,
+        }
+    }
 }
 
 impl TryFromPlatformVersioned<&DataContract> for DataContractInSerializationFormat {

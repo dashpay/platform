@@ -15,6 +15,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization::PlatformDeserializable;
 
+#[cfg(feature = "identity-value-conversion")]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -30,6 +31,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
 use platform_value::Value;
+use platform_version::TryIntoPlatformVersioned;
 use std::sync::Arc;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
@@ -56,6 +58,7 @@ impl IdentityFactory {
         )
     }
 
+    #[cfg(feature = "identity-value-conversion")]
     pub fn create_from_object(
         &self,
         raw_identity: Value,
@@ -65,10 +68,10 @@ impl IdentityFactory {
         if !skip_validation {
             self.validate_identity(&raw_identity)?;
         }
-
-        Identity::try_from_owned_value(raw_identity, PlatformVersion::get(self.protocol_version)?)
+        raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
     }
 
+    #[cfg(feature = "identity-serialization")]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
@@ -88,6 +91,7 @@ impl IdentityFactory {
         Ok(identity)
     }
 
+    //todo: this should be changed into identity.validate()
     #[cfg(feature = "validation")]
     pub fn validate_identity(&self, raw_identity: &Value) -> Result<(), ProtocolError> {
         //todo: reenable

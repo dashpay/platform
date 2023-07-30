@@ -36,6 +36,4 @@ pub trait DataContractCreateTransitionMethodsV0 {
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
     ) -> Result<DataContractCreateTransition, ProtocolError>;
-
-    fn modified_data_ids(&self) -> Vec<Identifier>;
 }

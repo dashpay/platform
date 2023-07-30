@@ -548,8 +548,8 @@ pub fn check_if_timestamps_are_equal(
     document_transition: &DocumentTransition,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
-    let created_at = document_transition.get_created_at();
-    let updated_at = document_transition.get_updated_at();
+    let created_at = document_transition.created_at();
+    let updated_at = document_transition.updated_at();
 
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
         result.add_error(ConsensusError::StateError(
@@ -568,7 +568,7 @@ pub fn check_created_inside_time_window(
     average_block_spacing_ms: u64,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let mut result = SimpleConsensusValidationResult::default();
-    let created_at = match document_transition.get_created_at() {
+    let created_at = match document_transition.created_at() {
         Some(t) => t,
         None => return Ok(result),
     };
@@ -601,7 +601,7 @@ pub fn check_updated_inside_time_window(
     average_block_spacing_ms: u64,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let mut result = SimpleConsensusValidationResult::default();
-    let updated_at = match document_transition.get_updated_at() {
+    let updated_at = match document_transition.updated_at() {
         Some(t) => t,
         None => return Ok(result),
     };

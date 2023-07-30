@@ -5,6 +5,7 @@ use virtue::utils::{parse_tagged_attribute, ParsedAttribute};
 pub struct ContainerAttributes {
     pub crate_name: String,
     pub untagged: bool,
+    pub unversioned: bool,
     pub bounds: Option<(String, Literal)>,
     pub decode_bounds: Option<(String, Literal)>,
     pub borrow_decode_bounds: Option<(String, Literal)>,
@@ -15,6 +16,7 @@ impl Default for ContainerAttributes {
     fn default() -> Self {
         Self {
             crate_name: "::platform_serialization".to_string(),
+            unversioned: false,
             untagged: false,
             bounds: None,
             decode_bounds: None,
@@ -42,6 +44,9 @@ impl FromAttribute for ContainerAttributes {
                     }
                 }
                 ParsedAttribute::Tag(i) if i.to_string() == "untagged" => {
+                    result.untagged = true;
+                }
+                ParsedAttribute::Tag(i) if i.to_string() == "unversioned" => {
                     result.untagged = true;
                 }
                 ParsedAttribute::Property(key, val) if key.to_string() == "bounds" => {

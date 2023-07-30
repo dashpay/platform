@@ -61,9 +61,4 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         transition.set_signature(signer.sign(public_key, &value)?.into());
         Ok(transition)
     }
-
-    /// Returns ID of the created contract
-    fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.data_contract.id()]
-    }
 }

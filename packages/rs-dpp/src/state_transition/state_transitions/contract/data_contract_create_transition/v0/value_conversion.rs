@@ -49,7 +49,8 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                     )
                 })?,
                 platform_version,
-            )?.try_into_platform_versioned(platform_version)?,
+            )?
+            .try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }
@@ -78,7 +79,8 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                         "data contract missing on state transition".to_string(),
                     ))?,
                 platform_version,
-            )?.try_into_platform_versioned(platform_version)?,
+            )?
+            .try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }

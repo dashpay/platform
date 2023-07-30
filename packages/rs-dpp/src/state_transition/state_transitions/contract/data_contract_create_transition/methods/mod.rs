@@ -37,16 +37,11 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
                 key_id,
                 signer,
                 platform_version,
+                feature_version,
             ),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractCreateTransition version for new_from_data_contract {v}"
             ))),
-        }
-    }
-
-    fn modified_data_ids(&self) -> Vec<Identifier> {
-        match self {
-            DataContractCreateTransition::V0(transition) => transition.modified_data_ids(),
         }
     }
 }

@@ -42,11 +42,12 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 #[derive(
     Debug,
     Clone,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
-    Decode,
     From,
     PartialEq,
 )]
@@ -55,6 +56,7 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]

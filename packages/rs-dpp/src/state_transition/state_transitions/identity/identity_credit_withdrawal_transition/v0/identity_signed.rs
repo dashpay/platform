@@ -1,3 +1,4 @@
+use crate::data_contract::DataContract;
 use crate::identity::SecurityLevel::CRITICAL;
 use crate::identity::{KeyID, SecurityLevel};
 

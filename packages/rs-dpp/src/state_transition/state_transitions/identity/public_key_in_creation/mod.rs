@@ -12,7 +12,8 @@ pub mod v0;
 mod v0_methods;
 
 #[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
-
+//here we want to indicate that IdentityPublicKeyInCreation can be transformed into IdentityPublicKeyInCreationSignable
+#[platform_signable(derive_into)]
 pub enum IdentityPublicKeyInCreation {
     V0(IdentityPublicKeyInCreationV0),
 }

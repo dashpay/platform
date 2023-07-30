@@ -24,7 +24,7 @@ use crate::{
 };
 
 use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
+use bincode::{BorrowDecode, config, Decode, Encode};
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -36,7 +36,7 @@ use crate::version::PlatformVersion;
 
 ///DataContractCreateTransitionV0 has the same encoding structure
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
@@ -49,17 +49,6 @@ pub struct DataContractCreateTransitionV0 {
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for DataContractCreateTransitionV0 {
-    fn default() -> Self {
-        DataContractCreateTransitionV0 {
-            entropy: Bytes32::default(),
-            signature_public_key_id: 0,
-            signature: BinaryData::default(),
-            data_contract: Default::default(),
-        }
-    }
 }
 
 impl From<DataContractCreateTransitionV0> for StateTransition {

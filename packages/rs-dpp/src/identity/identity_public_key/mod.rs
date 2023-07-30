@@ -36,11 +36,13 @@ pub type TimestampMillis = u64;
     PartialEq,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     From,
 )]
-#[platform_serialize(limit = 2000)]
+#[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 pub enum IdentityPublicKey {
     V0(IdentityPublicKeyV0),
 }

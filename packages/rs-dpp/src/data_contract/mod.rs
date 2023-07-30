@@ -155,7 +155,7 @@ impl PlatformDeserializableFromVersionedStructure for DataContract {
     {
         let config = config::standard().with_big_endian().with_no_limit();
         let data_contract_in_serialization_format: DataContractInSerializationFormat =
-            bincode::decode_from_slice(data, config)
+            bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
                     PlatformDeserializationError(format!(
                         "unable to deserialize DataContract: {}",
@@ -179,7 +179,7 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
             .with_big_endian()
             .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>();
         let data_contract_in_serialization_format: DataContractInSerializationFormat =
-            bincode::decode_from_slice(data, config)
+            bincode::borrow_decode_from_slice(data, config)
                 .map_err(|e| {
                     PlatformDeserializationError(format!(
                         "unable to deserialize DataContract with limit: {}",

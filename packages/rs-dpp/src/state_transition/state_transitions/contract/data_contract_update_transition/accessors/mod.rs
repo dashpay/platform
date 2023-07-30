@@ -1,9 +1,9 @@
 mod v0;
 
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 pub use v0::*;
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 impl DataContractUpdateTransitionAccessorsV0 for DataContractUpdateTransition {
     fn data_contract(&self) -> &DataContractInSerializationFormat {

@@ -14,6 +14,7 @@ pub(super) fn derive_platform_deserialize_enum(
 ) -> TokenStream {
     let VersionAttributes {
         passthrough,
+        unversioned,
         platform_version_path,
         platform_serialize_limit,
         untagged,
@@ -30,12 +31,22 @@ pub(super) fn derive_platform_deserialize_enum(
 
     // if we have passthrough or untagged we can't decode directly
     let bincode_decode_body = if !passthrough && !untagged {
-        let bincode_decode_body: proc_macro2::TokenStream =
-            crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
-                .unwrap_or_else(|e| e.into_token_stream())
-                .into();
-        quote! {
-            #bincode_decode_body
+        if unversioned {
+            let bincode_decode_body: proc_macro2::TokenStream =
+                crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
+                    .unwrap_or_else(|e| e.into_token_stream())
+                    .into();
+            quote! {
+                #bincode_decode_body
+            }
+        } else {
+            let bincode_decode_body: proc_macro2::TokenStream =
+                crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
+                    .unwrap_or_else(|e| e.into_token_stream())
+                    .into();
+            quote! {
+                #bincode_decode_body
+            }
         }
     } else {
         quote! {}

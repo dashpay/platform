@@ -7,7 +7,7 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::state_transition::StateTransitionIdentitySignedV0;
+use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionIdentitySignedV0};
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -38,23 +38,22 @@ lazy_static! {
 
 pub(crate) fn validate_state_transition_identity_signature_v0(
     drive: &Drive,
-    state_transition: &impl StateTransitionIdentitySignedV0,
+    state_transition: &impl StateTransitionIdentitySigned,
     request_revision: bool,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
     let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
-    let key_id = state_transition.get_signature_public_key_id().ok_or(
-        ProtocolError::CorruptedCodeExecution(
-            "state_transition does not have a public key Id to verify".to_string(),
-        ),
-    )?;
+    let key_id =
+        state_transition
+            .signature_public_key_id()
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "state_transition does not have a public key Id to verify".to_string(),
+            ))?;
 
-    let key_request = IdentityKeysRequest::new_specific_key_query(
-        state_transition.get_owner_id().as_bytes(),
-        key_id,
-    );
+    let key_request =
+        IdentityKeysRequest::new_specific_key_query(state_transition.owner_id().as_bytes(), key_id);
 
     let maybe_partial_identity = if request_revision {
         drive.fetch_identity_balance_with_keys_and_revision(
@@ -70,7 +69,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
         None => {
             // dbg!(bs58::encode(&state_transition.get_owner_id()).into_string());
             validation_result.add_error(SignatureError::IdentityNotFoundError(
-                IdentityNotFoundError::new(*state_transition.get_owner_id()),
+                IdentityNotFoundError::new(*state_transition.owner_id()),
             ));
             return Ok(validation_result);
         }
@@ -98,12 +97,12 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
         return Ok(validation_result);
     }
 
-    let security_levels = state_transition.get_security_level_requirement();
+    let security_levels = state_transition.security_level_requirement();
 
-    if !security_levels.contains(&public_key.security_level) {
+    if !security_levels.contains(&public_key.security_level()) {
         validation_result.add_error(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
             InvalidSignaturePublicKeySecurityLevelError::new(
-                public_key.security_level,
+                public_key.security_level(),
                 security_levels,
             ),
         ));
@@ -112,7 +111,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
 
     if public_key.is_disabled() {
         validation_result.add_error(SignatureError::PublicKeyIsDisabledError(
-            PublicKeyIsDisabledError::new(public_key.id),
+            PublicKeyIsDisabledError::new(public_key.id()),
         ));
         return Ok(validation_result);
     }

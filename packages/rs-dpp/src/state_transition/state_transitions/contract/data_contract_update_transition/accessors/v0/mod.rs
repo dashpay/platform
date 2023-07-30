@@ -1,4 +1,3 @@
-
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 pub trait DataContractUpdateTransitionAccessorsV0 {

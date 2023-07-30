@@ -53,7 +53,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
             BTreeMap::new();
 
         self.transitions().iter().for_each(|document_transition| {
-            let contract_identifier = document_transition.get_data_contract_id();
+            let contract_identifier = document_transition.data_contract_id();
 
             match document_transitions_by_contracts.entry(*contract_identifier) {
                 Entry::Vacant(vacant) => {

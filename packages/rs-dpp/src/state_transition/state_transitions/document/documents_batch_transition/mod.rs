@@ -41,6 +41,7 @@ mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+mod methods;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -62,6 +63,8 @@ pub use v0::*;
     Debug,
     Clone,
     PartialEq,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
@@ -73,6 +76,7 @@ pub use v0::*;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]

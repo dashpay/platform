@@ -1,3 +1,4 @@
+use crate::data_contract::DataContract;
 use crate::identity::{KeyID, SecurityLevel};
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::StateTransitionIdentitySigned;

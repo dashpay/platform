@@ -10,8 +10,8 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 use platform_version::TryIntoPlatformVersioned;
+use std::collections::BTreeMap;
 
 impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
@@ -69,7 +69,8 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
                     )
                 })?,
                 platform_version,
-            )?.try_into_platform_versioned(platform_version)?,
+            )?
+            .try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }
@@ -94,7 +95,8 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
                         "data contract missing on state transition".to_string(),
                     ))?,
                 platform_version,
-            )?.try_into_platform_versioned(platform_version)?,
+            )?
+            .try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }

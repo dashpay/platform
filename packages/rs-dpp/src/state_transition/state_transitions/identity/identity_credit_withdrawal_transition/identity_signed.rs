@@ -1,3 +1,4 @@
+use crate::data_contract::DataContract;
 use crate::identity::{KeyID, SecurityLevel};
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::StateTransitionIdentitySigned;

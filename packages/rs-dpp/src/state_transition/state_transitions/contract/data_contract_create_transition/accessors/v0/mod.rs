@@ -1,5 +1,5 @@
-use platform_value::Bytes32;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use platform_value::Bytes32;
 
 pub trait DataContractCreateTransitionAccessorsV0 {
     fn data_contract(&self) -> &DataContractInSerializationFormat;

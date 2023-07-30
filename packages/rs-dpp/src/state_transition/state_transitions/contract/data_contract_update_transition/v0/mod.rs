@@ -16,7 +16,10 @@ use crate::serialization::PlatformSerializable;
 use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_version::version::PlatformVersion;
+use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
 use crate::{
@@ -25,9 +28,8 @@ use crate::{
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     Convertible, NonConsensusError, ProtocolError,
 };
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PartialEq, PlatformSignable)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
@@ -42,13 +44,18 @@ pub struct DataContractUpdateTransitionV0 {
     pub signature: BinaryData,
 }
 
-impl Default for DataContractUpdateTransitionV0 {
-    fn default() -> Self {
-        DataContractUpdateTransitionV0 {
+impl TryFromPlatformVersioned<DataContract> for DataContractUpdateTransitionV0 {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        Ok(DataContractUpdateTransitionV0 {
+            data_contract: value.try_into_platform_versioned(platform_version)?,
             signature_public_key_id: 0,
-            signature: BinaryData::default(),
-            data_contract: Default::default(),
-        }
+            signature: Default::default(),
+        })
     }
 }
 

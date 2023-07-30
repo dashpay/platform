@@ -45,7 +45,7 @@ impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
                         &self.transitions[i].base().document_type_name,
                     )?;
 
-                if transition.get_updated_at().is_none() {
+                if transition.updated_at().is_none() {
                     cbor_transition.remove("$updatedAt");
                 }
 

@@ -12,21 +12,19 @@ use std::process::id;
 
 use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use dashcore::signer::sign;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
-use crate::identity::signer::Signer;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
 use crate::prelude::Identifier;
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::state_transition::{
@@ -35,7 +33,7 @@ use crate::state_transition::{
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 
-#[derive(Debug, Clone, PartialEq, PlatformDeserialize, PlatformSerialize, PlatformSignable)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
@@ -44,7 +42,7 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
 )]
 
 pub struct IdentityCreateTransitionV0 {
-    // The signable
+    // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
     pub asset_lock_proof: AssetLockProof,
