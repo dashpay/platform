@@ -144,6 +144,9 @@ mod test {
             state: &state_read_guard,
             config: &platform.config,
         };
+        let platform_version = state_read_guard
+            .current_platform_version()
+            .expect("should return a platform version");
 
         let mut contact_request_document = get_contact_request_extended_document_fixture(
             None,
@@ -187,7 +190,7 @@ mod test {
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("the execution result should be returned");
 
@@ -221,6 +224,10 @@ mod test {
             state: &state_write_guard,
             config: &platform.config,
         };
+
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
 
         let mut contact_request_document = get_contact_request_extended_document_fixture(
             None,
@@ -276,7 +283,7 @@ mod test {
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("data trigger result should be returned");
 
@@ -318,6 +325,9 @@ mod test {
             state: &state_write_guard,
             config: &platform.config,
         };
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
 
         let contact_request_document = get_contact_request_extended_document_fixture(
             None,
@@ -362,7 +372,7 @@ mod test {
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("data trigger result should be returned");
 

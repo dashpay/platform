@@ -17,13 +17,11 @@ mod context;
 mod executor;
 mod triggers;
 
-type DataTrigger = Box<
-    dyn Fn(
-        &DocumentTransitionAction,
-        &DataTriggerExecutionContext<'_>,
-        &PlatformVersion,
-    ) -> Result<DataTriggerExecutionResult, Error>,
->;
+type DataTrigger = fn(
+    &DocumentTransitionAction,
+    &DataTriggerExecutionContext<'_>,
+    &PlatformVersion,
+) -> Result<DataTriggerExecutionResult, Error>;
 
 /// A type alias for a [SimpleValidationResult] with a [DataTriggerError] as the error type.
 ///

@@ -352,6 +352,10 @@ mod test {
             config: &platform.config,
         };
 
+        let platform_version = state_read_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(
@@ -388,7 +392,7 @@ mod test {
         let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid());

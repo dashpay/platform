@@ -178,14 +178,13 @@ mod tests {
     #[test]
     fn can_serialize_and_deserialize_withdrawal() {
         let platform_version = PlatformVersion::first();
+
         let data_contract = load_system_data_contract(
             SystemDataContract::Withdrawals,
             platform_version.protocol_version,
         )
         .expect("to load system data contract");
         let owner_id = data_contract.owner_id;
-
-        let platform_version = PlatformVersion::first();
 
         let document_type = data_contract
             .document_type_for_name(withdrawal::NAME)
@@ -230,7 +229,9 @@ mod tests {
 
         let transition_execution_context = StateTransitionExecutionContext::default();
 
-        let platform_version = PlatformVersion::first();
+        let platform_version = state_read_guard
+            .current_platform_version()
+            .expect("should return a platform version");
 
         let data_contract = load_system_data_contract(
             SystemDataContract::Withdrawals,
@@ -299,7 +300,7 @@ mod tests {
         let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
             &data_trigger_context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("the execution result should be returned");
 

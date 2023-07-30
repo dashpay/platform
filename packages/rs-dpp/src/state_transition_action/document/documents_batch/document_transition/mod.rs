@@ -1,7 +1,9 @@
+mod action_type;
 pub mod document_base_transition_action;
 pub mod document_create_transition_action;
 pub mod document_delete_transition_action;
 pub mod document_replace_transition_action;
+pub use action_type::DocumentTransitionActionType;
 
 use derive_more::From;
 use serde::{Deserialize, Serialize};
@@ -20,27 +22,12 @@ pub enum DocumentTransitionAction {
     DeleteAction(DocumentDeleteTransitionAction),
 }
 
-// @append-only
-pub enum DocumentTransitionActionType {
-    Create,
-    Replace,
-    Delete,
-}
-
 impl DocumentTransitionAction {
     pub fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
             DocumentTransitionAction::CreateAction(d) => &d.base(),
             DocumentTransitionAction::DeleteAction(d) => &d.base(),
             DocumentTransitionAction::ReplaceAction(d) => &d.base(),
-        }
-    }
-
-    pub fn action_type(&self) -> DocumentTransitionActionType {
-        match self {
-            DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,
-            DocumentTransitionAction::DeleteAction(_) => DocumentTransitionActionType::Delete,
-            DocumentTransitionAction::ReplaceAction(_) => DocumentTransitionActionType::Replace,
         }
     }
 }

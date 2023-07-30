@@ -317,7 +317,10 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        let platform_version = PlatformVersion::first();
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let TestData {
             mut document_create_transition,
             extended_documents,
@@ -436,7 +439,13 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
         let mut state_write_guard = platform.state.write().unwrap();
+
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let TestData {
             document_create_transition,
             data_contract,
@@ -465,7 +474,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
-            PlatformVersion::first(),
+            platform_version,
         );
 
         let error = get_data_trigger_error(&result, 0);
@@ -483,7 +492,13 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
         let mut state_write_guard = platform.state.write().unwrap();
+
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let TestData {
             document_create_transition,
 
@@ -508,7 +523,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
-            PlatformVersion::first(),
+            platform_version,
         );
         let error = get_data_trigger_error(&result, 0);
 
@@ -523,7 +538,13 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
         let mut state_write_guard = platform.state.write().unwrap();
+
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let TestData {
             document_create_transition,
             data_contract,
@@ -567,7 +588,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid(), "{}", result.errors.first().unwrap())
@@ -578,13 +599,16 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
         let mut state_write_guard = platform.state.write().unwrap();
+
         let TestData {
             document_create_transition,
             data_contract,
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
+
         let platform_version = state_write_guard
             .current_platform_version()
             .expect("should return platform version");
@@ -603,7 +627,7 @@ mod test {
                 true,
                 None,
                 None,
-                PlatformVersion::first(),
+                platform_version,
             )
             .expect("expected to apply contract");
 
@@ -670,7 +694,7 @@ mod test {
                     BlockInfo::genesis(),
                     true,
                     None,
-                    PlatformVersion::first(),
+                    platform_version,
                 )
                 .expect("expected to insert a document successfully");
         }
@@ -687,7 +711,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
-            PlatformVersion::first(),
+            platform_version,
         );
         let error = get_data_trigger_error(&result, 0);
 
@@ -702,7 +726,13 @@ mod test {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
+
         let mut state_write_guard = platform.state.write().unwrap();
+
+        let platform_version = state_write_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let TestData {
             document_create_transition,
             data_contract,
@@ -729,7 +759,7 @@ mod test {
         let result = create_masternode_reward_shares_data_trigger_v0(
             &document_create_transition.into(),
             &context,
-            PlatformVersion::first(),
+            platform_version,
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid());
