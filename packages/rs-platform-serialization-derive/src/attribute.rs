@@ -106,6 +106,7 @@ impl FromAttribute for ContainerAttributes {
 pub struct FieldAttributes {
     pub with_serde: bool,
     pub with_platform_version: bool,
+    pub platform_version_path_bounds: String,
 }
 
 impl FromAttribute for FieldAttributes {
@@ -119,6 +120,9 @@ impl FromAttribute for FieldAttributes {
             match attribute {
                 ParsedAttribute::Tag(i) if i.to_string() == "with_serde" => {
                     result.with_serde = true;
+                }
+                ParsedAttribute::Tag(i) if i.to_string() == "versioned" => {
+                    result.with_platform_version = true;
                 }
                 ParsedAttribute::Tag(i) if i.to_string() == "versioned" => {
                     result.with_platform_version = true;

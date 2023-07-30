@@ -39,7 +39,7 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_version_path(
+#[platform_serialize(version_path=
     "dpp.state_transition_serialization_versions.identity_create_state_transition"
 )]
 pub enum IdentityCreateTransition {

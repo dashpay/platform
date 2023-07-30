@@ -36,7 +36,7 @@ use serde::Serialize;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_version_path(
+#[platform_serialize(version_path=
     "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]
 pub enum IdentityTopUpTransition {

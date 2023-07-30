@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
     From,
 )]
 #[platform_serialize(limit = 15000)]
-#[platform_version_path("dpp.identity_versions.identity_structure_version")]
+#[platform_serialize(version_path="dpp.identity_versions.identity_structure_version")]
 #[serde(untagged)]
 pub enum Identity {
     #[versioned(0)]
