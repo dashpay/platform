@@ -8,13 +8,14 @@ use crate::version::dpp_versions::{
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
-    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
-    DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
+    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
     DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
+    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
     DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
 };
 use crate::version::drive_versions::{
@@ -521,12 +522,25 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     state: 0,
                     transform_into_action: 0,
                 },
-                documents_batch_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                },
+                documents_batch_state_transition:
+                    DriveAbciDocumentsStateTransitionValidationVersions {
+                        structure: 0,
+                        identity_signatures: 0,
+                        state: 0,
+                        transform_into_action: 0,
+                        data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
+                            bindings: 0,
+                            triggers: DriveAbciValidationDataTriggerVersions {
+                                create_contact_request_data_trigger: 0,
+                                create_domain_data_trigger: 0,
+                                create_identity_data_trigger: 0,
+                                create_feature_flag_data_trigger: 0,
+                                create_masternode_reward_shares_data_trigger: 0,
+                                delete_withdrawal_data_trigger: 0,
+                                reject_data_trigger: 0,
+                            },
+                        },
+                    },
                 document_base_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
                     identity_signatures: 0,

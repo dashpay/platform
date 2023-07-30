@@ -15,6 +15,17 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
+pub mod document_types {
+    pub mod reward_share {
+        pub const NAME: &str = "rewardShare";
+
+        pub mod properties {
+            pub const PAY_TO_ID: &str = "payToId";
+            pub const PERCENTAGE: &str = "percentage";
+        }
+    }
+}
+
 pub fn load_documents_schemas() -> Result<Value, Error> {
     serde_json::from_str(include_str!(
         "../schema/masternode-reward-shares-documents.json"

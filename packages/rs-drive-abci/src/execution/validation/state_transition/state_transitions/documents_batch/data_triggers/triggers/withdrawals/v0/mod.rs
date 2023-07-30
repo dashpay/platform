@@ -1,20 +1,21 @@
+///! The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::execution::validation::data_trigger::{
-    DataTriggerExecutionContext, DataTriggerExecutionResult,
-};
-use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
-
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::{Identifier, Value};
+use dpp::platform_value::Value;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-use dpp::system_data_contracts::withdrawal::NAME;
 use dpp::system_data_contracts::withdrawals_contract;
-use dpp::{get_from_transition_action, ProtocolError};
+use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::{document, ProtocolError};
+use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 /// Creates a data trigger for handling deletion of withdrawal documents.
 ///
@@ -25,37 +26,36 @@ use std::collections::BTreeMap;
 ///
 /// * `document_transition` - A reference to the document transition that triggered the data trigger.
 /// * `context` - A reference to the data trigger execution context.
-/// * `_top_level_identity` - An unused parameter for the top-level identity associated with the withdrawal document
-///   (which is not needed for this trigger).
+/// * `platform_version` - A reference to the platform version.
 ///
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn delete_withdrawal_data_trigger(
+pub fn delete_withdrawal_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    _top_level_identity: Option<&Identifier>,
+    platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
 
     let DocumentTransitionAction::DeleteAction(dt_delete) = document_transition else {
         return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(format!(
             "the Document Transition {} isn't 'DELETE",
-            get_from_transition_action!(document_transition, id)
+            document_transition.base().id()
         ))));
     };
 
     let document_type = context
         .data_contract
-        .document_type_for_name(withdrawal::NAME::NAME)?;
+        .document_type_for_name(withdrawal::NAME)?;
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
-        document_type: &document_type,
+        document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
             primary_key_equal_clause: Some(WhereClause {
-                field: "$id".to_string(),
+                field: document::property_names::ID.to_string(),
                 operator: WhereOperator::Equal,
                 value: Value::Identifier(dt_delete.base.id.to_buffer()),
             }),
@@ -74,17 +74,21 @@ pub fn delete_withdrawal_data_trigger(
     let withdrawals = context
         .platform
         .drive
-        .query_documents(drive_query, None, false, context.transaction)?
+        .query_documents(
+            drive_query,
+            None,
+            false,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?
         .documents;
 
     let Some(withdrawal) = withdrawals.get(0) else {
-        let err = DataTriggerActionError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: dt_delete.base.id,
-            message: "Withdrawal document was not found".to_string(),
-            owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
-        };
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            dt_delete.base().id(),
+            "Withdrawal document was not found".to_string(),
+        );
 
         result.add_error(err);
 
@@ -99,14 +103,11 @@ pub fn delete_withdrawal_data_trigger(
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
-        let err = DataTriggerActionError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: dt_delete.base.id,
-            message: "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
-                .to_string(),
-            owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
-        };
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            dt_delete.base().id(),
+            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+        );
 
         result.add_error(err);
 
@@ -122,14 +123,12 @@ mod tests {
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::extended_block_info::BlockInfo;
-    use dpp::document::document_transition::{
-        DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
-    };
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::Document;
-    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+    use dpp::document::{Document, DocumentV0Getters};
     use dpp::platform_value::{platform_value, Bytes32};
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use dpp::version::PlatformVersion;
@@ -147,9 +146,11 @@ mod tests {
             state: &state_read_guard,
             config: &platform.config,
         };
+        let platform_version = state_read_guard.current_platform_version()?;
 
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let data_contract = get_data_contract_fixture(None).data_contract;
+        let data_contract =
+            get_data_contract_fixture(None, platform_version.protocol_version).data_contract;
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransitionAction::DeleteAction(Default::default());
@@ -161,9 +162,12 @@ mod tests {
             transaction: None,
         };
 
-        let result =
-            delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .expect_err("the execution result should be returned");
+        let result = delete_withdrawal_data_trigger_v0(
+            &document_transition,
+            &data_trigger_context,
+            platform_version,
+        )
+        .expect_err("the execution result should be returned");
 
         assert_eq!(
             result.to_string(),
@@ -173,11 +177,14 @@ mod tests {
 
     #[test]
     fn can_serialize_and_deserialize_withdrawal() {
-        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-            .expect("to load system data contract");
-        let owner_id = data_contract.owner_id;
-
         let platform_version = PlatformVersion::first();
+
+        let data_contract = load_system_data_contract(
+            SystemDataContract::Withdrawals,
+            platform_version.protocol_version,
+        )
+        .expect("to load system data contract");
+        let owner_id = data_contract.owner_id;
 
         let document_type = data_contract
             .document_type_for_name(withdrawal::NAME)
@@ -196,13 +203,14 @@ mod tests {
                 "transactionId": Bytes32::new([1;32]),
             }),
             None,
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
         let serialized = document
-            .serialize(&document_type, platform_version)
+            .serialize(document_type, platform_version)
             .expect("expected to serialize document");
-        Document::from_bytes(&serialized, &document_type, platform_version)
+        Document::from_bytes(&serialized, document_type, platform_version)
             .expect("expected to deserialize document");
     }
 
@@ -221,8 +229,15 @@ mod tests {
 
         let transition_execution_context = StateTransitionExecutionContext::default();
 
-        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-            .expect("to load system data contract");
+        let platform_version = state_read_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
+        let data_contract = load_system_data_contract(
+            SystemDataContract::Withdrawals,
+            platform_version.protocol_version,
+        )
+        .expect("to load system data contract");
         let owner_id = data_contract.owner_id;
 
         let document_type = data_contract
@@ -243,6 +258,7 @@ mod tests {
                 "transactionId": Bytes32::new([1;32]),
             }),
             None,
+            platform_version.protocol_version,
         )
         .expect("expected withdrawal document");
 
@@ -255,7 +271,7 @@ mod tests {
                         owner_id: Some(owner_id.to_buffer()),
                     },
                     contract: &data_contract,
-                    document_type: &document_type,
+                    document_type,
                 },
                 false,
                 BlockInfo::genesis(),
@@ -265,13 +281,14 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let document_transition =
-            DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction {
-                base: DocumentBaseTransitionAction {
-                    id: document.id,
+        let document_transition = DocumentTransitionAction::DeleteAction(
+            DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
+                base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+                    id: document.id(),
                     ..Default::default()
-                },
-            });
+                }),
+            }),
+        );
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
@@ -280,9 +297,12 @@ mod tests {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-        let result =
-            delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .expect("the execution result should be returned");
+        let result = delete_withdrawal_data_trigger_v0(
+            &document_transition,
+            &data_trigger_context,
+            platform_version,
+        )
+        .expect("the execution result should be returned");
 
         assert!(!result.is_valid());
 

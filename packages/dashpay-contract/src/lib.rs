@@ -12,6 +12,18 @@ pub const OWNER_ID_BYTES: [u8; 32] = [
     215, 90, 101, 229, 15, 115, 5, 44, 117, 182, 217,
 ];
 
+pub mod document_types {
+    pub mod contact_request {
+        pub const NAME: &str = "contactRequest";
+
+        pub mod properties {
+            pub const TO_USER_ID: &str = "toUserId";
+            pub const CORE_HEIGHT_CREATED_AT: &str = "coreHeightCreatedAt";
+            pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
+        }
+    }
+}
+
 pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
