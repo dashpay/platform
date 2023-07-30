@@ -108,6 +108,7 @@ const assertServiceRunningFactory = require('./test/asserts/assertServiceRunning
 const generateEnvsFactory = require('./config/generateEnvsFactory');
 const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
 const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
+const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
 
 /**
  * @param {Object} [options]
@@ -294,6 +295,8 @@ async function createDIContainer(options = {}) {
     configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
     configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
     registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
+      .singleton(),
+    registerMasternodeWithDMT: asFunction(registerMasternodeWithDMTFactory)
       .singleton(),
   });
 
