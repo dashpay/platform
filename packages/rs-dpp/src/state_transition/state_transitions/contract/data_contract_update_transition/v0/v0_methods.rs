@@ -1,3 +1,5 @@
+use platform_version::TryIntoPlatformVersioned;
+use platform_version::version::PlatformVersion;
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
@@ -17,10 +19,11 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
-        _version: FeatureVersion,
+        platform_version: &PlatformVersion,
+        _feature_version: Option<FeatureVersion>,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         let mut transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
-            data_contract,
+            data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             signature_public_key_id: key_id,
             signature: Default::default(),
         });

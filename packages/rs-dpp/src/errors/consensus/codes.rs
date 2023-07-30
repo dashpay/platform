@@ -1,8 +1,6 @@
 use crate::consensus::signature::SignatureError;
 #[cfg(feature = "state-transitions")]
-use crate::consensus::state::data_trigger::data_trigger_error::{
-    DataTriggerActionError, DataTriggerError,
-};
+use crate::consensus::state::data_trigger::DataTriggerError;
 
 use crate::errors::consensus::{
     basic::BasicError, fee::fee_error::FeeError, state::state_error::StateError, ConsensusError,
@@ -145,8 +143,6 @@ impl ErrorWithCode for StateError {
             Self::DataContractIsReadonlyError { .. } => 4026,
             #[cfg(feature = "validation")]
             Self::DataTriggerError(ref e) => e.code(),
-            #[cfg(feature = "validation")]
-            Self::DataTriggerActionError(ref e) => e.code(),
 
             // Document
             Self::DocumentAlreadyPresentError { .. } => 4004,
@@ -181,19 +177,6 @@ impl ErrorWithCode for DataTriggerError {
             Self::DataTriggerConditionError { .. } => 4001,
             Self::DataTriggerExecutionError { .. } => 4002,
             Self::DataTriggerInvalidResultError { .. } => 4003,
-        }
-    }
-}
-
-#[cfg(feature = "state-transitions")]
-impl ErrorWithCode for DataTriggerActionError {
-    fn code(&self) -> u32 {
-        match *self {
-            // Data Contract - Data Trigger
-            Self::DataTriggerConditionError { .. } => 4001,
-            Self::DataTriggerExecutionError { .. } => 4002,
-            Self::DataTriggerInvalidResultError { .. } => 4003,
-            Self::ValueError(_) => 4004,
         }
     }
 }

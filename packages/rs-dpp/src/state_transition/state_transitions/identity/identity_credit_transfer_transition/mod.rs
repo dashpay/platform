@@ -42,8 +42,8 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_serialize(
-    version_path = "dpp.state_transition_serialization_versions.identity_credit_transfer_state_transition"
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.identity_credit_transfer_state_transition"
 )]
 pub enum IdentityCreditTransferTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

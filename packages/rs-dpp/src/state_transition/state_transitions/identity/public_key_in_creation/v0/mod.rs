@@ -285,6 +285,21 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
 //     }
 // }
 
+impl From<IdentityPublicKeyInCreationV0> for IdentityPublicKey {
+    fn from(val: IdentityPublicKeyInCreationV0) -> Self {
+        IdentityPublicKeyV0 {
+            id: val.id,
+            purpose: val.purpose,
+            security_level: val.security_level,
+            key_type: val.key_type,
+            read_only: val.read_only,
+            data: val.data,
+            disabled_at: None,
+        }
+        .into()
+    }
+}
+
 impl From<&IdentityPublicKeyInCreationV0> for IdentityPublicKey {
     fn from(val: &IdentityPublicKeyInCreationV0) -> Self {
         IdentityPublicKeyV0 {

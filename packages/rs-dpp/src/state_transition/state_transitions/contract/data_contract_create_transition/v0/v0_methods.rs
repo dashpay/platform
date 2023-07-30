@@ -16,6 +16,8 @@ use crate::{
 
 use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_version::TryIntoPlatformVersioned;
+use platform_version::version::PlatformVersion;
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -32,7 +34,8 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
-        _version: FeatureVersion,
+        platform_version: &PlatformVersion,
+        _feature_version: Option<FeatureVersion>,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         data_contract.set_id(DataContract::generate_data_contract_id_v0(
             identity.id,
@@ -40,7 +43,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         ));
         data_contract.set_owner_id(identity.id);
         let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
-            data_contract,
+            data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             entropy: Default::default(),
             signature_public_key_id: key_id,
             signature: Default::default(),

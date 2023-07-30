@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use platform_value::{Bytes32, Error, Value};
+use platform_version::TryFromPlatformVersioned;
 
 use crate::data_contract::errors::InvalidDataContractError;
 
@@ -232,7 +233,7 @@ impl DataContractFactoryV0 {
         &self,
         created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        DataContractCreateTransition::try_from(
+        DataContractCreateTransition::try_from_platform_versioned(
             created_data_contract,
             PlatformVersion::get(self.protocol_version)?,
         )

@@ -8,9 +8,9 @@ use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
-pub struct DataContractSerializationFormatV0 {
+pub struct DataContractInSerializationFormatV0 {
     /// A unique identifier for the data contract.
     #[serde(rename = "$id")]
     pub id: Identifier,
@@ -37,7 +37,7 @@ pub struct DataContractSerializationFormatV0 {
     pub defs: Option<BTreeMap<DefinitionName, Value>>,
 }
 
-impl From<DataContract> for DataContractSerializationFormatV0 {
+impl From<DataContract> for DataContractInSerializationFormatV0 {
     fn from(value: DataContract) -> Self {
         match value {
             DataContract::V0(v0) => {
@@ -51,7 +51,7 @@ impl From<DataContract> for DataContractSerializationFormatV0 {
                     defs,
                     ..
                 } = v0;
-                DataContractSerializationFormatV0 {
+                DataContractInSerializationFormatV0 {
                     id,
                     config,
                     schema,

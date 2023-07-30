@@ -1,3 +1,4 @@
+use platform_version::version::PlatformVersion;
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
@@ -26,6 +27,7 @@ pub trait DataContractUpdateTransitionMethodsV0 {
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
-        version: FeatureVersion,
+        platform_version: &PlatformVersion,
+        feature_version: Option<FeatureVersion>,
     ) -> Result<DataContractUpdateTransition, ProtocolError>;
 }

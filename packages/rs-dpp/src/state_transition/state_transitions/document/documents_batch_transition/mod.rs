@@ -73,8 +73,8 @@ pub use v0::*;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_serialize(
-    version_path = "dpp.state_transition_serialization_versions.documents_batch_state_transition"
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
 pub enum DocumentsBatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

@@ -25,6 +25,14 @@ impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
     }
 }
 
+impl From<IdentityPublicKeyInCreation> for IdentityPublicKey {
+    fn from(val: IdentityPublicKeyInCreation) -> Self {
+        match val {
+            val => val.into(),
+        }
+    }
+}
+
 impl From<IdentityPublicKey> for IdentityPublicKeyInCreation {
     fn from(val: IdentityPublicKey) -> Self {
         match val {

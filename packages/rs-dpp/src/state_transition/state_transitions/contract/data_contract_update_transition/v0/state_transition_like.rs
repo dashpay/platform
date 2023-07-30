@@ -13,6 +13,7 @@ use crate::{
     Convertible, NonConsensusError, ProtocolError,
 };
 
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::identity::signer::Signer;
 use crate::identity::PartialIdentity;
 use crate::serialization::{PlatformDeserializable, Signable};

@@ -1,10 +1,11 @@
 use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
-use crate::data_contract::serialized_version::v0::DataContractSerializationFormatV0;
+use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 use platform_value::Value;
+use platform_version::TryFromPlatformVersioned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
@@ -18,7 +19,7 @@ impl Serialize for DataContractV0 {
         S: Serializer,
     {
         let data_contract: DataContract = self.clone().into();
-        let serialization_format = DataContractSerializationFormatV0::from(data_contract);
+        let serialization_format = DataContractInSerializationFormatV0::from(data_contract);
         serialization_format.serialize(serializer)
     }
 }
@@ -28,29 +29,22 @@ impl<'de> Deserialize<'de> for DataContractV0 {
     where
         D: Deserializer<'de>,
     {
-        let serialization_format = DataContractSerializationFormatV0::deserialize(deserializer)?;
+        let serialization_format = DataContractInSerializationFormatV0::deserialize(deserializer)?;
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        DataContractV0::try_from(serialization_format, current_version)
+        DataContractV0::try_from_platform_versioned(serialization_format, current_version)
             .map_err(serde::de::Error::custom)
     }
 }
 
-impl DataContractSerializationFormatV0 {
-    pub(in crate::data_contract) fn try_into(
-        self,
-        platform_version: &PlatformVersion,
-    ) -> Result<DataContractV0, ProtocolError> {
-        DataContractV0::try_from(self, platform_version)
-    }
-}
+impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContractV0 {
+    type Error = ProtocolError;
 
-impl DataContractV0 {
-    pub(in crate::data_contract) fn try_from(
-        value: DataContractSerializationFormatV0,
+    fn try_from_platform_versioned(
+        value: DataContractInSerializationFormatV0,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        let DataContractSerializationFormatV0 {
+    ) -> Result<Self, Self::Error> {
+        let DataContractInSerializationFormatV0 {
             id,
             config,
             schema,

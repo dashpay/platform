@@ -60,26 +60,27 @@ impl DataContract {
                 ),
             )?;
 
-            let validation_result = DataContract::validate_index_naming_duplicates(
-                &document_type.indices(),
-                document_name,
-            );
-            result.merge(validation_result);
-
-            let validation_result =
-                DataContract::validate_max_unique_indices(&document_type.indices(), document_name);
-            result.merge(validation_result);
-
-            let (validation_result, should_stop_further_validation) =
-                DataContract::validate_index_definitions(
-                    &document_type.indices(),
-                    document_name,
-                    document_schema,
-                );
-            result.merge(validation_result);
-            if should_stop_further_validation {
-                return Ok(result);
-            }
+            //todo: re-enable
+            // let validation_result = DataContract::validate_index_naming_duplicates(
+            //     &document_type.indices(),
+            //     document_name,
+            // );
+            // result.merge(validation_result);
+            //
+            // let validation_result =
+            //     DataContract::validate_max_unique_indices(&document_type.indices(), document_name);
+            // result.merge(validation_result);
+            //
+            // let (validation_result, should_stop_further_validation) =
+            //     DataContract::validate_index_definitions(
+            //         &document_type.indices(),
+            //         document_name,
+            //         document_schema,
+            //     );
+            // result.merge(validation_result);
+            // if should_stop_further_validation {
+            //     return Ok(result);
+            // }
         }
 
         Ok(result)

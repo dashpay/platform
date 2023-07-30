@@ -16,6 +16,7 @@ use crate::{
 
 use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
@@ -48,7 +49,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                     )
                 })?,
                 platform_version,
-            )?,
+            )?.try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }
@@ -77,7 +78,7 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                         "data contract missing on state transition".to_string(),
                     ))?,
                 platform_version,
-            )?,
+            )?.try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }

@@ -11,6 +11,7 @@ use crate::state_transition::data_contract_create_transition::{
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
+use platform_version::version::PlatformVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
     fn new_from_data_contract<S: Signer>(
@@ -19,16 +20,23 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
-        version: FeatureVersion,
+        platform_version: &PlatformVersion,
+        feature_version: Option<FeatureVersion>,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        match version {
+        match feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .contract_create_state_transition
+                .default_current_version,
+        ) {
             0 => DataContractCreateTransitionV0::new_from_data_contract(
                 data_contract,
                 entropy,
                 identity,
                 key_id,
                 signer,
-                version,
+                platform_version,
             ),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractCreateTransition version for new_from_data_contract {v}"

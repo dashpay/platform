@@ -25,6 +25,7 @@ use crate::{
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     Convertible, NonConsensusError, ProtocolError,
 };
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 #[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PartialEq, PlatformSignable)]
 #[cfg_attr(
@@ -34,8 +35,7 @@ use crate::{
 )]
 
 pub struct DataContractUpdateTransitionV0 {
-    #[platform_serialize(versioned)]
-    pub data_contract: DataContract,
+    pub data_contract: DataContractInSerializationFormat,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]

@@ -27,10 +27,7 @@ impl IdentityCreateTransitionActionV0 {
             ))?
             .into();
         Ok(IdentityCreateTransitionActionV0 {
-            public_keys: public_keys
-                .into_iter()
-                .map(IdentityPublicKeyInCreation::to_identity_public_key)
-                .collect(),
+            public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
             initial_balance_amount,
             identity_id,
             asset_lock_outpoint,
@@ -58,10 +55,7 @@ impl IdentityCreateTransitionActionV0 {
             ))?
             .into();
         Ok(IdentityCreateTransitionActionV0 {
-            public_keys: public_keys
-                .iter()
-                .map(|key| key.clone().to_identity_public_key())
-                .collect(),
+            public_keys: public_keys.iter().map(|key| key.into()).collect(),
             initial_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint,

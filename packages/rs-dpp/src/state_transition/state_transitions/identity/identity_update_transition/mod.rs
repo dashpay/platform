@@ -40,8 +40,8 @@ use serde::Serialize;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_serialize(
-    version_path = "dpp.state_transition_serialization_versions.identity_update_state_transition"
+#[platform_version_path(
+    "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

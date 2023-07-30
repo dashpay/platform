@@ -25,7 +25,7 @@ use crate::identity::Identity;
 use crate::prelude::Identifier;
 
 use crate::identity::accessors::IdentityGettersV0;
-use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionMethodsV0;
+use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;

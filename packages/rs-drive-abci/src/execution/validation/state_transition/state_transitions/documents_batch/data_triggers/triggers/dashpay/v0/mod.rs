@@ -291,7 +291,7 @@ mod test {
 
         assert!(matches!(
             &result.errors.first().unwrap(),
-            &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
+            &DataTriggerError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {owner_id} must not be equal to owner id")
             }
         ));
@@ -381,7 +381,7 @@ mod test {
 
         assert!(matches!(
             data_trigger_error,
-            DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
+            DataTriggerError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));

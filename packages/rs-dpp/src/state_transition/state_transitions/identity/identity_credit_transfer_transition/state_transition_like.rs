@@ -1,4 +1,3 @@
-use crate::state_transition::identity_credit_transfer_transition::v0::v0_methods::IdentityCreditTransferTransitionMethodsV0;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
