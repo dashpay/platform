@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use dpp::contracts::withdrawals_contract;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
@@ -27,7 +26,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let data_contract_id = withdrawals_contract::ID.deref();
+        let data_contract_id = withdrawals_contract::ID;
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_fee(
@@ -106,7 +105,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
-        let data_contract_id = withdrawals_contract::ID.deref();
+        let data_contract_id = withdrawals_contract::ID;
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_fee(
@@ -183,8 +182,8 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use dpp::contracts::withdrawals_contract;
     use dpp::prelude::Identifier;
+    use dpp::system_data_contracts::withdrawals_contract;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
@@ -195,6 +194,7 @@ mod tests {
         use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
+        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;
@@ -306,6 +306,7 @@ mod tests {
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};
+        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::version::PlatformVersion;
         use dpp::withdrawal::Pooling;

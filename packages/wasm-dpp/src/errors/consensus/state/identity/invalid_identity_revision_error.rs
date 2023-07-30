@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use js_sys::Number;
 use wasm_bindgen::prelude::*;
 

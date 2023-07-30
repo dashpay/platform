@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidAssetLockProofCoreChainHeightError)]

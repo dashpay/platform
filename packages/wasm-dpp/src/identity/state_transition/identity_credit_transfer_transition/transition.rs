@@ -13,7 +13,7 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::Identi
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 

@@ -20,7 +20,7 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes20, Bytes32};
 use std::collections::BTreeMap;
 
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::drive::identity::IdentityDriveQuery;

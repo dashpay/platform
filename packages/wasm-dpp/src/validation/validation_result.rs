@@ -3,7 +3,7 @@ use crate::{
     errors::consensus::consensus_error::from_consensus_error_ref,
     utils::{consensus_errors_from_buffers, WithJsError},
 };
-use dpp::serialization::serialization_traits::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializable;
 use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
 use js_sys::{JsString, Uint8Array};
 use wasm_bindgen::prelude::*;

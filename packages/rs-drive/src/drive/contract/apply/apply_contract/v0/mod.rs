@@ -5,9 +5,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization::serialization_traits::{
-    PlatformDeserializable, PlatformSerializable, PlatformSerializableWithPlatformVersion,
-};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

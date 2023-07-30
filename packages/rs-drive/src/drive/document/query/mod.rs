@@ -62,6 +62,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
+use dpp::version::PlatformVersionCurrentVersion;
 
 // TODO: Not using
 /// The outcome of a query

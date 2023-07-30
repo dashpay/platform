@@ -58,7 +58,7 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 

@@ -14,13 +14,13 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 
-impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionAction {
-    fn into_high_level_document_drive_operations<'a>(
+impl<'a> DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionAction<'a> {
+    fn into_high_level_document_drive_operations<'b>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<DriveOperation<'a>>, Error> {
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name().clone();
         let document =
