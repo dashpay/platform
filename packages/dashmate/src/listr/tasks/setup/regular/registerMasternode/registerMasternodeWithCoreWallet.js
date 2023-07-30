@@ -22,6 +22,7 @@ const PortStatusEnum = require('../../../../../status/enums/portState');
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
+ * @param {createPortIsNotReachableForm} createPortIsNotReachableForm
  * @return {registerMasternodeWithCoreWallet}
  */
 function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm,

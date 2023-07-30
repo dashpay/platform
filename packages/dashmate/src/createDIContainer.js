@@ -107,6 +107,7 @@ const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalSer
 const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const generateEnvsFactory = require('./config/generateEnvsFactory');
 const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
+const createPortIsNotReachableFormFactory = require('./listr/prompts/createPortIsNotReachableForm');
 const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
 const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
 
@@ -260,6 +261,7 @@ async function createDIContainer(options = {}) {
    */
   container.register({
     createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
+    createPortIsNotReachableForm: asFunction(createPortIsNotReachableFormFactory).singleton(),
   });
 
   /**
