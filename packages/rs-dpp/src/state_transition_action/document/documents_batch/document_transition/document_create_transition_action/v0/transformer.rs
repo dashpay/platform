@@ -8,7 +8,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 impl<'a> DocumentCreateTransitionActionV0<'a> {
     pub(in crate::state_transition_action::document::documents_batch::document_transition) fn try_from_document_create_transition_with_contract_lookup(
         value: DocumentCreateTransitionV0,
-        get_data_contract: impl FnMut(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentCreateTransitionV0 {
             base,
@@ -30,7 +30,7 @@ impl<'a> DocumentCreateTransitionActionV0<'a> {
 
     pub(in crate::state_transition_action::document::documents_batch::document_transition) fn try_from_borrowed_document_create_transition_with_contract_lookup(
         value: &DocumentCreateTransitionV0,
-        get_data_contract: impl FnMut(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentCreateTransitionV0 {
             base,

@@ -14,10 +14,7 @@ impl From<IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
             ..
         } = value;
         IdentityUpdateTransitionActionV0 {
-            add_public_keys: add_public_keys
-                .into_iter()
-                .map(IdentityPublicKeyInCreation::to_identity_public_key)
-                .collect(),
+            add_public_keys: add_public_keys.into_iter().map(|a| a.into()).collect(),
             disable_public_keys,
             public_keys_disabled_at,
             identity_id,
@@ -39,7 +36,7 @@ impl From<&IdentityUpdateTransitionV0> for IdentityUpdateTransitionActionV0 {
         IdentityUpdateTransitionActionV0 {
             add_public_keys: add_public_keys
                 .iter()
-                .map(|key| key.clone().to_identity_public_key())
+                .map(|key| key.clone().into())
                 .collect(),
             disable_public_keys: disable_public_keys.clone(),
             public_keys_disabled_at: *public_keys_disabled_at,

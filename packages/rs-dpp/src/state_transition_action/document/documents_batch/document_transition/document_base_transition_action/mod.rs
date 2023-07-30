@@ -10,7 +10,7 @@ mod v0;
 use crate::data_contract::DataContract;
 pub use v0::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
+#[derive(Debug, Clone, From)]
 pub enum DocumentBaseTransitionAction<'a> {
     V0(DocumentBaseTransitionActionV0<'a>),
 }

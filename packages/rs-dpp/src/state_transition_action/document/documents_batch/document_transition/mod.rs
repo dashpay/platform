@@ -15,7 +15,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
+#[derive(Debug, Clone, From)]
 pub enum DocumentTransitionAction<'a> {
     CreateAction(DocumentCreateTransitionAction<'a>),
     ReplaceAction(DocumentReplaceTransitionAction<'a>),

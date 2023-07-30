@@ -9,7 +9,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::ProtocolError;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
+#[derive(Debug, Clone)]
 
 pub struct DocumentBaseTransitionActionV0<'a> {
     /// The document Id

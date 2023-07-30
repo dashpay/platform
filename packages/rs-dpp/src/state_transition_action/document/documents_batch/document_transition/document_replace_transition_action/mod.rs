@@ -16,7 +16,7 @@ use crate::version::PlatformVersion;
 #[cfg(feature = "state-transition-transformers")]
 pub mod transformer;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
+#[derive(Debug, Clone, From)]
 pub enum DocumentReplaceTransitionAction<'a> {
     V0(DocumentReplaceTransitionActionV0<'a>),
 }

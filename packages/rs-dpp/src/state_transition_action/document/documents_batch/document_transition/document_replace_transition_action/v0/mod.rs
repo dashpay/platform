@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::version::PlatformVersion;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone)]
 pub struct DocumentReplaceTransitionActionV0<'a> {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction<'a>,

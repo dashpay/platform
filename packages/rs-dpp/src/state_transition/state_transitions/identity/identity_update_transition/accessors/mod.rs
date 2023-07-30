@@ -80,7 +80,7 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransition {
         }
     }
 
-    fn owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> Identifier {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.owner_id(),
         }

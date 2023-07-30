@@ -45,11 +45,11 @@ pub trait DocumentTransitionV0Methods {
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
     ///  get the id
-    fn get_id(&self) -> &Identifier;
+    fn get_id(&self) -> Identifier;
     /// get the document type
     fn get_document_type(&self) -> &String;
     /// get the data contract id
-    fn data_contract_id(&self) -> &Identifier;
+    fn data_contract_id(&self) -> Identifier;
     /// get the data of the transition if exits
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
     /// get the revision of transition if exits
@@ -225,16 +225,16 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
-    fn get_id(&self) -> &Identifier {
-        &self.base().id()
+    fn get_id(&self) -> Identifier {
+        self.base().id()
     }
 
     fn get_document_type(&self) -> &String {
         &self.base().document_type_name()
     }
 
-    fn data_contract_id(&self) -> &Identifier {
-        &self.base().data_contract_id()
+    fn data_contract_id(&self) -> Identifier {
+        self.base().data_contract_id()
     }
 
     fn updated_at(&self) -> Option<TimestampMillis> {

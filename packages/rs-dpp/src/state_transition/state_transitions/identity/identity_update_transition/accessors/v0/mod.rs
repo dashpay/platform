@@ -19,5 +19,5 @@ pub trait IdentityUpdateTransitionAccessorsV0 {
     fn public_key_ids_to_disable(&self) -> &[KeyID];
     fn set_public_keys_disabled_at(&mut self, public_keys_disabled_at: Option<TimestampMillis>);
     fn public_keys_disabled_at(&self) -> Option<TimestampMillis>;
-    fn owner_id(&self) -> &Identifier;
+    fn owner_id(&self) -> Identifier;
 }

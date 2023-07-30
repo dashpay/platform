@@ -32,6 +32,7 @@ impl TryFromPlatformVersioned<&DataContractUpdateTransitionV0>
     ) -> Result<Self, Self::Error> {
         Ok(DataContractUpdateTransitionActionV0 {
             data_contract: value
+                .clone()
                 .data_contract
                 .try_into_platform_versioned(platform_version)?,
         })

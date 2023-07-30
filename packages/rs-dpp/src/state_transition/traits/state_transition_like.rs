@@ -78,5 +78,5 @@ pub trait StateTransitionLike:
     fn set_signature_bytes(&mut self, signature: Vec<u8>);
 
     /// Get owner ID
-    fn owner_id(&self) -> &Identifier;
+    fn owner_id(&self) -> Identifier;
 }

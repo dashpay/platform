@@ -390,6 +390,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         });
 
     let mut derive_into = false;
+    let mut derive_bincode_with_borrowed_vec = false;
 
     if let Some(platform_serialize_attr) = input
         .attrs
@@ -400,6 +401,8 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             .parse_nested_meta(|meta| {
                 if meta.path.is_ident("derive_into") {
                     derive_into = true;
+                } else if meta.path.is_ident("derive_bincode_with_borrowed_vec") {
+                    derive_bincode_with_borrowed_vec = true;
                 }
                 Ok(())
             })
@@ -428,6 +431,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
 
             let mut intermediate_fields = Vec::new();
             let mut field_conversions = Vec::new();
+            let mut field_mapping = Vec::new();
 
             for field in &filtered_fields {
                 let ident = &field.ident;
@@ -506,6 +510,12 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                                     let inner_ty = angle_bracketed.args.first().unwrap();
                                     intermediate_fields.push(quote! { #ident: Vec<#inner_ty<'a>> });
                                     field_conversions.push(quote! { #ident: original.#ident.iter().map(|x| x.into()).collect() });
+                                    let ident = field.ident.as_ref().expect("Expected named field");
+                                    field_mapping.push(quote! {
+                                    (self.#ident.len() as u64).encode(encoder)?;
+                                    for item in self.#ident.iter() {
+                                        item.encode(encoder) ? ;
+                                    } });
                                 } else {
                                     panic!("Expected a type inside the vector");
                                 }
@@ -513,30 +523,59 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                                 intermediate_fields
                                     .push(quote! { #ident: std::borrow::Cow<'a, #ty> });
                                 field_conversions.push(quote! { #ident: std::borrow::Cow::<'a, #into_ty>::from(&original.#ident).into() });
+                                let ident = field.ident.as_ref().expect("Expected named field");
+                                field_mapping.push(quote! { self.#ident.encode(encoder)?; });
                             }
                         } else {
                             intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
                             field_conversions.push(
                                 quote! { #ident: std::borrow::Cow::Borrowed(&original.#ident) },
                             );
+                            let ident = field.ident.as_ref().expect("Expected named field");
+                            field_mapping.push(quote! { self.#ident.encode(encoder)?; });
                         }
                     } else {
                         intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
                         field_conversions
                             .push(quote! { #ident: std::borrow::Cow::Borrowed(&original.#ident) });
+                        let ident = field.ident.as_ref().expect("Expected named field");
+                        field_mapping.push(quote! { self.#ident.encode(encoder)?; });
                     }
                 } else {
                     intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
                     field_conversions
                         .push(quote! { #ident: std::borrow::Cow::Borrowed(&original.#ident) });
+                    let ident = field.ident.as_ref().expect("Expected named field");
+                    field_mapping.push(quote! { self.#ident.encode(encoder)?; });
                 }
             }
 
             let generics = &input.generics;
             let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+            let (auto_derive_bincode, manually_derive_bincode) = if derive_bincode_with_borrowed_vec
+            {
+                (
+                    quote! {},
+                    quote! {
+                                            impl #impl_generics <'a> bincode::Encode for #intermediate_name<'a> #ty_generics #where_clause {
+                            fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
+                            where
+                            E: bincode::enc::Encoder,
+                            {
+
+                            #(#field_mapping)*
+                            Ok(())
+                        }
+                    }
+                            },
+                )
+            } else {
+                (quote! {bincode::Encode}, quote! {})
+            };
+
             quote! {
-                #[derive(Debug, Clone, bincode::Encode)]
+                #[derive(Debug, Clone, #auto_derive_bincode)]
                 pub struct #intermediate_name<'a> #impl_generics {
                     #( #intermediate_fields, )*
                 }
@@ -548,6 +587,8 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                         }
                     }
                 }
+
+                #manually_derive_bincode
 
                 impl #impl_generics crate::serialization::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {

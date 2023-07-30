@@ -9,7 +9,7 @@ impl<'a> DocumentReplaceTransitionAction<'a> {
     pub(in crate::state_transition_action::document::documents_batch::document_transition) fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransition,
         originally_created_at: Option<TimestampMillis>,
-        get_data_contract: impl FnMut(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         match document_replace_transition {
             DocumentReplaceTransition::V0(v0) => Ok(

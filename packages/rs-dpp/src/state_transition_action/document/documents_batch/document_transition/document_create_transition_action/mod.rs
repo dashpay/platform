@@ -19,7 +19,7 @@ use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 use crate::version::{FeatureVersion, PlatformVersion};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
+#[derive(Debug, Clone, From)]
 pub enum DocumentCreateTransitionAction<'a> {
     V0(DocumentCreateTransitionActionV0<'a>),
 }

@@ -41,7 +41,7 @@ impl StateTransitionLike for IdentityTopUpTransition {
         }
     }
 
-    fn owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> Identifier {
         match self {
             IdentityTopUpTransition::V0(transition) => transition.owner_id(),
         }

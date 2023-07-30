@@ -13,7 +13,7 @@ use std::convert::TryFrom;
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     fn contract_based_security_level_requirement<'a>(
         &self,
-        get_data_contract: impl FnMut(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
     ) -> Result<Vec<SecurityLevel>, ProtocolError> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type

@@ -8,7 +8,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 impl<'a> DocumentDeleteTransitionActionV0<'a> {
     pub(in crate::state_transition_action::document::documents_batch::document_transition) fn try_from_document_delete_transition_with_contract_lookup(
         value: DocumentDeleteTransitionV0,
-        get_data_contract: impl FnMut(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentDeleteTransitionV0 { base, .. } = value;
         Ok(DocumentDeleteTransitionActionV0 {
@@ -21,7 +21,7 @@ impl<'a> DocumentDeleteTransitionActionV0<'a> {
 
     pub(in crate::state_transition_action::document::documents_batch::document_transition) fn try_from_borrowed_document_delete_transition_with_contract_lookup(
         value: &DocumentDeleteTransitionV0,
-        get_data_contract: impl FnMut(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
     ) -> Result<Self, ProtocolError> {
         let DocumentDeleteTransitionV0 { base, .. } = value;
         Ok(DocumentDeleteTransitionActionV0 {

@@ -8,11 +8,11 @@ mod value_conversion;
 mod version;
 
 use std::convert::{TryFrom, TryInto};
-use std::process::id;
 
 use crate::serialization::{PlatformDeserializable, Signable};
+use bincode::enc::Encoder;
+use bincode::error::EncodeError;
 use bincode::{config, Decode, Encode};
-use dashcore::signer::sign;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
 use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
@@ -24,14 +24,13 @@ use crate::prelude::Identifier;
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::state_transition::{
-    StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
+    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
-use crate::version::{FeatureVersion, PlatformVersion};
-use crate::{BlsModule, NonConsensusError, ProtocolError};
+use crate::version::PlatformVersion;
+use crate::{NonConsensusError, ProtocolError};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
@@ -40,7 +39,10 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
     serde(rename_all = "camelCase"),
     serde(try_from = "IdentityCreateTransitionV0Inner")
 )]
-
+// There is a problem deriving bincode for a borrowed vector
+// Hence we set to do it somewhat manually inside the PlatformSignable proc macro
+// Instead of inside of bincode_derive
+#[platform_signable(derive_bincode_with_borrowed_vec)]
 pub struct IdentityCreateTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]

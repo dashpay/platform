@@ -42,7 +42,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
         }
     }
 
-    fn owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> Identifier {
         match self {
             DocumentsBatchTransition::V0(transition) => transition.owner_id(),
         }

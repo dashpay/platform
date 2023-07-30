@@ -15,7 +15,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use crate::version::PlatformVersion;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone)]
 pub struct DocumentCreateTransitionActionV0<'a> {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction<'a>,

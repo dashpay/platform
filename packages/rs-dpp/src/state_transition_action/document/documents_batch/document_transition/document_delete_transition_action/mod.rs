@@ -9,7 +9,7 @@ pub mod v0;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
+#[derive(Debug, Clone, From)]
 pub enum DocumentDeleteTransitionAction<'a> {
     V0(DocumentDeleteTransitionActionV0<'a>),
 }

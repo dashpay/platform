@@ -137,7 +137,7 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransitionV0 {
         self.public_keys_disabled_at
     }
 
-    fn owner_id(&self) -> &Identifier {
-        &self.identity_id
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }
