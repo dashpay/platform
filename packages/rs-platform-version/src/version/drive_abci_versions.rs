@@ -30,6 +30,32 @@ pub struct DriveAbciValidationVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciDocumentsStateTransitionValidationVersions {
+    pub structure: FeatureVersion,
+    pub identity_signatures: FeatureVersion,
+    pub state: FeatureVersion,
+    pub transform_into_action: FeatureVersion,
+    pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciValidationDataTriggerAndBindingVersions {
+    pub bindings: FeatureVersion,
+    pub triggers: DriveAbciValidationDataTriggerVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciValidationDataTriggerVersions {
+    pub create_contact_request_data_trigger: FeatureVersion,
+    pub create_domain_data_trigger: FeatureVersion,
+    pub create_identity_data_trigger: FeatureVersion,
+    pub create_feature_flag_data_trigger: FeatureVersion,
+    pub create_masternode_reward_shares_data_trigger: FeatureVersion,
+    pub delete_withdrawal_data_trigger: FeatureVersion,
+    pub reject_data_trigger: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
     pub structure: FeatureVersion,
     pub identity_signatures: FeatureVersion,
@@ -46,7 +72,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub documents_batch_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
+    // TODO: We might want to add data triggers to action transitions. BTW, they aren't using atm.
     pub document_base_state_transition: DriveAbciStateTransitionValidationVersion,
     pub document_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub document_replace_state_transition: DriveAbciStateTransitionValidationVersion,

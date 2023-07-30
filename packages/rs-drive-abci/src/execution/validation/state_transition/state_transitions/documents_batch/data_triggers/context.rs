@@ -1,8 +1,5 @@
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::{
-    prelude::{DataContract, Identifier},
-    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-};
+use dpp::prelude::*;
 use drive::grovedb::TransactionArg;
 
 /// DataTriggerExecutionContext represents the context in which a data trigger is executed.
@@ -19,23 +16,4 @@ pub struct DataTriggerExecutionContext<'a> {
     pub data_contract: &'a DataContract,
     /// A reference to the execution context for the state transition that triggered the data trigger.
     pub state_transition_execution_context: &'a StateTransitionExecutionContext,
-}
-
-impl<'a> DataTriggerExecutionContext<'a> {
-    /// Creates a new instance of DataTriggerExecutionContext
-    pub fn new(
-        platform: &'a PlatformStateRef<'a>,
-        transaction: TransactionArg<'a, 'a>,
-        owner_id: &'a Identifier,
-        data_contract: &'a DataContract,
-        state_transition_execution_context: &'a StateTransitionExecutionContext,
-    ) -> Self {
-        DataTriggerExecutionContext {
-            platform,
-            transaction,
-            owner_id,
-            data_contract,
-            state_transition_execution_context,
-        }
-    }
 }

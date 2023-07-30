@@ -1,26 +1,26 @@
+use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{
+    DataTriggerExecutionContext, DataTriggerExecutionResult,
+};
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;
-use dpp::prelude::Identifier;
-use dpp::{get_from_transition_action, ProtocolError};
+use dpp::ProtocolError;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use dpp::system_data_contracts::dpns_contract;
+use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{ALLOW_SUBDOMAINS, DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
+use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
-use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
-
-const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
-const PROPERTY_LABEL: &str = "label";
-const PROPERTY_NORMALIZED_LABEL: &str = "normalizedLabel";
-const PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME: &str = "normalizedParentDomainName";
-const PROPERTY_PREORDER_SALT: &str = "preorderSalt";
-const PROPERTY_ALLOW_SUBDOMAINS: &str = "subdomainRules.allowSubdomains";
-const PROPERTY_RECORDS: &str = "records";
-const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
-const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
+pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 
 /// Creates a data trigger for handling domain documents.
 ///
@@ -31,25 +31,26 @@ const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 ///
 /// * `document_transition` - A reference to the document transition that triggered the data trigger.
 /// * `context` - A reference to the data trigger execution context.
-/// * `top_level_identity` - An optional identifier for the top-level identity associated with the domain
+/// * `dpns_contract::OWNER_ID` - An optional identifier for the top-level identity associated with the domain
 ///   document (if one exists).
 ///
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_domain_data_trigger(
+pub fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
-    top_level_identity: Option<&Identifier>,
+    platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
+
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
         _ => {
             return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
                 format!(
                     "the Document Transition {} isn't 'CREATE",
-                    get_from_transition_action!(document_transition, id)
+                    document_transition.base().id()
                 ),
             )))
         }
@@ -57,34 +58,29 @@ pub fn create_domain_data_trigger(
 
     let data = &document_create_transition.data;
 
-    let top_level_identity = top_level_identity.ok_or(Error::Execution(
-        ExecutionError::DataTriggerExecutionError("top level identity isn't provided".to_string()),
-    ))?;
     let owner_id = context.owner_id;
-    let label = data
-        .get_string(PROPERTY_LABEL)
-        .map_err(ProtocolError::ValueError)?;
+    let label = data.get_string(LABEL).map_err(ProtocolError::ValueError)?;
     let normalized_label = data
-        .get_str(PROPERTY_NORMALIZED_LABEL)
+        .get_str(NORMALIZED_LABEL)
         .map_err(ProtocolError::ValueError)?;
     let normalized_parent_domain_name = data
-        .get_string(PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME)
+        .get_string(NORMALIZED_PARENT_DOMAIN_NAME)
         .map_err(ProtocolError::ValueError)?;
 
     let preorder_salt = data
-        .get_hash256_bytes(PROPERTY_PREORDER_SALT)
+        .get_hash256_bytes(PREORDER_SALT)
         .map_err(ProtocolError::ValueError)?;
     let records = data
-        .get(PROPERTY_RECORDS)
+        .get(RECORDS)
         .ok_or(ExecutionError::DataTriggerExecutionError(format!(
             "property '{}' doesn't exist",
-            PROPERTY_RECORDS
+            RECORDS
         )))?
         .to_btree_ref_string_map()
         .map_err(ProtocolError::ValueError)?;
 
     let rule_allow_subdomains = data
-        .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
+        .get_bool_at_path(ALLOW_SUBDOMAINS)
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
@@ -96,67 +92,75 @@ pub fn create_domain_data_trigger(
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
-            let err = create_error(
-                context,
-                document_create_transition,
+            let err = DataTriggerConditionError::new(
+                context.data_contract.id(),
+                document_transition.base().id(),
                 format!(
                     "Full domain name length can not be more than {} characters long but got {}",
                     MAX_PRINTABLE_DOMAIN_NAME_LENGTH,
                     full_domain_name.len()
                 ),
             );
+
             result.add_error(err)
         }
 
         if normalized_label != label.to_lowercase() {
-            let err = create_error(
-                context,
-                document_create_transition,
-                "Normalized label doesn't match label".to_string(),
+            let err = DataTriggerConditionError::new(
+                context.data_contract.id(),
+                document_transition.base().id(),
+                format!(
+                    "Normalized label doesn't match label: {} != {}",
+                    normalized_label, label
+                ),
             );
+
             result.add_error(err);
         }
 
         if let Some(id) = records
-            .get_optional_identifier(PROPERTY_DASH_UNIQUE_IDENTITY_ID)
+            .get_optional_identifier(DASH_UNIQUE_IDENTITY_ID)
             .map_err(ProtocolError::ValueError)?
         {
             if id != owner_id {
-                let err = create_error(
-                    context,
-                    document_create_transition,
+                let err = DataTriggerConditionError::new(
+                    context.data_contract.id(),
+                    document_transition.base().id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
+                        owner_id, DASH_UNIQUE_IDENTITY_ID, id
                     ),
                 );
+
                 result.add_error(err);
             }
         }
 
         if let Some(id) = records
-            .get_optional_identifier(PROPERTY_DASH_ALIAS_IDENTITY_ID)
+            .get_optional_identifier(DASH_ALIAS_IDENTITY_ID)
             .map_err(ProtocolError::ValueError)?
         {
             if id != owner_id {
-                let err = create_error(
-                    context,
-                    document_create_transition,
+                let err = DataTriggerConditionError::new(
+                    context.data_contract.id(),
+                    document_transition.base().id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
-                        owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
+                        owner_id, DASH_ALIAS_IDENTITY_ID, id
                     ),
                 );
+
                 result.add_error(err);
             }
         }
 
-        if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
-            let err = create_error(
-                context,
-                document_create_transition,
+        if normalized_parent_domain_name.is_empty() && context.owner_id != dpns_contract::OWNER_ID {
+            let err = DataTriggerConditionError::new(
+                context.data_contract.id(),
+                document_transition.base().id(),
                 "Can't create top level domain for this identity".to_string(),
             );
+
             result.add_error(err);
         }
     }
@@ -170,6 +174,7 @@ pub fn create_domain_data_trigger(
         let document_type = context
             .data_contract
             .document_type_for_name(document_create_transition.base.document_type_name.as_str())?;
+
         let drive_query = DriveQuery {
             contract: context.data_contract,
             document_type,
@@ -208,43 +213,56 @@ pub fn create_domain_data_trigger(
         let documents = context
             .platform
             .drive
-            .query_documents(drive_query, None, is_dry_run, context.transaction)?
+            .query_documents(
+                drive_query,
+                None,
+                is_dry_run,
+                context.transaction,
+                Some(platform_version.protocol_version),
+            )?
             .documents;
 
         if !is_dry_run {
             if documents.is_empty() {
-                let err = create_error(
-                    context,
-                    document_create_transition,
+                let err = DataTriggerConditionError::new(
+                    context.data_contract.id(),
+                    document_transition.base().id(),
                     "Parent domain is not present".to_string(),
                 );
+
                 result.add_error(err);
+
                 return Ok(result);
             }
             let parent_domain = &documents[0];
 
             if rule_allow_subdomains {
-                let err = create_error(
-                    context,
-                    document_create_transition,
-                    "Allowing subdomains registration is forbidden for non top level domains"
-                        .to_string(),
+                let err = DataTriggerConditionError::new(
+                    context.data_contract.id(),
+                    document_transition.base().id(),
+                    "Allowing subdomains registration is forbidden for this domain".to_string(),
                 );
+
                 result.add_error(err);
+
+                return Ok(result);
             }
 
             if (!parent_domain
                 .properties
-                .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
+                .get_bool_at_path(ALLOW_SUBDOMAINS)
                 .map_err(ProtocolError::ValueError)?)
                 && context.owner_id != &parent_domain.owner_id
             {
-                let err = create_error(
-                    context,
-                    document_create_transition,
+                let err = DataTriggerConditionError::new(
+                    context.data_contract.id(),
+                    document_transition.base().id(),
                     "The subdomain can be created only by the parent domain owner".to_string(),
                 );
+
                 result.add_error(err);
+
+                return Ok(result);
             }
         }
     }
@@ -285,7 +303,13 @@ pub fn create_domain_data_trigger(
     let preorder_documents = context
         .platform
         .drive
-        .query_documents(drive_query, None, is_dry_run, context.transaction)?
+        .query_documents(
+            drive_query,
+            None,
+            is_dry_run,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?
         .documents;
 
     if is_dry_run {
@@ -293,9 +317,9 @@ pub fn create_domain_data_trigger(
     }
 
     if preorder_documents.is_empty() {
-        let err = create_error(
-            context,
-            document_create_transition,
+        let err = DataTriggerConditionError::new(
+            context.data_contract.id(),
+            document_transition.base().id(),
             "preorderDocument was not found".to_string(),
         );
         result.add_error(err)
@@ -306,18 +330,14 @@ pub fn create_domain_data_trigger(
 
 #[cfg(test)]
 mod test {
-    use crate::execution::validation::data_trigger::DataTriggerExecutionContext;
-    use crate::platform_types::platform::PlatformStateRef;
-    use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{
-        get_document_transitions_fixture, get_dpns_data_contract_fixture,
-        get_dpns_parent_document_fixture, ParentDocumentOptions,
-    };
+    use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+    use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
+    use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
-
-    use super::create_domain_data_trigger;
+    use crate::platform_types::platform::PlatformStateRef;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use super::*;
 
     #[test]
     fn should_return_execution_result_on_dry_run() {
@@ -332,14 +352,27 @@ mod test {
             config: &platform.config,
         };
 
+        let platform_version = state_read_guard
+            .current_platform_version()
+            .expect("should return a platform version");
+
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
-        let document = get_dpns_parent_document_fixture(ParentDocumentOptions {
-            owner_id,
-            ..Default::default()
-        });
-        let data_contract = get_dpns_data_contract_fixture(Some(owner_id));
-        let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
+        let document = get_dpns_parent_document_fixture(
+            ParentDocumentOptions {
+                owner_id,
+                ..Default::default()
+            },
+            state_read_guard.current_protocol_version_in_consensus(),
+        );
+        let data_contract = get_dpns_data_contract_fixture(
+            Some(owner_id),
+            state_read_guard.current_protocol_version_in_consensus(),
+        );
+        let transitions = get_document_transitions_fixture([(
+            DocumentTransitionActionType::Create,
+            vec![document],
+        )]);
         let first_transition = transitions.get(0).expect("transition should be present");
 
         let document_create_transition = first_transition
@@ -356,10 +389,10 @@ mod test {
             transaction: None,
         };
 
-        let result = create_domain_data_trigger(
+        let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
-            Some(&owner_id),
+            platform_version,
         )
         .expect("the execution result should be returned");
         assert!(result.is_valid());
