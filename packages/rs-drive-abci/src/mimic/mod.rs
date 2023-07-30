@@ -13,7 +13,7 @@ use dashcore_rpc::dashcore::consensus::Decodable;
 use dashcore_rpc::dashcore;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;

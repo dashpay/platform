@@ -193,7 +193,7 @@ mod test {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
     use dpp::document::{Document, ExtendedDocument};

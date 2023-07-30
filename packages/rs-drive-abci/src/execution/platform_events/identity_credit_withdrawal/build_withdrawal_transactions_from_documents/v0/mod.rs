@@ -120,7 +120,7 @@ mod tests {
     use drive::tests::helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
-        use dpp::block::extended_block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;

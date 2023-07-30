@@ -5,7 +5,7 @@ use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpoc
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -13,7 +13,7 @@ use dpp::ProtocolError;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
-use drive::fee::credits::Credits;
+
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {

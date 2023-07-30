@@ -1,5 +1,5 @@
 use crate::platform_types::platform::Platform;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 use drive::contract::Contract;
 

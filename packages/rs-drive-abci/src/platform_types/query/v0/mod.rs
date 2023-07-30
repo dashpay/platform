@@ -893,7 +893,7 @@ mod test {
             get_data_contract_history_response, GetDataContractHistoryRequest,
             GetDataContractHistoryResponse,
         };
-        use dpp::block::extended_block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         use dpp::data_contract::DataContract;
         use dpp::tests::fixtures::get_data_contract_fixture;

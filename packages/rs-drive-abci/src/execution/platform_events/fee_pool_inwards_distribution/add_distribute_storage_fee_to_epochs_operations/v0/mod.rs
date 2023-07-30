@@ -81,7 +81,7 @@ mod tests {
     mod add_distribute_storage_fee_to_epochs_operations {
         use dpp::balances::credits::Creditable;
         use dpp::block::epoch::Epoch;
-        use dpp::block::extended_block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
         use dpp::fee::epoch::{
             CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,

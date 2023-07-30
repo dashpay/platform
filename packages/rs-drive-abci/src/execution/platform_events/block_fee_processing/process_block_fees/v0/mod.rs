@@ -220,7 +220,7 @@ mod tests {
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
     use drive::common::helpers::identities::create_test_masternode_identities;
     use drive::common::identities::create_test_masternode_identities;
-    use drive::fee::epoch::GENESIS_EPOCH_INDEX;
+
 
     mod helpers {
         use super::*;

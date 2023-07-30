@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Setters;

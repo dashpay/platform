@@ -7,7 +7,7 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::fee::credits::Credits;
+
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
@@ -75,7 +75,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
