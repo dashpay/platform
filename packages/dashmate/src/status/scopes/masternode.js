@@ -43,6 +43,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         lastPaidTime: null,
         paymentQueuePosition: null,
         nextPaymentTime: null,
+        enabledCount: null,
       },
     };
 
@@ -75,6 +76,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       info.nodeState.poSePenalty = poSePenalty;
       info.nodeState.lastPaidHeight = lastPaidHeight;
       info.nodeState.lastPaidTime = lastPaidTime;
+      info.nodeState.enabledCount = enabled;
       info.nodeState.paymentQueuePosition = paymentQueuePosition;
       info.nodeState.nextPaymentTime = nextPaymentTime;
     }
