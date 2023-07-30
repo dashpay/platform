@@ -32,7 +32,7 @@ function getHostScopeFactory(resolvePublicIpV4) {
       scope.username = os.userInfo().username;
       scope.memory = `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`;
       scope.cpus = os.cpus().length;
-      scope.ip = await resolvePublicIpV4()
+      scope.ip = await resolvePublicIpV4();
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console

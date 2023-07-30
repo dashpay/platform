@@ -5,8 +5,6 @@ const {
   PRESET_MAINNET,
 } = require('../../constants');
 
-const wait = require('../../util/wait');
-
 function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
   /**
    * @typedef {function} createIpAndPortsForm
@@ -57,13 +55,13 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
       return validatePort(value);
     }
 
-    let initialIp = options.initialIp;
+    let { initialIp } = options;
 
     if (!initialIp) {
-      initialIp = await resolvePublicIpV4() ?? ''
+      initialIp = await resolvePublicIpV4() ?? '';
     }
 
-    let initialCoreP2PPort = options.initialCoreP2PPort;
+    let { initialCoreP2PPort } = options;
 
     if (!initialCoreP2PPort || network === PRESET_MAINNET) {
       initialCoreP2PPort = defaultConfigs.get(network).get('core.p2p.port').toString();
@@ -87,7 +85,7 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
     ];
 
     if (options.isHPMN) {
-      let initialPlatformP2PPort = options.initialPlatformP2PPort;
+      let { initialPlatformP2PPort } = options;
       if (!initialPlatformP2PPort || network === PRESET_MAINNET) {
         initialPlatformP2PPort = defaultConfigs.get(network).get('platform.drive.tenderdash.p2p.port').toString();
       }
@@ -100,7 +98,7 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
         disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
       });
 
-      let initialPlatformHTTPPort = options.initialPlatformHTTPPort;
+      let { initialPlatformHTTPPort } = options;
       if (!initialPlatformHTTPPort || network === PRESET_MAINNET) {
         initialPlatformHTTPPort = defaultConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
       }
