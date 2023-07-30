@@ -1,4 +1,3 @@
-use crate::state_transition::identity_update_transition::v0::v0_methods::IdentityUpdateTransitionV0Methods;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;

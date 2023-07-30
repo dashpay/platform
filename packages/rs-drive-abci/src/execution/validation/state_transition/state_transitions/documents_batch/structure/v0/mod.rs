@@ -52,20 +52,18 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         let mut document_transitions_by_contracts: BTreeMap<Identifier, Vec<&DocumentTransition>> =
             BTreeMap::new();
 
-        self.get_transitions()
-            .iter()
-            .for_each(|document_transition| {
-                let contract_identifier = document_transition.get_data_contract_id();
+        self.transitions().iter().for_each(|document_transition| {
+            let contract_identifier = document_transition.get_data_contract_id();
 
-                match document_transitions_by_contracts.entry(*contract_identifier) {
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(vec![document_transition]);
-                    }
-                    Entry::Occupied(mut identifiers) => {
-                        identifiers.get_mut().push(document_transition);
-                    }
-                };
-            });
+            match document_transitions_by_contracts.entry(*contract_identifier) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(vec![document_transition]);
+                }
+                Entry::Occupied(mut identifiers) => {
+                    identifiers.get_mut().push(document_transition);
+                }
+            };
+        });
 
         let mut result = ValidationResult::default();
 

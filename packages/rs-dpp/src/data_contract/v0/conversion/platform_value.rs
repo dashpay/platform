@@ -30,7 +30,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
     }
 
     fn from_object(
-        raw_object: Value,
+        mut raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut data_contract_map = raw_object

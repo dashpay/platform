@@ -12,10 +12,6 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
-
-use crate::identity::SecurityLevel::{CRITICAL, MASTER};
-use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -24,23 +20,22 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-pub trait IdentityCreditWithdrawalTransitionV0Methods {
+pub trait IdentityUpdateTransitionMethodsV0 {
+    #[cfg(feature = "state-transition-signing")]
+    fn try_from_identity_with_signer<S: Signer>(
+        identity: &Identity,
+        master_public_key_id: &KeyID,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<KeyID>,
+        public_keys_disabled_at: Option<u64>,
+        signer: &S,
+        version: FeatureVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
-        StateTransitionType::IdentityCreditWithdrawal
-    }
-    fn set_revision(&mut self, revision: Revision);
-    fn revision(&self) -> Revision;
-}
-
-impl IdentityCreditWithdrawalTransitionV0Methods for IdentityCreditWithdrawalTransitionV0 {
-    fn set_revision(&mut self, revision: Revision) {
-        self.revision = revision;
-    }
-
-    fn revision(&self) -> Revision {
-        self.revision
+        StateTransitionType::IdentityUpdate
     }
 }

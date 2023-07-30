@@ -1,7 +1,10 @@
+mod v0;
+
+pub use v0::*;
+
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, KeyID, PartialIdentity};
 use crate::prelude::AssetLockProof;
-use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -10,7 +13,7 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::{Bytes32, Identifier};
 
-impl IdentityCreateTransitionV0Methods for IdentityCreateTransition {
+impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
         identity: Identity,
@@ -42,52 +45,5 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransition {
 
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreate
-    }
-
-    fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<(), NonConsensusError> {
-        match self {
-            IdentityCreateTransition::V0(transition) => {
-                transition.set_asset_lock_proof(asset_lock_proof)
-            }
-        }
-    }
-
-    fn get_asset_lock_proof(&self) -> &AssetLockProof {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.get_asset_lock_proof(),
-        }
-    }
-
-    fn get_public_keys(&self) -> &[IdentityPublicKeyInCreation] {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.get_public_keys(),
-        }
-    }
-
-    fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyInCreation>) {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.set_public_keys(public_keys),
-        }
-    }
-
-    fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.add_public_keys(public_keys),
-        }
-    }
-
-    fn get_identity_id(&self) -> &Identifier {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.get_identity_id(),
-        }
-    }
-
-    fn get_owner_id(&self) -> &Identifier {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.get_owner_id(),
-        }
     }
 }

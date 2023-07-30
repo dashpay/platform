@@ -30,7 +30,6 @@ use crate::state_transition::state_transitions::contract::data_contract_create_t
 
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;
-pub use v0_methods::DataContractCreateTransitionV0Methods;
 
 ///DataContractCreateTransitionV0 has the same encoding structure
 

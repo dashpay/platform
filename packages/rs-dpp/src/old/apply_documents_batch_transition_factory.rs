@@ -54,7 +54,7 @@ pub async fn apply_documents_batch_transition(
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<(), ProtocolError> {
     let replace_transitions: Vec<_> = state_transition
-        .get_transitions_slice()
+        .transitions_slice()
         .iter()
         .filter(|dt| dt.base().action == Action::Replace)
         .collect();
@@ -73,7 +73,7 @@ pub async fn apply_documents_batch_transition(
 
     // since groveDB doesn't support parallel inserts, we need to make them sequential
 
-    for document_transition in state_transition.get_transitions() {
+    for document_transition in state_transition.transitions() {
         match document_transition {
             DocumentTransition::Create(document_create_transition) => {
                 let document =

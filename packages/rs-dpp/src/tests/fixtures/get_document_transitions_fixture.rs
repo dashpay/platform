@@ -39,6 +39,6 @@ pub fn get_document_transitions_fixture(
             (Action::Delete, delete_documents),
         ])
         .expect("the transitions should be created")
-        .get_transitions()
+        .transitions()
         .to_owned()
 }

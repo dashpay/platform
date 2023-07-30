@@ -23,9 +23,13 @@ use crate::state_transition::identity_update_transition::v0::{
 };
 use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
+use platform_version::version::PlatformVersion;
 
 impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
-    fn from_object(mut raw_object: Value) -> Result<IdentityUpdateTransitionV0, ProtocolError> {
+    fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let signature = raw_object
             .get_binary_data(SIGNATURE)
             .map_err(ProtocolError::ValueError)?;
@@ -54,7 +58,6 @@ impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
             add_public_keys,
             disable_public_keys,
             public_keys_disabled_at,
-            transition_type: StateTransitionType::IdentityUpdate,
         })
     }
 
@@ -66,8 +69,9 @@ impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
     }
 
     fn from_value_map(
-        mut raw_data_contract_create_transition: BTreeMap<String, Value>,
-    ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
+        mut raw_value_map: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         todo()
     }
 

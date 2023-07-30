@@ -21,7 +21,11 @@ pub fn create_masternode_reward_shares_data_trigger(
         .triggers
         .create_masternode_reward_shares_data_trigger
     {
-        0 => create_masternode_reward_shares_data_trigger_v0(document_transition, context, platform_version),
+        0 => create_masternode_reward_shares_data_trigger_v0(
+            document_transition,
+            context,
+            platform_version,
+        ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "create_masternode_reward_shares_data_trigger".to_string(),
             known_versions: vec![0],

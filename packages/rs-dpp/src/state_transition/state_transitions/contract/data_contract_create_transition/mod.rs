@@ -1,11 +1,12 @@
+mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+mod methods;
 mod serialize;
 mod state_transition_like;
 mod v0;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -52,8 +53,8 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_serialize(version_path=
-    "dpp.state_transition_serialization_versions.contract_create_state_transition"
+#[platform_serialize(
+    version_path = "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

@@ -14,14 +14,15 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+pub mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+pub mod methods;
 mod serialize;
 mod state_transition_like;
 mod v0;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -48,8 +49,8 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_serialize(version_path=
-    "dpp.state_transition_serialization_versions.contract_update_state_transition"
+#[platform_serialize(
+    version_path = "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
@@ -74,6 +75,7 @@ impl StateTransitionFieldTypes for DataContractUpdateTransition {
 mod test {
     use crate::util::json_value::JsonValueExt;
     use integer_encoding::VarInt;
+    use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
@@ -95,7 +97,9 @@ mod test {
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let platform_version = PlatformVersion::first();
+        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+            .data_contract_owned();
 
         let value_map = BTreeMap::from([
             (
@@ -113,8 +117,9 @@ mod test {
             ),
         ]);
 
-        let state_transition = DataContractUpdateTransition::from_value_map(value_map)
-            .expect("state transition should be created without errors");
+        let state_transition =
+            DataContractUpdateTransition::from_value_map(value_map, platform_version)
+                .expect("state transition should be created without errors");
 
         TestData {
             data_contract,

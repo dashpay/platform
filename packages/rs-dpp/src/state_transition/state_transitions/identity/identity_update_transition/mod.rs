@@ -1,7 +1,9 @@
+pub mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+pub mod methods;
 mod state_transition_like;
 pub mod v0;
 mod v0_methods;
@@ -38,8 +40,8 @@ use serde::Serialize;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
-#[platform_serialize(version_path=
-    "dpp.state_transition_serialization_versions.identity_update_state_transition"
+#[platform_serialize(
+    version_path = "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

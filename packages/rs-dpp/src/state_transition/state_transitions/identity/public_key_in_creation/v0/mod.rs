@@ -167,7 +167,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
 
 //
 //     #[cfg(feature = "state-transition-value-conversion")]
-//     pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
+//     pub fn from_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
 //         raw_object.try_into().map_err(ProtocolError::ValueError)
 //     }
 //

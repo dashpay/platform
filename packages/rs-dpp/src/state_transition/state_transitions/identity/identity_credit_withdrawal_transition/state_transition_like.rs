@@ -1,4 +1,4 @@
-use crate::state_transition::identity_credit_withdrawal_transition::v0::v0_methods::IdentityCreditWithdrawalTransitionV0Methods;
+use crate::state_transition::identity_credit_withdrawal_transition::v0::v0_methods::IdentityCreditWithdrawalTransitionMethodsV0;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;

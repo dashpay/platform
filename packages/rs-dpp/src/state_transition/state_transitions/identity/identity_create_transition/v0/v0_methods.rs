@@ -17,6 +17,8 @@ use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
 use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use bincode::{config, Decode, Encode};
 
@@ -24,40 +26,7 @@ use crate::state_transition::identity_create_transition::v0::IdentityCreateTrans
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::{FeatureVersion, PlatformVersion};
 
-pub trait IdentityCreateTransitionV0Methods {
-    #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer>(
-        identity: Identity,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &[u8],
-        signer: &S,
-        bls: &impl BlsModule,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-    /// Get State Transition type
-    fn get_type() -> StateTransitionType;
-    /// Set asset lock
-    fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<(), NonConsensusError>;
-    /// Get asset lock proof
-    fn get_asset_lock_proof(&self) -> &AssetLockProof;
-    /// Get identity public keys
-    fn get_public_keys(&self) -> &[IdentityPublicKeyInCreation];
-    /// Replaces existing set of public keys with a new one
-    fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyInCreation>);
-    /// Adds public keys to the existing public keys array
-    fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>);
-    /// Returns identity id
-    fn get_identity_id(&self) -> &Identifier;
-    /// Returns Owner ID
-    fn get_owner_id(&self) -> &Identifier;
-}
-
-impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
+impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity_with_signer<S: Signer>(
         identity: Identity,
@@ -106,7 +75,9 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreate
     }
+}
 
+impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
     /// Set asset lock
     fn set_asset_lock_proof(
         &mut self,
@@ -120,12 +91,12 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
     }
 
     /// Get asset lock proof
-    fn get_asset_lock_proof(&self) -> &AssetLockProof {
+    fn asset_lock_proof(&self) -> &AssetLockProof {
         &self.asset_lock_proof
     }
 
     /// Get identity public keys
-    fn get_public_keys(&self) -> &[IdentityPublicKeyInCreation] {
+    fn public_keys(&self) -> &[IdentityPublicKeyInCreation] {
         &self.public_keys
     }
 
@@ -140,12 +111,12 @@ impl IdentityCreateTransitionV0Methods for IdentityCreateTransitionV0 {
     }
 
     /// Returns identity id
-    fn get_identity_id(&self) -> &Identifier {
-        &self.identity_id
+    fn identity_id(&self) -> Identifier {
+        self.identity_id
     }
 
     /// Returns Owner ID
-    fn get_owner_id(&self) -> &Identifier {
-        &self.identity_id
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

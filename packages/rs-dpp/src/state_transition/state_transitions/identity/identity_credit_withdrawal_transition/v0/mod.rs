@@ -3,7 +3,6 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
-pub(super) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;

@@ -34,7 +34,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransiti
 
         // We should validate that the identity id is created from the asset lock proof
 
-        let identifier_from_outpoint = match self.get_asset_lock_proof().create_identifier() {
+        let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
             Ok(identifier) => identifier,
             Err(_) => {
                 return Ok(ConsensusValidationResult::new_with_error(

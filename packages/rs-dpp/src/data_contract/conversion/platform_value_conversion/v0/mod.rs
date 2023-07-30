@@ -5,7 +5,7 @@ use platform_value::Value;
 
 pub trait DataContractValueConversionMethodsV0 {
     fn from_object(
-        raw_object: Value,
+        mut raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

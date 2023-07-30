@@ -1,3 +1,4 @@
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::DataContract;
 use crate::state_transition::data_contract_update_transition::fields::*;
 use crate::state_transition::data_contract_update_transition::{
@@ -8,6 +9,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
@@ -46,7 +48,10 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
         Ok(object)
     }
 
-    fn from_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
+    fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionV0 {
             signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
@@ -56,35 +61,38 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
                 .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(raw_object.remove(DATA_CONTRACT).map_err(
-                |_| {
+            data_contract: DataContract::from_object(
+                raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     )
-                },
-            )?)?,
+                })?,
+                platform_version,
+            )?,
             ..Default::default()
         })
     }
 
     fn from_value_map(
-        mut raw_data_contract_update_transition: BTreeMap<String, Value>,
+        mut raw_value_map: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Ok(DataContractUpdateTransitionV0 {
-            signature: raw_data_contract_update_transition
+            signature: raw_value_map
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            signature_public_key_id: raw_data_contract_update_transition
+            signature_public_key_id: raw_value_map
                 .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_object(
-                raw_data_contract_update_transition
+                raw_value_map
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     ))?,
+                platform_version,
             )?,
             ..Default::default()
         })

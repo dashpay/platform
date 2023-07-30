@@ -249,7 +249,7 @@ pub fn create_identities_state_transitions(
                     &NativeBlsModule::default(),
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.id = *identity_create_transition.get_identity_id();
+            identity.id = *identity_create_transition.identity_id();
             (identity, identity_create_transition.into())
         })
         .collect()

@@ -54,7 +54,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        let identity_id = self.get_identity_id();
+        let identity_id = self.identity_id();
         let balance =
             drive.fetch_identity_balance(self.identity_id.to_buffer(), tx, platform_version)?;
 

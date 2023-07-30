@@ -18,7 +18,7 @@ struct TestData {
 fn setup_test() -> TestData {
     let mut state_transition = get_identity_update_transition_fixture();
 
-    state_transition.set_revision(state_transition.get_revision() + 1);
+    state_transition.set_revision(state_transition.revision() + 1);
 
     let state_repository_mock = MockStateRepositoryLike::new();
 
