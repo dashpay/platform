@@ -76,6 +76,7 @@ const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 const updateNodeFactory = require('./update/updateNodeFactory');
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
+const resolvePublicIpV4 = require('./util/resolvePublicIpV4');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
@@ -164,6 +165,7 @@ async function createDIContainer(options = {}) {
    */
   container.register({
     generateHDPrivateKeys: asValue(generateHDPrivateKeys),
+    resolvePublicIpV4: asValue(resolvePublicIpV4),
   });
 
   /**

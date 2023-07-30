@@ -1,7 +1,6 @@
 const wrapAnsi = require('wrap-ansi');
 const chalk = require('chalk');
 const BlsSignatures = require('@dashevo/bls');
-
 const generateBlsKeys = require('../../../../../core/generateBlsKeys');
 const validateAddress = require('../../../../prompts/validators/validateAddress');
 const {
@@ -18,12 +17,14 @@ const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNo
 const getBLSPublicKeyFromPrivateKeyHex = require('../../../../../core/getBLSPublicKeyFromPrivateKeyHex');
 const deriveTenderdashNodeId = require('../../../../../tenderdash/deriveTenderdashNodeId');
 const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
+const providers = require("../../../../../status/providers");
+const PortStatusEnum = require("../../../../../status/enums/portState");
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithCoreWallet}
  */
-function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
+function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm, resolvePublicIpV4) {
   /**
    * Print prompts to collect masternode registration data with Core
    *
@@ -86,9 +87,9 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
         {
           type: 'form',
           name: 'collateral',
-          header: `  Dashmate needs to collect your collateral funding transaction hash and index.              
+          header: `  Dashmate needs to collect your collateral funding transaction hash and index.
   The funding value must be exactly ${collateralAmount} ${collateralDenomination}.
-  
+
   Please follow the instructions on how to create a collateral funding transaction in Dash Core Wallet:
   ${instructionsUrl}\n`,
           message: 'Enter collateral funding transaction information:',
@@ -208,6 +209,27 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
       }));
 
       state = await task.prompt(prompts);
+
+      const portStatus  = await providers.mnowatch.checkPortStatus(state.ipAndPorts.coreP2PPort)
+
+      if (portStatus !== PortStatusEnum.OPEN) {
+        const externalIp = await resolvePublicIpV4() ?? 'unresolved'
+
+        const confirmation = await task.prompt({
+          type: 'toggle',
+          name: 'confirm',
+          header: `You have chosen Core P2P port ${state.ipAndPorts.coreP2PPort}, ` +
+`however it looks not reachable on your host ` +
+`${chalk.red(`(TCP ${externalIp}:${state.ipAndPorts.coreP2PPort} ${portStatus})`)}`,
+          message: 'Are you sure that you want to continue?',
+          enabled: 'Yes',
+          disabled: 'No',
+        });
+
+        if (!confirmation) {
+          throw new Error('Operation is cancelled')
+        }
+      }
 
       const operatorPublicKeyHex = await getBLSPublicKeyFromPrivateKeyHex(
         state.operator.privateKey,
