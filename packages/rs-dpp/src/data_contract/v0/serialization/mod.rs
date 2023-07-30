@@ -46,6 +46,7 @@ impl DataContractSerializationFormatV0 {
 }
 
 impl DataContractV0 {
+    // TODO: Here we should do structure validation
     pub(in crate::data_contract) fn try_from(
         value: DataContractSerializationFormatV0,
         platform_version: &PlatformVersion,
@@ -60,6 +61,8 @@ impl DataContractV0 {
             defs,
             ..
         } = value;
+
+        // TODO: Validate schema
 
         let document_types = DataContract::get_document_types_from_value_array(
             id,
@@ -76,11 +79,13 @@ impl DataContractV0 {
                 })
                 .transpose()?
                 .unwrap_or_default(),
+            // TODO: Why they are default? Do we have Anton
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
             platform_version,
         )?;
 
+        // TODO: Those must be consensus errors or we do it in the next task
         let binary_properties = documents
             .iter()
             .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version)?)))

@@ -4,10 +4,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::{cbor_serializer, deserializer};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use ciborium::Value as CborValue;
 use platform_value::{Identifier, Value};
-use std::collections::BTreeMap;
-use std::format;
 
 pub trait DataContractCborConversionMethodsV0 {
     fn from_cbor_with_id(
@@ -23,6 +20,9 @@ pub trait DataContractCborConversionMethodsV0 {
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;
-    fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError>;
+    fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError>;
+    fn to_cbor_canonical_map(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<CborCanonicalMap, ProtocolError>;
 }

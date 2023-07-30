@@ -129,6 +129,7 @@ impl DataContractFactoryV0 {
             .contract_versions
             .contract_structure_version
         {
+            // TODO We shouldn't be able to construct a DataContract this way outside of DPP
             0 => DataContractV0 {
                 id: data_contract_id,
                 schema: data_contract::DATA_CONTRACT_SCHEMA_URI_V0.to_string(),

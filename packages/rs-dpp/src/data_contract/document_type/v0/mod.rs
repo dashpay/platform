@@ -95,6 +95,7 @@ impl DocumentTypeV0 {
         })
     }
 
+    // TODO: Here should be validation of the documents
     pub(crate) fn from_platform_value(
         data_contract_id: Identifier,
         name: &str,
