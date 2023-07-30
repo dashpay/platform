@@ -16,7 +16,6 @@ use dpp::state_transition::StateTransition;
 #[cfg(test)]
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
-use drive::fee::result::FeeResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
 

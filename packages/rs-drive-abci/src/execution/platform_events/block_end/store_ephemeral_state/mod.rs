@@ -5,7 +5,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use crate::version::PlatformVersion;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use drive::error::Error::GroveDB;

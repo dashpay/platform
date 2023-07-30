@@ -7,7 +7,6 @@ use crate::platform_types::block_proposal;
 use crate::platform_types::epochInfo::v0::EpochInfoV0;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::version::PlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 

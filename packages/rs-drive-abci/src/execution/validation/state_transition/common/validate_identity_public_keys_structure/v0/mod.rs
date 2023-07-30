@@ -9,7 +9,6 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 
 use dpp::consensus::state::state_error::StateError;
 
-use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};

@@ -6,6 +6,7 @@ use dpp::document::{Document, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawal::NAME;
 use dpp::system_data_contracts::withdrawals_contract;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 
 use drive::drive::batch::DriveOperation;
@@ -191,6 +192,8 @@ mod tests {
     use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
+    use dpp::system_data_contracts::withdrawals_contract;
+    use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::{
         data_contract::DataContract,

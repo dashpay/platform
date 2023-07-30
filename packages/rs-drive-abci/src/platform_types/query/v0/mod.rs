@@ -37,7 +37,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
 };
-use drive::error::contract::ContractError;
+use drive::error::contract::DataContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
@@ -113,9 +113,11 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
                 let identity_id: Identifier = check_validation_result_with_data!(id.try_into());
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_full_identity(identity_id.into_buffer(), None));
+                    let proof = check_validation_result_with_data!(self.drive.prove_full_identity(
+                        identity_id.into_buffer(),
+                        None,
+                        &platform_version.drive
+                    ));
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -129,7 +131,7 @@ impl<C> Platform<C> {
                 } else {
                     let identity = check_validation_result_with_data!(self
                         .drive
-                        .fetch_full_identity(identity_id.into_buffer(), None)
+                        .fetch_full_identity(identity_id.into_buffer(), None, platform_version)
                         .map_err(QueryError::Drive)
                         .and_then(|identity| identity
                             .map(|identity| identity
@@ -155,9 +157,12 @@ impl<C> Platform<C> {
                     })
                     .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_full_identities(identity_ids.as_slice(), None));
+                    let proof =
+                        check_validation_result_with_data!(self.drive.prove_full_identities(
+                            identity_ids.as_slice(),
+                            None,
+                            &platform_version.drive
+                        ));
                     GetIdentitiesResponse {
                         metadata: Some(metadata),
                         result: Some(get_identities_response::Result::Proof(Proof {
@@ -171,7 +176,7 @@ impl<C> Platform<C> {
                 } else {
                     let identities = check_validation_result_with_data!(self
                         .drive
-                        .fetch_full_identities(identity_ids.as_slice(), None));
+                        .fetch_full_identities(identity_ids.as_slice(), None, platform_version));
 
                     let identities = check_validation_result_with_data!(identities
                         .into_iter()
@@ -208,9 +213,12 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
                 let identity_id: Identifier = check_validation_result_with_data!(id.try_into());
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_identity_balance(identity_id.into_buffer(), None));
+                    let proof =
+                        check_validation_result_with_data!(self.drive.prove_identity_balance(
+                            identity_id.into_buffer(),
+                            None,
+                            &platform_version.drive
+                        ));
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -224,7 +232,7 @@ impl<C> Platform<C> {
                 } else {
                     let balance = check_validation_result_with_data!(self
                         .drive
-                        .fetch_identity_balance(identity_id.into_buffer(), None,));
+                        .fetch_identity_balance(identity_id.into_buffer(), None, platform_version));
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Balance(
                             balance.unwrap(),
@@ -242,7 +250,11 @@ impl<C> Platform<C> {
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
-                        .prove_identity_balance_and_revision(identity_id.into_buffer(), None));
+                        .prove_identity_balance_and_revision(
+                            identity_id.into_buffer(),
+                            None,
+                            &platform_version.drive
+                        ));
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -256,7 +268,7 @@ impl<C> Platform<C> {
                 } else {
                     let balance = check_validation_result_with_data!(self
                         .drive
-                        .fetch_identity_balance(identity_id.into_buffer(), None,));
+                        .fetch_identity_balance(identity_id.into_buffer(), None, platform_version));
                     let revision = check_validation_result_with_data!(self
                         .drive
                         .fetch_identity_revision(identity_id.into_buffer(), true, None,));
@@ -323,32 +335,33 @@ impl<C> Platform<C> {
                     limit: limit.map(|l| l as u16),
                     offset: offset.map(|o| o as u16),
                 };
-                let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_identity_keys(key_request, None));
-                    GetIdentityKeysResponse {
-                        result: Some(get_identity_keys_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let keys: SerializedKeyVec = check_validation_result_with_data!(self
-                        .drive
-                        .fetch_identity_keys(key_request, None, platform_version));
-                    GetIdentityKeysResponse {
-                        result: Some(get_identity_keys_response::Result::Keys(
-                            get_identity_keys_response::Keys { keys_bytes: keys },
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
+                let response_data =
+                    if prove {
+                        let proof = check_validation_result_with_data!(self
+                            .drive
+                            .prove_identity_keys(key_request, None, platform_version));
+                        GetIdentityKeysResponse {
+                            result: Some(get_identity_keys_response::Result::Proof(Proof {
+                                grovedb_proof: proof,
+                                quorum_hash: state.last_quorum_hash().to_vec(),
+                                signature: state.last_block_signature().to_vec(),
+                                round: state.last_block_round(),
+                            })),
+                            metadata: Some(metadata),
+                        }
+                        .encode_to_vec()
+                    } else {
+                        let keys: SerializedKeyVec = check_validation_result_with_data!(self
+                            .drive
+                            .fetch_identity_keys(key_request, None, platform_version));
+                        GetIdentityKeysResponse {
+                            result: Some(get_identity_keys_response::Result::Keys(
+                                get_identity_keys_response::Keys { keys_bytes: keys },
+                            )),
+                            metadata: Some(metadata),
+                        }
+                        .encode_to_vec()
+                    };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             "/dataContract" => {
@@ -356,9 +369,11 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetDataContractRequest::decode(query_data));
                 let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_contract(contract_id.into_buffer(), None));
+                    let proof = check_validation_result_with_data!(self.drive.prove_contract(
+                        contract_id.into_buffer(),
+                        None,
+                        platform_version
+                    ));
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -372,7 +387,13 @@ impl<C> Platform<C> {
                 } else {
                     let contract = check_validation_result_with_data!(self
                         .drive
-                        .fetch_contract(contract_id.into_buffer(), None, None, None)
+                        .fetch_contract(
+                            contract_id.into_buffer(),
+                            None,
+                            None,
+                            None,
+                            platform_version
+                        )
                         .unwrap())
                     .map(|contract| contract.contract.serialize())
                     .transpose()?;
@@ -467,18 +488,22 @@ impl<C> Platform<C> {
                 let limit = limit
                     .map(|limit| {
                         u16::try_from(limit).map_err(|_| {
-                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
-                                "can't fit u16 limit from the supplied value",
-                            )))
+                            Error::Drive(drive::error::Error::DataContract(
+                                DataContractError::Overflow(
+                                    "can't fit u16 limit from the supplied value",
+                                ),
+                            ))
                         })
                     })
                     .transpose()?;
                 let offset = offset
                     .map(|offset| {
                         u16::try_from(offset).map_err(|_| {
-                            Error::Drive(drive::error::Error::Contract(ContractError::Overflow(
-                                "can't fit u16 offset from the supplied value",
-                            )))
+                            Error::Drive(drive::error::Error::DataContract(
+                                DataContractError::Overflow(
+                                    "can't fit u16 offset from the supplied value",
+                                ),
+                            ))
                         })
                     })
                     .transpose()?;
@@ -510,7 +535,8 @@ impl<C> Platform<C> {
                             None,
                             start_at_seconds.unwrap_or_default(),
                             limit,
-                            offset
+                            offset,
+                            platform_version,
                         ));
 
                     let contract_historical_entries = check_validation_result_with_data!(contracts
@@ -562,7 +588,8 @@ impl<C> Platform<C> {
                         contract_id.to_buffer(),
                         None,
                         true,
-                        None
+                        None,
+                        platform_version,
                     ));
                 let contract = check_validation_result_with_data!(contract.ok_or(
                     QueryError::Query(QuerySyntaxError::DataContractNotFound(
@@ -648,7 +675,7 @@ impl<C> Platform<C> {
                     ));
                 let response_data = if prove {
                     let (proof, _) = check_validation_result_with_data!(
-                        drive_query.execute_with_proof(&self.drive, None, None)
+                        drive_query.execute_with_proof(&self.drive, None, None, platform_version)
                     );
                     GetDocumentsResponse {
                         result: Some(get_documents_response::Result::Proof(Proof {
@@ -661,9 +688,8 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let results = check_validation_result_with_data!(
-                        drive_query.execute_raw_results_no_proof(&self.drive, None, None,)
-                    )
+                    let results = check_validation_result_with_data!(drive_query
+                        .execute_raw_results_no_proof(&self.drive, None, None, platform_version))
                     .0;
                     GetDocumentsResponse {
                         result: Some(get_documents_response::Result::Documents(
@@ -689,7 +715,11 @@ impl<C> Platform<C> {
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
-                        .prove_full_identity_by_unique_public_key_hash(public_key_hash, None));
+                        .prove_full_identity_by_unique_public_key_hash(
+                            public_key_hash,
+                            None,
+                            platform_version
+                        ));
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
                         result: Some(get_identity_by_public_key_hashes_response::Result::Proof(
@@ -705,7 +735,11 @@ impl<C> Platform<C> {
                 } else {
                     let maybe_identity = check_validation_result_with_data!(self
                         .drive
-                        .fetch_full_identity_by_unique_public_key_hash(public_key_hash, None,));
+                        .fetch_full_identity_by_unique_public_key_hash(
+                            public_key_hash,
+                            None,
+                            platform_version
+                        ));
                     let serialized_identity = check_validation_result_with_data!(maybe_identity
                         .map(|identity| identity.serialize_consume())
                         .transpose());
@@ -739,7 +773,8 @@ impl<C> Platform<C> {
                         .drive
                         .prove_full_identities_by_unique_public_key_hashes(
                             &public_key_hashes,
-                            None
+                            None,
+                            platform_version,
                         ));
                     GetIdentitiesByPublicKeyHashesResponse {
                         result: Some(get_identities_by_public_key_hashes_response::Result::Proof(
@@ -760,6 +795,7 @@ impl<C> Platform<C> {
                         .fetch_full_identities_by_unique_public_key_hashes(
                             public_key_hashes.as_slice(),
                             None,
+                            platform_version,
                         ));
                     let identities = check_validation_result_with_data!(identities
                         .into_values()
@@ -825,7 +861,8 @@ impl<C> Platform<C> {
                     &identity_requests,
                     &contract_ids,
                     &document_queries,
-                    None
+                    None,
+                    platform_version,
                 ));
                 let response_data = GetProofsResponse {
                     proof: Some(Proof {
@@ -1145,7 +1182,7 @@ mod test {
 
             match error {
                 Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::Contract(contract_error) => match contract_error {
+                    drive::error::Error::DataContract(contract_error) => match contract_error {
                         ContractError::Overflow(error_message) => {
                             assert_eq!(
                                 error_message,
@@ -1179,7 +1216,7 @@ mod test {
 
             match error {
                 Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::Contract(contract_error) => match contract_error {
+                    drive::error::Error::DataContract(contract_error) => match contract_error {
                         ContractError::Overflow(error_message) => {
                             assert_eq!(
                                 error_message,

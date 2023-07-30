@@ -4,6 +4,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -33,16 +34,17 @@ impl Drive {
         &self,
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version
+        match platform_version
+            .drive
             .methods
             .identity
             .keys
             .prove
             .prove_identity_keys
         {
-            0 => self.prove_identity_keys_v0(key_request, transaction, drive_version),
+            0 => self.prove_identity_keys_v0(key_request, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_identity_keys".to_string(),
                 known_versions: vec![0],

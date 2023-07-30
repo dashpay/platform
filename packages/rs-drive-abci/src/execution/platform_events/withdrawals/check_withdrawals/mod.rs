@@ -40,7 +40,7 @@ where
     /// * `Result<SimpleValidationResult<AbciError>, Error>` - On success, a `SimpleValidationResult`
     ///   containing an `AbciError` is returned. On error, an `Error` is returned.
     ///
-    pub(super) fn check_withdrawals(
+    pub(crate) fn check_withdrawals(
         &self,
         received_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,
         our_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,

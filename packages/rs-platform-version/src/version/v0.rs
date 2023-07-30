@@ -415,7 +415,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     },
     drive_abci: DriveAbciVersion {
         methods: DriveAbciMethodVersions {
-            engine: DriveAbciEngineMethodVersions { init_chain: 0 },
+            engine: DriveAbciEngineMethodVersions {
+                init_chain: 0,
+                check_tx: 0,
+                run_block_proposal: 0,
+            },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height: 0,
                 create_genesis_state: 0,

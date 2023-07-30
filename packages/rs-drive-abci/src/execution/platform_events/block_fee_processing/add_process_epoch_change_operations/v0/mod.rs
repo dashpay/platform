@@ -53,8 +53,6 @@ use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
 use crate::platform_types::epochInfo::EpochInfo;
 use crate::platform_types::platform::Platform;
-use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
-use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:

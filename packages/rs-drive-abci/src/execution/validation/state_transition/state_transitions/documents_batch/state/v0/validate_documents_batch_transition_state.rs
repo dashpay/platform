@@ -21,7 +21,7 @@ use dpp::document::document_transition::{
 use dpp::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
@@ -40,7 +40,8 @@ use dpp::{
 };
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionV0Methods, DocumentTransitionMethodsV0};
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionV0Methods, DocumentTransitionMethodsV0, DocumentReplaceTransition};
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
@@ -48,7 +49,6 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
-use dpp::validation::block_time_window::validate_time_in_block_time_window::v0::validate_time_in_block_time_window_v0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext};
@@ -380,7 +380,7 @@ fn validate_transition(
                 let document_replace_action =
                     DocumentReplaceTransitionAction::from_document_replace_transition(
                         document_replace_transition,
-                        original_document.created_at,
+                        original_document.created_at(),
                     );
 
                 let validation_result = platform
@@ -472,20 +472,20 @@ pub fn check_ownership(
 }
 
 pub fn check_revision_is_bumped_by_one(
-    document_transition: &DocumentReplaceTransitionV0,
+    document_transition: &DocumentReplaceTransition,
     original_document: &Document,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
 
-    let revision = document_transition.revision;
+    let revision = document_transition.revision();
 
     // If there was no previous revision this means that the document_type is not update-able
     // However this should have been caught earlier
-    let Some(previous_revision) =  original_document.revision else {
+    let Some(previous_revision) =  original_document.revision() else {
         result.add_error(ConsensusError::StateError(
             StateError::InvalidDocumentRevisionError(
                 InvalidDocumentRevisionError::new(
-                    document_transition.base.id,
+                    document_transition.base().id(),
                     None,
                 )
             )
@@ -497,7 +497,7 @@ pub fn check_revision_is_bumped_by_one(
     if revision != expected_revision {
         result.add_error(ConsensusError::StateError(
             StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
-                document_transition.base.id,
+                document_transition.base().id(),
                 Some(previous_revision),
             )),
         ))

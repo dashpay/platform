@@ -2,6 +2,7 @@ use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -27,7 +28,7 @@ impl Drive {
         &self,
         key_request: IdentityKeysRequest,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let identity_query = key_request.into_path_query();
         self.grove_get_proved_path_query(
@@ -35,7 +36,7 @@ impl Drive {
             false,
             transaction,
             &mut vec![],
-            drive_version,
+            &platform_version.drive,
         )
     }
 }
