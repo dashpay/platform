@@ -39,7 +39,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         // Data contract shouldn't exist
         if drive
             .get_contract_with_fetch_info_and_fee(
-                self.data_contract.id.to_buffer(),
+                self.data_contract().id().to_buffer(),
                 None,
                 false,
                 tx,

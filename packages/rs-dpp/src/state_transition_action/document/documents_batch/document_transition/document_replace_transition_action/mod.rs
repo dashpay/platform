@@ -17,18 +17,18 @@ use crate::version::PlatformVersion;
 pub mod transformer;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
-pub enum DocumentReplaceTransitionAction {
-    V0(DocumentReplaceTransitionActionV0),
+pub enum DocumentReplaceTransitionAction<'a> {
+    V0(DocumentReplaceTransitionActionV0<'a>),
 }
 
-impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAction {
+impl<'a> DocumentReplaceTransitionActionAccessorsV0<'a> for DocumentReplaceTransitionAction<'a> {
     fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => &v0.base,
         }
     }
 
-    fn base_owned(self) -> DocumentBaseTransitionAction {
+    fn base_owned(self) -> DocumentBaseTransitionAction<'a> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => v0.base,
         }

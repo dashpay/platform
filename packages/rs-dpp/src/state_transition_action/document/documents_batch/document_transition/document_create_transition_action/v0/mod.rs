@@ -16,9 +16,9 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::version::PlatformVersion;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
-pub struct DocumentCreateTransitionActionV0 {
+pub struct DocumentCreateTransitionActionV0<'a> {
     /// Document Base Transition
-    pub base: DocumentBaseTransitionAction,
+    pub base: DocumentBaseTransitionAction<'a>,
     /// The creation time of the document
     pub created_at: Option<TimestampMillis>,
     //todo: remove updated_at
@@ -28,9 +28,9 @@ pub struct DocumentCreateTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
 }
 
-pub trait DocumentCreateTransitionActionAccessorsV0 {
+pub trait DocumentCreateTransitionActionAccessorsV0<'a> {
     fn base(&self) -> &DocumentBaseTransitionAction;
-    fn base_owned(self) -> DocumentBaseTransitionAction;
+    fn base_owned(self) -> DocumentBaseTransitionAction<'a>;
     fn created_at(&self) -> Option<TimestampMillis>;
     fn updated_at(&self) -> Option<TimestampMillis>;
     fn data(&self) -> &BTreeMap<String, Value>;

@@ -9,12 +9,4 @@ use crate::state_transition::{
 };
 use platform_value::Identifier;
 
-impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransition {
-    fn security_level_requirement(&self) -> Vec<SecurityLevel> {
-        match self {
-            IdentityCreditTransferTransition::V0(transition) => {
-                transition.security_level_requirement()
-            }
-        }
-    }
-}
+impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransition {}

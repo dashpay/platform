@@ -30,6 +30,8 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
 #[derive(
     Debug,
     Clone,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,

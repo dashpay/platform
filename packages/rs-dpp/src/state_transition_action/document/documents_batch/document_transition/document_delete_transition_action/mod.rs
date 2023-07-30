@@ -10,18 +10,18 @@ pub mod v0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
-pub enum DocumentDeleteTransitionAction {
-    V0(DocumentDeleteTransitionActionV0),
+pub enum DocumentDeleteTransitionAction<'a> {
+    V0(DocumentDeleteTransitionActionV0<'a>),
 }
 
-impl DocumentDeleteTransitionActionAccessorsV0 for DocumentDeleteTransitionAction {
-    fn base(&self) -> &DocumentBaseTransitionAction {
+impl<'a> DocumentDeleteTransitionActionAccessorsV0<'a> for DocumentDeleteTransitionAction<'a> {
+    fn base(&self) -> &DocumentBaseTransitionAction<'a> {
         match self {
             DocumentDeleteTransitionAction::V0(v0) => &v0.base,
         }
     }
 
-    fn base_owned(self) -> DocumentBaseTransitionAction {
+    fn base_owned(self) -> DocumentBaseTransitionAction<'a> {
         match self {
             DocumentDeleteTransitionAction::V0(v0) => v0.base,
         }

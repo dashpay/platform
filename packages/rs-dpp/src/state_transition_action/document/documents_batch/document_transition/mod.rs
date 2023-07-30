@@ -16,13 +16,13 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
-pub enum DocumentTransitionAction {
-    CreateAction(DocumentCreateTransitionAction),
-    ReplaceAction(DocumentReplaceTransitionAction),
-    DeleteAction(DocumentDeleteTransitionAction),
+pub enum DocumentTransitionAction<'a> {
+    CreateAction(DocumentCreateTransitionAction<'a>),
+    ReplaceAction(DocumentReplaceTransitionAction<'a>),
+    DeleteAction(DocumentDeleteTransitionAction<'a>),
 }
 
-impl DocumentTransitionAction {
+impl<'a> DocumentTransitionAction<'a> {
     pub fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
             DocumentTransitionAction::CreateAction(d) => &d.base(),

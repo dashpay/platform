@@ -118,7 +118,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
         private_key: &[u8],
         bls: &impl BlsModule,
     ) -> Result<Self, ProtocolError> {
-        let key_type = public_key.key_type;
+        let key_type = public_key.key_type();
         let mut public_key_with_witness: IdentityPublicKeyInCreationV0 = public_key.into();
         public_key_with_witness.signature = state_transition_bytes
             .sign_by_private_key(private_key, key_type, bls)?
@@ -132,7 +132,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
         signer: &S,
     ) -> Result<Self, ProtocolError> {
         let mut public_key_with_witness: IdentityPublicKeyInCreationV0 = public_key.clone().into();
-        match public_key.key_type {
+        match public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
                 public_key_with_witness.signature =
                     signer.sign(&public_key, state_transition_bytes)?;
@@ -324,6 +324,20 @@ impl From<IdentityPublicKey> for IdentityPublicKeyInCreationV0 {
             key_type: val.key_type(),
             read_only: val.read_only(),
             data: val.data_owned(),
+            signature: Default::default(),
+        }
+    }
+}
+
+impl From<&IdentityPublicKey> for IdentityPublicKeyInCreationV0 {
+    fn from(val: &IdentityPublicKey) -> Self {
+        IdentityPublicKeyInCreationV0 {
+            id: val.id(),
+            purpose: val.purpose(),
+            security_level: val.security_level(),
+            key_type: val.key_type(),
+            read_only: val.read_only(),
+            data: val.data().clone(),
             signature: Default::default(),
         }
     }

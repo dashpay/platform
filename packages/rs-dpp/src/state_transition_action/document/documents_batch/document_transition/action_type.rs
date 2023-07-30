@@ -7,7 +7,7 @@ pub enum DocumentTransitionActionType {
     Delete,
 }
 
-impl DocumentTransitionAction {
+impl<'a> DocumentTransitionAction<'a> {
     pub fn action_type(&self) -> DocumentTransitionActionType {
         match self {
             DocumentTransitionAction::CreateAction(_) => DocumentTransitionActionType::Create,

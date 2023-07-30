@@ -5,6 +5,7 @@ use crate::{BlsModule, ProtocolError};
 use platform_version::version::FeatureVersion;
 
 pub trait IdentityTopUpTransitionMethodsV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity(
         identity: Identity,
         asset_lock_proof: AssetLockProof,

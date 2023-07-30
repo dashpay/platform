@@ -12,6 +12,7 @@ use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::{Bytes32, Identifier};
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity(
         identity: Identity,
         asset_lock_proof: AssetLockProof,

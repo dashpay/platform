@@ -13,9 +13,9 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::version::PlatformVersion;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
-pub struct DocumentReplaceTransitionActionV0 {
+pub struct DocumentReplaceTransitionActionV0<'a> {
     /// Document Base Transition
-    pub base: DocumentBaseTransitionAction,
+    pub base: DocumentBaseTransitionAction<'a>,
     /// The current revision we are setting
     pub revision: Revision,
     /// The time the document was last updated
@@ -26,9 +26,9 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
 }
 
-pub trait DocumentReplaceTransitionActionAccessorsV0 {
+pub trait DocumentReplaceTransitionActionAccessorsV0<'a> {
     fn base(&self) -> &DocumentBaseTransitionAction;
-    fn base_owned(self) -> DocumentBaseTransitionAction;
+    fn base_owned(self) -> DocumentBaseTransitionAction<'a>;
     fn revision(&self) -> Revision;
     fn created_at(&self) -> Option<TimestampMillis>;
     fn updated_at(&self) -> Option<TimestampMillis>;

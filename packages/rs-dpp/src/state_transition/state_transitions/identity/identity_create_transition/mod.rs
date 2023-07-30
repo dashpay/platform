@@ -28,6 +28,8 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
 #[derive(
     Debug,
     Clone,
+    Decode,
+    Encode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,

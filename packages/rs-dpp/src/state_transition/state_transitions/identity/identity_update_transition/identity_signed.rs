@@ -4,7 +4,7 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for IdentityUpdateTransition {
-    fn signature_public_key_id(&self) -> Option<KeyID> {
+    fn signature_public_key_id(&self) -> KeyID {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.signature_public_key_id(),
         }

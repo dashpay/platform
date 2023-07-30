@@ -4,7 +4,7 @@ use crate::state_transition::identity_credit_withdrawal_transition::IdentityCred
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
-    fn signature_public_key_id(&self) -> Option<KeyID> {
+    fn signature_public_key_id(&self) -> KeyID {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => {
                 transition.signature_public_key_id()

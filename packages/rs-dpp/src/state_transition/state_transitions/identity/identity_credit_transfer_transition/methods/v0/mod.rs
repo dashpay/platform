@@ -6,5 +6,4 @@ pub trait IdentityCreditTransferTransitionMethodsV0 {
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityCreditTransfer
     }
-    fn security_level_requirement(&self) -> Vec<SecurityLevel>;
 }

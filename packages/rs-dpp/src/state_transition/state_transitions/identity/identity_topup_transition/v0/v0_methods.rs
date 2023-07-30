@@ -10,6 +10,7 @@ use crate::{
     BlsModule, Convertible, NonConsensusError, ProtocolError,
 };
 
+use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
@@ -22,6 +23,7 @@ use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransit
 use crate::version::FeatureVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
@@ -31,7 +33,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
     ) -> Result<Self, ProtocolError> {
         let mut identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
-            identity_id: identity.id,
+            identity_id: identity.id(),
             signature: Default::default(),
         };
 

@@ -6,11 +6,11 @@ pub mod document_transition;
 pub mod v0;
 
 #[derive(Debug, Clone)]
-pub enum DocumentsBatchTransitionAction {
-    V0(DocumentsBatchTransitionActionV0),
+pub enum DocumentsBatchTransitionAction<'a> {
+    V0(DocumentsBatchTransitionActionV0<'a>),
 }
 
-impl DocumentsBatchTransitionAction {
+impl<'a> DocumentsBatchTransitionAction<'a> {
     pub fn owner_id(&self) -> Identifier {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.owner_id,
@@ -23,7 +23,7 @@ impl DocumentsBatchTransitionAction {
         }
     }
 
-    pub fn transitions_owned(self) -> Vec<DocumentTransitionAction> {
+    pub fn transitions_owned(self) -> Vec<DocumentTransitionAction<'a>> {
         match self {
             DocumentsBatchTransitionAction::V0(v0) => v0.transitions,
         }

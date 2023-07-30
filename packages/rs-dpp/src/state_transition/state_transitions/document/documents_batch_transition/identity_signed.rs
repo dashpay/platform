@@ -4,7 +4,7 @@ use crate::state_transition::documents_batch_transition::DocumentsBatchTransitio
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for DocumentsBatchTransition {
-    fn signature_public_key_id(&self) -> Option<KeyID> {
+    fn signature_public_key_id(&self) -> KeyID {
         match self {
             DocumentsBatchTransition::V0(transition) => transition.signature_public_key_id(),
         }

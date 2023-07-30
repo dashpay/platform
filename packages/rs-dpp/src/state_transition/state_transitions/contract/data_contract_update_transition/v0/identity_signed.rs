@@ -5,8 +5,8 @@ use crate::state_transition::data_contract_update_transition::DataContractUpdate
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for DataContractUpdateTransitionV0 {
-    fn signature_public_key_id(&self) -> Option<KeyID> {
-        Some(self.signature_public_key_id)
+    fn signature_public_key_id(&self) -> KeyID {
+        self.signature_public_key_id
     }
 
     fn set_signature_public_key_id(&mut self, key_id: crate::identity::KeyID) {

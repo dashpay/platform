@@ -6,8 +6,8 @@ use crate::state_transition::identity_credit_withdrawal_transition::v0::Identity
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionIdentitySigned};
 
 impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransitionV0 {
-    fn signature_public_key_id(&self) -> Option<KeyID> {
-        Some(self.signature_public_key_id)
+    fn signature_public_key_id(&self) -> KeyID {
+        self.signature_public_key_id
     }
 
     fn set_signature_public_key_id(&mut self, key_id: KeyID) {

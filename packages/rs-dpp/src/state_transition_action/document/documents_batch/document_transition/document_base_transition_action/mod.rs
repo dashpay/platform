@@ -11,11 +11,11 @@ use crate::data_contract::DataContract;
 pub use v0::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
-pub enum DocumentBaseTransitionAction {
-    V0(DocumentBaseTransitionActionV0),
+pub enum DocumentBaseTransitionAction<'a> {
+    V0(DocumentBaseTransitionActionV0<'a>),
 }
 
-impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
+impl<'a> DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction<'a> {
     fn id(&self) -> Identifier {
         match self {
             DocumentBaseTransitionAction::V0(v0) => v0.id,

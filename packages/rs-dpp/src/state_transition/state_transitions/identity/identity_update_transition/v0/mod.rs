@@ -36,7 +36,7 @@ use crate::{
 };
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(PlatformDeserialize, PlatformSerialize, PlatformSignable, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
