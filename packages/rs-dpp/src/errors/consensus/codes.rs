@@ -76,6 +76,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTypeError { .. } => 1028,
+            Self::MaxDocumentsTransitionsExceededError { .. } => 1065,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -100,6 +101,10 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 1057,
             Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 1058,
             Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 1059,
+            Self::InvalidIdentityCreditTransferAmountError(_) => 1061,
+            Self::InvalidIdentityCreditWithdrawalTransitionAmountError(_) => 1062,
+            Self::InvalidIdentityUpdateTransitionEmptyError(_) => 1063,
+            Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 1064,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
