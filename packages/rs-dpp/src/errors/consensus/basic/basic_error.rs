@@ -16,14 +16,7 @@ use crate::consensus::basic::data_contract::{
 use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
-use crate::consensus::basic::document::{
-    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MissingDataContractIdBasicError,
-    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError,
-};
+use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError, MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError, MissingDocumentTypeError};
 use crate::consensus::basic::identity::{DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError, IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutPointAlreadyExistsError, IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError, InvalidIdentityAssetLockProofChainLockValidationError, InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError, InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError, MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -165,6 +158,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MissingDocumentTypeError(MissingDocumentTypeError),
+
+    #[error(transparent)]
+    MaxDocumentsTransitionsExceededError(MaxDocumentsTransitionsExceededError),
 
     // Identity
     #[error(transparent)]

@@ -7,7 +7,6 @@ use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 
 const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
 

@@ -76,6 +76,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTypeError { .. } => 1028,
+            Self::MaxDocumentsTransitionsExceededError { .. } => 1065,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
