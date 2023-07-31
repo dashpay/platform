@@ -18,8 +18,8 @@ use indexmap::IndexMap;
 use crate::platform_types::masternode;
 
 use crate::platform_types::validator_set::ValidatorSet;
-use std::collections::{BTreeMap, HashMap};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
 #[derive(Clone, Debug)]

@@ -9,7 +9,6 @@ pub struct ApplyBalanceChangeOutcomeV0 {
 
 /// Trait for interacting with balance change outcomes.
 pub trait ApplyBalanceChangeOutcomeV0Methods {
-
     /// Returns an immutable reference to the actual fee paid.
     fn actual_fee_paid(&self) -> &FeeResult;
 

@@ -178,7 +178,7 @@ impl StateTransition {
     }
 
     /// returns the signature as a byte-array
-    fn signature_public_key_id(&self) -> Option<KeyID> {
+    pub fn signature_public_key_id(&self) -> Option<KeyID> {
         call_method_identity_signed!(self, signature_public_key_id)
     }
 
@@ -239,7 +239,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-validation")]
-    fn verify_signature(
+    pub fn verify_signature(
         &self,
         public_key: &IdentityPublicKey,
         bls: &impl BlsModule,

@@ -1,7 +1,7 @@
 use crate::ProtocolError;
 use lazy_static::lazy_static;
-pub use platform_version::version::*;
 pub use platform_version::error::PlatformVersionError;
+pub use platform_version::version::*;
 pub use platform_version::*;
 use std::sync::{RwLock, RwLockReadGuard};
 

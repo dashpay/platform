@@ -31,6 +31,7 @@ use crate::platform_types::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -41,7 +42,6 @@ use drive::error::contract::DataContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     match value {
@@ -270,9 +270,13 @@ impl<C> Platform<C> {
                     let balance = check_validation_result_with_data!(self
                         .drive
                         .fetch_identity_balance(identity_id.into_buffer(), None, platform_version));
-                    let revision = check_validation_result_with_data!(self
-                        .drive
-                        .fetch_identity_revision(identity_id.into_buffer(), true, None, platform_version));
+                    let revision =
+                        check_validation_result_with_data!(self.drive.fetch_identity_revision(
+                            identity_id.into_buffer(),
+                            true,
+                            None,
+                            platform_version
+                        ));
                     GetIdentityBalanceAndRevisionResponse {
                         result: Some(
                             get_identity_balance_and_revision_response::Result::BalanceAndRevision(
@@ -396,7 +400,11 @@ impl<C> Platform<C> {
                             platform_version
                         )
                         .unwrap())
-                    .map(|contract| contract.contract.serialize_with_platform_version(platform_version))
+                    .map(|contract| {
+                        contract
+                            .contract
+                            .serialize_with_platform_version(platform_version)
+                    })
                     .transpose()?;
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::DataContract(
@@ -418,9 +426,11 @@ impl<C> Platform<C> {
                     })
                     .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_contracts(contract_ids.as_slice(), None, platform_version));
+                    let proof = check_validation_result_with_data!(self.drive.prove_contracts(
+                        contract_ids.as_slice(),
+                        None,
+                        platform_version
+                    ));
                     GetDataContractsResponse {
                         metadata: Some(metadata),
                         result: Some(get_data_contracts_response::Result::Proof(Proof {
@@ -453,7 +463,11 @@ impl<C> Platform<C> {
                                             ProtocolError,
                                         >(
                                             get_data_contracts_response::DataContractValue {
-                                                value: contract.contract.serialize_with_platform_version(platform_version)?
+                                                value: contract
+                                                    .contract
+                                                    .serialize_with_platform_version(
+                                                        platform_version
+                                                    )?
                                             }
                                         ))
                                         .transpose()?,

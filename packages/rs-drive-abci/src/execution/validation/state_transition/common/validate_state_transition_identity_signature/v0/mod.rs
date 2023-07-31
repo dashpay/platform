@@ -7,7 +7,9 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionIdentitySignedV0};
+use dpp::state_transition::{
+    StateTransition, StateTransitionIdentitySigned, StateTransitionIdentitySignedV0,
+};
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -38,7 +40,7 @@ lazy_static! {
 
 pub(crate) fn validate_state_transition_identity_signature_v0(
     drive: &Drive,
-    state_transition: &impl StateTransitionIdentitySigned,
+    state_transition: &StateTransition,
     request_revision: bool,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
@@ -69,7 +71,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
         None => {
             // dbg!(bs58::encode(&state_transition.get_owner_id()).into_string());
             validation_result.add_error(SignatureError::IdentityNotFoundError(
-                IdentityNotFoundError::new(*state_transition.owner_id()),
+                IdentityNotFoundError::new(state_transition.owner_id()),
             ));
             return Ok(validation_result);
         }
@@ -92,7 +94,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
 
     if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type) {
         validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
-            InvalidIdentityPublicKeyTypeError::new(public_key.key_type),
+            InvalidIdentityPublicKeyTypeError::new(public_key.key_type()),
         ));
         return Ok(validation_result);
     }

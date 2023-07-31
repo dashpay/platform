@@ -76,8 +76,8 @@ mod tests {
 
     mod add_distribute_storage_fee_to_epochs_operations {
         use dpp::balances::credits::Creditable;
-        use dpp::block::epoch::Epoch;
         use dpp::block::block_info::BlockInfo;
+        use dpp::block::epoch::Epoch;
         use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
         use dpp::fee::epoch::{
             CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
@@ -167,8 +167,12 @@ mod tests {
             let refunds =
                 CreditsPerEpoch::from_iter([(0, 10000), (1, 15000), (2, 20000), (3, 25000)]);
 
-            Drive::add_update_pending_epoch_refunds_operations(&mut batch, refunds.clone(), &platform_version.drive)
-                .expect("should update pending epoch refunds");
+            Drive::add_update_pending_epoch_refunds_operations(
+                &mut batch,
+                refunds.clone(),
+                &platform_version.drive,
+            )
+            .expect("should update pending epoch refunds");
 
             batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 

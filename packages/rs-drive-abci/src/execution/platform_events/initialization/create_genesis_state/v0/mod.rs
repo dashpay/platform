@@ -39,8 +39,11 @@ use drive::dpp::identity::{
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::IdentityV0;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -52,9 +55,6 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, Owne
 use drive::query::TransactionArg;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::IdentityV0;
 
 const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
     215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
@@ -148,7 +148,8 @@ impl<C> Platform<C> {
                         read_only: false,
                         data: identity_public_keys_set.master.clone().into(),
                         disabled_at: None,
-                    }.into(),
+                    }
+                    .into(),
                 ),
                 (
                     1,
@@ -160,7 +161,8 @@ impl<C> Platform<C> {
                         read_only: false,
                         data: identity_public_keys_set.high.clone().into(),
                         disabled_at: None,
-                    }.into(),
+                    }
+                    .into(),
                 ),
             ];
 
@@ -169,9 +171,14 @@ impl<C> Platform<C> {
                 public_keys: BTreeMap::from(public_keys),
                 balance: 0,
                 revision: 0,
-            }.into();
+            }
+            .into();
 
-            self.register_system_data_contract_operations(data_contract, &mut operations, platform_version);
+            self.register_system_data_contract_operations(
+                data_contract,
+                &mut operations,
+                platform_version,
+            );
 
             self.register_system_identity_operations(identity, &mut operations);
         }
@@ -195,7 +202,7 @@ impl<C> Platform<C> {
         &self,
         data_contract: DataContract,
         operations: &mut Vec<DriveOperation>,
-        platform_version : &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) {
         let serialization = data_contract.serialize_with_platform_version().unwrap();
         operations.push(DriveOperation::DataContractOperation(

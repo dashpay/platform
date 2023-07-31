@@ -43,7 +43,10 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating state
     let result = state_transition.validate_state(platform, transaction)?;
 
-    result.map_result(|action| (maybe_identity, action, &platform.state.epoch()).try_into_platform_versioned(platform_version))
+    result.map_result(|action| {
+        (maybe_identity, action, &platform.state.epoch())
+            .try_into_platform_versioned(platform_version)
+    })
 }
 
 /// A trait for validating state transitions within a blockchain.

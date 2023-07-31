@@ -221,7 +221,6 @@ mod tests {
     use drive::common::helpers::identities::create_test_masternode_identities;
     use drive::common::identities::create_test_masternode_identities;
 
-
     mod helpers {
         use super::*;
         use crate::execution::types::block_fees::v0::BlockFeesV0;

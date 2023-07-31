@@ -34,7 +34,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
         if self.pooling() != Pooling::Never {
             result.add_error(
                 NotImplementedIdentityCreditWithdrawalTransitionPoolingError::new(
-                    self.pooling() as u8,
+                    self.pooling() as u8
                 ),
             );
 

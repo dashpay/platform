@@ -1,12 +1,13 @@
-use std::collections::HashMap;
 use crate::identity::KeyID;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-
+use std::collections::HashMap;
 
 impl IdentityPublicKeyInCreation {
     /// Find duplicate key ids
-    pub(super) fn duplicated_key_ids_witness_v0(public_keys: &[IdentityPublicKeyInCreation]) -> Vec<KeyID> {
+    pub(super) fn duplicated_key_ids_witness_v0(
+        public_keys: &[IdentityPublicKeyInCreation],
+    ) -> Vec<KeyID> {
         let mut duplicated_ids = Vec::<KeyID>::new();
         let mut ids_count = HashMap::<KeyID, usize>::new();
 
@@ -24,4 +25,3 @@ impl IdentityPublicKeyInCreation {
         duplicated_ids
     }
 }
-

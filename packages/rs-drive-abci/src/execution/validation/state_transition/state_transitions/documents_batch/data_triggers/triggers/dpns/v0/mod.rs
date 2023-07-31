@@ -157,7 +157,8 @@ pub fn create_domain_data_trigger_v0(
             }
         }
 
-        if normalized_parent_domain_name.is_empty() && context.owner_id != &dpns_contract::OWNER_ID {
+        if normalized_parent_domain_name.is_empty() && context.owner_id != &dpns_contract::OWNER_ID
+        {
             let err = DataTriggerConditionError::new(
                 context.data_contract.id(),
                 document_transition.base().id(),
@@ -174,9 +175,12 @@ pub fn create_domain_data_trigger_v0(
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let document_type = context
-            .data_contract
-            .document_type_for_name(document_create_transition.base().document_type_name().as_str())?;
+        let document_type = context.data_contract.document_type_for_name(
+            document_create_transition
+                .base()
+                .document_type_name()
+                .as_str(),
+        )?;
 
         let drive_query = DriveQuery {
             contract: context.data_contract,

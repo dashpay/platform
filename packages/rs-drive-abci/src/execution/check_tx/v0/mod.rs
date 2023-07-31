@@ -7,8 +7,8 @@ use crate::execution::validation::state_transition::processor::process_state_tra
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;

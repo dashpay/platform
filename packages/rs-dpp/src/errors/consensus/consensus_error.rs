@@ -54,7 +54,6 @@ impl From<DataTriggerError> for ConsensusError {
     }
 }
 
-
 #[cfg(test)]
 impl From<TestConsensusError> for ConsensusError {
     fn from(error: TestConsensusError) -> Self {

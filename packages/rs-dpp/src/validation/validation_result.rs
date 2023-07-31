@@ -183,7 +183,7 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         self.errors.append(&mut errors)
     }
 
-    pub fn add_errors_into<EI : Into<E>>(&mut self, errors: Vec<EI>)  {
+    pub fn add_errors_into<EI: Into<E>>(&mut self, errors: Vec<EI>) {
         errors.into_iter().for_each(|e| self.add_error(e.into()))
     }
 

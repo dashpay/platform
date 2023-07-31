@@ -40,7 +40,7 @@ pub struct JsonSchemaValidatorVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionMethodVersions {
-    pub public_key_in_creation_methods: PublicKeyInCreationMethodVersions
+    pub public_key_in_creation_methods: PublicKeyInCreationMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]

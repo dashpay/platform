@@ -1,6 +1,5 @@
 use dpp::fee::Credits;
 
-
 //todo: make this non versioned
 /// Result of storage fee distribution
 pub struct StorageFeeDistributionOutcome {

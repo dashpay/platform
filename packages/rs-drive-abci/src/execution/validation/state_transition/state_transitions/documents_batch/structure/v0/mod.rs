@@ -13,7 +13,9 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::DocumentTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};

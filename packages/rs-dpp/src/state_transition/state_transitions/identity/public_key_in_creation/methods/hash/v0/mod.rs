@@ -1,8 +1,8 @@
-use std::convert::TryInto;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::IdentityPublicKey;
-use crate::ProtocolError;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::ProtocolError;
+use std::convert::TryInto;
 
 impl IdentityPublicKeyInCreation {
     /// Get the original public key hash

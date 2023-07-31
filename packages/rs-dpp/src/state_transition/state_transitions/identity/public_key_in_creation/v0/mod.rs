@@ -38,7 +38,9 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::serialization::PlatformMessageSignable;
-use crate::state_transition::public_key_in_creation::accessors::{IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters};
+use crate::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+};
 use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
@@ -117,7 +119,6 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
         }
         .into()
     }
-
 }
 
 //

@@ -44,8 +44,7 @@ impl<C> Platform<C> {
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
-            current_epoch
-                .update_processing_fee_pool_operation(total_processing_fees)?,
+            current_epoch.update_processing_fee_pool_operation(total_processing_fees)?,
         ));
 
         // update storage fee pool

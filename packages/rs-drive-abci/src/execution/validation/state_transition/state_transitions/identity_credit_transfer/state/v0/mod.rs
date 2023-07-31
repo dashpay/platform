@@ -10,10 +10,10 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionAction,
 };
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionAction,
 };
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 
 use dpp::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
@@ -52,8 +52,11 @@ impl StateTransitionStateValidationV0 for IdentityCreditTransferTransition {
 
         if existing_identity_balance < self.amount() {
             return Ok(ConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(self.identity_id(), existing_identity_balance)
-                    .into(),
+                IdentityInsufficientBalanceError::new(
+                    self.identity_id(),
+                    existing_identity_balance,
+                )
+                .into(),
             ));
         }
 

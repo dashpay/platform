@@ -75,16 +75,22 @@ impl<'a> ExecutionEvent<'a> {
     }
 }
 
-impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for ExecutionEvent<'a> {
+impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionAction, &Epoch)>
+    for ExecutionEvent<'a>
+{
     type Error = Error;
 
-    fn try_from_platform_versioned(value: (Option<PartialIdentity>, StateTransitionAction, &Epoch), platform_version: &PlatformVersion) -> Result<Self, Self::Error> {
+    fn try_from_platform_versioned(
+        value: (Option<PartialIdentity>, StateTransitionAction, &Epoch),
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
         let (identity, action, epoch) = value;
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();
                 let added_balance = identity_create_action.initial_balance_amount;
-                let operations = action.into_high_level_drive_operations(epoch, platform_version)?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(PaidFromAssetLockDriveEvent {
                     identity,
                     added_balance,
@@ -93,7 +99,8 @@ impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionActio
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
                 let added_balance = identity_top_up_action.top_up_balance_amount;
-                let operations = action.into_high_level_drive_operations(epoch, platform_version)?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
                     Ok(PaidFromAssetLockDriveEvent {
                         identity,
@@ -107,7 +114,8 @@ impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionActio
                 }
             }
             _ => {
-                let operations = action.into_high_level_drive_operations(epoch, platform_version)?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
                     Ok(PaidDriveEvent {
                         identity,
@@ -121,6 +129,4 @@ impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionActio
             }
         }
     }
-
-
 }

@@ -9,8 +9,8 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::grovedb::Transaction;
 use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
+use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
 where

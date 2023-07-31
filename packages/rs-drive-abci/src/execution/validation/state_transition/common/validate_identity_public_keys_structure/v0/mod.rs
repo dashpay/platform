@@ -38,7 +38,10 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
     }
 
     // Check that there's not duplicates key ids in the state transition
-    let duplicated_ids = IdentityPublicKeyInCreation::duplicated_key_ids_witness(identity_public_keys_with_witness, platform_version)?;
+    let duplicated_ids = IdentityPublicKeyInCreation::duplicated_key_ids_witness(
+        identity_public_keys_with_witness,
+        platform_version,
+    )?;
     if !duplicated_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             BasicError::DuplicatedIdentityPublicKeyIdBasicError(
@@ -49,7 +52,10 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
     }
 
     // Check that there's no duplicated keys
-    let duplicated_key_ids = IdentityPublicKeyInCreation::duplicated_keys_witness(identity_public_keys_with_witness, platform_version)?;
+    let duplicated_key_ids = IdentityPublicKeyInCreation::duplicated_keys_witness(
+        identity_public_keys_with_witness,
+        platform_version,
+    )?;
     if !duplicated_key_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             StateError::DuplicatedIdentityPublicKeyStateError(

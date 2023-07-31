@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod accessors;
 mod fields;
-pub mod v0;
 mod methods;
+pub mod v0;
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From,

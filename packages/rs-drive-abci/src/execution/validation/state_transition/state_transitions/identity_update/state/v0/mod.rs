@@ -13,7 +13,6 @@ use dpp::identity::state_transition::identity_update_transition::IdentityUpdateT
 
 use dpp::prelude::ConsensusValidationResult;
 
-
 use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionAction,

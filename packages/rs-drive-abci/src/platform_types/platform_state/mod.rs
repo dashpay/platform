@@ -21,12 +21,12 @@ use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use indexmap::IndexMap;
-use std::collections::{BTreeMap, HashMap};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]
-#[platform_serialize(into="PlatformStateForSaving")]
+#[platform_serialize(into = "PlatformStateForSaving")]
 pub enum PlatformState {
     /// Version 0
     V0(PlatformStateV0),

@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods};
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
-use dpp::block::epoch::Epoch;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -187,7 +187,12 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
-            let platform_version = platform.state.read().unwrap().current_platform_version().expect("platform_version");
+            let platform_version = platform
+                .state
+                .read()
+                .unwrap()
+                .current_platform_version()
+                .expect("platform_version");
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
