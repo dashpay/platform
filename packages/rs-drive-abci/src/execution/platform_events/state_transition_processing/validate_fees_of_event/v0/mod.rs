@@ -9,7 +9,6 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::fee::result::FeeResult;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>

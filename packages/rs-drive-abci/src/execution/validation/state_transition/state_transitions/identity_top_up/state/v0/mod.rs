@@ -11,16 +11,13 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
 
-use dpp::identity::state_transition::identity_topup_transition::{
-    IdentityTopUpTransition, IdentityTopUpTransitionAction,
-};
-
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionAction,
 };
-use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+
 use dpp::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
@@ -49,13 +46,13 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let outpoint = match self.asset_lock_proof.out_point() {
+        let outpoint = match self.asset_lock_proof().out_point() {
             None => {
                 return Ok(ConsensusValidationResult::new_with_error(
                     ConsensusError::BasicError(
                         BasicError::IdentityAssetLockTransactionOutputNotFoundError(
                             IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
+                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
                             ),
                         ),
                     ),
@@ -95,7 +92,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let tx_out_validation = self
-            .asset_lock_proof
+            .asset_lock_proof()
             .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(

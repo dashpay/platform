@@ -31,7 +31,6 @@ use crate::platform_types::platform::Platform;
 
 use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
-use drive::contract::DataContract;
 use drive::dpp::document::Document;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,

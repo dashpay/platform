@@ -7,6 +7,7 @@ use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
 use tracing::error;
+use dpp::version::{PlatformVersion, PlatformVersionError};
 
 /// Execution errors module
 pub mod execution;
@@ -47,6 +48,13 @@ pub enum Error {
     /// Error from metrics subsystem
     #[error("metrics: {0}")]
     Metrics(#[from] crate::metrics::Error),
+}
+
+impl From<PlatformVersionError> for Error {
+    fn from(value: PlatformVersionError) -> Self {
+        let platform_error: ProtocolError = value.into();
+        platform_error.into()
+    }
 }
 
 impl From<Error> for ResponseException {

@@ -66,7 +66,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(drive, tx),
+            0 => self.validate_structure_v0(drive, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: structure".to_string(),
                 known_versions: vec![0],
@@ -89,7 +89,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .identity_signatures
         {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction),
+            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: validate_identity_and_signatures".to_string(),
                 known_versions: vec![0],

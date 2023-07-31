@@ -25,7 +25,7 @@ impl Drive {
     /// # Returns
     ///
     /// Returns a `Result` containing an `Option` for the Identity's revision, otherwise an `Error` if the operation fails or the version is not supported.
-    pub(crate) fn fetch_identity_revision(
+    pub fn fetch_identity_revision(
         &self,
         identity_id: [u8; 32],
         apply: bool,

@@ -9,7 +9,6 @@ use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-    state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
 
@@ -32,7 +31,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
-        _platform: &PlatformRef<C>,
+        platform: &PlatformRef<C>,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =

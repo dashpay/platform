@@ -15,7 +15,8 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction,
 };
-use dpp::state_transition::StateTransitionAction;
+
+use dpp::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 
@@ -40,28 +41,28 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let maybe_existing_identity_balance = platform
             .drive
-            .fetch_identity_balance(self.identity_id.to_buffer(), tx)?;
+            .fetch_identity_balance(self.identity_id().to_buffer(), tx)?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id).into()));
+            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
         };
 
-        if existing_identity_balance < self.amount {
+        if existing_identity_balance < self.amount() {
             return Ok(ConsensusValidationResult::new_with_error(
                 IdentityInsufficientBalanceError::new(self.identity_id, existing_identity_balance)
                     .into(),
             ));
         }
 
-        let Some(revision) = platform.drive.fetch_identity_revision(self.identity_id.to_buffer(), true, tx)? else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id).into()));
+        let Some(revision) = platform.drive.fetch_identity_revision(self.identity_id().to_buffer(), true, tx)? else {
+            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
         };
 
         // Check revision
         if revision + 1 != self.revision {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
-                    self.identity_id,
+                    self.identity_id(),
                     revision,
                 ))
                 .into(),

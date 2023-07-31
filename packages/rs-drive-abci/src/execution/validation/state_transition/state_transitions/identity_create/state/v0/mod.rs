@@ -20,7 +20,7 @@ use dpp::identity::state_transition::identity_create_transition::{
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::StateTransitionAction;
+
 use dpp::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;

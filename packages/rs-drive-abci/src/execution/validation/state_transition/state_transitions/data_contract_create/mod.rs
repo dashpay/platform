@@ -4,8 +4,7 @@ mod structure;
 
 use dpp::identity::PartialIdentity;
 
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::StateTransitionAction;
+
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;

@@ -15,20 +15,18 @@ use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use dpp::serialization::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 /// Platform state
 #[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]
-#[platform_serialize_into(PlatformStateForSaving)]
-#[platform_deserialize_from(PlatformStateForSaving)]
-
+#[platform_serialize(into="PlatformStateForSaving")]
 pub enum PlatformState {
     /// Version 0
     V0(PlatformStateV0),

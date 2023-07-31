@@ -1221,6 +1221,8 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
+ "platform-serialization",
+ "platform-serialization-derive",
  "prost",
  "rand",
  "regex",

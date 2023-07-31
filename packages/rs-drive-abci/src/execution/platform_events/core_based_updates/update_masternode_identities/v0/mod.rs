@@ -11,7 +11,6 @@ use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
-use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
