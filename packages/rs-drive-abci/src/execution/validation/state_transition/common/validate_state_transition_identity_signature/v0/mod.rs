@@ -18,7 +18,6 @@ use dpp::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
         SignatureError,
     },
-    state_transition::state_transition_validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
     NativeBlsModule,
 };
 use drive::dpp::identity::KeyType;
@@ -54,8 +53,15 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
                 "state_transition does not have a public key Id to verify".to_string(),
             ))?;
 
+    let owner_id =
+        state_transition
+            .owner_id()
+            .ok_or(ProtocolError::CorruptedCodeExecution(
+                "state_transition does not have a owner Id to verify".to_string(),
+            ))?;
+
     let key_request =
-        IdentityKeysRequest::new_specific_key_query(state_transition.owner_id().as_bytes(), key_id);
+        IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
     let maybe_partial_identity = if request_revision {
         drive.fetch_identity_balance_with_keys_and_revision(
@@ -71,7 +77,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
         None => {
             // dbg!(bs58::encode(&state_transition.get_owner_id()).into_string());
             validation_result.add_error(SignatureError::IdentityNotFoundError(
-                IdentityNotFoundError::new(state_transition.owner_id()),
+                IdentityNotFoundError::new(owner_id),
             ));
             return Ok(validation_result);
         }

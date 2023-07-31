@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::state_transition_helpers;
 
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, Identifier, Value};
 pub use state_transition_types::*;
 
 use bincode::{config, Decode, Encode};
@@ -180,6 +180,11 @@ impl StateTransition {
     /// returns the signature as a byte-array
     pub fn signature_public_key_id(&self) -> Option<KeyID> {
         call_method_identity_signed!(self, signature_public_key_id)
+    }
+
+    /// returns the signature as a byte-array
+    pub fn owner_id(&self) -> Option<Identifier> {
+        call_method_identity_signed!(self, owner_id)
     }
 
     /// set a new signature

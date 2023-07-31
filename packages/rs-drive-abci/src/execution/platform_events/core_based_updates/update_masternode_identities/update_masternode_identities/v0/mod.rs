@@ -1,8 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformState;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
@@ -60,10 +58,10 @@ where
         let mut drive_operations = vec![];
 
         for masternode in added_mns {
-            let owner_identity = self.create_owner_identity(&masternode)?;
+            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?;
             let voter_identity =
-                self.create_voter_identity_from_masternode_list_item(&masternode)?;
-            let operator_identity = self.create_operator_identity(&masternode)?;
+                Self::create_voter_identity_from_masternode_list_item(&masternode, platform_version)?;
+            let operator_identity = Self::create_operator_identity(&masternode, platform_version)?;
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: owner_identity,

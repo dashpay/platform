@@ -9,13 +9,12 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 
 use dpp::consensus::state::state_error::StateError;
 
-use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};
-
 use dpp::state_transition::identity_update_transition::validate_identity_update_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 
 /// This validation will validate the count of new keys, that there are no duplicates either by
 /// id or by data. This is done before signature and state validation to remove potential
@@ -71,12 +70,12 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
         .filter_map(|identity_public_key| {
             let allowed_security_levels = ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose);
             if let Some(levels) = allowed_security_levels {
-                if !levels.contains(&identity_public_key.security_level) {
+                if !levels.contains(&identity_public_key.security_level()) {
                     Some(
                         InvalidIdentityPublicKeySecurityLevelError::new(
-                            identity_public_key.id,
-                            identity_public_key.purpose,
-                            identity_public_key.security_level,
+                            identity_public_key.id(),
+                            identity_public_key.purpose(),
+                            identity_public_key.security_level(),
                             Some(levels.clone()),
                         )
                         .into(),
@@ -87,9 +86,9 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
             } else {
                 Some(
                     InvalidIdentityPublicKeySecurityLevelError::new(
-                        identity_public_key.id,
-                        identity_public_key.purpose,
-                        identity_public_key.security_level,
+                        identity_public_key.id(),
+                        identity_public_key.purpose(),
+                        identity_public_key.security_level(),
                         None,
                     )
                     .into(),

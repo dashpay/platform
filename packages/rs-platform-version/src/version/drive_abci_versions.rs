@@ -97,6 +97,15 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
+    pub get_voter_identity_key: FeatureVersion,
+    pub get_operator_identity_keys: FeatureVersion,
+    pub get_owner_identity_key: FeatureVersion,
+    pub get_voter_identifier: FeatureVersion,
+    pub get_operator_identifier: FeatureVersion,
+    pub create_operator_identity: FeatureVersion,
+    pub create_owner_identity: FeatureVersion,
+    pub create_voter_identity: FeatureVersion,
+    pub hash_protxhash_with_key_data: FeatureVersion,
     pub disable_identity_keys: FeatureVersion,
     pub update_masternode_identities: FeatureVersion,
     pub update_operator_identity: FeatureVersion,
