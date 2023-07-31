@@ -91,10 +91,10 @@ impl DataTriggerBindingV0Getters for DataTriggerBindingV0 {
         &self,
         data_contract_id: &Identifier,
         document_type: &str,
-        transition_action: DocumentTransitionAction,
+        transition_action_type: DocumentTransitionActionType,
     ) -> bool {
         &self.data_contract_id == data_contract_id
             && self.document_type == document_type
-            && self.transition_action_type == transition_action.action_type()
+            && self.transition_action_type == transition_action_type
     }
 }

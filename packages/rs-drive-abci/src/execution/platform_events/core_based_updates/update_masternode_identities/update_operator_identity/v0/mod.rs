@@ -1,7 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformState;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
@@ -64,15 +63,19 @@ where
                 ))
             })?;
 
-        let old_operator_identifier =
-            Self::get_operator_identifier_from_masternode_list_item(old_masternode)?;
+        let old_operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
+            old_masternode,
+            platform_version,
+        )?;
 
         let mut new_masternode = old_masternode.clone();
 
         new_masternode.state.apply_diff(state_diff.clone());
 
-        let new_operator_identifier =
-            Self::get_operator_identifier_from_masternode_list_item(&new_masternode)?;
+        let new_operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
+            &new_masternode,
+            platform_version,
+        )?;
 
         let key_request = IdentityKeysRequest {
             identity_id: old_operator_identifier,

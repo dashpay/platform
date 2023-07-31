@@ -37,20 +37,22 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use dpp::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext};
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
-pub(crate) fn validate_document_batch_transition_state(
+pub(crate) fn validate_document_batch_transition_state<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     batch_state_transition: &DocumentsBatchTransition,
     transaction: TransactionArg,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
+) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction<'a>>, Error> {
     let owner_id = batch_state_transition.owner_id();
+    let platform_version = platform.state.current_platform_version()?;
     let mut transitions_by_contracts_and_types: BTreeMap<
         &Identifier,
         BTreeMap<&String, Vec<&DocumentTransition>>,
@@ -100,11 +102,11 @@ pub(crate) fn validate_document_batch_transition_state(
     let validation_result = ConsensusValidationResult::flatten(validation_result);
 
     if validation_result.is_valid() {
-        let batch_transition_action = DocumentsBatchTransitionAction {
-            version: DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
+        let batch_transition_action = DocumentsBatchTransitionActionV0 {
             owner_id,
             transitions: validation_result.into_data()?,
-        };
+        }
+        .into();
         Ok(ConsensusValidationResult::new_with_data(
             batch_transition_action,
         ))
@@ -115,7 +117,7 @@ pub(crate) fn validate_document_batch_transition_state(
     }
 }
 
-fn validate_document_transitions_within_contract(
+fn validate_document_transitions_within_contract<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     data_contract_id: &Identifier,
@@ -124,7 +126,7 @@ fn validate_document_transitions_within_contract(
     execution_context: &StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction<'a>>>, Error> {
     let drive = platform.drive;
     // Data Contract must exist
     let Some(contract_fetch_info) = drive
@@ -155,7 +157,7 @@ fn validate_document_transitions_within_contract(
     Ok(ConsensusValidationResult::flatten(validation_result))
 }
 
-fn validate_document_transitions_within_document_type(
+fn validate_document_transitions_within_document_type<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     data_contract: &DataContract,
@@ -164,7 +166,7 @@ fn validate_document_transitions_within_document_type(
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,
     transaction: TransactionArg,
-) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction<'a>>>, Error> {
     // We use temporary execution context without dry run,
     // because despite the dryRun, we need to get the
     // data contract to proceed with following logic
@@ -237,7 +239,7 @@ fn validate_document_transitions_within_document_type(
 }
 
 /// The data contract can be of multiple difference versions
-fn validate_transition(
+fn validate_transition<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     contract: &DataContract,
@@ -246,7 +248,7 @@ fn validate_transition(
     fetched_documents: &[Document],
     owner_id: Identifier,
     transaction: TransactionArg,
-) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
+) -> Result<ConsensusValidationResult<DocumentTransitionAction<'a>>, Error> {
     let platform_version =
         PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
     let latest_block_time_ms = platform.state.last_block_time_ms();

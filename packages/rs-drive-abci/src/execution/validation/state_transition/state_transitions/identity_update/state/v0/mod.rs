@@ -9,9 +9,7 @@ use dpp::consensus::state::state_error::StateError;
 
 use dpp::prelude::ConsensusValidationResult;
 
-use dpp::state_transition::identity_update_transition::{
-    IdentityUpdateTransition,
-};
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
@@ -103,10 +101,11 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                     )),
                 )?;
 
-                let window_validation_result = validate_time_in_block_time_window_v0(
+                let window_validation_result = validate_time_in_block_time_window(
                     last_block_time,
                     disabled_at_ms,
                     platform.config.block_spacing_ms,
+                    platform_version,
                 )
                 .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
 

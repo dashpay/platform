@@ -35,7 +35,7 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
             // Ensure max items
             if self.public_key_ids_to_disable().len() > MAX_KEYS_TO_DISABLE {
                 result.add_error(
-                    MaxIdentityPublicKeyLimitReachedError::new(MAX_KEYS_TO_DISABLE).into()
+                    MaxIdentityPublicKeyLimitReachedError::new(MAX_KEYS_TO_DISABLE).into(),
                 );
             }
 
@@ -43,7 +43,9 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
             let mut ids = HashSet::new();
             for key_id in self.public_key_ids_to_disable() {
                 if ids.contains(key_id) {
-                    result.add_error(DuplicatedIdentityPublicKeyIdBasicError::new(vec![key_id.clone()]).into());
+                    result.add_error(
+                        DuplicatedIdentityPublicKeyIdBasicError::new(vec![key_id.clone()]).into(),
+                    );
                     break;
                 }
 
@@ -52,15 +54,11 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
 
             // Ensure disable at timestamp is present
             if self.public_keys_disabled_at().is_none() {
-                result.add_error(
-                    InvalidIdentityUpdateTransitionDisableKeysError::new().into()
-                )
+                result.add_error(InvalidIdentityUpdateTransitionDisableKeysError::new().into())
             }
         } else if self.public_keys_disabled_at().is_some() {
             // Ensure there are public keys to disable when disable at timestamp is present
-            result.add_error(
-                InvalidIdentityUpdateTransitionDisableKeysError::new().into()
-            )
+            result.add_error(InvalidIdentityUpdateTransitionDisableKeysError::new().into())
         }
 
         if !result.is_valid() {

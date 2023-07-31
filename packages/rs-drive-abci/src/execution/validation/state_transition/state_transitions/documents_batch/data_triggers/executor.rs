@@ -6,6 +6,7 @@ use dpp::ProtocolError;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;
 
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers<'a>(
@@ -16,7 +17,7 @@ pub trait DataTriggerExecutor {
     ) -> Result<DataTriggerExecutionResult, ProtocolError>;
 }
 
-impl DataTriggerExecutor for DocumentTransitionAction {
+impl<'a> DataTriggerExecutor for DocumentTransitionAction<'a> {
     fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &Vec<DataTriggerBinding>,
@@ -25,7 +26,7 @@ impl DataTriggerExecutor for DocumentTransitionAction {
     ) -> Result<DataTriggerExecutionResult, ProtocolError> {
         let data_contract_id = &context.data_contract.id();
         let document_type_name = self.base().document_type_name();
-        let transition_action = self.action();
+        let transition_action = self.action_type();
 
         // Match data triggers by action type, contract ID and document type name
         // and then execute matched triggers until one of them returns invalid result

@@ -1,11 +1,16 @@
-use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
+use dpp::consensus::basic::identity::{
+    InvalidIdentityCreditWithdrawalTransitionAmountError,
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+};
 
-use dpp::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition};
+use crate::error::Error;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
-use crate::error::Error;
 
 const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
 
@@ -19,7 +24,11 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
 
         if self.amount() < MIN_WITHDRAWAL_AMOUNT {
             result.add_error(
-                InvalidIdentityCreditWithdrawalTransitionAmountError::new(self.amount(), MIN_WITHDRAWAL_AMOUNT).into(),
+                InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+                    self.amount(),
+                    MIN_WITHDRAWAL_AMOUNT,
+                )
+                .into(),
             );
         }
 

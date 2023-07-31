@@ -3,7 +3,7 @@ mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::proposer_payouts;
-use crate::execution::types::proposer_payouts::v0::ProposersPayoutsV0;
+use crate::execution::types::proposer_payouts::v0::ProposersPayouts;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
@@ -38,7 +38,7 @@ impl<C> Platform<C> {
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<proposer_payouts::ProposersPayouts>, Error> {
+    ) -> Result<Option<ProposersPayouts>, Error> {
         match platform_version
             .drive_abci
             .methods

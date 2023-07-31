@@ -18,19 +18,7 @@ use dpp::{
     consensus::basic::data_contract::{
         DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
     },
-    data_contract::{
-        property_names,
-        state_transition::data_contract_update_transition::{
-            validation::basic::{
-                get_operation_and_property_name, get_operation_and_property_name_json,
-                schema_compatibility_validator::{
-                    validate_schema_compatibility, DiffVAlidatorError,
-                },
-                validate_indices_are_backward_compatible, EMPTY_JSON,
-            },
-            DataContractUpdateTransition,
-        },
-    },
+    data_contract::property_names,
     platform_value::{self, Value},
     Convertible, ProtocolError,
 };

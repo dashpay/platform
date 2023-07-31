@@ -77,7 +77,7 @@ impl StateTransitionValidationV0 for DataContractCreateTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        _protocol_version: u32,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;

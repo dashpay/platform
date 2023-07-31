@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::document::DocumentV0Getters;
 use dpp::ProtocolError;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
@@ -107,7 +108,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
     let document_type = context
         .data_contract
-        .document_type_for_name(&document_create_transition.base().document_type_name)?;
+        .document_type_for_name(&document_create_transition.base().document_type_name())?;
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
@@ -168,7 +169,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     let mut total_percent: u64 = percentage;
     for d in documents.iter() {
         total_percent += d
-            .properties
+            .properties()
             .get_integer::<u64>(PERCENTAGE)
             .map_err(ProtocolError::ValueError)?;
     }
@@ -216,11 +217,11 @@ mod test {
     use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
 
-    struct TestData {
+    struct TestData<'a> {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         extended_documents: Vec<ExtendedDocument>,
-        document_create_transition: DocumentCreateTransitionAction,
+        document_create_transition: DocumentCreateTransitionAction<'a>,
     }
 
     fn setup_test(platform_state: &mut PlatformStateV0) -> TestData {

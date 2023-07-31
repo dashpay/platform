@@ -14,7 +14,6 @@ pub struct InvalidIdentityCreditWithdrawalTransitionAmountError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-
     pub amount: u64,
     pub min_amount: u64,
 }

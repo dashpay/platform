@@ -9,12 +9,12 @@ use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIde
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_credit_withdrawal_transition::{
-    IdentityCreditWithdrawalTransition,
-};
+use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 use dpp::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -36,9 +36,12 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let maybe_existing_identity_balance = platform
-            .drive
-            .fetch_identity_balance(self.identity_id().to_buffer(), tx)?;
+        let platform_version = platform.state.current_platform_version()?;
+        let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
+            self.identity_id().to_buffer(),
+            tx,
+            platform_version,
+        )?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {
             return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
@@ -51,12 +54,12 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
             ));
         }
 
-        let Some(revision) = platform.drive.fetch_identity_revision(self.identity_id().to_buffer(), true, tx)? else {
+        let Some(revision) = platform.drive.fetch_identity_revision(self.identity_id().to_buffer(), true, tx, platform_version)? else {
             return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
         };
 
         // Check revision
-        if revision + 1 != self.revision {
+        if revision + 1 != self.revision() {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
                     self.identity_id(),

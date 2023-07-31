@@ -75,7 +75,7 @@ impl<'a> ExecutionEvent<'a> {
     }
 }
 
-impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionAction, &Epoch)>
+impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionAction<'a>, &Epoch)>
     for ExecutionEvent<'a>
 {
     type Error = Error;
@@ -88,7 +88,7 @@ impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionActio
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();
-                let added_balance = identity_create_action.initial_balance_amount;
+                let added_balance = identity_create_action.initial_balance_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(PaidFromAssetLockDriveEvent {
@@ -98,7 +98,7 @@ impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionActio
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
-                let added_balance = identity_top_up_action.top_up_balance_amount;
+                let added_balance = identity_top_up_action.top_up_balance_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {

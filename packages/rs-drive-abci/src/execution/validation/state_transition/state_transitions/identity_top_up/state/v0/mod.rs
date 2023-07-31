@@ -14,9 +14,7 @@ use dpp::dashcore::OutPoint;
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use dpp::state_transition::identity_topup_transition::{
-    IdentityTopUpTransition
-};
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 use dpp::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;

@@ -5,10 +5,8 @@ mod structure;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition_action::StateTransitionAction;
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
-use dpp::{
-    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
-};
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -30,7 +28,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _tx: TransactionArg,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
             PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;

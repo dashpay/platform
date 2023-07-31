@@ -2,11 +2,12 @@ use dpp::consensus::basic::BasicError;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-use dpp::consensus::basic::document::{DataContractNotPresentError, MaxDocumentsTransitionsExceededError};
+use dpp::consensus::basic::document::{
+    DataContractNotPresentError, MaxDocumentsTransitionsExceededError,
+};
 
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
-use crate::execution::validation::state_transition::documents_batch::validate_document_transitions_basic;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
