@@ -20,12 +20,14 @@ pub(crate) trait StateTransitionStructureValidationV0 {
 
 impl StateTransitionStructureValidationV0 for IdentityCreditTransferTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
+        let mut result = validate_protocol_version_v0(self.protocol_version);
+
         if self.amount() < MIN_TRANSFER_AMOUNT {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
+            result.add_error(
                 InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT).into(),
-            ));
+            );
         }
 
-        Ok(validate_protocol_version_v0(self.protocol_version))
+        Ok(result)
     }
 }

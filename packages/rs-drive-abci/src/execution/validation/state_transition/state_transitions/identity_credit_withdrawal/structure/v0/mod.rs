@@ -1,10 +1,7 @@
-use dpp::consensus::basic::identity::{
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
-};
+use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
 
 use dpp::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition, Pooling};
+use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -12,18 +9,20 @@ use dpp::withdrawal::Pooling;
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 
+const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
+
 pub(crate) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = validate_schema_v0(
-            &IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR,
-            self,
-        );
-        if !result.is_valid() {
-            return Ok(result);
+        let mut result = SimpleConsensusValidationResult::default();
+
+        if self.amount() < MIN_WITHDRAWAL_AMOUNT {
+            result.add_error(
+                InvalidIdentityCreditWithdrawalTransitionAmountError::new(self.amount(), MIN_WITHDRAWAL_AMOUNT).into(),
+            );
         }
 
         //todo: version validation

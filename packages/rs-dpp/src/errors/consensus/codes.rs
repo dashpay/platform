@@ -101,6 +101,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 1058,
             Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 1059,
             Self::InvalidIdentityCreditTransferAmountError(_) => 1061,
+            Self::InvalidIdentityCreditWithdrawalTransitionAmountError(_) => 1062,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
