@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-#[error("Amount of document transitions must be less or equal to {max_transitions} is not present")]
+#[error("Amount of document transitions must be less or equal to {max_transitions}")]
 pub struct MaxDocumentsTransitionsExceededError {
     /*
 

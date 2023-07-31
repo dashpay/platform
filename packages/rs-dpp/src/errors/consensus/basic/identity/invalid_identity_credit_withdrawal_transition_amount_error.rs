@@ -7,7 +7,7 @@ use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-#[error("Credit withdrawal amount {amount:?} must be greater or equal to {min_amount:?}")]
+#[error("Credit withdrawal amount {amount} must be greater or equal to {min_amount}")]
 pub struct InvalidIdentityCreditWithdrawalTransitionAmountError {
     /*
 
