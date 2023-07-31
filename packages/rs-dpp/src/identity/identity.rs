@@ -1,4 +1,3 @@
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AssetLockProof, Revision};
@@ -11,28 +10,27 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-use platform_versioning::PlatformSerdeVersionedDeserialize;
+use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The identity is not stored inside of drive, because of this, the serialization is mainly for
 /// transport, the serialization of the identity will include the version, so no passthrough or
 /// untagged is needed here
-#[derive(
-    Debug,
-    Serialize,
-    PlatformSerdeVersionedDeserialize,
-    Clone,
-    PartialEq,
-    PlatformDeserialize,
-    PlatformSerialize,
-    From,
+#[derive(Debug, Clone, PartialEq, From)]
+#[cfg_attr(
+    feature = "identity-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize),
+    serde(untagged),
+    platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
-#[platform_serialize(limit = 15000)]
-#[platform_version_path("dpp.identity_versions.identity_structure_version")]
-#[serde(untagged)]
+#[cfg_attr(
+    feature = "identity-serialization",
+    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    platform_serialize(limit = 15000, unversioned)
+)]
 pub enum Identity {
-    #[versioned(0)]
+    #[cfg_attr(feature = "identity-serde-conversion", versioned(0))]
     V0(IdentityV0),
 }
 
@@ -48,6 +46,7 @@ pub struct PartialIdentity {
 }
 
 impl Identity {
+    #[cfg(feature = "identity-hashing")]
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))

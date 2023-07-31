@@ -4,8 +4,8 @@ use dashcore_rpc::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
     hashes::Hash, QuorumHash,
 };
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Setters};
@@ -52,7 +52,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = *withdrawals_contract::ID;
+        let data_contract_id = withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),

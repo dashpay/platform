@@ -53,7 +53,6 @@ impl DocumentBaseTransitionV0 {
                     .map_err(ProtocolError::ValueError)?
                     .unwrap_or(data_contract.id.to_buffer()),
             ),
-            data_contract,
         })
     }
 }
@@ -94,8 +93,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
             document_type_name: map
                 .get_string(property_names::DOCUMENT_TYPE)
                 .map_err(ProtocolError::ValueError)?,
-            data_contract_id: data_contract.id,
-            data_contract,
+            data_contract_id: data_contract.id(),
         })
     }
 

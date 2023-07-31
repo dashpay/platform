@@ -34,9 +34,9 @@ pub const PROPERTY_ACTION: &str = "$action";
 pub trait DocumentTransitionV0Methods {
     fn base(&self) -> &DocumentBaseTransition;
     /// returns the creation timestamp (in milliseconds) if it exists for given type of document transition
-    fn get_created_at(&self) -> Option<TimestampMillis>;
+    fn created_at(&self) -> Option<TimestampMillis>;
     /// returns the update timestamp  (in milliseconds) if it exists for given type of document transition
-    fn get_updated_at(&self) -> Option<TimestampMillis>;
+    fn updated_at(&self) -> Option<TimestampMillis>;
     /// set the created_at (in milliseconds) if it exists
     fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>);
     /// set the updated_at (in milliseconds) if it exists
@@ -45,13 +45,11 @@ pub trait DocumentTransitionV0Methods {
     /// the `path` supports dot-syntax: i.e: property.internal_property
     fn get_dynamic_property(&self, path: &str) -> Option<&Value>;
     ///  get the id
-    fn get_id(&self) -> &Identifier;
+    fn get_id(&self) -> Identifier;
     /// get the document type
     fn get_document_type(&self) -> &String;
-    /// get the data contract
-    fn get_data_contract(&self) -> &DataContract;
     /// get the data contract id
-    fn get_data_contract_id(&self) -> &Identifier;
+    fn data_contract_id(&self) -> Identifier;
     /// get the data of the transition if exits
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
     /// get the revision of transition if exits
@@ -227,23 +225,19 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
-    fn get_id(&self) -> &Identifier {
-        &self.base().id()
+    fn get_id(&self) -> Identifier {
+        self.base().id()
     }
 
     fn get_document_type(&self) -> &String {
         &self.base().document_type_name()
     }
 
-    fn get_data_contract(&self) -> &DataContract {
-        &self.base().data_contract()
+    fn data_contract_id(&self) -> Identifier {
+        self.base().data_contract_id()
     }
 
-    fn get_data_contract_id(&self) -> &Identifier {
-        &self.base().data_contract_id()
-    }
-
-    fn get_updated_at(&self) -> Option<TimestampMillis> {
+    fn updated_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.updated_at(),
             DocumentTransition::Replace(t) => t.updated_at(),
@@ -259,7 +253,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
-    fn get_created_at(&self) -> Option<TimestampMillis> {
+    fn created_at(&self) -> Option<TimestampMillis> {
         match self {
             DocumentTransition::Create(t) => t.created_at(),
             DocumentTransition::Replace(_) => None,

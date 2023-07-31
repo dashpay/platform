@@ -3,18 +3,20 @@ use crate::version::dpp_versions::{
     DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
     DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
     IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
-    StateTransitionConversionVersions, StateTransitionSerializationVersions,
+    PublicKeyInCreationMethodVersions, StateTransitionConversionVersions,
+    StateTransitionMethodVersions, StateTransitionSerializationVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
-    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
-    DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
+    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
     DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
+    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
     DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
 };
 use crate::version::drive_versions::{
@@ -414,7 +416,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     },
     drive_abci: DriveAbciVersion {
         methods: DriveAbciMethodVersions {
-            engine: DriveAbciEngineMethodVersions { init_chain: 0 },
+            engine: DriveAbciEngineMethodVersions {
+                init_chain: 0,
+                check_tx: 0,
+                run_block_proposal: 0,
+            },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height: 0,
                 create_genesis_state: 0,
@@ -424,6 +430,15 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 update_masternode_list: 0,
                 update_quorum_info: 0,
                 masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
+                    get_voter_identity_key: 0,
+                    get_operator_identity_keys: 0,
+                    get_owner_identity_key: 0,
+                    get_voter_identifier: 0,
+                    get_operator_identifier: 0,
+                    create_operator_identity: 0,
+                    create_owner_identity: 0,
+                    create_voter_identity: 0,
+                    hash_protxhash_with_key_data: 0,
                     disable_identity_keys: 0,
                     update_masternode_identities: 0,
                     update_operator_identity: 0,
@@ -449,6 +464,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 0,
                 add_epoch_pool_to_proposers_payout_operations: 0,
                 find_oldest_epoch_needing_payment: 0,
+                fetch_reward_shares_list_for_masternode: 0,
             },
             identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
                 build_withdrawal_transactions_from_documents: 0,
@@ -521,12 +537,25 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                     state: 0,
                     transform_into_action: 0,
                 },
-                documents_batch_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                },
+                documents_batch_state_transition:
+                    DriveAbciDocumentsStateTransitionValidationVersions {
+                        structure: 0,
+                        identity_signatures: 0,
+                        state: 0,
+                        transform_into_action: 0,
+                        data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
+                            bindings: 0,
+                            triggers: DriveAbciValidationDataTriggerVersions {
+                                create_contact_request_data_trigger: 0,
+                                create_domain_data_trigger: 0,
+                                create_identity_data_trigger: 0,
+                                create_feature_flag_data_trigger: 0,
+                                create_masternode_reward_shares_data_trigger: 0,
+                                delete_withdrawal_data_trigger: 0,
+                                reject_data_trigger: 0,
+                            },
+                        },
+                    },
                 document_base_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
                     identity_signatures: 0,
@@ -645,6 +674,15 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: StateTransitionConversionVersions {
             identity_to_identity_create_transition: 0,
             identity_to_identity_create_transition_with_signer: 0,
+        },
+        state_transition_method_versions: StateTransitionMethodVersions {
+            public_key_in_creation_methods: PublicKeyInCreationMethodVersions {
+                from_public_key_signed_with_private_key: 0,
+                from_public_key_signed_external: 0,
+                hash: 0,
+                duplicated_key_ids_witness: 0,
+                duplicated_keys_witness: 0,
+            },
         },
         contract_versions: ContractVersions {
             contract_serialization_version: FeatureVersionBounds {

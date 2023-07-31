@@ -91,7 +91,7 @@ impl StateTransitionValidationV0 for IdentityCreditWithdrawalTransition {
             .identity_credit_withdrawal_state_transition
             .identity_signatures
         {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction),
+            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit withdrawal transition: validate_identity_and_signatures"
                     .to_string(),

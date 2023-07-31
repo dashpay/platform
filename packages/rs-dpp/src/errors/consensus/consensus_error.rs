@@ -8,6 +8,7 @@ use crate::consensus::state::state_error::StateError;
 
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::signature::SignatureError;
+use crate::consensus::state::data_trigger::DataTriggerError;
 
 #[cfg(test)]
 use crate::consensus::test_consensus_error::TestConsensusError;
@@ -17,7 +18,9 @@ use crate::ProtocolError;
 
 // TODO It must be versioned as all other serializable types
 
-#[derive(Error, Debug, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
+#[derive(
+    Error, Debug, Serialize, Deserialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[platform_serialize(limit = 2000)]
 pub enum ConsensusError {
     /*
@@ -43,6 +46,12 @@ pub enum ConsensusError {
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
+}
+
+impl From<DataTriggerError> for ConsensusError {
+    fn from(error: DataTriggerError) -> Self {
+        Self::StateError(StateError::DataTriggerError(error))
+    }
 }
 
 #[cfg(test)]

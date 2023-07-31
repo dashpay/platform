@@ -7,7 +7,7 @@ pub use apply::*;
 pub use validation::*;
 
 use dpp::consensus::ConsensusError;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::{
     consensus::signature::SignatureError,

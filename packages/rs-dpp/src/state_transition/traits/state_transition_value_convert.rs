@@ -2,6 +2,7 @@ use crate::serialization::{PlatformSerializable, Signable};
 use crate::state_transition::{state_transition_helpers, StateTransitionFieldTypes};
 use crate::ProtocolError;
 use platform_value::{Value, ValueMapHelper};
+use platform_version::version::PlatformVersion;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -49,14 +50,20 @@ pub trait StateTransitionValueConvert: Serialize + StateTransitionFieldTypes {
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         self.to_object(skip_signature)
     }
-    fn from_object(raw_object: Value) -> Result<Self, ProtocolError>
+    fn from_object(
+        raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
         platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)
     }
 
-    fn from_value_map(raw_value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError>
+    fn from_value_map(
+        raw_value_map: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {

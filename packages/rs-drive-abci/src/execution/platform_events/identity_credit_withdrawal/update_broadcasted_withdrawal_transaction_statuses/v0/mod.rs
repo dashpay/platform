@@ -1,11 +1,11 @@
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::{Document, DocumentV0Setters};
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::system_data_contracts::withdrawal::NAME;
 use dpp::system_data_contracts::withdrawals_contract;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
 
 use drive::drive::batch::DriveOperation;
@@ -44,7 +44,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = *withdrawals_contract::ID;
+        let data_contract_id = withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
@@ -79,7 +79,7 @@ where
             .into_iter()
             .map(|mut document| {
                 let transaction_sign_height: u32 = document
-                    .properties
+                    .properties()
                     .get_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -88,7 +88,7 @@ where
                     })?;
 
                 let transaction_id_bytes = document
-                    .properties
+                    .properties()
                     .get_bytes(withdrawal::properties::TRANSACTION_ID)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -97,7 +97,7 @@ where
                     })?;
 
                 let transaction_index = document
-                    .properties
+                    .properties()
                     .get_integer(withdrawal::properties::TRANSACTION_INDEX)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -191,6 +191,8 @@ mod tests {
     use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
+    use dpp::system_data_contracts::withdrawals_contract;
+    use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::{
         data_contract::DataContract,

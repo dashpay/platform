@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::common::decode;
 use crate::error::drive::DriveError;
-use dpp::serialization::serialization_traits::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 

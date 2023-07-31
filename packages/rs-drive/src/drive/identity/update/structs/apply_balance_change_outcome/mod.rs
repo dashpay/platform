@@ -7,6 +7,7 @@ pub use v0::*;
 /// The outcome of paying for a fee
 #[derive(Debug, From)]
 pub enum ApplyBalanceChangeOutcome {
+    /// Version 0
     V0(ApplyBalanceChangeOutcomeV0),
 }
 

@@ -1,19 +1,14 @@
+mod data_triggers;
 mod identity_and_signatures;
 mod state;
 mod structure;
 
 use dpp::identity::PartialIdentity;
+use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition_action::StateTransitionAction;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{
-    document::{
-        validation::basic::validate_documents_batch_transition_basic::validate_document_transitions as validate_document_transitions_basic,
-        DocumentsBatchTransition,
-    },
-    state_transition::StateTransitionAction,
-    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
-};
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -71,7 +66,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(drive, tx),
+            0 => self.validate_structure_v0(drive, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: structure".to_string(),
                 known_versions: vec![0],
@@ -83,7 +78,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        _protocol_version: u32,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;
@@ -94,7 +89,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .identity_signatures
         {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction),
+            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: validate_identity_and_signatures".to_string(),
                 known_versions: vec![0],
@@ -110,6 +105,7 @@ impl StateTransitionValidationV0 for DocumentsBatchTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
             PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+
         match platform_version
             .drive_abci
             .validation_and_processing

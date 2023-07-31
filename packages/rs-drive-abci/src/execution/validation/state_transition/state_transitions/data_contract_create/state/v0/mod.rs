@@ -9,7 +9,7 @@ use dpp::data_contract::state_transition::data_contract_create_transition::{
 };
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::StateTransitionAction;
+
 use dpp::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
@@ -39,7 +39,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         // Data contract shouldn't exist
         if drive
             .get_contract_with_fetch_info_and_fee(
-                self.data_contract.id.to_buffer(),
+                self.data_contract().id().to_buffer(),
                 None,
                 false,
                 tx,

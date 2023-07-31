@@ -1,6 +1,4 @@
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
-use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -11,11 +9,6 @@ pub(crate) trait StateTransitionStructureValidationV0 {
 
 impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema_v0(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
         // Validate protocol version
         //todo: redo versioning
         // let protocol_version_validator = ProtocolVersionValidator::default();

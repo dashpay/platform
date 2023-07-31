@@ -10,7 +10,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::ExecTxResult;
 

@@ -9,9 +9,9 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::ProtocolError;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PlatformSerialize, PlatformDeserialize)]
+#[derive(Debug, Clone)]
 
-pub struct DocumentBaseTransitionActionV0 {
+pub struct DocumentBaseTransitionActionV0<'a> {
     /// The document Id
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`
@@ -19,7 +19,7 @@ pub struct DocumentBaseTransitionActionV0 {
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
     pub data_contract_id: Identifier,
     /// A potential data contract
-    pub data_contract: DataContract,
+    pub data_contract: &'a DataContract,
 }
 
 pub trait DocumentBaseTransitionActionAccessorsV0 {

@@ -130,7 +130,9 @@ impl DataContractFactory {
         data_contract: DataContract,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         match self {
-            DataContractFactory::V0(v0) => v0.create_data_contract_update_transition(data_contract),
+            DataContractFactory::V0(v0) => {
+                v0.create_unsigned_data_contract_update_transition(data_contract)
+            }
         }
     }
 }

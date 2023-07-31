@@ -21,7 +21,7 @@ impl Drive {
     /// # Returns
     ///
     /// A Result containing a boolean indicating whether the proposer's tree is empty, or an Error.
-    pub(crate) fn add_update_pending_epoch_refunds_operations(
+    pub fn add_update_pending_epoch_refunds_operations(
         batch: &mut Vec<DriveOperation>,
         refunds_per_epoch: CreditsPerEpoch,
         drive_version: &DriveVersion,

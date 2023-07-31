@@ -6,12 +6,12 @@ use dpp::block::epoch::Epoch;
 use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use dpp::version::PlatformVersion;
 
-impl DriveHighLevelOperationConverter for DocumentsBatchTransitionAction {
-    fn into_high_level_drive_operations<'a>(
+impl<'a> DriveHighLevelOperationConverter for DocumentsBatchTransitionAction<'a> {
+    fn into_high_level_drive_operations<'b>(
         self,
         epoch: &Epoch,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<DriveOperation<'a>>, Error> {
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
         let owner_id = self.owner_id();
         let transitions = self.transitions_owned();
         Ok(transitions

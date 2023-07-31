@@ -19,19 +19,19 @@ use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 use crate::version::{FeatureVersion, PlatformVersion};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From)]
-pub enum DocumentCreateTransitionAction {
-    V0(DocumentCreateTransitionActionV0),
+#[derive(Debug, Clone, From)]
+pub enum DocumentCreateTransitionAction<'a> {
+    V0(DocumentCreateTransitionActionV0<'a>),
 }
 
-impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionAction {
+impl<'a> DocumentCreateTransitionActionAccessorsV0<'a> for DocumentCreateTransitionAction<'a> {
     fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
             DocumentCreateTransitionAction::V0(v0) => &v0.base,
         }
     }
 
-    fn base_owned(self) -> DocumentBaseTransitionAction {
+    fn base_owned(self) -> DocumentBaseTransitionAction<'a> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.base,
         }

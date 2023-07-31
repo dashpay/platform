@@ -10,41 +10,20 @@ use crate::{
     BlsModule, Convertible, NonConsensusError, ProtocolError,
 };
 
+use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
 use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::version::FeatureVersion;
 
-pub trait IdentityTopUpTransitionV0Methods {
-    fn try_from_identity(
-        identity: Identity,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &[u8],
-        bls: &impl BlsModule,
-        version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-
-    /// Get State Transition type
-    fn get_type() -> StateTransitionType {
-        StateTransitionType::IdentityTopUp
-    }
-    /// Set asset lock
-    fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof);
-    /// Get asset lock proof
-    fn asset_lock_proof(&self) -> &AssetLockProof;
-    /// Set identity id
-    fn set_identity_id(&mut self, identity_id: Identifier);
-    /// Returns identity id
-    fn identity_id(&self) -> &Identifier;
-}
-
-impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
+impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_identity(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
@@ -54,7 +33,7 @@ impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
     ) -> Result<Self, ProtocolError> {
         let mut identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
-            identity_id: identity.id,
+            identity_id: identity.id(),
             signature: Default::default(),
         };
 
@@ -66,7 +45,9 @@ impl IdentityTopUpTransitionV0Methods for IdentityTopUpTransitionV0 {
 
         Ok(identity_top_up_transition)
     }
+}
 
+impl IdentityTopUpTransitionAccessorsV0 for IdentityTopUpTransitionV0 {
     /// Set asset lock
     fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof) {
         self.asset_lock_proof = asset_lock_proof;

@@ -41,6 +41,8 @@ clap = { version = "4.1.8", optional = true, features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.6", optional = true }
 dapi-grpc = { path = "../dapi-grpc" }
+platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
     "env-filter",
     "ansi",

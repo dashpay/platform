@@ -43,7 +43,6 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
-use drive::fee::credits::SignedCredits;
 use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -58,7 +57,7 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
@@ -72,6 +71,8 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
+use dpp::fee::SignedCredits;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
@@ -465,6 +466,10 @@ where
                     "block execution context must be set in block begin handler for verify vote extension",
                 )))?;
 
+        let platform_version = block_execution_context
+            .block_platform_state()
+            .current_platform_version()?;
+
         let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
@@ -509,14 +514,15 @@ where
         //     });
         // };
 
-        let validation_result = self.platform.check_withdrawals_v0(
+        let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,
             height as u64,
             round as u32,
             None,
             None,
-        );
+            platform_version,
+        )?;
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
@@ -653,7 +659,28 @@ where
 
         let RequestQuery { data, path, .. } = &request;
 
-        let result = self.platform.query(path.as_str(), data.as_slice())?;
+        let Some(platform_version) = PlatformVersion::get_maybe_current() else {
+            let response = ResponseQuery {
+                //todo: right now just put GRPC error codes,
+                //  later we will use own error codes
+                code: 1,
+                log: "".to_string(),
+                info: "Platform not initialized".to_string(),
+                index: 0,
+                key: vec![],
+                value: vec![],
+                proof_ops: None,
+                height: self.platform.state.read().unwrap().height() as i64,
+                codespace: "".to_string(),
+            };
+            tracing::trace!(method = "query", ?request, ?response);
+
+            return Ok(response)
+        };
+
+        let result = self
+            .platform
+            .query(path.as_str(), data.as_slice(), platform_version)?;
 
         let (code, data, info) = if result.is_valid() {
             (0, result.data.unwrap_or_default(), "success".to_string())

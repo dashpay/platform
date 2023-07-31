@@ -21,9 +21,13 @@ use crate::state_transition::identity_topup_transition::fields::*;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
+use platform_version::version::PlatformVersion;
 
 impl StateTransitionValueConvert for IdentityTopUpTransitionV0 {
-    fn from_object(raw_object: Value) -> Result<IdentityTopUpTransitionV0, ProtocolError> {
+    fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let signature = raw_object
             .get_optional_binary_data(SIGNATURE)
             .map_err(ProtocolError::ValueError)?
@@ -54,7 +58,8 @@ impl StateTransitionValueConvert for IdentityTopUpTransitionV0 {
     }
 
     fn from_value_map(
-        mut raw_data_contract_topUp_transition: BTreeMap<String, Value>,
+        mut raw_value_map: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         todo()
     }

@@ -97,7 +97,7 @@ pub async fn validate_document_batch_transition_state(
     let owner_id = *state_transition.get_owner_id();
 
     let transitions_by_data_contract_id = state_transition
-        .get_transitions_slice()
+        .transitions_slice()
         .iter()
         .into_group_map_by(|t| &t.base().data_contract_id);
 

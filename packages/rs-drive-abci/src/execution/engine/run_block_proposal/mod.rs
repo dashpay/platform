@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::{block_execution_outcome, block_proposal};
@@ -40,9 +41,28 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        let epoch_info = self.gather_epoch_info(&block_proposal, transaction)?;
+        let state = self.state.read().expect("expected to get state");
+        let platform_version = state.current_platform_version()?;
 
-        //todo: use protocol version to decide which block proposal to use
-        self.run_block_proposal_v0(block_proposal, epoch_info.into(), transaction)
+        let epoch_info = self.gather_epoch_info(&block_proposal, transaction, platform_version)?;
+
+        match platform_version
+            .drive_abci
+            .methods
+            .engine
+            .run_block_proposal
+        {
+            0 => self.run_block_proposal_v0(
+                block_proposal,
+                epoch_info.into(),
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "run_block_proposal".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }

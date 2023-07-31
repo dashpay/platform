@@ -38,11 +38,11 @@ where
             .initial_core_height
         {
             0 => self.initial_core_height_v0(requested),
-            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "initial_core_height".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

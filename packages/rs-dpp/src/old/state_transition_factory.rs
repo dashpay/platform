@@ -321,7 +321,7 @@ mod test {
             panic!("must be a DocumentsBatch transition")
         };
         let values = transition
-            .get_transitions()
+            .transitions()
             .iter()
             .map(|t| t.to_object().unwrap())
             .collect::<Vec<Value>>();

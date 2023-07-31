@@ -21,10 +21,13 @@ pub mod v0;
     Eq,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
     PlatformSerialize,
     PlatformDeserialize,
     From,
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum ExtendedBlockInfo {
     V0(ExtendedBlockInfoV0),
 }

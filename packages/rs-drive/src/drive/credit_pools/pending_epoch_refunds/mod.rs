@@ -41,4 +41,6 @@ mod methods;
 mod operations;
 mod paths;
 
+pub use methods::*;
+pub use operations::*;
 pub use paths::*;

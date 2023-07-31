@@ -53,7 +53,7 @@ where
                 last_synced_core_height,
                 block_execution_context,
                 transaction,
-                &self.platform_version,
+                platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_broadcasted_withdrawal_transaction_statuses".to_string(),

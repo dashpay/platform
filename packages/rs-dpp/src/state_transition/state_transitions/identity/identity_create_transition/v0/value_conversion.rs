@@ -17,15 +17,19 @@ use crate::{
 
 use crate::prelude::AssetLockProof;
 use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::fields::*;
-use crate::state_transition::identity_create_transition::v0::v0_methods::IdentityCreateTransitionV0Methods;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
+use platform_version::version::PlatformVersion;
 
 impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
-    fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
+    fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
         let mut transition_map = raw_object
@@ -61,7 +65,8 @@ impl StateTransitionValueConvert for IdentityCreateTransitionV0 {
     }
 
     fn from_value_map(
-        mut raw_data_contract_create_transition: BTreeMap<String, Value>,
+        mut raw_value_map: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         todo()
     }

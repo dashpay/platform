@@ -38,7 +38,7 @@ use std::option::Option::None;
 use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
+use drive::drive::Drive;
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
@@ -163,10 +163,10 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             block_fees.refunds_per_epoch_owned()
         };
 
-        add_update_pending_epoch_refunds_operations(
+        Drive::add_update_pending_epoch_refunds_operations(
             &mut batch,
             pending_epoch_refunds,
-            platform_version,
+            &platform_version.drive,
         )?;
 
         self.drive.apply_drive_operations(
@@ -220,7 +220,6 @@ mod tests {
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
     use drive::common::helpers::identities::create_test_masternode_identities;
     use drive::common::identities::create_test_masternode_identities;
-    use drive::fee::epoch::GENESIS_EPOCH_INDEX;
 
     mod helpers {
         use super::*;
@@ -228,7 +227,6 @@ mod tests {
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
-        use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(
@@ -355,7 +353,7 @@ mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        platform.create_mn_shares_contract(Some(&transaction));
+        platform.create_mn_shares_contract(Some(&transaction), platform_version);
 
         let proposers = create_test_masternode_identities(
             &platform.drive,

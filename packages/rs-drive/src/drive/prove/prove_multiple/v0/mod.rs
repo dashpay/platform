@@ -4,6 +4,7 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {
@@ -28,7 +29,7 @@ impl Drive {
         contract_ids: &[[u8; 32]],
         document_queries: &Vec<SingleDocumentDriveQuery>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let mut path_queries = vec![];
         let mut count = 0;
@@ -78,7 +79,7 @@ impl Drive {
             verbose,
             transaction,
             &mut vec![],
-            drive_version,
+            &platform_version.drive,
         )
     }
 }

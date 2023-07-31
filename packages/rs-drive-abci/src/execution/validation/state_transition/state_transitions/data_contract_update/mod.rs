@@ -12,7 +12,7 @@ use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::state_transition::StateTransitionAction;
+
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 
@@ -128,7 +128,7 @@ mod tests {
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};

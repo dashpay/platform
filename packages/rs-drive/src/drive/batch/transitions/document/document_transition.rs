@@ -6,13 +6,13 @@ use dpp::prelude::Identifier;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 
-impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
-    fn into_high_level_document_drive_operations<'a>(
+impl<'a> DriveHighLevelDocumentOperationConverter for DocumentTransitionAction<'a> {
+    fn into_high_level_document_drive_operations<'b>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<DriveOperation<'a>>, Error> {
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
         match self {
             DocumentTransitionAction::CreateAction(document_create_transition) => {
                 document_create_transition.into_high_level_document_drive_operations(

@@ -33,7 +33,7 @@ use crate::{
 };
 
 pub trait StateTransitionIdentitySigned: StateTransitionLike {
-    fn signature_public_key_id(&self) -> Option<KeyID>;
+    fn signature_public_key_id(&self) -> KeyID;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
 
     #[cfg(feature = "state-transition-signing")]
@@ -111,43 +111,6 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
         self.set_signature_public_key_id(identity_public_key.id);
 
         Ok(())
-    }
-
-    #[cfg(feature = "state-transition-validation")]
-    fn verify_signature(
-        &self,
-        public_key: &IdentityPublicKey,
-        bls: &impl BlsModule,
-    ) -> Result<(), ProtocolError> {
-        self.verify_public_key_level_and_purpose(public_key)?;
-        self.verify_public_key_is_enabled(public_key)?;
-
-        let signature = self.signature();
-        if signature.is_empty() {
-            return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone().into()),
-            ));
-        }
-
-        if self.signature_public_key_id() != Some(public_key.id()) {
-            return Err(ProtocolError::PublicKeyMismatchError(
-                PublicKeyMismatchError::new(public_key.clone()),
-            ));
-        }
-
-        let public_key_bytes = public_key.data().as_slice();
-        match public_key.key_type() {
-            KeyType::ECDSA_HASH160 => {
-                self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key_bytes)
-            }
-
-            KeyType::ECDSA_SECP256K1 => self.verify_ecdsa_signature_by_public_key(public_key_bytes),
-
-            KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
-
-            // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(()),
-        }
     }
 
     //this is not versioned because of it just being the base trait default
@@ -325,7 +288,7 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 //         }
 //
 //         fn get_signature_public_key_id(&self) -> Option<KeyID> {
-//             Some(self.signature_public_key_id)
+//             self.signature_public_key_id
 //         }
 //
 //         fn set_signature_public_key_id(&mut self, key_id: KeyID) {

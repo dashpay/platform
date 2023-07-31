@@ -30,6 +30,32 @@ pub struct DriveAbciValidationVersions {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciDocumentsStateTransitionValidationVersions {
+    pub structure: FeatureVersion,
+    pub identity_signatures: FeatureVersion,
+    pub state: FeatureVersion,
+    pub transform_into_action: FeatureVersion,
+    pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciValidationDataTriggerAndBindingVersions {
+    pub bindings: FeatureVersion,
+    pub triggers: DriveAbciValidationDataTriggerVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciValidationDataTriggerVersions {
+    pub create_contact_request_data_trigger: FeatureVersion,
+    pub create_domain_data_trigger: FeatureVersion,
+    pub create_identity_data_trigger: FeatureVersion,
+    pub create_feature_flag_data_trigger: FeatureVersion,
+    pub create_masternode_reward_shares_data_trigger: FeatureVersion,
+    pub delete_withdrawal_data_trigger: FeatureVersion,
+    pub reject_data_trigger: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
     pub structure: FeatureVersion,
     pub identity_signatures: FeatureVersion,
@@ -46,7 +72,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_credit_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub documents_batch_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
+    // TODO: We might want to add data triggers to action transitions. BTW, they aren't using atm.
     pub document_base_state_transition: DriveAbciStateTransitionValidationVersion,
     pub document_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub document_replace_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -56,6 +83,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciEngineMethodVersions {
     pub init_chain: FeatureVersion,
+    pub check_tx: FeatureVersion,
+    pub run_block_proposal: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -68,6 +97,15 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
+    pub get_voter_identity_key: FeatureVersion,
+    pub get_operator_identity_keys: FeatureVersion,
+    pub get_owner_identity_key: FeatureVersion,
+    pub get_voter_identifier: FeatureVersion,
+    pub get_operator_identifier: FeatureVersion,
+    pub create_operator_identity: FeatureVersion,
+    pub create_owner_identity: FeatureVersion,
+    pub create_voter_identity: FeatureVersion,
+    pub hash_protxhash_with_key_data: FeatureVersion,
     pub disable_identity_keys: FeatureVersion,
     pub update_masternode_identities: FeatureVersion,
     pub update_operator_identity: FeatureVersion,
@@ -103,6 +141,7 @@ pub struct DriveAbciFeePoolOutwardsDistributionMethodVersions {
     pub add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: FeatureVersion,
     pub add_epoch_pool_to_proposers_payout_operations: FeatureVersion,
     pub find_oldest_epoch_needing_payment: FeatureVersion,
+    pub fetch_reward_shares_list_for_masternode: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

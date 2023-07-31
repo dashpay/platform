@@ -52,7 +52,7 @@ pub trait DriveHighLevelOperationConverter {
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
-impl DriveHighLevelOperationConverter for StateTransitionAction {
+impl<'s> DriveHighLevelOperationConverter for StateTransitionAction<'s> {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,

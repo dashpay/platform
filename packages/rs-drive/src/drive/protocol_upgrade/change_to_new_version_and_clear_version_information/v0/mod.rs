@@ -14,6 +14,7 @@ use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use integer_encoding::VarInt;
@@ -29,7 +30,8 @@ impl Drive {
         next_version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let platform_version = PlatformVersion::get(current_version)?;
+        let platform_version = PlatformVersion::get(current_version)
+            .map_err(|a| ProtocolError::PlatformVersionError(a))?;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         self.clear_version_information_operations_v0(
             transaction,

@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicatedIdentityPublicKeyStateError)]

@@ -1,5 +1,5 @@
 use crate::identity::KeyID;
-use crate::state_transition::data_contract_create_transition::v0::v0_methods::DataContractCreateTransitionV0Methods;
+use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -45,7 +45,7 @@ impl StateTransitionLike for DataContractCreateTransition {
         }
     }
 
-    fn owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> Identifier {
         match self {
             DataContractCreateTransition::V0(transition) => transition.owner_id(),
         }

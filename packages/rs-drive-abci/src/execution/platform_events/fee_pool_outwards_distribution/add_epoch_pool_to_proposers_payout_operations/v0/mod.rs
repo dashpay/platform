@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods};
 use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -13,7 +13,7 @@ use dpp::ProtocolError;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
-use drive::fee::credits::Credits;
+
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
@@ -186,10 +186,17 @@ mod tests {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
+
+            let platform_version = platform
+                .state
+                .read()
+                .unwrap()
+                .current_platform_version()
+                .expect("platform_version");
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
-            let contract = platform.create_mn_shares_contract(Some(&transaction));
+            let contract = platform.create_mn_shares_contract(Some(&transaction), platform_version);
 
             let proposers_count = 10u16;
             let processing_fees = 10000;

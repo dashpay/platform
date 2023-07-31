@@ -8,10 +8,6 @@ use dpp::fee::epoch::distribution::{
 use dpp::fee::epoch::SignedCreditsPerEpoch;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::fee::epoch::distribution::{
-    distribute_storage_fee_to_epochs_collection, subtract_refunds_from_epoch_credits_collection,
-};
-use drive::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C> {
@@ -80,8 +76,8 @@ mod tests {
 
     mod add_distribute_storage_fee_to_epochs_operations {
         use dpp::balances::credits::Creditable;
+        use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
-        use dpp::block::extended_block_info::BlockInfo;
         use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
         use dpp::fee::epoch::{
             CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
@@ -89,7 +85,7 @@ mod tests {
         use dpp::fee::Credits;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::DriveOperation;
-        use drive::drive::credit_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
+        use drive::drive::Drive;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 
@@ -171,8 +167,12 @@ mod tests {
             let refunds =
                 CreditsPerEpoch::from_iter([(0, 10000), (1, 15000), (2, 20000), (3, 25000)]);
 
-            add_update_pending_epoch_refunds_operations(&mut batch, refunds.clone())
-                .expect("should update pending epoch refunds");
+            Drive::add_update_pending_epoch_refunds_operations(
+                &mut batch,
+                refunds.clone(),
+                &platform_version.drive,
+            )
+            .expect("should update pending epoch refunds");
 
             batch.push(DriveOperation::GroveDBOpBatch(inner_batch));
 

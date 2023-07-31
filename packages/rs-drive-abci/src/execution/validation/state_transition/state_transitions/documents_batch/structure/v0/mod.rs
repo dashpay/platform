@@ -2,26 +2,26 @@ use dpp::consensus::basic::BasicError;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::consensus::basic::document::{DataContractNotPresentError, MaxDocumentsTransitionsExceededError};
 
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 use crate::execution::validation::state_transition::documents_batch::validate_document_transitions_basic;
-use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
-use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
-use dpp::document::DocumentsBatchTransition;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::StateTransitionLike;
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+
+const MAX_TRANSITIONS_IN_BATCH: usize = 1000;
 
 pub(crate) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(
@@ -39,12 +39,17 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema_v0(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
+        let mut result = validate_protocol_version_v0(self.protocol_version);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let result = validate_protocol_version_v0(self.protocol_version);
+        if self.transitions().len() > MAX_TRANSITIONS_IN_BATCH {
+            result.add_error(
+                MaxDocumentsTransitionsExceededError::new(MAX_TRANSITIONS_IN_BATCH as u32).into(),
+            )
+        }
+
         if !result.is_valid() {
             return Ok(result);
         }
@@ -52,20 +57,18 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         let mut document_transitions_by_contracts: BTreeMap<Identifier, Vec<&DocumentTransition>> =
             BTreeMap::new();
 
-        self.get_transitions()
-            .iter()
-            .for_each(|document_transition| {
-                let contract_identifier = document_transition.get_data_contract_id();
+        self.transitions().iter().for_each(|document_transition| {
+            let contract_identifier = document_transition.data_contract_id();
 
-                match document_transitions_by_contracts.entry(*contract_identifier) {
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(vec![document_transition]);
-                    }
-                    Entry::Occupied(mut identifiers) => {
-                        identifiers.get_mut().push(document_transition);
-                    }
-                };
-            });
+            match document_transitions_by_contracts.entry(*contract_identifier) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(vec![document_transition]);
+                }
+                Entry::Occupied(mut identifiers) => {
+                    identifiers.get_mut().push(document_transition);
+                }
+            };
+        });
 
         let mut result = ValidationResult::default();
 
@@ -97,7 +100,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
                 .collect();
             let validation_result = validate_document_transitions_basic(
                 existing_data_contract,
-                self.owner_id,
+                self.owner_id(),
                 transitions_as_objects
                     .iter()
                     .map(|t| t.to_btree_ref_string_map().unwrap()),

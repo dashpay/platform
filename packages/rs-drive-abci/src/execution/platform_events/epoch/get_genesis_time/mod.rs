@@ -3,7 +3,6 @@ mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::version::PlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 

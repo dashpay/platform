@@ -36,13 +36,16 @@ use crate::{
 };
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(PlatformDeserialize, PlatformSerialize, PlatformSignable, Debug, Clone, PartialEq)]
+#[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+// There is a problem deriving bincode for a borrowed vector
+// Hence we set to do it somewhat manually inside the PlatformSignable proc macro
+// Instead of inside of bincode_derive
+#[platform_signable(derive_bincode_with_borrowed_vec)]
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,

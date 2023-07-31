@@ -32,7 +32,7 @@ pub enum ExecutionError {
     CorruptedCodeVersionMismatch(&'static str),
 
     /// Platform expected some specific versions
-    #[error("platform unknown version on {method}, known versions: {known_versions}, received: {received}")]
+    #[error("platform unknown version on {method}, received: {received}")]
     UnknownVersionMismatch {
         /// method
         method: String,

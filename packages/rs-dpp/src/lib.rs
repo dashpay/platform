@@ -13,8 +13,6 @@ pub use convertible::Convertible;
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 
-#[cfg(feature = "system_contracts")]
-pub mod contracts;
 pub mod data_contract;
 
 mod convertible;
@@ -76,7 +74,6 @@ pub mod prelude {
 
 pub use bincode;
 pub use bls_signatures;
-pub use data_contracts;
 pub use ed25519_dalek;
 pub use jsonschema;
 pub use platform_serialization;

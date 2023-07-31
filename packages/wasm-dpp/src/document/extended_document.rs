@@ -7,7 +7,7 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;

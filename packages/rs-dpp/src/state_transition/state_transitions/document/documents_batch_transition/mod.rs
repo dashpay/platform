@@ -35,14 +35,15 @@ use crate::serialization::PlatformSerializable;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 
+pub mod accessors;
 pub mod document_transition;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+mod methods;
 mod state_transition_like;
 mod v0;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -62,6 +63,8 @@ pub use v0::*;
     Debug,
     Clone,
     PartialEq,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
@@ -73,6 +76,7 @@ pub use v0::*;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
@@ -254,11 +258,11 @@ pub enum DocumentsBatchTransition {
 //         Ok(batch_transitions)
 //     }
 //
-//     pub fn get_transitions(&self) -> &Vec<DocumentTransition> {
+//     pub fn transitions(&self) -> &Vec<DocumentTransition> {
 //         &self.transitions
 //     }
 //
-//     pub fn get_transitions_slice(&self) -> &[DocumentTransition] {
+//     pub fn transitions_slice(&self) -> &[DocumentTransition] {
 //         self.transitions.as_slice()
 //     }
 //

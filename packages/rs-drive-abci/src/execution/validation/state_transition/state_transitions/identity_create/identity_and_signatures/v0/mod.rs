@@ -6,7 +6,8 @@ use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::serialization_traits::{PlatformMessageSignable, Signable};
+use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
@@ -34,7 +35,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransiti
 
         // We should validate that the identity id is created from the asset lock proof
 
-        let identifier_from_outpoint = match self.get_asset_lock_proof().create_identifier() {
+        let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
             Ok(identifier) => identifier,
             Err(_) => {
                 return Ok(ConsensusValidationResult::new_with_error(

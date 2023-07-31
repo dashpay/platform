@@ -13,13 +13,13 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
 
-impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction {
-    fn into_high_level_document_drive_operations<'a>(
+impl<'a> DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction<'a> {
+    fn into_high_level_document_drive_operations<'b>(
         self,
         _epoch: &Epoch,
         _owner_id: Identifier,
         _platform_version: &PlatformVersion,
-    ) -> Result<Vec<DriveOperation<'a>>, Error> {
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
         let base = self.base_owned();
 
         let mut drive_operations = vec![];

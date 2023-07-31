@@ -6,6 +6,7 @@ pub struct DPPVersion {
     pub validation: DPPValidationVersions,
     pub state_transition_serialization_versions: StateTransitionSerializationVersions,
     pub state_transition_conversion_versions: StateTransitionConversionVersions,
+    pub state_transition_method_versions: StateTransitionMethodVersions,
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
@@ -35,6 +36,20 @@ pub struct JsonSchemaValidatorVersions {
     pub validate: FeatureVersion,
     pub validate_data_contract_schema: FeatureVersion,
     pub validate_schema: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct StateTransitionMethodVersions {
+    pub public_key_in_creation_methods: PublicKeyInCreationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PublicKeyInCreationMethodVersions {
+    pub from_public_key_signed_with_private_key: FeatureVersion,
+    pub from_public_key_signed_external: FeatureVersion,
+    pub hash: FeatureVersion,
+    pub duplicated_key_ids_witness: FeatureVersion,
+    pub duplicated_keys_witness: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

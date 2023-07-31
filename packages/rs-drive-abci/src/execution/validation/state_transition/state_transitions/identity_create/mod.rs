@@ -13,11 +13,10 @@ use crate::execution::validation::state_transition::transformer::StateTransition
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::StateTransitionAction;
+
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -30,8 +29,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
         platform: &PlatformRef<C>,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -39,7 +37,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform),
+            0 => self.transform_into_action_v0(platform, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -64,7 +62,7 @@ impl StateTransitionValidationV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -101,8 +99,7 @@ impl StateTransitionValidationV0 for IdentityCreateTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version =
-            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        let platform_version = platform.state.current_platform_version()?;
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -110,7 +107,7 @@ impl StateTransitionValidationV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_state".to_string(),
                 known_versions: vec![0],

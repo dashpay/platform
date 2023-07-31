@@ -26,11 +26,11 @@ where
         let platform_version = PlatformVersion::get(current_protocol_version)?;
         match platform_version.drive_abci.methods.engine.init_chain {
             0 => self.init_chain_v0(request, transaction, platform_version),
-            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "init_chain".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

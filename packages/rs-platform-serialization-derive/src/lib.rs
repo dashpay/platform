@@ -389,6 +389,26 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                 .expect("Failed to parse default error type")
         });
 
+    let mut derive_into = false;
+    let mut derive_bincode_with_borrowed_vec = false;
+
+    if let Some(platform_serialize_attr) = input
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("platform_signable"))
+    {
+        platform_serialize_attr
+            .parse_nested_meta(|meta| {
+                if meta.path.is_ident("derive_into") {
+                    derive_into = true;
+                } else if meta.path.is_ident("derive_bincode_with_borrowed_vec") {
+                    derive_bincode_with_borrowed_vec = true;
+                }
+                Ok(())
+            })
+            .expect("expected to parse nested meta");
+    }
+
     let expanded = match &input.data {
         Data::Struct(data) => {
             let fields = &data.fields;
@@ -533,21 +553,31 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             let generics = &input.generics;
             let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+            let (auto_derive_bincode, manually_derive_bincode) = if derive_bincode_with_borrowed_vec
+            {
+                (
+                    quote! {},
+                    quote! {
+                                            impl #impl_generics <'a> bincode::Encode for #intermediate_name<'a> #ty_generics #where_clause {
+                            fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
+                            where
+                            E: bincode::enc::Encoder,
+                            {
+
+                            #(#field_mapping)*
+                            Ok(())
+                        }
+                    }
+                            },
+                )
+            } else {
+                (quote! {bincode::Encode}, quote! {})
+            };
+
             quote! {
-                #[derive(Debug, Clone)]
+                #[derive(Debug, Clone, #auto_derive_bincode)]
                 pub struct #intermediate_name<'a> #impl_generics {
                     #( #intermediate_fields, )*
-                }
-
-                impl #impl_generics <'a> bincode::Encode for #intermediate_name<'a> #ty_generics #where_clause {
-                    fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
-                    where
-                        E: bincode::enc::Encoder,
-                    {
-
-                        #(#field_mapping)*
-                        Ok(())
-                    }
                 }
 
                 impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
@@ -557,6 +587,8 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                         }
                     }
                 }
+
+                #manually_derive_bincode
 
                 impl #impl_generics crate::serialization::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
@@ -632,11 +664,50 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             let generics = &input.generics;
             let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+            let derive_into_clause = if derive_into {
+                let variant_into = variants.iter().enumerate().map(|(i, variant)| {
+                    let variant_ident = &variant.ident;
+                    let variant_fields = match &variant.fields {
+                        syn::Fields::Unnamed(fields) => fields.unnamed.iter().collect::<Vec<_>>(),
+                        _ => panic!("Only tuple-style enum variants are supported"),
+                    };
+
+                    if variant_fields.len() != 1 {
+                        panic!("Each enum variant must contain exactly one field");
+                    }
+
+                    let intermediate_ident = syn::Ident::new(
+                        &format!("{}{}Signable", name, variant_ident),
+                        variant_ident.span(),
+                    );
+
+                    quote! {
+                        #name::#variant_ident(inner) => {
+                            let signable  : #intermediate_ident = inner.into();
+                            signable.into()
+                        }
+                    }
+                });
+                quote! {
+                                    impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
+                    fn from(original: &'a #name #ty_generics) -> Self {
+                        match original {
+                            #( #variant_into, )*
+                        }
+                    }
+                }
+                }
+            } else {
+                quote! {}
+            };
+
             quote! {
-                #[derive(Debug, Clone)]
+                #[derive(Debug, Clone, bincode::Encode, derive_more::From)]
                 pub enum #intermediate_name<'a> #impl_generics {
                     #( #transformed_variants, )*
                 }
+
+                #derive_into_clause
 
                 impl #impl_generics crate::serialization::Signable for #name #ty_generics #where_clause {
                     fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {

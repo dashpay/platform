@@ -7,7 +7,7 @@ use dashcore_rpc::dashcore::{
     consensus::Encodable,
     Script, TxOut,
 };
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
@@ -45,7 +45,7 @@ where
 
         for (i, document) in documents.iter().enumerate() {
             let output_script_bytes = document
-                .properties
+                .properties()
                 .get_bytes(withdrawal::properties::OUTPUT_SCRIPT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -54,7 +54,7 @@ where
                 })?;
 
             let amount = document
-                .properties
+                .properties()
                 .get_integer(withdrawal::properties::AMOUNT)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -63,7 +63,7 @@ where
                 })?;
 
             let core_fee_per_byte: u32 = document
-                .properties
+                .properties()
                 .get_integer(withdrawal::properties::CORE_FEE_PER_BYTE)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -104,7 +104,7 @@ where
                 })?;
 
             withdrawals.insert(
-                document.id,
+                document.id(),
                 (transaction_index.to_be_bytes().to_vec(), transaction_buffer),
             );
         }
@@ -120,7 +120,7 @@ mod tests {
     use drive::tests::helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
-        use dpp::block::extended_block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;

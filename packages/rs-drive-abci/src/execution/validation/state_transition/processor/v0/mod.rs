@@ -6,9 +6,10 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::{StateTransition, StateTransitionAction};
+use dpp::state_transition::StateTransition;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -16,6 +17,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
     // Validating structure
     let result = state_transition.validate_structure(
@@ -41,7 +43,10 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // Validating state
     let result = state_transition.validate_state(platform, transaction)?;
 
-    result.map_result(|action| (maybe_identity, action, &platform.state.epoch()).try_into())
+    result.map_result(|action| {
+        (maybe_identity, action, &platform.state.epoch())
+            .try_into_platform_versioned(platform_version)
+    })
 }
 
 /// A trait for validating state transitions within a blockchain.

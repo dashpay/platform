@@ -1,16 +1,18 @@
+mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+mod methods;
 mod serialize;
 mod state_transition_like;
 mod v0;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
 
 use fields::*;
+use std::convert::TryFrom;
 
 use crate::data_contract::property_names::ENTROPY;
 
@@ -27,6 +29,7 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::{BinaryData, Bytes32, Identifier, Value};
+use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -39,11 +42,12 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 #[derive(
     Debug,
     Clone,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
     PlatformVersioned,
-    Decode,
     From,
     PartialEq,
 )]
@@ -52,6 +56,7 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]
@@ -60,11 +65,13 @@ pub enum DataContractCreateTransition {
     V0(DataContractCreateTransitionV0),
 }
 
-impl DataContractCreateTransition {
-    pub fn try_from(
+impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransition {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
         value: CreatedDataContract,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, Self::Error> {
         match platform_version
             .dpp
             .state_transition_serialization_versions
@@ -72,7 +79,8 @@ impl DataContractCreateTransition {
             .default_current_version
         {
             0 => {
-                let data_contract_create_transition: DataContractCreateTransitionV0 = value.into();
+                let data_contract_create_transition: DataContractCreateTransitionV0 =
+                    value.try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_create_transition.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -84,9 +92,30 @@ impl DataContractCreateTransition {
     }
 }
 
-impl From<DataContract> for DataContractCreateTransition {
-    fn from(value: DataContract) -> Self {
-        DataContractCreateTransitionV0::from(value).into()
+impl TryFromPlatformVersioned<DataContract> for DataContractCreateTransition {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .contract_create_state_transition
+            .default_current_version
+        {
+            0 => {
+                let data_contract_create_transition: DataContractCreateTransitionV0 =
+                    value.try_into_platform_versioned(platform_version)?;
+                Ok(data_contract_create_transition.into())
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractCreateTransition::try_from(DataContract)".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 }
 
@@ -119,7 +148,9 @@ mod test {
     use platform_value::Bytes32;
 
     use super::*;
+    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
     use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+    use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;

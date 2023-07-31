@@ -1,16 +1,16 @@
-use dpp::document::DocumentsBatchTransition;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::StateTransitionAction;
+use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
+use crate::execution::validation::state_transition::documents_batch::state::v0::data_triggers::execute_data_triggers;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::documents_batch::state::v0::validate_documents_batch_transition_state::validate_document_batch_transition_state;
 
-pub mod execute_data_triggers;
+mod data_triggers;
 pub mod fetch_documents;
 pub mod validate_documents_batch_transition_state;
 
@@ -34,13 +34,39 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let validation_result = validate_document_batch_transition_state(
+        let state_transition_execution_context = StateTransitionExecutionContext::default();
+
+        let mut validation_result = validate_document_batch_transition_state(
             false,
             &platform.into(),
             self,
             tx,
-            &StateTransitionExecutionContext::default(),
+            state_transition_execution_context,
         )?;
+
+        // Do not execute data triggers if there are already any state-based errors
+        if !validation_result.is_valid() {
+            return Ok(validation_result.map(Into::into));
+        }
+
+        let data_trigger_execution_context = DataTriggerExecutionContext {
+            platform,
+            transaction: tx,
+            owner_id: &self.owner_id(),
+            data_contract,
+            state_transition_execution_context,
+        };
+
+        let document_transition_actions = validation_result.into_data()?;
+
+        let data_triggers_validation_result = execute_data_triggers(
+            document_transition_actions.transitions(),
+            &data_trigger_execution_context,
+            platform.state.current_platform_version()?,
+        )?;
+
+        validation_result.add_errors_into(data_triggers_validation_result.errors);
+
         Ok(validation_result.map(Into::into))
     }
 

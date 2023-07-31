@@ -5,17 +5,20 @@ use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
+use platform_version::TryFromPlatformVersioned;
 pub use v0::*;
 
 impl ValueConvertible for Identity {}
 
 impl IdentityPlatformValueConversionMethodsV0 for Identity {}
 
-impl Identity {
-    pub fn try_from_owned_value(
+impl TryFromPlatformVersioned<Value> for Identity {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
         value: Value,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, Self::Error> {
         match platform_version
             .dpp
             .identity_versions
@@ -33,11 +36,15 @@ impl Identity {
             }),
         }
     }
+}
 
-    pub fn try_from_borrowed_value(
+impl TryFromPlatformVersioned<&Value> for Identity {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
         value: &Value,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<Self, Self::Error> {
         match platform_version
             .dpp
             .identity_versions

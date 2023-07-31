@@ -9,7 +9,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
@@ -59,11 +59,11 @@ where
                 transaction,
                 platform_version,
             ),
-            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_masternode_list".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

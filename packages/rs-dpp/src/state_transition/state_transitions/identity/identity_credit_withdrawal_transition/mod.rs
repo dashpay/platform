@@ -1,12 +1,13 @@
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 
+pub mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+pub mod methods;
 mod state_transition_like;
 pub(crate) mod v0;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -28,6 +29,8 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
 #[derive(
     Debug,
     Clone,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
@@ -40,6 +43,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition"
 )]

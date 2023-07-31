@@ -2,8 +2,6 @@ mod identity_and_signatures;
 mod state;
 mod structure;
 
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition_action::StateTransitionAction;
@@ -91,7 +89,7 @@ impl StateTransitionValidationV0 for IdentityCreditTransferTransition {
             .identity_credit_transfer_state_transition
             .state
         {
-            0 => self.validate_identity_and_signatures_v0(drive, tx),
+            0 => self.validate_identity_and_signatures_v0(drive, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit transfer transition: validate_identity_and_signatures"
                     .to_string(),
@@ -115,7 +113,7 @@ impl StateTransitionValidationV0 for IdentityCreditTransferTransition {
             .identity_credit_transfer_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity credit transfer transition: validate_state".to_string(),
                 known_versions: vec![0],

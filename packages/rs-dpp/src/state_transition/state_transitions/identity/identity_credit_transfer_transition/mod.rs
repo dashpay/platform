@@ -1,10 +1,11 @@
+pub mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+pub mod methods;
 mod state_transition_like;
 pub(crate) mod v0;
-mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -29,6 +30,8 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
 #[derive(
     Debug,
     Clone,
+    Encode,
+    Decode,
     PlatformDeserialize,
     PlatformSerialize,
     PlatformSignable,
@@ -41,6 +44,7 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged)
 )]
+#[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_credit_transfer_state_transition"
 )]

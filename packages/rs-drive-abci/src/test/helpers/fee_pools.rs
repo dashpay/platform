@@ -43,7 +43,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::INITIAL_REVISION;

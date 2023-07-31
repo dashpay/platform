@@ -5,7 +5,6 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
-pub(super) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -25,7 +24,7 @@ use platform_value::{BinaryData, Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-#[derive(Debug, Clone, PartialEq, PlatformDeserialize, PlatformSerialize, PlatformSignable)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)

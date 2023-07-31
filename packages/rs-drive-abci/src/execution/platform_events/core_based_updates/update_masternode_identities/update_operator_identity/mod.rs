@@ -7,7 +7,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::json::DMNStateDiff;
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;

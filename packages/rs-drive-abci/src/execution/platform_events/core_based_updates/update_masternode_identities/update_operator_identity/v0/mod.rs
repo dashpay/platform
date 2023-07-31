@@ -9,7 +9,7 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
-use dpp::block::extended_block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
@@ -246,7 +246,8 @@ where
                 old_masternode.state.platform_node_id
             };
             // Now we need to create the new operator identity with the new keys
-            let mut identity = Self::create_basic_identity(new_operator_identifier);
+            let mut identity =
+                Identity::create_basic_identity(new_operator_identifier, platform_version)?;
             identity.add_public_keys(
                 self.get_operator_identity_keys(
                     state_diff
@@ -256,6 +257,7 @@ where
                         .clone(),
                     new_payout_address,
                     new_platform_node_id,
+                    platform_version,
                 )?,
             );
             drive_operations.push(IdentityOperation(AddNewIdentity { identity }));

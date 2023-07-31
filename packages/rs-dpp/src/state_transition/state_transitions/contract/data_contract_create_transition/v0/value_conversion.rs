@@ -16,13 +16,19 @@ use crate::{
 
 use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_version::TryIntoPlatformVersioned;
+use platform_version::version::PlatformVersion;
+use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
 impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
-    fn from_object(mut raw_object: Value) -> Result<DataContractCreateTransitionV0, ProtocolError> {
+    fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractCreateTransitionV0 {
             signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
@@ -36,40 +42,45 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(raw_object.remove(DATA_CONTRACT).map_err(
-                |_| {
+            data_contract: DataContract::from_object(
+                raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     )
-                },
-            )?)?,
+                })?,
+                platform_version,
+            )?
+            .try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }
 
     fn from_value_map(
-        mut raw_data_contract_create_transition: BTreeMap<String, Value>,
-    ) -> Result<DataContractCreateTransitionV0, ProtocolError> {
+        mut raw_value_map: BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         Ok(DataContractCreateTransitionV0 {
-            signature: raw_data_contract_create_transition
+            signature: raw_value_map
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            signature_public_key_id: raw_data_contract_create_transition
+            signature_public_key_id: raw_value_map
                 .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_data_contract_create_transition
+            entropy: raw_value_map
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_object(
-                raw_data_contract_create_transition
+                raw_value_map
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     ))?,
-            )?,
+                platform_version,
+            )?
+            .try_into_platform_versioned(platform_version)?,
             ..Default::default()
         })
     }

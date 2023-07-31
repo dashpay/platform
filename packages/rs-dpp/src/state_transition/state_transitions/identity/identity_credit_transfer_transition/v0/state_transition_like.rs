@@ -58,7 +58,7 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
     }
 
     /// Get owner ID
-    fn owner_id(&self) -> &Identifier {
-        &self.identity_id
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

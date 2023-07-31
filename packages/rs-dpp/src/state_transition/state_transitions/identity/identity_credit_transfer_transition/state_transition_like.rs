@@ -1,4 +1,3 @@
-use crate::state_transition::identity_credit_transfer_transition::v0::v0_methods::IdentityCreditTransferTransitionV0Methods;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -44,7 +43,7 @@ impl StateTransitionLike for IdentityCreditTransferTransition {
         }
     }
 
-    fn owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreditTransferTransition::V0(transition) => transition.owner_id(),
         }

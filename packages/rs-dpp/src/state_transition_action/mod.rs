@@ -13,10 +13,10 @@ use crate::state_transition_action::identity::identity_update::IdentityUpdateTra
 use derive_more::From;
 
 #[derive(Debug, Clone, From)]
-pub enum StateTransitionAction {
+pub enum StateTransitionAction<'a> {
     DataContractCreateAction(DataContractCreateTransitionAction),
     DataContractUpdateAction(DataContractUpdateTransitionAction),
-    DocumentsBatchAction(DocumentsBatchTransitionAction),
+    DocumentsBatchAction(DocumentsBatchTransitionAction<'a>),
     IdentityCreateAction(IdentityCreateTransitionAction),
     IdentityTopUpAction(IdentityTopUpTransitionAction),
     IdentityCreditWithdrawalAction(IdentityCreditWithdrawalTransitionAction),

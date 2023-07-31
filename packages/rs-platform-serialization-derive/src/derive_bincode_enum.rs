@@ -18,8 +18,7 @@ impl DeriveEnum {
     }
 
     pub fn generate_encode(self, generator: &mut Generator) -> Result<()> {
-        //let crate_name = self.attributes.crate_name.as_str();
-        let crate_name = "platform_serialization";
+        let crate_name = self.attributes.crate_name.as_str();
         generator
             .impl_for(format!("{}::PlatformVersionEncode", crate_name))
             .modify_generic_constraints(|generics, where_constraints| {

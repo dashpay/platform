@@ -4,6 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 use dpp::version::drive_versions::DriveVersion;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 mod v0;
@@ -32,15 +33,15 @@ impl Drive {
         contract_ids: &[[u8; 32]],
         document_queries: &Vec<SingleDocumentDriveQuery>,
         transaction: TransactionArg,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        match drive_version.methods.prove.prove_multiple {
+        match platform_version.drive.methods.prove.prove_multiple {
             0 => self.prove_multiple_v0(
                 identity_queries,
                 contract_ids,
                 document_queries,
                 transaction,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_multiple".to_string(),

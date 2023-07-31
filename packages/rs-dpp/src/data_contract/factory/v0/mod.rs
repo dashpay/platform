@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use platform_value::{Bytes32, Error, Value};
+use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::errors::InvalidDataContractError;
 
@@ -233,37 +234,21 @@ impl DataContractFactoryV0 {
         &self,
         created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        DataContractCreateTransition::try_from(
+        DataContractCreateTransition::try_from_platform_versioned(
             created_data_contract,
             PlatformVersion::get(self.protocol_version)?,
         )
     }
 
     #[cfg(feature = "state-transitions")]
-    pub fn create_data_contract_update_transition(
+    pub fn create_unsigned_data_contract_update_transition(
         &self,
         data_contract: DataContract,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        let platform_version = PlatformVersion::get(self.protocol_version)?;
-
-        match platform_version
-            .dpp
-            .state_transition_serialization_versions
-            .contract_update_state_transition
-            .default_current_version
-        {
-            0 => Ok(DataContractUpdateTransitionV0 {
-                data_contract,
-                signature_public_key_id: 0,
-                signature: Default::default(),
-            }
-            .into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::from_json_object".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
+        DataContractUpdateTransition::try_from_platform_versioned(
+            data_contract,
+            PlatformVersion::get(self.protocol_version)?,
+        )
     }
 }
 

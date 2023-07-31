@@ -7,7 +7,7 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::fee::credits::Credits;
+
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
@@ -44,8 +44,7 @@ impl<C> Platform<C> {
         let total_processing_fees = epoch_processing_fees + block_fees.processing_fee();
 
         batch.push(DriveOperation::GroveDBOperation(
-            current_epoch
-                .update_processing_fee_pool_operation(total_processing_fees, platform_version)?,
+            current_epoch.update_processing_fee_pool_operation(total_processing_fees)?,
         ));
 
         // update storage fee pool
@@ -75,7 +74,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::block::extended_block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
     use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
     use crate::test::helpers::setup::TestPlatformBuilder;

@@ -3,7 +3,6 @@ mod identity_signed;
 mod json_conversion;
 mod state_transition_like;
 mod types;
-pub(super) mod v0_methods;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -33,7 +32,7 @@ use crate::identity::SecurityLevel;
 use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
 use crate::withdrawal::Pooling;
 
-#[derive(Debug, Clone, PlatformDeserialize, PlatformSerialize, PlatformSignable, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),

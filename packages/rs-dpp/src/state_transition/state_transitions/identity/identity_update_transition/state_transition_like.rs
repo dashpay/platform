@@ -1,4 +1,3 @@
-use crate::state_transition::identity_update_transition::v0::v0_methods::IdentityUpdateTransitionV0Methods;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -42,7 +41,7 @@ impl StateTransitionLike for IdentityUpdateTransition {
         }
     }
 
-    fn owner_id(&self) -> &Identifier {
+    fn owner_id(&self) -> Identifier {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.owner_id(),
         }

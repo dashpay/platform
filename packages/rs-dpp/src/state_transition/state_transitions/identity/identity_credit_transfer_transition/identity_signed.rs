@@ -1,9 +1,10 @@
+use crate::data_contract::DataContract;
 use crate::identity::{KeyID, SecurityLevel};
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
 impl StateTransitionIdentitySigned for IdentityCreditTransferTransition {
-    fn signature_public_key_id(&self) -> Option<KeyID> {
+    fn signature_public_key_id(&self) -> KeyID {
         match self {
             IdentityCreditTransferTransition::V0(transition) => {
                 transition.signature_public_key_id()

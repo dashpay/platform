@@ -11,9 +11,8 @@ use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
-use dpp::serialization::serialization_traits::{
-    PlatformSerializable, PlatformSerializableWithPlatformVersion,
-};
+
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

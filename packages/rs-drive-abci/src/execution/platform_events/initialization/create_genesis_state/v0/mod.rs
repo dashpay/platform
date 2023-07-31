@@ -31,7 +31,6 @@ use crate::platform_types::platform::Platform;
 
 use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
-use drive::contract::DataContract;
 use drive::dpp::document::Document;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
@@ -40,13 +39,16 @@ use drive::dpp::identity::{
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::IdentityV0;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
-    ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
+    DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
@@ -138,7 +140,7 @@ impl<C> Platform<C> {
             let public_keys = [
                 (
                     0,
-                    IdentityPublicKey {
+                    IdentityPublicKeyV0 {
                         id: 0,
                         purpose: Purpose::AUTHENTICATION,
                         security_level: SecurityLevel::MASTER,
@@ -146,11 +148,12 @@ impl<C> Platform<C> {
                         read_only: false,
                         data: identity_public_keys_set.master.clone().into(),
                         disabled_at: None,
-                    },
+                    }
+                    .into(),
                 ),
                 (
                     1,
-                    IdentityPublicKey {
+                    IdentityPublicKeyV0 {
                         id: 1,
                         purpose: Purpose::AUTHENTICATION,
                         security_level: SecurityLevel::HIGH,
@@ -158,21 +161,24 @@ impl<C> Platform<C> {
                         read_only: false,
                         data: identity_public_keys_set.high.clone().into(),
                         disabled_at: None,
-                    },
+                    }
+                    .into(),
                 ),
             ];
 
-            let identity = Identity {
-                feature_version: PROTOCOL_VERSION,
-                id: data_contract.owner_id,
+            let identity = IdentityV0 {
+                id: data_contract.owner_id(),
                 public_keys: BTreeMap::from(public_keys),
                 balance: 0,
                 revision: 0,
-                asset_lock_proof: None,
-                metadata: None,
-            };
+            }
+            .into();
 
-            self.register_system_data_contract_operations(data_contract, &mut operations);
+            self.register_system_data_contract_operations(
+                data_contract,
+                &mut operations,
+                platform_version,
+            );
 
             self.register_system_identity_operations(identity, &mut operations);
         }
@@ -196,8 +202,9 @@ impl<C> Platform<C> {
         &self,
         data_contract: DataContract,
         operations: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) {
-        let serialization = data_contract.serialize().unwrap();
+        let serialization = data_contract.serialize_with_platform_version().unwrap();
         operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             ContractOperationType::ApplyContractWithSerialization {
@@ -231,7 +238,7 @@ impl<C> Platform<C> {
             "normalizedParentDomainName" : "",
             "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" : {
-                "dashAliasIdentityId" : contract.owner_id,
+                "dashAliasIdentityId" : contract.owner_id(),
             },
             "subdomainRules": {
                 "allowSubdomains": true,
@@ -245,7 +252,7 @@ impl<C> Platform<C> {
         let document = Document {
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
             properties: document_stub_properties,
-            owner_id: contract.owner_id,
+            owner_id: contract.owner_id(),
             revision: None,
             created_at: None,
             updated_at: None,

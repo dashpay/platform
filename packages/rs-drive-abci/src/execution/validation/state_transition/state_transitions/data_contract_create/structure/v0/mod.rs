@@ -4,7 +4,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0Methods;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionMethodsV0;
 use dpp::validation::SimpleConsensusValidationResult;
 
 pub(crate) trait StateTransitionStructureValidationV0 {

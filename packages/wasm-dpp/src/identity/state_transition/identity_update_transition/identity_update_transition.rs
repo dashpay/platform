@@ -24,7 +24,7 @@ use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 use dpp::{
     identifier::Identifier,

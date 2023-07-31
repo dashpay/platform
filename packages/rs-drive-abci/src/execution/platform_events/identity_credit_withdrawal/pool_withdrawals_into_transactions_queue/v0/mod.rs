@@ -1,10 +1,10 @@
 use std::ops::Deref;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::DocumentV0Setters;
+use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::version::PlatformVersion;
 
 use drive::dpp::util::hash;
@@ -44,7 +44,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = *withdrawals_contract::ID;
+        let data_contract_id = withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
@@ -78,7 +78,7 @@ where
         )?;
 
         for document in documents.iter_mut() {
-            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id) else {
+            let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id()) else {
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("transactions must contain a transaction")))
             };
 

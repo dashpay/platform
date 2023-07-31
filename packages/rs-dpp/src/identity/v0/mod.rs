@@ -26,11 +26,19 @@ use ciborium::value::Value as CborValue;
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, Clone, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
+#[cfg_attr(
+    feature = "identity-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct IdentityV0 {
     pub id: Identifier,
-    #[serde(with = "public_key_serialization")]
+    #[cfg_attr(
+        feature = "identity-serde-conversion",
+        serde(with = "public_key_serialization")
+    )]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,
@@ -117,6 +125,7 @@ impl IdentityV0 {
     }
 }
 
+#[cfg(feature = "identity-value-conversion")]
 impl TryFrom<Value> for IdentityV0 {
     type Error = ProtocolError;
 
@@ -125,6 +134,7 @@ impl TryFrom<Value> for IdentityV0 {
     }
 }
 
+#[cfg(feature = "identity-value-conversion")]
 impl TryFrom<&Value> for IdentityV0 {
     type Error = ProtocolError;
 

@@ -35,8 +35,6 @@ pub mod block_proposal;
 pub mod cleaned_abci_messages;
 /// The commit
 pub mod commit;
-/// Contracts module
-pub mod contracts;
 /// Epoch
 pub mod epochInfo;
 /// Masternode

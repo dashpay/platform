@@ -1,7 +1,7 @@
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;

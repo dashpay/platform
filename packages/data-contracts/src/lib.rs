@@ -25,6 +25,16 @@ pub struct DataContractSource {
 }
 
 impl SystemDataContract {
+    pub fn id(&self) -> Identifier {
+        let bytes = match self {
+            SystemDataContract::Withdrawals => withdrawals_contract::ID_BYTES,
+            SystemDataContract::MasternodeRewards => masternode_reward_shares_contract::ID_BYTES,
+            SystemDataContract::FeatureFlags => feature_flags_contract::ID_BYTES,
+            SystemDataContract::DPNS => dpns_contract::ID_BYTES,
+            SystemDataContract::Dashpay => dashpay_contract::ID_BYTES,
+        };
+        Identifier::new(bytes)
+    }
     /// Returns [DataContractSource]
     pub fn source(self) -> Result<DataContractSource, Error> {
         let data = match self {
