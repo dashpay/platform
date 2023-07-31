@@ -6,7 +6,8 @@ use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::serialization_traits::{PlatformMessageSignable, Signable};
+use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {

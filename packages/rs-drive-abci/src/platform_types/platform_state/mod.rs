@@ -11,7 +11,6 @@ use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, QuorumType};
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
-use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};

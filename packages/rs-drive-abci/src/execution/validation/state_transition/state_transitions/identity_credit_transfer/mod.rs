@@ -2,8 +2,6 @@ mod identity_and_signatures;
 mod state;
 mod structure;
 
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition_action::StateTransitionAction;

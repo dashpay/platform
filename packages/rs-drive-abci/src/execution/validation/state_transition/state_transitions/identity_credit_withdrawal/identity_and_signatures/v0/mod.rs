@@ -1,9 +1,9 @@
 use crate::error::Error;
 
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::version::PlatformVersion;
 
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signature::v0::validate_state_transition_identity_signature_v0;
 use drive::drive::Drive;
@@ -14,6 +14,7 @@ pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 }
 
@@ -22,9 +23,10 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreditWithdraw
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature_v0(drive, self, false, transaction)?
+            validate_state_transition_identity_signature_v0(drive, self, false, transaction, platform_version)?
                 .map(Some),
         )
     }
