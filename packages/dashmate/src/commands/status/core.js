@@ -66,7 +66,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
         verificationProgress,
       } = scope;
 
-      const versionString = `${colors.status(version, latestVersion)(version) || 'n/a'} ${version && version !== latestVersion ? `(latest ${latestVersion})` : ''}`;
+      const versionString = `${colors.version(version, latestVersion)(version) || 'n/a'} ${version && version !== latestVersion ? `(latest ${latestVersion})` : ''}`;
 
       plain.Network = network || 'n/a';
       plain.Version = versionString;
@@ -78,7 +78,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
       plain['Sync asset'] = syncAsset || 'n/a';
       plain['Peer count'] = peersCount || 'n/a';
       plain['P2P service'] = p2pService || 'n/a';
-      plain['P2P port'] = p2pPortState || 'n/a';
+      plain['P2P port'] = colors.portState(p2pPortState)(p2pPortState) || 'n/a';
       plain['RPC service'] = rpcService || 'n/a';
       plain['Block height'] = colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight) || 'n/a';
       plain['Header height'] = headerHeight || 'n/a';
