@@ -2,13 +2,11 @@ use dpp::consensus::basic::BasicError;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::consensus::basic::document::{DataContractNotPresentError, MaxDocumentsTransitionsExceededError};
 
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 use crate::execution::validation::state_transition::documents_batch::validate_document_transitions_basic;
-use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::DocumentTransition;
@@ -22,6 +20,8 @@ use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+
+const MAX_TRANSITIONS_IN_BATCH: usize = 1000;
 
 pub(crate) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(
@@ -39,12 +39,17 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema_v0(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
+        let mut result = validate_protocol_version_v0(self.protocol_version);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let result = validate_protocol_version_v0(self.protocol_version);
+        if self.transitions().len() > MAX_TRANSITIONS_IN_BATCH {
+            result.add_error(
+                MaxDocumentsTransitionsExceededError::new(MAX_TRANSITIONS_IN_BATCH as u32).into(),
+            )
+        }
+
         if !result.is_valid() {
             return Ok(result);
         }

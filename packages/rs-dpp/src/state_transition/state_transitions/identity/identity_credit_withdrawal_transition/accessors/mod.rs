@@ -7,6 +7,12 @@ use crate::state_transition::identity_credit_withdrawal_transition::IdentityCred
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
 impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalTransition {
+    fn amount(&self) -> u64 {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.amount,
+        }
+    }
+
     fn set_revision(&mut self, revision: Revision) {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.revision = revision,
