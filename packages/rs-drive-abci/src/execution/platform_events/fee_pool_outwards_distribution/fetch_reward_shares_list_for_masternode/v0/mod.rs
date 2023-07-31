@@ -14,15 +14,12 @@ use crate::platform_types::platform::Platform;
 use dpp::platform_value::Value;
 
 use drive::dpp::document::Document;
-use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
-use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
-
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::version::PlatformVersion;
-use drive::drive::document::query::QueryDocumentsOutcome;
+use drive::drive::document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods};
 use std::collections::BTreeMap;
 use crate::execution::platform_events::fee_pool_outwards_distribution::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
@@ -65,7 +62,7 @@ impl<C> Platform<C> {
             block_time_ms: None,
         };
 
-        let QueryDocumentsOutcome { documents, .. } = self.drive.query_documents(
+        let queryDocumentsOutcome = self.drive.query_documents(
             drive_query,
             None,
             false,
@@ -73,6 +70,6 @@ impl<C> Platform<C> {
             Some(platform_version.protocol_version),
         )?;
 
-        Ok(documents)
+        Ok(queryDocumentsOutcome.documents().to_owned())
     }
 }

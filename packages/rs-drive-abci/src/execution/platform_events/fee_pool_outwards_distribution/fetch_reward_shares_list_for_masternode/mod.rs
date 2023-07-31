@@ -17,7 +17,7 @@ use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 
 use drive::dpp::document::Document;
-use drive::drive::query::QueryDocumentsOutcome;
+use drive::drive::document::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 

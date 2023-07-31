@@ -14,22 +14,10 @@ use dpp::consensus::state::document::invalid_document_revision_error::InvalidDoc
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition,
-    DocumentReplaceTransitionAction, DocumentTransitionAction,
-};
-use dpp::document::state_transition::documents_batch_transition::{
-    DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
-};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
-    block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
-    document::{
-        document_transition::{DocumentTransition, DocumentTransitionExt},
-        DocumentsBatchTransition,
-    },
     prelude::{Identifier, TimestampMillis},
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
@@ -39,9 +27,9 @@ use dpp::{
     ProtocolError,
 };
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
+use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionV0Methods, DocumentTransitionMethodsV0, DocumentReplaceTransition};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentReplaceTransition};
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
@@ -62,7 +50,7 @@ pub(crate) fn validate_document_batch_transition_state(
     transaction: TransactionArg,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
-    let owner_id = *batch_state_transition.owner_id();
+    let owner_id = batch_state_transition.owner_id();
     let mut transitions_by_contracts_and_types: BTreeMap<
         &Identifier,
         BTreeMap<&String, Vec<&DocumentTransition>>,

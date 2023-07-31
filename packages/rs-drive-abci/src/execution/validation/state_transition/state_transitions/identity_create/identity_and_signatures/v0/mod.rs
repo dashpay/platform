@@ -3,7 +3,6 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundE
 use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::{PlatformMessageSignable, Signable};
@@ -22,7 +21,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransiti
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
         let bytes: Vec<u8> = self.signable_bytes()?;
-        for key in self.public_keys.iter() {
+        for key in self.public_keys().iter() {
             let result = bytes.as_slice().verify_signature(
                 key.key_type,
                 key.data.as_slice(),

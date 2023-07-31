@@ -162,7 +162,6 @@ mod tests {
     use crate::platform_types::epochInfo::v0::EpochInfoV0;
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;

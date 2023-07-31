@@ -126,12 +126,10 @@ mod tests {
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{signer, KeyPair};
     use dpp::data_contracts::dpns_contract;
-    use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-    use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionType};
     use dpp::system_data_contracts::dpns_contract;

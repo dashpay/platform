@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError};
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
-use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;

@@ -4,9 +4,6 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::data_contract::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionAction,
-};
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
