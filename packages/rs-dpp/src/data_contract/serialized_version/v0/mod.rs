@@ -18,11 +18,6 @@ pub struct DataContractInSerializationFormatV0 {
     /// Internal configuration for the contract.
     pub config: DataContractConfig,
 
-    //todo: we should just store a schema number
-    /// A reference to the JSON schema that defines the contract.
-    #[serde(rename = "$schema")]
-    pub schema: String,
-
     /// The version of this data contract.
     pub version: u32,
 
@@ -44,7 +39,6 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                 let DataContractV0 {
                     id,
                     config,
-                    schema,
                     version,
                     owner_id,
                     documents,
@@ -54,7 +48,6 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                 DataContractInSerializationFormatV0 {
                     id,
                     config,
-                    schema,
                     version,
                     owner_id,
                     documents: documents

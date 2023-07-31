@@ -17,15 +17,6 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContract {
         }
     }
 
-    fn generate_binary_properties(
-        &mut self,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
-        match self {
-            DataContract::V0(v0) => v0.generate_binary_properties(platform_version),
-        }
-    }
-
     fn get_optional_binary_properties(
         &self,
         doc_type: &str,

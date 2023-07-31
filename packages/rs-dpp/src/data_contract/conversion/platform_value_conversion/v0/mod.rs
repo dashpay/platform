@@ -10,7 +10,6 @@ pub trait DataContractValueConversionMethodsV0 {
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    fn to_object(&self) -> Result<Value, ProtocolError>;
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
-    fn into_object(self) -> Result<Value, ProtocolError>;
+    fn to_object(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError>;
+    fn into_object(self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError>;
 }

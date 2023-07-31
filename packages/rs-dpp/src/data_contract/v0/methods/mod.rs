@@ -1,5 +1,3 @@
-mod enrich_with_base_schema;
-
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use crate::data_contract::data_contract_methods::base::DataContractBaseMethodsV0;
@@ -110,23 +108,6 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
                 .into()
             })
             .map(Some)
-    }
-
-    fn generate_binary_properties(
-        &mut self,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
-        self.binary_properties = self
-            .documents
-            .iter()
-            .map(|(doc_type, schema)| {
-                Ok((
-                    String::from(doc_type),
-                    DataContract::get_binary_properties(schema, platform_version)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
-        Ok(())
     }
 
     fn get_identifiers_and_binary_paths(

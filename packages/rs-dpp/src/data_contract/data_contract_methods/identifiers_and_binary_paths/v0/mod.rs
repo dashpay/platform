@@ -8,10 +8,6 @@ pub trait DataContractIdentifiersAndBinaryPathsMethodsV0 {
         &self,
         document_type: &str,
     ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError>;
-    fn generate_binary_properties(
-        &mut self,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError>;
     /// Returns the binary properties for the given document type
     /// Comparing to JS version of DPP, the binary_properties are not generated automatically
     /// if they're not present. It is up to the developer to use proper methods like ['DataContractV0::set_document_schema'] which

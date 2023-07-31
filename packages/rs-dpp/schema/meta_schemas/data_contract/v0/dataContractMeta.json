@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+  "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/data_contract/v0/dataContractMeta.json",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -366,32 +366,9 @@
     }
   },
   "properties": {
-    "protocolVersion": {
-      "type": "integer",
-      "minimum": 0,
-      "$comment": "Maximum is the latest protocol version"
-    },
     "$schema": {
       "type": "string",
       "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
-    },
-    "$id": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier"
-    },
-    "version": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "ownerId": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier"
     },
     "documents": {
       "type": "object",
@@ -474,11 +451,8 @@
     }
   },
   "required": [
-    "protocolVersion",
     "$schema",
     "$id",
-    "version",
-    "ownerId",
     "documents"
   ],
   "additionalProperties": false

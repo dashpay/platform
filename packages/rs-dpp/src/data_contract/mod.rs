@@ -42,6 +42,7 @@ pub use data_contract_methods::*;
 pub mod accessors;
 pub mod data_contract_config;
 mod validation;
+mod json_schema;
 
 pub use v0::*;
 
@@ -257,7 +258,7 @@ impl DataContract {
 
     #[cfg(feature = "platform-value")]
     pub fn from_object(
-        mut raw_object: Value,
+        raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContract, ProtocolError> {
         match platform_version
@@ -274,6 +275,7 @@ impl DataContract {
         }
     }
 
+    // TODO: Remove
     // #[cfg(feature = "validation")]
     // pub fn validate(
     //     protocol_version: u32,

@@ -16,7 +16,6 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
 #[serde(untagged)]
-
 pub enum DataContractConfig {
     V0(DataContractConfigV0),
 }

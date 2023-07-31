@@ -34,11 +34,9 @@ use platform_value::string_encoding::Encoding;
 
 use super::super::property_names;
 
-pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
-    "https://schema.dash.org/dpp-0-4-0/meta/data-contract";
-
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
+// TODO: move to ST?
 pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 
 /// `DataContractV0` represents a data contract in a decentralized platform.
@@ -53,34 +51,31 @@ pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.
-    pub id: Identifier,
-
-    /// A reference to the JSON schema that defines the contract.
-    pub schema: String,
+    pub(super) id: Identifier,
 
     /// The version of this data contract.
-    pub version: u32,
+    pub(super) version: u32,
 
     /// The identifier of the contract owner.
-    pub owner_id: Identifier,
+    pub(super) owner_id: Identifier,
 
     /// A mapping of document names to their corresponding document types.
-    pub document_types: BTreeMap<DocumentName, DocumentType>,
+    pub(super) document_types: BTreeMap<DocumentName, DocumentType>,
 
     /// Optional metadata associated with the contract.
-    pub metadata: Option<Metadata>,
+    pub(super) metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
-    pub config: DataContractConfig,
+    pub(super) config: DataContractConfig,
 
     /// A mapping of document names to their corresponding JSON schemas.
-    pub documents: BTreeMap<DocumentName, JsonSchema>,
+    pub(super) documents: BTreeMap<DocumentName, JsonSchema>,
 
     /// Optional mapping of definition names to their corresponding JSON schemas.
-    pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
+    pub(super) defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
     /// A nested mapping of document names and property paths to their binary values.
-    pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+    pub(super) binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 }
 
 //

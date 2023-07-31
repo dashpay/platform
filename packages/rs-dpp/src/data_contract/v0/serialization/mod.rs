@@ -1,4 +1,5 @@
 use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
@@ -48,15 +49,12 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContr
         let DataContractInSerializationFormatV0 {
             id,
             config,
-            schema,
             version,
             owner_id,
             documents,
             defs,
             ..
         } = value;
-
-        // TODO: Validate schema
 
         let document_types = DataContract::get_document_types_from_value_array(
             id,
@@ -73,13 +71,13 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContr
                 })
                 .transpose()?
                 .unwrap_or_default(),
-            // TODO: Why they are default? Do we have Anton
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
             platform_version,
         )?;
 
-        // TODO: Those must be consensus errors or we do it in the next task
+        // TODO: validate against schema
+
         let binary_properties = documents
             .iter()
             .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version)?)))
@@ -87,7 +85,6 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContr
 
         let data_contract = DataContractV0 {
             id,
-            schema,
             version,
             owner_id,
             document_types,

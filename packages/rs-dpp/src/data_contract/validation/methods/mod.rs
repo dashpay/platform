@@ -1,4 +1,4 @@
-mod validate;
+mod validate_schema;
 mod validate_index_definitions;
 mod validate_index_naming_duplicates;
 mod validate_not_defined_properties;

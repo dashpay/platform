@@ -108,7 +108,7 @@ impl DataContractFacade {
         data_contract: &Value,
         allow_non_current_data_contract_versions: bool,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        DataContract::validate(
+        DataContract::validate_schema(
             protocol_version,
             &data_contract,
             allow_non_current_data_contract_versions,

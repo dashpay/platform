@@ -7,12 +7,12 @@ mod v0;
 
 impl DataContract {
     /// Validate the data contract from a raw value
-    pub fn validate(
+    pub(in crate::data_contract) fn validate_schema(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version.dpp.validation.data_contract.validate {
-            0 => self.validate_v0(platform_version),
+            0 => self.validate_schema_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate".to_string(),
                 known_versions: vec![0],

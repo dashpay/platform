@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::data_contract::DataContract;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::errors::json_schema_error::JSONSchemaError;
 use crate::errors::consensus::ConsensusError;
 
 // @append_only
@@ -64,4 +65,7 @@ pub enum DataContractError {
 
     #[error("Corrupted Code Execution: {0}")]
     CorruptedCodeExecution(&'static str),
+
+    #[error("Corrupted Code Execution: {0}")]
+    JSONSchema(JSONSchemaError),
 }
