@@ -464,6 +464,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 0,
                 add_epoch_pool_to_proposers_payout_operations: 0,
                 find_oldest_epoch_needing_payment: 0,
+                fetch_reward_shares_list_for_masternode: 0,
             },
             identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
                 build_withdrawal_transactions_from_documents: 0,

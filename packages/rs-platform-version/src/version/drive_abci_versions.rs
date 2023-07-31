@@ -141,6 +141,7 @@ pub struct DriveAbciFeePoolOutwardsDistributionMethodVersions {
     pub add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: FeatureVersion,
     pub add_epoch_pool_to_proposers_payout_operations: FeatureVersion,
     pub find_oldest_epoch_needing_payment: FeatureVersion,
+    pub fetch_reward_shares_list_for_masternode: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

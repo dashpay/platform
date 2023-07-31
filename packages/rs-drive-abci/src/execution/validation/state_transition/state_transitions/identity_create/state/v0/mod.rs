@@ -109,7 +109,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
             return Ok(validation_result);
         }
 
-        self.transform_into_action_v0(platform)
+        self.transform_into_action_v0(platform, platform_version)
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(

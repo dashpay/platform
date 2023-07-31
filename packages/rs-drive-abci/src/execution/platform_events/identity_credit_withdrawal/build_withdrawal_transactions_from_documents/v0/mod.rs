@@ -104,7 +104,7 @@ where
                 })?;
 
             withdrawals.insert(
-                document.id,
+                document.id(),
                 (transaction_index.to_be_bytes().to_vec(), transaction_buffer),
             );
         }

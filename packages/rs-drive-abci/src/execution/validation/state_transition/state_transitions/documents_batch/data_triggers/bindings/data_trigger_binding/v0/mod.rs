@@ -84,7 +84,7 @@ impl DataTriggerBindingV0Getters for DataTriggerBindingV0 {
         context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {
-        self.data_trigger(document_transition, context, platform_version)
+        (self.data_trigger)(document_transition, context, platform_version)
     }
 
     fn is_matching(
