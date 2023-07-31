@@ -45,7 +45,7 @@ impl<C> Platform<C> {
 
         batch.push(DriveOperation::GroveDBOperation(
             current_epoch
-                .update_processing_fee_pool_operation(total_processing_fees, platform_version)?,
+                .update_processing_fee_pool_operation(total_processing_fees)?,
         ));
 
         // update storage fee pool

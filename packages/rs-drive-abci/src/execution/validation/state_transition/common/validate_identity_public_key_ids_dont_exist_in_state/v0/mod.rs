@@ -4,6 +4,7 @@ use dpp::consensus::basic::BasicError;
 
 use dpp::identity::KeyID;
 use dpp::platform_value::Identifier;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
 use dpp::validation::SimpleConsensusValidationResult;
@@ -24,7 +25,7 @@ pub(crate) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
     // first let's check that the identity has no keys with the same id
     let key_ids = identity_public_keys_with_witness
         .iter()
-        .map(|key| key.id)
+        .map(|key| key.id())
         .collect::<Vec<KeyID>>();
     let limit = key_ids.len() as u16;
     let identity_key_request = IdentityKeysRequest {

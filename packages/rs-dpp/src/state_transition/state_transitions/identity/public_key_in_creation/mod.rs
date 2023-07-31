@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub mod accessors;
 mod fields;
 pub mod v0;
-mod v0_methods;
+mod methods;
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From,

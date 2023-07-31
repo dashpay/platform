@@ -10,6 +10,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 
 impl<C> Platform<C>
 where
@@ -86,7 +87,7 @@ where
 
                     Ok(SuccessfulPaidExecution(
                         validation_result.into_data()?,
-                        outcome.actual_fee_paid,
+                        outcome.actual_fee_paid_owned(),
                     ))
                 } else {
                     Ok(ConsensusExecutionError(

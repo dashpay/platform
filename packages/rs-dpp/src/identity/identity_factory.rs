@@ -71,7 +71,7 @@ impl IdentityFactory {
         raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
     }
 
-    #[cfg(feature = "identity-serialization")]
+    #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,

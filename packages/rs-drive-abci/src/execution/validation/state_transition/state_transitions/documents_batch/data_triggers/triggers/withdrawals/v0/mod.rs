@@ -12,9 +12,11 @@ use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::{document, ProtocolError};
+use dpp::document::DocumentV0Getters;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 /// Creates a data trigger for handling deletion of withdrawal documents.
@@ -57,7 +59,7 @@ pub fn delete_withdrawal_data_trigger_v0(
             primary_key_equal_clause: Some(WhereClause {
                 field: document::property_names::ID.to_string(),
                 operator: WhereOperator::Equal,
-                value: Value::Identifier(dt_delete.base.id.to_buffer()),
+                value: Value::Identifier(dt_delete.base().id().to_buffer()),
             }),
             in_clause: None,
             range_clause: None,
@@ -81,7 +83,7 @@ pub fn delete_withdrawal_data_trigger_v0(
             context.transaction,
             Some(platform_version.protocol_version),
         )?
-        .documents;
+        .documents_owned();
 
     let Some(withdrawal) = withdrawals.get(0) else {
         let err = DataTriggerConditionError::new(
@@ -96,7 +98,7 @@ pub fn delete_withdrawal_data_trigger_v0(
     };
 
     let status: u8 = withdrawal
-        .properties
+        .properties()
         .get_integer("status")
         .map_err(ProtocolError::ValueError)?;
 

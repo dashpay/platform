@@ -29,11 +29,11 @@ impl<C> Platform<C> {
                 transaction,
                 platform_version,
             ),
-            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "create_genesis_state".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

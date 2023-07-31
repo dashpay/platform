@@ -35,7 +35,7 @@ use crate::serialization::PlatformSerializable;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 
-mod accessors;
+pub mod accessors;
 pub mod document_transition;
 mod fields;
 mod identity_signed;

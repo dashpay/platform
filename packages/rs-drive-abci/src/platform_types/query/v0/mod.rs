@@ -20,7 +20,7 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes20, Bytes32};
 use std::collections::BTreeMap;
 
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::validation::ValidationResult;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::drive::identity::IdentityDriveQuery;
@@ -41,6 +41,7 @@ use drive::error::contract::DataContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     match value {
@@ -271,7 +272,7 @@ impl<C> Platform<C> {
                         .fetch_identity_balance(identity_id.into_buffer(), None, platform_version));
                     let revision = check_validation_result_with_data!(self
                         .drive
-                        .fetch_identity_revision(identity_id.into_buffer(), true, None,));
+                        .fetch_identity_revision(identity_id.into_buffer(), true, None, platform_version));
                     GetIdentityBalanceAndRevisionResponse {
                         result: Some(
                             get_identity_balance_and_revision_response::Result::BalanceAndRevision(
@@ -395,7 +396,7 @@ impl<C> Platform<C> {
                             platform_version
                         )
                         .unwrap())
-                    .map(|contract| contract.contract.serialize())
+                    .map(|contract| contract.contract.serialize_with_platform_version(platform_version))
                     .transpose()?;
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::DataContract(
@@ -419,7 +420,7 @@ impl<C> Platform<C> {
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
-                        .prove_contracts(contract_ids.as_slice(), None));
+                        .prove_contracts(contract_ids.as_slice(), None, platform_version));
                     GetDataContractsResponse {
                         metadata: Some(metadata),
                         result: Some(get_data_contracts_response::Result::Proof(Proof {
@@ -452,7 +453,7 @@ impl<C> Platform<C> {
                                             ProtocolError,
                                         >(
                                             get_data_contracts_response::DataContractValue {
-                                                value: contract.contract.serialize()?
+                                                value: contract.contract.serialize_with_platform_version(platform_version)?
                                             }
                                         ))
                                         .transpose()?,
@@ -550,7 +551,7 @@ impl<C> Platform<C> {
                                 // TODO: figure out why this is optional
                                 value: Some(
                                     get_data_contract_history_response::DataContractValue {
-                                        value: data_contract.serialize()?
+                                        value: data_contract.serialize(platform_version)?
                                     }
                                 )
                             }

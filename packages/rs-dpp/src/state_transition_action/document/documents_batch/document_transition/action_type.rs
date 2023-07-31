@@ -1,6 +1,7 @@
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 // @append-only
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum DocumentTransitionActionType {
     Create,
     Replace,

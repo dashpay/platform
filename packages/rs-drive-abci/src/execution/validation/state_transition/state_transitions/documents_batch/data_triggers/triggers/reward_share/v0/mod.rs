@@ -10,7 +10,9 @@ use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::ProtocolError;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::masternode_reward_shares_contract::document_types::reward_share::properties::{PAY_TO_ID, PERCENTAGE};
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -55,7 +57,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
         }
     };
 
-    let properties = &document_create_transition.data;
+    let properties = &document_create_transition.data();
 
     let pay_to_id = properties
         .get_hash256_bytes(PAY_TO_ID)
@@ -105,7 +107,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
     let document_type = context
         .data_contract
-        .document_type_for_name(&document_create_transition.base.document_type_name)?;
+        .document_type_for_name(&document_create_transition.base().document_type_name)?;
 
     let drive_query = DriveQuery {
         contract: context.data_contract,
@@ -142,7 +144,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
             context.transaction,
             Some(platform_version.protocol_version),
         )?
-        .documents;
+        .documents_owned();
 
     if is_dry_run {
         return Ok(result);

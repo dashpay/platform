@@ -34,7 +34,7 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
         .validation_and_processing
         .process_state_transition
     {
-        0 => v0::process_state_transition_v0(platform, state_transition, transaction),
+        0 => v0::process_state_transition_v0(platform, state_transition, transaction, platform_version),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "process_state_transition".to_string(),
             known_versions: vec![0],

@@ -1,10 +1,4 @@
-use crate::version::dpp_versions::{
-    ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
-    DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
-    IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
-    StateTransitionConversionVersions, StateTransitionSerializationVersions,
-};
+use crate::version::dpp_versions::{ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion, DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions, IdentityVersions, IndexVersions, JsonSchemaValidatorVersions, StateTransitionConversionVersions, StateTransitionSerializationVersions, StateTransitionMethodVersions, PublicKeyInCreationMethodVersions};
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
@@ -664,6 +658,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             identity_to_identity_create_transition: 0,
             identity_to_identity_create_transition_with_signer: 0,
         },
+        state_transition_method_versions: StateTransitionMethodVersions { public_key_in_creation_methods: PublicKeyInCreationMethodVersions{ from_public_key_signed_with_private_key: 0, from_public_key_signed_external: 0, hash: 0, duplicated_key_ids_witness: 0, duplicated_keys_witness: 0 } },
         contract_versions: ContractVersions {
             contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,

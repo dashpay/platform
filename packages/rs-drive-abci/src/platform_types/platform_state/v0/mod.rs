@@ -19,6 +19,7 @@ use crate::platform_types::masternode;
 
 use crate::platform_types::validator_set::ValidatorSet;
 use std::collections::{BTreeMap, HashMap};
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 
 /// Platform state
 #[derive(Clone, Debug)]
@@ -327,7 +328,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn height(&self) -> u64 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.height)
+            .map(|block_info| block_info.basic_info().height)
             .unwrap_or_default()
     }
 
@@ -335,7 +336,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn known_height_or(&self, default: u64) -> u64 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.height)
+            .map(|block_info| block_info.basic_info().height)
             .unwrap_or(default)
     }
 
@@ -343,7 +344,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn core_height(&self) -> u32 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.core_height)
+            .map(|block_info| block_info.basic_info().core_height)
             .unwrap_or_else(|| {
                 self.initialization_information
                     .as_ref()
@@ -358,7 +359,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn known_core_height_or(&self, default: u32) -> u32 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.core_height)
+            .map(|block_info| block_info.basic_info().core_height)
             .unwrap_or_else(|| {
                 self.initialization_information
                     .as_ref()
@@ -373,14 +374,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn last_block_time_ms(&self) -> Option<u64> {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.time_ms)
+            .map(|block_info| block_info.basic_info().time_ms)
     }
 
     /// The last quorum hash
     fn last_quorum_hash(&self) -> [u8; 32] {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.quorum_hash)
+            .map(|block_info| *block_info.quorum_hash())
             .unwrap_or_default()
     }
 
@@ -388,7 +389,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn last_block_signature(&self) -> [u8; 96] {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.signature)
+            .map(|block_info| *block_info.signature())
             .unwrap_or([0u8; 96])
     }
 
@@ -396,14 +397,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn last_block_app_hash(&self) -> Option<[u8; 32]> {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.app_hash)
+            .map(|block_info| *block_info.app_hash())
     }
 
     /// The last block height or 0 for genesis
     fn last_block_height(&self) -> u64 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.height)
+            .map(|block_info| block_info.basic_info.height())
             .unwrap_or_default()
     }
 
@@ -411,7 +412,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn last_block_round(&self) -> u32 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.round)
+            .map(|block_info| block_info.round())
             .unwrap_or_default()
     }
 
@@ -419,7 +420,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn epoch(&self) -> Epoch {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info.epoch)
+            .map(|block_info| block_info.basic_info.epoch())
             .unwrap_or_default()
     }
 

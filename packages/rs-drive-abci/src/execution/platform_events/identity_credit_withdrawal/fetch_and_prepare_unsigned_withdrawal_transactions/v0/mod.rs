@@ -52,7 +52,7 @@ where
             epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = *withdrawals_contract::ID;
+        let data_contract_id = withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),

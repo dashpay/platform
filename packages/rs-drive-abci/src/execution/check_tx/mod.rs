@@ -35,11 +35,11 @@ where
         let platform_version = state.current_platform_version()?;
         match platform_version.drive_abci.methods.engine.check_tx {
             0 => self.check_tx_v0(raw_tx),
-            version => Error::Execution(ExecutionError::UnknownVersionMismatch {
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_tx".to_string(),
                 known_versions: vec![0],
                 received: version,
-            }),
+            })),
         }
     }
 }

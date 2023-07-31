@@ -32,7 +32,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<EpochInfoV0, Error> {
         match platform_version.drive_abci.methods.epoch.gather_epoch_info {
-            0 => self.gather_epoch_info_v0(block_proposal, transaction),
+            0 => self.gather_epoch_info_v0(block_proposal, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "gather_epoch_info".to_string(),
                 known_versions: vec![0],

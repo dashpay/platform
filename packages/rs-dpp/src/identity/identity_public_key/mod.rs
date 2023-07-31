@@ -15,7 +15,7 @@ pub use security_level::SecurityLevel;
 pub mod accessors;
 pub(crate) mod conversion;
 mod fields;
-pub(crate) mod v0;
+pub mod v0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;

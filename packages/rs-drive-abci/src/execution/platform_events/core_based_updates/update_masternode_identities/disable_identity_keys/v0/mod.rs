@@ -54,7 +54,7 @@ where
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {
-                if key.is_disabled() || key.purpose == WITHDRAW {
+                if key.is_disabled() || key.purpose() == WITHDRAW {
                     None // Don't disable withdrawal keys
                 } else {
                     Some(key_id)

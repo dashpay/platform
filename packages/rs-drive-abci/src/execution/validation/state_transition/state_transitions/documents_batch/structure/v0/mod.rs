@@ -8,16 +8,14 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
 use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
 use crate::execution::validation::state_transition::documents_batch::validate_document_transitions_basic;
-use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
 use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
-use dpp::document::DocumentsBatchTransition;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::prelude::DocumentTransition;
-use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentTransition, DocumentTransitionV0Methods,
-};
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::StateTransitionLike;
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -95,7 +93,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
                 .collect();
             let validation_result = validate_document_transitions_basic(
                 existing_data_contract,
-                self.owner_id,
+                self.owner_id(),
                 transitions_as_objects
                     .iter()
                     .map(|t| t.to_btree_ref_string_map().unwrap()),

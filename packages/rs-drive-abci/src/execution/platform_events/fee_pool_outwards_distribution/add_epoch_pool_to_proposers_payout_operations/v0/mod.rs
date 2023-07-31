@@ -186,10 +186,12 @@ mod tests {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
+
+            let platform_version = platform.state.read().unwrap().current_platform_version().expect("platform_version");
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
-            let contract = platform.create_mn_shares_contract(Some(&transaction));
+            let contract = platform.create_mn_shares_contract(Some(&transaction), platform_version);
 
             let proposers_count = 10u16;
             let processing_fees = 10000;

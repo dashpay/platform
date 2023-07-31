@@ -62,8 +62,9 @@ mod insert;
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Module related to Identity Keys
 pub mod key;
+/// Module related to updating of identity
 #[cfg(feature = "full")]
-mod update;
+pub mod update;
 
 #[cfg(feature = "full")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;

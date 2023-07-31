@@ -10,14 +10,17 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::document::DocumentV0Getters;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::dpns_contract;
 use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{ALLOW_SUBDOMAINS, DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
 use dpp::version::PlatformVersion;
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
@@ -56,7 +59,7 @@ pub fn create_domain_data_trigger_v0(
         }
     };
 
-    let data = &document_create_transition.data;
+    let data = document_create_transition.data();
 
     let owner_id = context.owner_id;
     let label = data.get_string(LABEL).map_err(ProtocolError::ValueError)?;
@@ -154,7 +157,7 @@ pub fn create_domain_data_trigger_v0(
             }
         }
 
-        if normalized_parent_domain_name.is_empty() && context.owner_id != dpns_contract::OWNER_ID {
+        if normalized_parent_domain_name.is_empty() && context.owner_id != &dpns_contract::OWNER_ID {
             let err = DataTriggerConditionError::new(
                 context.data_contract.id(),
                 document_transition.base().id(),
@@ -173,7 +176,7 @@ pub fn create_domain_data_trigger_v0(
 
         let document_type = context
             .data_contract
-            .document_type_for_name(document_create_transition.base.document_type_name.as_str())?;
+            .document_type_for_name(document_create_transition.base().document_type_name().as_str())?;
 
         let drive_query = DriveQuery {
             contract: context.data_contract,
@@ -220,7 +223,7 @@ pub fn create_domain_data_trigger_v0(
                 context.transaction,
                 Some(platform_version.protocol_version),
             )?
-            .documents;
+            .documents_owned();
 
         if !is_dry_run {
             if documents.is_empty() {
@@ -249,10 +252,10 @@ pub fn create_domain_data_trigger_v0(
             }
 
             if (!parent_domain
-                .properties
+                .properties()
                 .get_bool_at_path(ALLOW_SUBDOMAINS)
                 .map_err(ProtocolError::ValueError)?)
-                && context.owner_id != &parent_domain.owner_id
+                && context.owner_id != &parent_domain.owner_id()
             {
                 let err = DataTriggerConditionError::new(
                     context.data_contract.id(),
@@ -310,7 +313,7 @@ pub fn create_domain_data_trigger_v0(
             context.transaction,
             Some(platform_version.protocol_version),
         )?
-        .documents;
+        .documents_owned();
 
     if is_dry_run {
         return Ok(result);

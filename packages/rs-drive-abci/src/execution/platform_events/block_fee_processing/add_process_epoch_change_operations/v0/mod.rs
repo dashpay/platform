@@ -99,6 +99,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         // init current epoch pool for processing
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
+        //todo: version
         current_epoch.add_init_current_operations(
             DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
             block_info.height(),

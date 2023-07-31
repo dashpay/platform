@@ -73,7 +73,7 @@ impl Default for AbciConfig {
         Self {
             bind_address: "tcp://127.0.0.1:1234".to_string(),
             prometheus_bind_address: None,
-            keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
+            keys: Keys::new_random_keys_with_seed(18012014, PlatformVersion::first()).expect("random keys for first version can not error"), //Dash genesis day
             genesis_height: AbciConfig::default_genesis_height(),
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),

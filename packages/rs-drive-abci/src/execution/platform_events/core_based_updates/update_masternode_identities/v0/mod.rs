@@ -33,7 +33,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    fn get_owner_identity_key(
+    pub(crate) fn get_owner_identity_key(
         payout_address: [u8; 20],
         key_id: KeyID,
     ) -> Result<IdentityPublicKey, Error> {

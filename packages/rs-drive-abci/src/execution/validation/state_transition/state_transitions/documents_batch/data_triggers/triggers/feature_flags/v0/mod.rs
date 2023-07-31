@@ -6,6 +6,7 @@ use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTrigg
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::feature_flags_contract;
 use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params::properties::PROPERTY_ENABLE_AT_HEIGHT;
@@ -50,7 +51,7 @@ pub fn create_feature_flag_data_trigger_v0(
         }
     };
 
-    let data = &document_create_transition.data;
+    let data = document_create_transition.data();
 
     let enable_at_height: u64 = data.get_integer(PROPERTY_ENABLE_AT_HEIGHT).map_err(|_| {
         Error::Execution(ExecutionError::DataTriggerExecutionError(format!(
@@ -73,7 +74,7 @@ pub fn create_feature_flag_data_trigger_v0(
         return Ok(result);
     }
 
-    if context.owner_id != feature_flags_contract::OWNER_ID {
+    if context.owner_id != &feature_flags_contract::OWNER_ID {
         let err = DataTriggerConditionError::new(
             context.data_contract.id(),
             document_transition.base().id(),

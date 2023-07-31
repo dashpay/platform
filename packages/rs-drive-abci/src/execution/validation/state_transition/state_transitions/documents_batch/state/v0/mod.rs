@@ -1,6 +1,6 @@
-use dpp::document::DocumentsBatchTransition;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
@@ -51,8 +51,8 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
 
         let data_trigger_execution_context = DataTriggerExecutionContext {
             platform,
-            transaction,
-            owner_id: self.get_owner_id(),
+            transaction: tx,
+            owner_id: &self.owner_id(),
             data_contract,
             state_transition_execution_context,
         };
@@ -65,7 +65,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
             platform.state.current_platform_version()?,
         )?;
 
-        validation_result.add_errors(data_triggers_validation_result.errors());
+        validation_result.add_errors_into(data_triggers_validation_result.errors);
 
         Ok(validation_result.map(Into::into))
     }
