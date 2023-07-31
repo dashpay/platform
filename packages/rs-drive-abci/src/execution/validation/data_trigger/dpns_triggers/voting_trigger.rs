@@ -24,6 +24,7 @@ impl PlatformStateRef<'_> {
     }
 }
 
+/// Runs the name register trigger.
 pub fn run_name_register_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
