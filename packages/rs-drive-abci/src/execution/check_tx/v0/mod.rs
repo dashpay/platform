@@ -84,7 +84,7 @@ where
         };
         let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
 
-        let platform_version = platform.state.current_platform_version()?;
+        let platform_version = platform_ref.state.current_platform_version()?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
@@ -130,10 +130,11 @@ mod tests {
     use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization::serialization_traits::{PlatformSerializable, Signable};
+    use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionType};
+    use dpp::system_data_contracts::dpns_contract;
     use dpp::version::{PlatformVersion, LATEST_VERSION};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -147,11 +148,11 @@ mod tests {
             .build_with_mock_rpc();
         let platform_version = PlatformVersion::latest();
 
-        let key = IdentityPublicKey::random_authentication_key(1, Some(1));
+        let key = IdentityPublicKey::random_authentication_key(1, Some(1), platform_version);
 
         platform
             .drive
-            .create_initial_state_structure(None, &platform_version.drive)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create state structure");
         let identity = Identity {
             protocol_version: 1,
@@ -167,7 +168,13 @@ mod tests {
         };
         platform
             .drive
-            .add_new_identity(identity, &BlockInfo::default(), true, None)
+            .add_new_identity(
+                identity,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
             .expect("expected to insert identity");
 
         let _validation_result = platform
@@ -195,7 +202,7 @@ mod tests {
 
         platform
             .drive
-            .create_initial_state_structure(None, &platform_version.drive)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create state structure");
 
         let transaction = platform.drive.grove.start_transaction();

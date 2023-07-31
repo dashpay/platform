@@ -20,7 +20,7 @@ where
         identity.add_public_keys([Self::get_owner_identity_key(
             masternode.state.payout_address,
             0,
-            platform_version
+            platform_version,
         )?]);
         Ok(identity)
     }

@@ -2,16 +2,16 @@ mod create_operator_identity;
 mod create_owner_identity;
 mod create_voter_identity;
 mod disable_identity_keys;
+mod get_operator_identifier;
+mod get_operator_identity_keys;
+mod get_owner_identity_key;
+mod get_voter_identifier;
+mod get_voter_identity_key;
+mod hash_protxhash_with_key_data;
 mod update_masternode_identities;
 mod update_operator_identity;
 mod update_owner_withdrawal_address;
 mod update_voter_identity;
-mod get_voter_identifier;
-mod get_operator_identifier;
-mod get_operator_identity_keys;
-mod get_owner_identity_key;
-mod get_voter_identity_key;
-mod hash_protxhash_with_key_data;
 
 //
 //

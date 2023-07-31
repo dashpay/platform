@@ -1,17 +1,17 @@
 mod v0;
 
-use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::platform_value::BinaryData;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Retrieves an identity public key using the provided payout address and key ID.
     ///
@@ -34,7 +34,8 @@ impl<C> Platform<C>
         match platform_version
             .drive_abci
             .methods
-            .core_based_updates.masternode_updates
+            .core_based_updates
+            .masternode_updates
             .get_owner_identity_key
         {
             0 => Self::get_owner_identity_key_v0(payout_address, key_id),

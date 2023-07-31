@@ -246,7 +246,8 @@ where
                 old_masternode.state.platform_node_id
             };
             // Now we need to create the new operator identity with the new keys
-            let mut identity = Identity::create_basic_identity(new_operator_identifier, platform_version)?;
+            let mut identity =
+                Identity::create_basic_identity(new_operator_identifier, platform_version)?;
             identity.add_public_keys(
                 self.get_operator_identity_keys(
                     state_diff

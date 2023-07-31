@@ -1,14 +1,13 @@
-use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::platform_value::BinaryData;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     pub(crate) fn get_operator_identity_keys_v0(
         pub_key_operator: Vec<u8>,
@@ -23,28 +22,35 @@ impl<C> Platform<C>
             read_only: true,
             data: BinaryData::new(pub_key_operator),
             disabled_at: None,
-        }.into()];
+        }
+        .into()];
         if let Some(operator_payout_address) = operator_payout_address {
-            identity_public_keys.push(IdentityPublicKeyV0 {
-                id: 1,
-                key_type: KeyType::ECDSA_HASH160,
-                purpose: Purpose::WITHDRAW,
-                security_level: SecurityLevel::CRITICAL,
-                read_only: true,
-                data: BinaryData::new(operator_payout_address.to_vec()),
-                disabled_at: None,
-            }.into());
+            identity_public_keys.push(
+                IdentityPublicKeyV0 {
+                    id: 1,
+                    key_type: KeyType::ECDSA_HASH160,
+                    purpose: Purpose::WITHDRAW,
+                    security_level: SecurityLevel::CRITICAL,
+                    read_only: true,
+                    data: BinaryData::new(operator_payout_address.to_vec()),
+                    disabled_at: None,
+                }
+                .into(),
+            );
         }
         if let Some(node_id) = platform_node_id {
-            identity_public_keys.push(IdentityPublicKeyV0 {
-                id: 2,
-                key_type: KeyType::EDDSA_25519_HASH160,
-                purpose: Purpose::SYSTEM,
-                security_level: SecurityLevel::CRITICAL,
-                read_only: true,
-                data: BinaryData::new(node_id.to_vec()),
-                disabled_at: None,
-            }.into());
+            identity_public_keys.push(
+                IdentityPublicKeyV0 {
+                    id: 2,
+                    key_type: KeyType::EDDSA_25519_HASH160,
+                    purpose: Purpose::SYSTEM,
+                    security_level: SecurityLevel::CRITICAL,
+                    read_only: true,
+                    data: BinaryData::new(node_id.to_vec()),
+                    disabled_at: None,
+                }
+                .into(),
+            );
         }
 
         Ok(identity_public_keys)

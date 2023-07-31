@@ -1,18 +1,17 @@
 mod v0;
 
-use sha2::{Digest, Sha256};
-use std::convert::TryInto;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
+use sha2::{Digest, Sha256};
+use std::convert::TryInto;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
-
     /// Hashes transaction hash with key data.
     ///
     /// This function performs the hash operation and delegates to a version-specific method depending on the platform version.
@@ -34,7 +33,8 @@ impl<C> Platform<C>
         match platform_version
             .drive_abci
             .methods
-            .core_based_updates.masternode_updates
+            .core_based_updates
+            .masternode_updates
             .hash_protxhash_with_key_data
         {
             0 => Self::hash_protxhash_with_key_data_v0(pro_tx_hash, key_data),

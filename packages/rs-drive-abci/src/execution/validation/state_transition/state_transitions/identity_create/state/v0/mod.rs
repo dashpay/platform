@@ -13,12 +13,9 @@ use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
 
-use dpp::identity::state_transition::identity_create_transition::{
-    IdentityCreateTransition, IdentityCreateTransitionAction,
-};
-
 use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 use dpp::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
@@ -56,7 +53,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
 
         let identity_id = self.identity_id();
         let balance =
-            drive.fetch_identity_balance(self.identity_id.to_buffer(), tx, platform_version)?;
+            drive.fetch_identity_balance(identity_id.to_buffer(), tx, platform_version)?;
 
         // Balance is here to check if the identity does already exist
         if balance.is_some() {
@@ -64,13 +61,13 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
                 IdentityAlreadyExistsError::new(identity_id.to_owned()).into(),
             ));
         }
-        let outpoint = match self.asset_lock_proof.out_point() {
+        let outpoint = match self.asset_lock_proof().out_point() {
             None => {
                 return Ok(ConsensusValidationResult::new_with_error(
                     ConsensusError::BasicError(
                         BasicError::IdentityAssetLockTransactionOutputNotFoundError(
                             IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
+                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
                             ),
                         ),
                     ),
@@ -100,7 +97,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
             validate_unique_identity_public_key_hashes_in_state_v0(
-                self.public_keys.as_slice(),
+                self.public_keys(),
                 drive,
                 tx,
                 platform_version,
@@ -118,12 +115,12 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let tx_out_validation = self
-            .asset_lock_proof
+            .asset_lock_proof()
             .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
@@ -132,7 +129,7 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        match IdentityCreateTransitionAction::from_borrowed(self, tx_out.value * 1000) {
+        match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }

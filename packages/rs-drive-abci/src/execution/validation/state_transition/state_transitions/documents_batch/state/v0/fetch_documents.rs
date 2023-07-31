@@ -11,13 +11,12 @@ use dpp::data_contract::DataContract;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
-use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::DocumentTransition;
 use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentTransition, DocumentTransitionMethodsV0,
+    DocumentTransition, DocumentTransitionMethodsV0, DocumentTransitionV0Methods,
 };
 use dpp::validation::ConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use drive::contract::Contract;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -71,6 +70,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     document_type_name: &str,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
     let drive = platform.drive;
     //todo: deal with fee result
@@ -81,6 +81,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
         Some(&platform.state.epoch()),
         add_to_cache_if_pulled,
         transaction,
+        platform_version,
     )?;
 
     let Some(contract_fetch_info) = contract_fetch_info else {

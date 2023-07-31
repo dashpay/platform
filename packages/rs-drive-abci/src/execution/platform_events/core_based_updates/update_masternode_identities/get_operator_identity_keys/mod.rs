@@ -1,17 +1,17 @@
 mod v0;
 
-use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::platform_value::BinaryData;
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Retrieves the operator identity public keys using provided operator parameters.
     ///
@@ -37,9 +37,14 @@ impl<C> Platform<C>
             .drive_abci
             .methods
             .core_based_updates
-            .masternode_updates.get_operator_identity_keys
+            .masternode_updates
+            .get_operator_identity_keys
         {
-            0 => Self::get_operator_identity_keys_v0(pub_key_operator, operator_payout_address, platform_node_id),
+            0 => Self::get_operator_identity_keys_v0(
+                pub_key_operator,
+                operator_payout_address,
+                platform_node_id,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "get_operator_identity_keys".to_string(),
                 known_versions: vec![0],

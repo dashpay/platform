@@ -1,7 +1,7 @@
 mod v0;
 
-use crate::error::Error;
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
@@ -9,8 +9,8 @@ use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Creates an operator identity based on the given masternode list item.
     ///
@@ -33,7 +33,9 @@ impl<C> Platform<C>
         match platform_version
             .drive_abci
             .methods
-            .core_based_updates.masternode_updates.create_operator_identity
+            .core_based_updates
+            .masternode_updates
+            .create_operator_identity
         {
             0 => Self::create_operator_identity_v0(masternode, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

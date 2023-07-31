@@ -522,7 +522,7 @@ where
             None,
             None,
             platform_version,
-        );
+        )?;
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
@@ -665,7 +665,7 @@ where
                 //  later we will use own error codes
                 code: 1,
                 log: "".to_string(),
-                info,
+                info: "Platform not initialized".to_string(),
                 index: 0,
                 key: vec![],
                 value: vec![],

@@ -10,11 +10,11 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 use dpp::consensus::state::state_error::StateError;
 
 use dpp::state_transition::identity_update_transition::validate_identity_update_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 
 /// This validation will validate the count of new keys, that there are no duplicates either by
 /// id or by data. This is done before signature and state validation to remove potential

@@ -1,14 +1,13 @@
-use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::platform_value::BinaryData;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     pub(crate) fn get_voter_identity_key_v0(
         voting_address: [u8; 20],
@@ -22,6 +21,7 @@ impl<C> Platform<C>
             read_only: true,
             data: BinaryData::new(voting_address.to_vec()),
             disabled_at: None,
-        }.into())
+        }
+        .into())
     }
 }

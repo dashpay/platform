@@ -7,9 +7,6 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionIdentitySignedV0,
-};
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -53,15 +50,13 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
                 "state_transition does not have a public key Id to verify".to_string(),
             ))?;
 
-    let owner_id =
-        state_transition
-            .owner_id()
-            .ok_or(ProtocolError::CorruptedCodeExecution(
-                "state_transition does not have a owner Id to verify".to_string(),
-            ))?;
+    let owner_id = state_transition
+        .owner_id()
+        .ok_or(ProtocolError::CorruptedCodeExecution(
+            "state_transition does not have a owner Id to verify".to_string(),
+        ))?;
 
-    let key_request =
-        IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
+    let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 
     let maybe_partial_identity = if request_revision {
         drive.fetch_identity_balance_with_keys_and_revision(
@@ -98,7 +93,7 @@ pub(crate) fn validate_state_transition_identity_signature_v0(
         return Ok(validation_result);
     };
 
-    if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type) {
+    if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type()) {
         validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
             InvalidIdentityPublicKeyTypeError::new(public_key.key_type()),
         ));

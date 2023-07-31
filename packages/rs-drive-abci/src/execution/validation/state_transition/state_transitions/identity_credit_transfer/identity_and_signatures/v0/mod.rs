@@ -1,9 +1,9 @@
 use crate::error::Error;
 
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -28,7 +28,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreditTransfer
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
         let maybe_partial_identity = drive.fetch_identity_with_balance(
-            self.identity_id.to_buffer(),
+            self.identity_id().to_buffer(),
             tx,
             platform_version,
         )?;
@@ -36,7 +36,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreditTransfer
         let partial_identity = match maybe_partial_identity {
             None => {
                 validation_result.add_error(SignatureError::IdentityNotFoundError(
-                    IdentityNotFoundError::new(self.identity_id),
+                    IdentityNotFoundError::new(self.identity_id()),
                 ));
                 return Ok(validation_result);
             }

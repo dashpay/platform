@@ -59,8 +59,10 @@ where
 
         for masternode in added_mns {
             let owner_identity = Self::create_owner_identity(&masternode, platform_version)?;
-            let voter_identity =
-                Self::create_voter_identity_from_masternode_list_item(&masternode, platform_version)?;
+            let voter_identity = Self::create_voter_identity_from_masternode_list_item(
+                &masternode,
+                platform_version,
+            )?;
             let operator_identity = Self::create_operator_identity(&masternode, platform_version)?;
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
