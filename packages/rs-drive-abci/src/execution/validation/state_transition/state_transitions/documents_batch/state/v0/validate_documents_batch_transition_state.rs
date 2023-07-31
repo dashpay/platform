@@ -36,10 +36,10 @@ use dpp::state_transition_action::document::documents_batch::DocumentsBatchTrans
 use dpp::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::version::PlatformVersion;
-use drive::error::Error::DataContract;
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 
 pub(crate) fn validate_document_batch_transition_state<'a>(
     bypass_validation: bool,
@@ -147,6 +147,7 @@ fn validate_document_transitions_within_contract<'a>(
                 document_transitions,
                 execution_context,
                 transaction,
+                platform_version,
             )
         })
         .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>(
@@ -387,7 +388,7 @@ fn validate_transition<'a>(
                 // There is a case where we updated a just deleted document
                 // In this case we don't care about the created at
                 let original_document_created_at = if validation_result.is_valid() {
-                    validation_result.into_data()?.created_at
+                    validation_result.into_data()?.created_at()
                 } else {
                     None
                 };

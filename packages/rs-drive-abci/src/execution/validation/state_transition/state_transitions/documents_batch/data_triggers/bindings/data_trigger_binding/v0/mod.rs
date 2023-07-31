@@ -73,7 +73,7 @@ pub trait DataTriggerBindingV0Getters {
         &self,
         data_contract_id: &Identifier,
         document_type: &str,
-        transition_action: DocumentTransitionAction,
+        transition_action_type: DocumentTransitionActionType,
     ) -> bool;
 }
 

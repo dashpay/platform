@@ -1,8 +1,11 @@
+use crate::execution::validation::state_transition::documents_batch::data_triggers::{
+    DataTriggerExecutionContext, DataTriggerExecutionResult,
+};
 use dpp::identifier::Identifier;
+use dpp::state_transition_action::document::documents_batch::document_transition::{
+    DocumentTransitionAction, DocumentTransitionActionType,
+};
 use dpp::version::PlatformVersion;
-use dpp::state_transition_action::document::documents_batch::document_transition::{DocumentTransitionAction, DocumentTransitionActionType};
-use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::v0::{DataTriggerBindingV0, DataTriggerBindingV0Getters};
-use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 use crate::error::Error;
 pub use v0::*;

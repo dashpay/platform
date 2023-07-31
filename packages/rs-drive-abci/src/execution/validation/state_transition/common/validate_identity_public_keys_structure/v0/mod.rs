@@ -65,7 +65,8 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
     let validation_errors = identity_public_keys_with_witness
         .iter()
         .filter_map(|identity_public_key| {
-            let allowed_security_levels = ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose);
+            let allowed_security_levels =
+                ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose());
             if let Some(levels) = allowed_security_levels {
                 if !levels.contains(&identity_public_key.security_level()) {
                     Some(
