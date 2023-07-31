@@ -89,7 +89,7 @@
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
-    "@dashevo/wasm-re2": "~2.0.3",
+    "@dashevo/wasm-re2": "~2.0.4",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
     "bignumber.js": "^9.0.1",

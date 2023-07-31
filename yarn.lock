@@ -1628,7 +1628,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/wasm-re2": ~2.0.3
+    "@dashevo/wasm-re2": ~2.0.4
     acorn: ^8.5.0
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
@@ -2022,7 +2022,7 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
-    "@dashevo/wasm-re2": ~2.0.3
+    "@dashevo/wasm-re2": ~2.0.4
     "@types/bs58": ^4.0.1
     "@types/node": ^14.6.0
     "@yarnpkg/pnpify": ^4.0.0-rc.42
@@ -2071,10 +2071,10 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/wasm-re2@npm:~2.0.3":
-  version: 2.0.3
-  resolution: "@dashevo/wasm-re2@npm:2.0.3"
-  checksum: c8d48f8250b70d6f8c855d5b77dc0e8391e7e3a1e6bdf323b5cf27ca8c88fe3167ebddfa2b78e388e24a6f6e12f8930084a4103d4a9ed11edd895077e9361350
+"@dashevo/wasm-re2@npm:~2.0.4":
+  version: 2.0.4
+  resolution: "@dashevo/wasm-re2@npm:2.0.4"
+  checksum: 3a66db77e404487cf47c07e6532fdab981f3eecbe65af83e9ec2c23dc235c7eef59f770a1343e5cae81a24267d66ee5fa5f693f9b1435fa6d97f9cab560eaa3b
   languageName: node
   linkType: hard
 
