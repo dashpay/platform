@@ -13,11 +13,10 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::documents_batch_transition::document_transition::{
-    DocumentTransition, DocumentTransitionMethodsV0, DocumentTransitionV0Methods,
+    DocumentTransition, DocumentTransitionV0Methods,
 };
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::contract::Contract;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};

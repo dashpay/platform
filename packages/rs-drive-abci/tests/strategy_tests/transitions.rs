@@ -4,18 +4,10 @@ use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::core_script::CoreScript;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
-    IdentityCreditWithdrawalTransition, Pooling,
-};
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{

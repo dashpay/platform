@@ -1,7 +1,6 @@
 use crate::error::Error;
 
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signature::v0::validate_state_transition_identity_signature_v0;
-use dpp::document::DocumentsBatchTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;

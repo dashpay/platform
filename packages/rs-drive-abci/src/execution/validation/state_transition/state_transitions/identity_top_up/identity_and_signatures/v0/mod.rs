@@ -2,7 +2,6 @@ use crate::error::Error;
 
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
 
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;

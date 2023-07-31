@@ -7,7 +7,6 @@ use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTr
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
-    state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
 

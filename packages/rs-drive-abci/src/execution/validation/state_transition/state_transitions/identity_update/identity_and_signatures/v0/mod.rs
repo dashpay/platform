@@ -5,11 +5,9 @@ use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIde
 use dpp::consensus::state::state_error::StateError;
 
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signature::v0::validate_state_transition_identity_signature_v0;
-use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::serialization_traits::{PlatformMessageSignable, Signable};
-use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::serialization::{PlatformMessageSignable, Signable};
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;

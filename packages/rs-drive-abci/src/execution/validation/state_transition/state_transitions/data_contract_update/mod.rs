@@ -4,7 +4,6 @@ mod structure;
 
 use dpp::identity::PartialIdentity;
 
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use drive::drive::Drive;
@@ -129,7 +128,6 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
     use dpp::state_transition::{StateTransitionFieldTypes, StateTransitionType};

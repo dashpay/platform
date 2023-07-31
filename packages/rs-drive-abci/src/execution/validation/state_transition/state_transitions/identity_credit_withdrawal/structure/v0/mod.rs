@@ -1,8 +1,7 @@
 use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
 
-use dpp::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition, Pooling};
+use dpp::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition};
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;

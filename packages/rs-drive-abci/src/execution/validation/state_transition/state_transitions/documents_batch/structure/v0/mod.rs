@@ -9,7 +9,6 @@ use crate::execution::validation::state_transition::common::validate_protocol_ve
 use crate::execution::validation::state_transition::documents_batch::validate_document_transitions_basic;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use dpp::prelude::DocumentTransition;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,

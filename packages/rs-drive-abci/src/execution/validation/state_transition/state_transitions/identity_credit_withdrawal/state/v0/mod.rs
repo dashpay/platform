@@ -8,12 +8,9 @@ use dpp::consensus::signature::IdentityNotFoundError;
 use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
-    IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction,
-};
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_withdrawal_transition::{
-    IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionAction,
+    IdentityCreditWithdrawalTransition,
 };
 
 use dpp::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;

@@ -125,7 +125,6 @@ mod tests {
         use dpp::data_contract::base::DataContractBaseMethodsV0;
         use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;
         use dpp::identity::core_script::CoreScript;
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};

@@ -3,12 +3,10 @@ mod state;
 mod structure;
 
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
-    identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
 

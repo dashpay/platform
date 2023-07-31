@@ -1,5 +1,4 @@
 use crate::error::Error;
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 

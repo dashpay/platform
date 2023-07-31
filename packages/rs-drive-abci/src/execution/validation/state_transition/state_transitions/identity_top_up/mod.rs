@@ -8,8 +8,6 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::{
-    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
-    state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
 use drive::drive::Drive;
