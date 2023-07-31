@@ -97,7 +97,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
     } = parse_macro_input!(input);
     let name_str = ident.to_string();
 
-    let path = parse_path(&attrs);
+    let path = parse_path(&attrs).expect("expected a path");
 
     let path_tokens: proc_macro2::TokenStream = {
         let mut tokens = proc_macro2::TokenStream::new();
@@ -334,7 +334,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
     let name = &input.ident;
     let path = parse_path(&input.attrs);
 
-    let path_tokens: proc_macro2::TokenStream = {
+    let verify_protocol_version: proc_macro2::TokenStream = if let Some(path) = path {
         let mut tokens = proc_macro2::TokenStream::new();
         for (i, ident) in path.iter().enumerate() {
             if i != 0 {
@@ -342,7 +342,14 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
             }
             tokens.extend(quote! { #ident });
         }
-        tokens
+        quote! {
+            pub fn verify_protocol_version(&self, protocol_version: u32) -> Result<bool, ProtocolError> {
+                let platform_version = crate::version::PlatformVersion::get(protocol_version)?;
+                Ok(platform_version.#tokens.check_version(self.version()))
+            }
+        }
+    } else {
+        quote! {}
     };
 
     let data_enum = match &input.data {
@@ -366,10 +373,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
                 }
             }
 
-            pub fn verify_protocol_version(&self, protocol_version: u32) -> Result<bool, ProtocolError> {
-                let platform_version = crate::version::PlatformVersion::get(protocol_version)?;
-                Ok(platform_version.#path_tokens.check_version(self.version()))
-            }
+            #verify_protocol_version
         }
     };
 
@@ -378,7 +382,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-fn parse_path(attrs: &[Attribute]) -> Vec<Ident> {
+fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
     let mut platform_version_path = None::<LitStr>;
     //
     // if let Some(platform_serialize_attr) = attrs
@@ -403,13 +407,15 @@ fn parse_path(attrs: &[Attribute]) -> Vec<Ident> {
 
     if let Some(platform_version_path) = platform_version_path {
         let path_string = platform_version_path.value();
-        return path_string
-            .split('.')
-            .map(|s| Ident::new(s, Span::call_site()))
-            .collect();
+        return Some(
+            path_string
+                .split('.')
+                .map(|s| Ident::new(s, Span::call_site()))
+                .collect(),
+        );
     }
 
-    panic!("platform_version_path attribute not found");
+    return None;
 }
 
 fn generate_version_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStream> {

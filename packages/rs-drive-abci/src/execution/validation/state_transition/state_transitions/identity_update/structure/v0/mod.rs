@@ -4,6 +4,7 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::validation::state_transition::common::validate_identity_public_keys_structure::v0::validate_identity_public_keys_structure_v0;
 use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
@@ -11,11 +12,17 @@ use crate::execution::validation::state_transition::common::validate_protocol_ve
 const MAX_KEYS_TO_DISABLE: usize = 10;
 
 pub(crate) trait StateTransitionStructureValidationV0 {
-    fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
+    fn validate_structure_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
-    fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_structure_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = validate_protocol_version_v0(self.protocol_version);
         if !result.is_valid() {
             return Ok(result);
@@ -65,6 +72,9 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
             return Ok(result);
         }
 
-        validate_identity_public_keys_structure_v0(self.add_public_keys.as_slice())
+        validate_identity_public_keys_structure_v0(
+            self.add_public_keys().as_slice(),
+            platform_version,
+        )
     }
 }

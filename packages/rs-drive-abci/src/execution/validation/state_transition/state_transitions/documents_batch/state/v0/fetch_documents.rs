@@ -12,6 +12,7 @@ use dpp::data_contract::DataContract;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::platform_value::{Identifier, Value};
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
@@ -26,6 +27,7 @@ pub(crate) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
     let mut transitions_by_contracts_and_types: BTreeMap<
         (&Identifier, &String),
@@ -33,8 +35,8 @@ pub(crate) fn fetch_documents_for_transitions(
     > = BTreeMap::new();
 
     for document_transition in document_transitions {
-        let document_type = &document_transition.base().document_type_name;
-        let data_contract_id = &document_transition.base().data_contract_id;
+        let document_type = &document_transition.base().document_type_name();
+        let data_contract_id = &document_transition.base().data_contract_id();
 
         match transitions_by_contracts_and_types.entry((data_contract_id, document_type)) {
             Entry::Vacant(v) => {
@@ -53,6 +55,7 @@ pub(crate) fn fetch_documents_for_transitions(
                 document_type_name,
                 transitions.as_slice(),
                 transaction,
+                platform_version,
             )
         })
         .collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
@@ -98,6 +101,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
         document_type,
         transitions,
         transaction,
+        platform_version,
     )
 }
 
@@ -107,10 +111,11 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     document_type: DocumentTypeRef,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
     let ids: Vec<Value> = transitions
         .iter()
-        .map(|dt| Value::Identifier(get_from_transition!(dt, id).to_buffer()))
+        .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
         .collect();
 
     let drive_query = DriveQuery {
@@ -137,7 +142,13 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
 
     //todo: deal with cost of this operation
     let documents = drive
-        .query_documents(drive_query, None, false, transaction, platform_version)?
+        .query_documents(
+            drive_query,
+            None,
+            false,
+            transaction,
+            Some(platform_version.protocol_version),
+        )?
         .documents;
 
     Ok(ConsensusValidationResult::new_with_data(documents))

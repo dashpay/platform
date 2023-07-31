@@ -41,7 +41,9 @@ enum PlatformStateForSaving {
 impl PlatformState {
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&PlatformVersion, Error> {
-        PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::Protocol)
+        Ok(PlatformVersion::get(
+            self.current_protocol_version_in_consensus(),
+        )?)
     }
 
     /// The default state at platform start

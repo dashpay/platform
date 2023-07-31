@@ -8,8 +8,10 @@ use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
@@ -53,7 +55,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         let Some(contract_fetch_info) =
             drive
                 .get_contract_with_fetch_info_and_fee(
-                    self.data_contract.id.0.0,
+                    self.data_contract().id().0.0,
                     None,
                     add_to_cache_if_pulled,
                     tx,
@@ -63,15 +65,15 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
             else {
                 validation_result
                     .add_error(BasicError::DataContractNotPresentError(
-                        DataContractNotPresentError::new(self.data_contract.id.0.0.into())
+                        DataContractNotPresentError::new(self.data_contract().id().0.0.into())
                     ));
                 return Ok(validation_result);
             };
 
         let existing_data_contract = &contract_fetch_info.contract;
 
-        let new_version = self.data_contract.version;
-        let old_version = existing_data_contract.version;
+        let new_version = self.data_contract().version();
+        let old_version = existing_data_contract.version();
         if new_version < old_version || new_version - old_version != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
@@ -79,7 +81,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         }
 
         let mut existing_data_contract_object = existing_data_contract.to_object()?;
-        let new_data_contract_object = self.data_contract.to_object()?;
+        let new_data_contract_object = self.data_contract().to_object()?;
 
         existing_data_contract_object
             .remove_many(&vec![
@@ -147,12 +149,12 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
             let result = validate_schema_compatibility(document_schema, new_document_schema);
             match result {
                 Ok(_) => {}
-                Err(DiffVAlidatorError::SchemaCompatibilityError { diffs }) => {
+                Err(DiffValidatorError::SchemaCompatibilityError { diffs }) => {
                     let (operation_name, property_name) =
                         get_operation_and_property_name_json(&diffs[0]);
                     validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
                         IncompatibleDataContractSchemaError::new(
-                            existing_data_contract.id,
+                            existing_data_contract.id(),
                             operation_name.to_owned(),
                             property_name.to_owned(),
                             document_schema.clone(),
