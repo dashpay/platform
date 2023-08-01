@@ -2634,7 +2634,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/wasm-re2", "npm:1.0.2"],\
+            ["@dashevo/wasm-re2", "npm:2.0.4"],\
             ["acorn", "npm:8.8.2"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
@@ -3012,6 +3012,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-1.0.2-50818efe42-3d54788e4e.zip/node_modules/@dashevo/wasm-re2/",\
           "packageDependencies": [\
             ["@dashevo/wasm-re2", "npm:1.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:2.0.4", {\
+          "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-2.0.4-7adcfc6dac-3a66db77e4.zip/node_modules/@dashevo/wasm-re2/",\
+          "packageDependencies": [\
+            ["@dashevo/wasm-re2", "npm:2.0.4"]\
           ],\
           "linkType": "HARD"\
         }]\
