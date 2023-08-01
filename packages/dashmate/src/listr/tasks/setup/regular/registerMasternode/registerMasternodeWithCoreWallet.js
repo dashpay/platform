@@ -20,11 +20,9 @@ const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/val
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
- * @param {createPortIsNotReachableForm} createPortIsNotReachableForm
  * @return {registerMasternodeWithCoreWallet}
  */
-function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm,
-  createPortIsNotReachableForm) {
+function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with Core
    *
@@ -67,6 +65,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm,
         rewardShare: null,
       },
       ipAndPorts: {
+        ip: null,
         coreP2PPort: null,
         platformHTTPPort: null,
         platformP2PPort: null,
