@@ -7,6 +7,7 @@ use dpp::state_transition_action::document::documents_batch::document_transition
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0Getters;
+use crate::error::Error;
 
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers<'a>(

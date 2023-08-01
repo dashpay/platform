@@ -28,7 +28,6 @@ where
     }
 
     pub(super) fn create_voter_identity_from_masternode_list_item_v0(
-        &self,
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<Identity, Error> {

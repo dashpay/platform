@@ -87,7 +87,7 @@ impl StateTransitionValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .identity_signatures
         {
-            0 => self.validate_identity_and_signatures_v0(drive, tx),
+            0 => self.validate_identity_and_signatures_v0(drive, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_identity_and_signatures".to_string(),
                 known_versions: vec![0],
@@ -110,7 +110,7 @@ impl StateTransitionValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_state".to_string(),
                 known_versions: vec![0],

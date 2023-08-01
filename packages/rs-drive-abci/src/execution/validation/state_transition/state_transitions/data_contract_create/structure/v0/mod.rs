@@ -1,10 +1,10 @@
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
 use dpp::consensus::basic::BasicError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 
 pub(crate) trait StateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;

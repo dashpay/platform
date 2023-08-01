@@ -27,9 +27,9 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let operator_identifier =
-            Self::get_operator_identifier_from_masternode_list_item(old_masternode)?;
+            Self::get_operator_identifier_from_masternode_list_item(old_masternode, platform_version)?;
         let voter_identifier =
-            Self::get_voter_identifier_from_masternode_list_item(old_masternode)?;
+            Self::get_voter_identifier_from_masternode_list_item(old_masternode, platform_version)?;
 
         let operator_key_request = IdentityKeysRequest {
             identity_id: operator_identifier,
