@@ -29,6 +29,7 @@ use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
 impl<C> Platform<C>
 where
@@ -159,7 +160,7 @@ where
             if let Some(old_operator_pub_key_to_re_enable) = old_operator_node_id_to_re_enable {
                 keys_to_re_enable.push(old_operator_pub_key_to_re_enable);
             } else if needs_change_platform_node_id {
-                let key = IdentityPublicKey {
+                let key = IdentityPublicKeyV0 {
                     id: new_key_id,
                     key_type: KeyType::EDDSA_25519_HASH160,
                     purpose: Purpose::SYSTEM,
@@ -188,7 +189,7 @@ where
                     .as_ref()
                     .expect("operator_payout_address confirmed is some")
                 {
-                    let key = IdentityPublicKey {
+                    let key = IdentityPublicKeyV0 {
                         id: new_key_id,
                         key_type: KeyType::ECDSA_HASH160,
                         purpose: WITHDRAW,

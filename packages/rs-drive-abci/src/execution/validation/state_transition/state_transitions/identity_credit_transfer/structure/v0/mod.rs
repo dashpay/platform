@@ -21,8 +21,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreditTransferTransition {
 
         if self.amount() < MIN_TRANSFER_AMOUNT {
             result.add_error(
-                InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT)
-                    .into(),
+                ConsensusError::from(InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT)),
             );
         }
 
