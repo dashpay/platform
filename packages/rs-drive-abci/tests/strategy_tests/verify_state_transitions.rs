@@ -2,7 +2,7 @@ use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsRes
 
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionLike};
+use dpp::state_transition::{StateTransition, StateTransitionLike};
 use drive::drive::Drive;
 use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
@@ -15,6 +15,7 @@ use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
 
 pub(crate) fn verify_state_transitions_were_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
@@ -40,8 +41,8 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .into_data()
                 .unwrap_or_else(|_| {
                     panic!(
-                        "expected state transitions to be valid {}",
-                        state_transition.get_type()
+                        "expected state transitions to be valid {:?}",
+                        state_transition
                     )
                 })
         })
@@ -59,7 +60,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .contracts
                     .push(get_proofs_request::ContractRequest {
-                        contract_id: data_contract_create.data_contract.id.to_vec(),
+                        contract_id: data_contract_create.data_contract().id().to_vec(),
                     });
                 let result = abci_app
                     .platform
@@ -79,7 +80,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     None,
                     false,
-                    data_contract_create.data_contract.id.into_buffer(),
+                    data_contract_create.data_contract().id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify full identity");
@@ -98,7 +99,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .contracts
                     .push(get_proofs_request::ContractRequest {
-                        contract_id: data_contract_update.data_contract.id.to_vec(),
+                        contract_id: data_contract_update.data_contract().id().to_vec(),
                     });
                 let result = abci_app
                     .platform
@@ -118,7 +119,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     None,
                     false,
-                    data_contract_update.data_contract.id.into_buffer(),
+                    data_contract_update.data_contract().id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify full identity");

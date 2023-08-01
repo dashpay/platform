@@ -2,17 +2,25 @@ use crate::signer::SimpleSigner;
 use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
-use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
-};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::withdrawal::Pooling;
@@ -26,7 +34,9 @@ pub fn create_identity_top_up_transition(
     identity: &Identity,
     platform_version: &PlatformVersion,
 ) -> StateTransition {
-    let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng, platform_version);
+    let (_, pk) = ECDSA_SECP256K1
+        .random_public_and_private_key_data(rng, platform_version)
+        .unwrap();
     let sk: [u8; 32] = pk.try_into().unwrap();
     let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
     let asset_lock_proof =
@@ -88,17 +98,17 @@ pub fn create_identity_update_transition_disable_keys(
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
 ) -> Option<StateTransition> {
-    identity.revision += 1;
+    identity.bump_revision();
     // we want to find keys that are not disabled
     let key_ids_we_could_disable = identity
         .public_keys()
         .iter()
         .filter(|(_, key)| {
-            key.disabled_at.is_none()
-                && (key.security_level != MASTER
-                    && !(key.security_level == CRITICAL
-                        && key.purpose == AUTHENTICATION
-                        && key.key_type == ECDSA_SECP256K1))
+            key.disabled_at().is_none()
+                && (key.security_level() != MASTER
+                    && !(key.security_level() == CRITICAL
+                        && key.purpose() == AUTHENTICATION
+                        && key.key_type() == ECDSA_SECP256K1))
         })
         .map(|(key_id, _)| *key_id)
         .collect::<Vec<_>>();
@@ -150,18 +160,17 @@ pub fn create_identity_withdrawal_transition(
     rng: &mut StdRng,
 ) -> StateTransition {
     identity.revision += 1;
-    let mut withdrawal = IdentityCreditWithdrawalTransition {
-        protocol_version: LATEST_VERSION,
-        transition_type: StateTransitionType::IdentityCreditWithdrawal,
+    let mut withdrawal: IdentityCreditWithdrawalTransition = IdentityCreditWithdrawalTransitionV0 {
         identity_id: identity.id,
         amount: 100000000, // 0.001 Dash
         core_fee_per_byte: 1,
         pooling: Pooling::Never,
         output_script: CoreScript::random_p2sh(rng),
-        revision: identity.revision,
+        revision: identity.revision(),
         signature_public_key_id: 0,
         signature: Default::default(),
-    };
+    }
+    .into();
 
     let identity_public_key = identity
         .get_first_public_key_matching(
@@ -184,15 +193,14 @@ pub fn create_identity_credit_transfer_transition(
     signer: &mut SimpleSigner,
     amount: u64,
 ) -> StateTransition {
-    let mut transition = IdentityCreditTransferTransition {
-        transition_type: StateTransitionType::IdentityCreditTransfer,
-        identity_id: identity.id,
-        recipient_id: recipient.id,
+    let mut transition: IdentityCreditTransferTransition = IdentityCreditTransferTransitionV0 {
+        identity_id: identity.id(),
+        recipient_id: recipient.id(),
         amount,
-        protocol_version: LATEST_VERSION,
         signature_public_key_id: 0,
         signature: Default::default(),
-    };
+    }
+    .into();
 
     let identity_public_key = identity
         .get_first_public_key_matching(
@@ -239,6 +247,7 @@ pub fn create_identities_state_transitions(
                     pk.as_slice(),
                     signer,
                     &NativeBlsModule::default(),
+                    platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
             identity.id = *identity_create_transition.identity_id();

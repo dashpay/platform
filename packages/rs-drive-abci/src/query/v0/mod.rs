@@ -1019,7 +1019,7 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id.to_vec(),
+                id: original_data_contract.id().to_vec(),
                 ..default_request()
             };
             let request_data = request.encode_to_vec();
@@ -1101,7 +1101,7 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id.to_vec(),
+                id: original_data_contract.id().to_vec(),
                 prove: true,
                 ..default_request()
             };
@@ -1140,7 +1140,7 @@ mod test {
             // Check that the proof has correct values inside
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
-                original_data_contract.id.to_buffer(),
+                original_data_contract.id().to_buffer(),
                 request.start_at_seconds(),
                 Some(10),
                 Some(0),
@@ -1186,7 +1186,7 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id.to_vec(),
+                id: original_data_contract.id().to_vec(),
                 limit: Some(100000),
                 ..default_request()
             };
@@ -1220,7 +1220,7 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id.to_vec(),
+                id: original_data_contract.id().to_vec(),
                 offset: Some(100000),
                 ..default_request()
             };

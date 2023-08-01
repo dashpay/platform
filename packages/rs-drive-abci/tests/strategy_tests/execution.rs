@@ -19,6 +19,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::version::PlatformVersion;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -660,6 +661,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &mut current_identities,
                 &mut signer,
                 &mut rng,
+                platform_version,
             );
 
         let proposed_version = proposer_versions

@@ -331,7 +331,7 @@ mod tests {
             let contract_history = platform
                 .drive
                 .fetch_contract_with_history(
-                    *data_contract.id.as_bytes(),
+                    *data_contract.id().as_bytes(),
                     None,
                     0,
                     None,
@@ -351,7 +351,7 @@ mod tests {
             let contract_history = platform
                 .drive
                 .fetch_contract_with_history(
-                    *data_contract.id.as_bytes(),
+                    *data_contract.id().as_bytes(),
                     None,
                     0,
                     None,
@@ -369,7 +369,7 @@ mod tests {
             let contract_history = platform
                 .drive
                 .fetch_contract_with_history(
-                    *data_contract.id.as_bytes(),
+                    *data_contract.id().as_bytes(),
                     None,
                     0,
                     Some(1),

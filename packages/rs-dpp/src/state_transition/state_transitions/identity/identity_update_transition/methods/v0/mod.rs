@@ -12,6 +12,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -31,9 +32,7 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         public_keys_disabled_at: Option<u64>,
         signer: &S,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
+    ) -> Result<StateTransition, ProtocolError>;
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityUpdate

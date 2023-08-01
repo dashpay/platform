@@ -223,6 +223,12 @@ impl DataContract {
         }
     }
 
+    pub fn set_version(&mut self, version: u32) {
+        match self {
+            DataContract::V0(v0) => v0.version = version,
+        }
+    }
+
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),

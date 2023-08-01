@@ -7,6 +7,7 @@ use crate::identity::{Identity, KeyID, PartialIdentity};
 use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::{Bytes32, Identifier};
@@ -19,7 +20,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
         asset_lock_proof_private_key: &[u8],
         bls: &impl BlsModule,
         version: FeatureVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<StateTransition, ProtocolError> {
         match version {
             0 => Ok(IdentityTopUpTransitionV0::try_from_identity(
                 identity,
@@ -27,8 +28,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
                 asset_lock_proof_private_key,
                 bls,
                 version,
-            )?
-            .into()),
+            )?),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityTopUpTransition version for try_from_identity {v}"
             ))),

@@ -5,6 +5,8 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{Identity, PartialIdentity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::validation::SimpleValidationResult;
@@ -198,7 +200,7 @@ impl QueryStrategy {
                 .into_iter()
                 .filter_map(|identity| {
                     let unique_public_keys: Vec<_> = identity
-                        .public_keys
+                        .public_keys()
                         .iter()
                         .filter(|(_, public_key)| public_key.key_type.is_unique_key_type())
                         .collect();

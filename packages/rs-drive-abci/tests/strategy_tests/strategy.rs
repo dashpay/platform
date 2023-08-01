@@ -12,13 +12,10 @@ use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::data_contract::{generate_data_contract_id, CreatedDataContract};
+use dpp::data_contract::{generate_data_contract_id, DataContract};
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
-use dpp::document::document_transition::{
-    Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-};
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::{Document, DocumentsBatchTransition};
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializable;
@@ -33,6 +30,8 @@ use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -243,11 +242,18 @@ impl Strategy {
         &self,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            crate::transitions::create_identities_state_transitions(count, 5, signer, rng)
+            crate::transitions::create_identities_state_transitions(
+                count,
+                5,
+                signer,
+                rng,
+                platform_version,
+            )
         } else {
             vec![]
         }
@@ -269,13 +275,16 @@ impl Strategy {
                     .clone()
                     .into_partial_identity_info();
 
-                let mut contract = &mut created_contract.data_contract;
+                let mut contract = &mut created_contract.data_contract();
 
                 contract.owner_id = identity.id;
-                let old_id = contract.id;
-                contract.id = generate_data_contract_id(identity.id, created_contract.entropy_used);
+                let old_id = contract.id();
+                contract.set_id(DataContract::generate_data_contract_id_v0(
+                    identity.id,
+                    created_contract.entropy_used,
+                ));
                 contract
-                    .document_types
+                    .document_types()
                     .iter_mut()
                     .for_each(|(_, document_type)| document_type.data_contract_id = contract.id);
 
@@ -375,18 +384,21 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let documents = document_type.random_documents_with_params(
-                            count as u32,
-                            current_identities,
-                            block_info.time_ms,
-                            rng,
-                        );
+                        let documents = document_type
+                            .random_documents_with_params(
+                                count as u32,
+                                current_identities,
+                                block_info.time_ms,
+                                rng,
+                                platform_version,
+                            )
+                            .expect("expected random_documents_with_params");
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
                                 let updated_at =
                                     if document_type.required_fields.contains("$updatedAt") {
-                                        document.created_at
+                                        document.created_at()
                                     } else {
                                         None
                                     };
@@ -691,7 +703,12 @@ impl Strategy {
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let identity_state_transitions = self.identity_state_transitions_for_block(signer, rng);
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected platform version");
+        let identity_state_transitions =
+            self.identity_state_transitions_for_block(signer, rng, platform_version);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
         current_identities.append(&mut identities);

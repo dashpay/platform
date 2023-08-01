@@ -162,6 +162,14 @@ impl IdentitySettersV0 for Identity {
         }
     }
 
+    /// Sets the revision of the identity to +1.
+    ///
+    fn bump_revision(&mut self) {
+        match self {
+            Identity::V0(identity) => identity.revision += 1,
+        }
+    }
+
     /// Sets the identifier of the identity.
     ///
     /// # Arguments

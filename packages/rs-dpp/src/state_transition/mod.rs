@@ -16,7 +16,7 @@ use crate::{BlsModule, ProtocolError};
 mod state_transition_types;
 
 pub mod errors;
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::{hash_to_vec, ripemd160_sha256};
 
 mod serialization;
 pub mod state_transitions;
@@ -30,6 +30,7 @@ use crate::consensus::signature::{
 };
 use crate::consensus::ConsensusError;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, SecurityLevel};
 pub use state_transitions::*;
 
@@ -44,7 +45,8 @@ use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    StateTransitionIsNotSignedError,
 };
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
@@ -89,7 +91,7 @@ macro_rules! call_method {
     };
 }
 
-macro_rules! call_method_identity_signed {
+macro_rules! call_getter_method_identity_signed {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {
             StateTransition::DataContractCreate(st) => Some(st.$method($args)),
@@ -112,6 +114,68 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
+        }
+    };
+}
+
+macro_rules! call_method_identity_signed {
+    ($state_transition:expr, $method:ident, $args:tt ) => {
+        match $state_transition {
+            StateTransition::DataContractCreate(st) => st.$method($args),
+            StateTransition::DataContractUpdate(st) => st.$method($args),
+            StateTransition::DocumentsBatch(st) => st.$method($args),
+            StateTransition::IdentityCreate(st) => {}
+            StateTransition::IdentityTopUp(st) => {}
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
+            StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+        }
+    };
+    ($state_transition:expr, $method:ident ) => {
+        match $state_transition {
+            StateTransition::DataContractCreate(st) => st.$method(),
+            StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::DocumentsBatch(st) => st.$method(),
+            StateTransition::IdentityCreate(st) => {}
+            StateTransition::IdentityTopUp(st) => {}
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
+            StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityCreditTransfer(st) => st.$method(),
+        }
+    };
+}
+
+macro_rules! call_errorable_method_identity_signed {
+    ($state_transition:expr, $method:ident, $args:tt ) => {
+        match $state_transition {
+            StateTransition::DataContractCreate(st) => st.$method($args),
+            StateTransition::DataContractUpdate(st) => st.$method($args),
+            StateTransition::DocumentsBatch(st) => st.$method($args),
+            StateTransition::IdentityCreate(st) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity create can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityTopUp(st) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
+            StateTransition::IdentityUpdate(st) => st.$method($args),
+            StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+        }
+    };
+    ($state_transition:expr, $method:ident ) => {
+        match $state_transition {
+            StateTransition::DataContractCreate(st) => st.$method(),
+            StateTransition::DataContractUpdate(st) => st.$method(),
+            StateTransition::DocumentsBatch(st) => st.$method(),
+            StateTransition::IdentityCreate(st) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity create can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityTopUp(st) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
+            StateTransition::IdentityUpdate(st) => st.$method(),
+            StateTransition::IdentityCreditTransfer(st) => st.$method(),
         }
     };
 }
@@ -187,22 +251,120 @@ impl StateTransition {
 
     /// returns the signature as a byte-array
     pub fn signature_public_key_id(&self) -> Option<KeyID> {
-        call_method_identity_signed!(self, signature_public_key_id)
+        call_getter_method_identity_signed!(self, signature_public_key_id)
     }
 
     /// returns the signature as a byte-array
     pub fn security_level_requirement(&self) -> Option<Vec<SecurityLevel>> {
-        call_method_identity_signed!(self, security_level_requirement)
+        call_getter_method_identity_signed!(self, security_level_requirement)
     }
 
     /// returns the signature as a byte-array
     pub fn owner_id(&self) -> Option<Identifier> {
-        call_method_identity_signed!(self, owner_id)
+        call_getter_method_identity_signed!(self, owner_id)
     }
 
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
+    }
+
+    /// set a new signature
+    fn set_signature_public_key_id(&mut self, public_key_id: KeyID) {
+        call_method_identity_signed!(self, set_signature_public_key_id, public_key_id)
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn sign_external<S: Signer>(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(), ProtocolError> {
+        call_errorable_method_identity_signed!(
+            self,
+            verify_public_key_level_and_purpose,
+            identity_public_key
+        )?;
+        call_errorable_method_identity_signed!(
+            self,
+            verify_public_key_is_enabled,
+            identity_public_key
+        )?;
+        let data = self.signable_bytes()?;
+        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        self.set_signature_public_key_id(identity_public_key.id());
+        Ok(())
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        private_key: &[u8],
+        bls: &impl BlsModule,
+    ) -> Result<(), ProtocolError> {
+        call_errorable_method_identity_signed!(
+            self,
+            verify_public_key_level_and_purpose,
+            identity_public_key
+        )?;
+        call_errorable_method_identity_signed!(
+            self,
+            verify_public_key_is_enabled,
+            identity_public_key
+        )?;
+
+        match identity_public_key.key_type() {
+            KeyType::ECDSA_SECP256K1 => {
+                let public_key_compressed = get_compressed_public_ec_key(private_key)?;
+
+                // we store compressed public key in the identity ,
+                // and here we compare the private key used to sing the state transition with
+                // the compressed key stored in the identity
+
+                if public_key_compressed.as_slice() != identity_public_key.data().as_slice() {
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data().to_vec()),
+                    ));
+                }
+
+                self.sign_by_private_key(private_key, identity_public_key.key_type(), bls)
+            }
+            KeyType::ECDSA_HASH160 => {
+                let public_key_compressed = get_compressed_public_ec_key(private_key)?;
+                let pub_key_hash = ripemd160_sha256(&public_key_compressed);
+
+                if identity_public_key.data().as_slice() != pub_key_hash {
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data().to_vec()),
+                    ));
+                }
+                self.sign_by_private_key(private_key, identity_public_key.key_type(), bls)
+            }
+            KeyType::BLS12_381 => {
+                let public_key = bls.private_key_to_public_key(private_key)?;
+
+                if public_key != identity_public_key.data().as_slice() {
+                    return Err(ProtocolError::InvalidSignaturePublicKeyError(
+                        InvalidSignaturePublicKeyError::new(identity_public_key.data().to_vec()),
+                    ));
+                }
+                self.sign_by_private_key(private_key, identity_public_key.key_type(), bls)
+            }
+
+            // the default behavior from
+            // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
+            // is to return the error for the BIP13_SCRIPT_HASH
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type()),
+                ))
+            }
+        }?;
+
+        self.set_signature_public_key_id(identity_public_key.id());
+
+        Ok(())
     }
 
     #[cfg(feature = "state-transition-signing")]
