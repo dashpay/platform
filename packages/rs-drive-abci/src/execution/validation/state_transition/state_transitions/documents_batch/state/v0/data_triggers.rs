@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutionResult,
     DataTriggerExecutor,
@@ -10,7 +11,7 @@ pub(super) fn execute_data_triggers(
     document_transition_actions: &Vec<DocumentTransitionAction>,
     context: &DataTriggerExecutionContext,
     platform_version: &PlatformVersion,
-) -> Result<DataTriggerExecutionResult, ProtocolError> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let data_trigger_bindings = data_trigger_bindings_list(platform_version)?;
 
     for document_transition_action in document_transition_actions {

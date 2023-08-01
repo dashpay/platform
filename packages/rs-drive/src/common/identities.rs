@@ -227,7 +227,8 @@ pub fn create_test_masternode_identities_with_rng(
             rng,
             transaction,
             platform_version,
-        );
+        )
+        .expect("expected to get a platform version");
 
         identity_ids.push(proposer_pro_tx_hash);
     }

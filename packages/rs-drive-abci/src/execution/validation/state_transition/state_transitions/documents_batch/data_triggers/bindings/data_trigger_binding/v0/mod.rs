@@ -12,7 +12,7 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 /// The `DataTrigger` struct contains information about a data trigger, including the data contract ID, the document
 /// type that the trigger handles, the kind of trigger, the action that triggered the trigger, and an optional
 /// identifier for the top-level identity associated with the document.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DataTriggerBindingV0 {
     /// The identifier of the data contract associated with the trigger.
     pub data_contract_id: Identifier,
@@ -22,12 +22,6 @@ pub struct DataTriggerBindingV0 {
     pub data_trigger: DataTrigger,
     /// The action that triggered the trigger.
     pub transition_action_type: DocumentTransitionActionType,
-}
-
-impl Into<DataTriggerBinding> for DataTriggerBindingV0 {
-    fn into(self) -> DataTriggerBinding {
-        DataTriggerBinding::V0(self)
-    }
 }
 
 pub trait DataTriggerBindingV0Getters {

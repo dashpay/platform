@@ -15,14 +15,14 @@ pub fn data_trigger_bindings_list(
         .data_triggers
         .bindings
     {
-        0 => v0::data_trigger_bindings_list_v0(),
+        0 => Ok(v0::data_trigger_bindings_list_v0()?
+            .into_iter()
+            .map(|binding| binding.into())
+            .collect()),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "data_trigger_bindings".to_string(),
             known_versions: vec![0],
             received: version,
         }),
     }
-    .into_iter()
-    .map(|binding| Ok(binding.into()))
-    .collect()
 }

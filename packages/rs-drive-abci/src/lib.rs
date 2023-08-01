@@ -33,6 +33,7 @@ pub mod core;
 /// Metrics subsystem
 pub mod metrics;
 /// Test helpers and fixtures
+#[cfg(test)]
 pub mod test;
 
 /// Mimic of block execution for tests

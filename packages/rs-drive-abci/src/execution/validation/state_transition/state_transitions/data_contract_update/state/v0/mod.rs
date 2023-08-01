@@ -42,6 +42,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 
     fn transform_into_action_v0(
         &self,
+        platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -57,6 +58,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let new_data_contract: DataContract = self
             .data_contract()
+            .clone()
             .try_into_platform_versioned(platform_version)?;
 
         // Data contract should exist
@@ -216,14 +218,19 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //     return Ok(validation_result);
         // }
 
-        self.transform_into_action_v0()
+        self.transform_into_action_v0(platform_version)
     }
 
     fn transform_into_action_v0(
         &self,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action: StateTransitionAction =
-            Into::<DataContractUpdateTransitionAction>::into(self).into();
+        let action: StateTransitionAction = TryIntoPlatformVersioned::<
+            DataContractUpdateTransitionAction,
+        >::try_into_platform_versioned(
+            self, platform_version
+        )?
+        .into();
         Ok(action.into())
     }
 }

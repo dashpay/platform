@@ -51,7 +51,7 @@ impl PlatformStateForSaving {
 
 impl PlatformSerializable for PlatformState {
     fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
-        let platform_version = self.current_platform_version()?;
+        let platform_version = PlatformVersion::get(self.current_protocol_version_in_consensus())?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;

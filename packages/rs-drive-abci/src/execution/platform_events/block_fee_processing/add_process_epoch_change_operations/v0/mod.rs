@@ -106,7 +106,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             block_info.core_chain_locked_height(),
             block_info.block_time_ms(),
             &mut inner_batch,
-            platform_version,
         );
 
         // Nothing to distribute on genesis epoch start

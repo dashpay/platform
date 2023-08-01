@@ -272,7 +272,9 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     .identity_signatures
                 {
                     // The validation of the signature happens on the state level
-                    Some(0) => st.retrieve_topped_up_identity(drive, tx, platform_version),
+                    Some(0) => Ok(st
+                        .retrieve_topped_up_identity(drive, tx, platform_version)?
+                        .map(Some)),
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "identity top up transition: validate_identity_and_signatures"
                             .to_string(),

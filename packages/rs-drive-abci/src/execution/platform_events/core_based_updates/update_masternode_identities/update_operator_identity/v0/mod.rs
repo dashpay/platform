@@ -160,7 +160,7 @@ where
             if let Some(old_operator_pub_key_to_re_enable) = old_operator_node_id_to_re_enable {
                 keys_to_re_enable.push(old_operator_pub_key_to_re_enable);
             } else if needs_change_platform_node_id {
-                let key = IdentityPublicKeyV0 {
+                let key: IdentityPublicKey = IdentityPublicKeyV0 {
                     id: new_key_id,
                     key_type: KeyType::EDDSA_25519_HASH160,
                     purpose: Purpose::SYSTEM,
@@ -174,7 +174,8 @@ where
                             .to_vec(),
                     ),
                     disabled_at: None,
-                };
+                }
+                .into();
                 non_unique_keys_to_add.push(key);
                 new_key_id += 1;
             }
@@ -198,7 +199,7 @@ where
                         data: BinaryData::new(new_operator_payout_address.to_vec()),
                         disabled_at: None,
                     };
-                    non_unique_keys_to_add.push(key);
+                    non_unique_keys_to_add.push(key.into());
                     // new_key_id += 1;
                 }
             }
@@ -253,18 +254,16 @@ where
             // Now we need to create the new operator identity with the new keys
             let mut identity =
                 Identity::create_basic_identity(new_operator_identifier, platform_version)?;
-            identity.add_public_keys(
-                self.get_operator_identity_keys(
-                    state_diff
-                        .pub_key_operator
-                        .as_ref()
-                        .expect("expected a pub key operator")
-                        .clone(),
-                    new_payout_address,
-                    new_platform_node_id,
-                    platform_version,
-                )?,
-            );
+            identity.add_public_keys(Self::get_operator_identity_keys(
+                state_diff
+                    .pub_key_operator
+                    .as_ref()
+                    .expect("expected a pub key operator")
+                    .clone(),
+                new_payout_address,
+                new_platform_node_id,
+                platform_version,
+            )?);
             drive_operations.push(IdentityOperation(AddNewIdentity { identity }));
         }
         Ok(())

@@ -435,9 +435,10 @@ fn validate_transition<'a>(
             }
 
             if result.is_valid() {
-                Ok(DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |identifier| {
+                let action = DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |identifier| {
                     Ok(contract)
-                }).map(DocumentTransitionAction::DeleteAction).into())
+                })?;
+                Ok(DocumentTransitionAction::DeleteAction(action).into())
             } else {
                 Ok(result)
             }
@@ -505,7 +506,7 @@ pub fn check_if_document_is_not_already_present(
     let mut result = SimpleConsensusValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id());
+        .find(|d| d.id() == document_transition.base().id());
 
     if maybe_fetched_document.is_some() {
         result.add_error(ConsensusError::StateError(
@@ -608,7 +609,7 @@ pub fn check_updated_inside_time_window(
         platform_version,
     )
     .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
-    if !window_validation.is_valid() {
+    if !window_validation.valid {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(
                 DocumentTimestampWindowViolationError::new(

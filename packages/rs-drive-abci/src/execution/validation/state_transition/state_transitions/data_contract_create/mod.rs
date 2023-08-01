@@ -66,7 +66,7 @@ impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
             .contract_create_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_structure".to_string(),
                 known_versions: vec![0],
