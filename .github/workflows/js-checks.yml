@@ -72,10 +72,6 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y build-essential gcc
-
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
@@ -121,7 +117,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '16'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
