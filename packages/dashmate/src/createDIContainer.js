@@ -76,7 +76,6 @@ const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 const updateNodeFactory = require('./update/updateNodeFactory');
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
-const resolvePublicIpV4 = require('./util/resolvePublicIpV4');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
@@ -107,7 +106,6 @@ const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalSer
 const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const generateEnvsFactory = require('./config/generateEnvsFactory');
 const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
-const createPortIsNotReachableFormFactory = require('./listr/prompts/createPortIsNotReachableForm');
 const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
 const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
 
@@ -167,7 +165,6 @@ async function createDIContainer(options = {}) {
    */
   container.register({
     generateHDPrivateKeys: asValue(generateHDPrivateKeys),
-    resolvePublicIpV4: asValue(resolvePublicIpV4),
   });
 
   /**
@@ -261,7 +258,6 @@ async function createDIContainer(options = {}) {
    */
   container.register({
     createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
-    createPortIsNotReachableForm: asFunction(createPortIsNotReachableFormFactory).singleton(),
   });
 
   /**

@@ -2,8 +2,6 @@ const BlsSignatures = require('@dashevo/bls');
 
 const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNodeKeyInput');
 const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
-const providers = require('../../../../../status/providers');
-const PortStatusEnum = require('../../../../../status/enums/portState');
 
 /**
  *
@@ -74,18 +72,6 @@ function registerMasternodeWithDMTFactory(createIpAndPortsForm, createPortIsNotR
     }));
 
     const state = await task.prompt(prompts);
-
-    const portStatus = await providers.mnowatch.checkPortStatus(state.ipAndPorts.coreP2PPort);
-
-    if (portStatus !== PortStatusEnum.OPEN) {
-      const confirmed = await task.prompt(
-        await createPortIsNotReachableForm(state.ipAndPorts.coreP2PPort),
-      );
-
-      if (!confirmed) {
-        throw new Error('Operation is cancelled');
-      }
-    }
 
     // Keep compatibility with other registration methods
     state.operator = {

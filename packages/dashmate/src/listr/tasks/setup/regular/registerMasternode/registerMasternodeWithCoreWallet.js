@@ -17,8 +17,6 @@ const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNo
 const getBLSPublicKeyFromPrivateKeyHex = require('../../../../../core/getBLSPublicKeyFromPrivateKeyHex');
 const deriveTenderdashNodeId = require('../../../../../tenderdash/deriveTenderdashNodeId');
 const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
-const providers = require('../../../../../status/providers');
-const PortStatusEnum = require('../../../../../status/enums/portState');
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
@@ -211,18 +209,6 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm,
       }));
 
       state = await task.prompt(prompts);
-
-      const portStatus = await providers.mnowatch.checkPortStatus(state.ipAndPorts.coreP2PPort);
-
-      if (portStatus !== PortStatusEnum.OPEN) {
-        const confirmed = await task.prompt(
-          await createPortIsNotReachableForm(state.ipAndPorts.coreP2PPort),
-        );
-
-        if (!confirmed) {
-          throw new Error('Operation is cancelled');
-        }
-      }
 
       const operatorPublicKeyHex = await getBLSPublicKeyFromPrivateKeyHex(
         state.operator.privateKey,

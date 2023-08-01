@@ -1,11 +1,12 @@
 const os = require('os');
+const publicIp = require('public-ip');
 const prettyMs = require('pretty-ms');
 const prettyByte = require('pretty-bytes');
 
 /**
  * @returns {getHostScope}
  */
-function getHostScopeFactory(resolvePublicIpV4) {
+function getHostScopeFactory() {
   /**
    * Get host status scope
    *
@@ -32,7 +33,7 @@ function getHostScopeFactory(resolvePublicIpV4) {
       scope.username = os.userInfo().username;
       scope.memory = `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`;
       scope.cpus = os.cpus().length;
-      scope.ip = await resolvePublicIpV4();
+      scope.ip = await publicIp.v4();
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
