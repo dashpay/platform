@@ -2,11 +2,11 @@ use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationC
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
+use crate::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use dpp::block::epoch::Epoch;
-use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveHighLevelOperationConverter for DocumentsBatchTransitionAction<'a> {
+impl DriveHighLevelOperationConverter for DocumentsBatchTransitionAction {
     fn into_high_level_drive_operations<'b>(
         self,
         epoch: &Epoch,

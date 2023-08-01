@@ -18,9 +18,9 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
-use dpp::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;

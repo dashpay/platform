@@ -5,9 +5,9 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::feature_flags_contract;
 use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params::properties::PROPERTY_ENABLE_AT_HEIGHT;
 use dpp::version::PlatformVersion;
@@ -35,7 +35,8 @@ pub fn create_feature_flag_data_trigger_v0(
     _platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
-    let data_contract = document_transition.base().data_contract();
+    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract = &data_contract_fetch_info.contract;
     let is_dry_run = false; //todo (maybe reenable - maybe not)
 
     let document_create_transition = match document_transition {
@@ -94,9 +95,9 @@ mod test {
 
     use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
+    use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {

@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::v0::create_contact_request_data_trigger_v0;
 

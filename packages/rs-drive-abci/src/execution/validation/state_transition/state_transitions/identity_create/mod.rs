@@ -21,11 +21,11 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::StateTransitionAction;
 
 impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(

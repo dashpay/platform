@@ -3,15 +3,15 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::document::DocumentV0Getters;
 use dpp::ProtocolError;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::masternode_reward_shares_contract::document_types::reward_share::properties::{PAY_TO_ID, PERCENTAGE};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
@@ -46,7 +46,8 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     let mut result = DataTriggerExecutionResult::default();
 
     let is_dry_run = false; //todo: maybe reenable
-    let data_contract = document_transition.base().data_contract();
+    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract = &data_contract_fetch_info.contract;
 
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
@@ -215,16 +216,16 @@ mod test {
     use std::net::SocketAddr;
     use std::str::FromStr;
     use dpp::consensus::state::data_trigger::DataTriggerError;
-    use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
+    use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+    use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::version::DefaultForPlatformVersion;
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
-    struct TestData<'a> {
+    struct TestData {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         extended_documents: Vec<ExtendedDocument>,
-        document_create_transition: DocumentCreateTransitionAction<'a>,
+        document_create_transition: DocumentCreateTransitionAction,
     }
 
     fn setup_test(platform_state: &mut PlatformStateV0) -> TestData {

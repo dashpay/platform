@@ -2,7 +2,7 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use dpp::identifier::Identifier;
-use dpp::state_transition_action::document::documents_batch::document_transition::{DocumentTransitionAction, DocumentTransitionActionType};
+use drive::state_transition_action::document::documents_batch::document_transition::{DocumentTransitionAction, DocumentTransitionActionType};
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;

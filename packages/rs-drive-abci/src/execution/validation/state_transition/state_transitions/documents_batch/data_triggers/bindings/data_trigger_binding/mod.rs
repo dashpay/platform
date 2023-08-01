@@ -3,10 +3,10 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 };
 use derive_more::From;
 use dpp::identifier::Identifier;
-use dpp::state_transition_action::document::documents_batch::document_transition::{
+use dpp::version::PlatformVersion;
+use drive::state_transition_action::document::documents_batch::document_transition::{
     DocumentTransitionAction, DocumentTransitionActionType,
 };
-use dpp::version::PlatformVersion;
 
 use crate::error::Error;
 pub use v0::*;

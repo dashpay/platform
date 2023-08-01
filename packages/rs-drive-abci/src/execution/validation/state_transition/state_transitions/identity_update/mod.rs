@@ -4,9 +4,9 @@ mod structure;
 
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;

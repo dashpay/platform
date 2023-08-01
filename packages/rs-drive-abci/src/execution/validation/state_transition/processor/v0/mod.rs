@@ -8,7 +8,7 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
-use dpp::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion, TryIntoPlatformVersioned};
 use drive::drive::Drive;
@@ -54,7 +54,12 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let result = state_transition.validate_state(platform, transaction)?;
 
     result.map_result(|action| {
-        ExecutionEvent::create_from_state_transition_action(action, maybe_identity, platform.state.epoch_ref(), platform_version)
+        ExecutionEvent::create_from_state_transition_action(
+            action,
+            maybe_identity,
+            platform.state.epoch_ref(),
+            platform_version,
+        )
     })
 }
 

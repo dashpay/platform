@@ -3,9 +3,9 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
     data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutionResult,
     DataTriggerExecutor,
 };
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 pub(super) fn execute_data_triggers(
     document_transition_actions: &Vec<DocumentTransitionAction>,

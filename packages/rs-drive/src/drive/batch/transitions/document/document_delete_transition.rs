@@ -8,12 +8,12 @@ use dpp::block::epoch::Epoch;
 
 use dpp::identifier::Identifier;
 use std::borrow::Cow;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
-use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction<'a> {
+impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
         self,
         _epoch: &Epoch,

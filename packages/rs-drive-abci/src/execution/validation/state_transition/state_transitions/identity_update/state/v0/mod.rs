@@ -11,11 +11,11 @@ use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use drive::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;

@@ -4,9 +4,11 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperation
 use crate::drive::defaults::PROTOCOL_VERSION;
 
 use crate::error::Error;
+use crate::state_transition_action::identity::identity_create::{
+    IdentityCreateTransitionAction, IdentityFromIdentityCreateTransitionAction,
+};
 use dpp::block::epoch::Epoch;
 use dpp::prelude::Identity;
-use dpp::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {

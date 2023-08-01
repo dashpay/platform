@@ -6,7 +6,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Coding conventions
 #![forbid(unsafe_code)]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 
 #[cfg(feature = "full")]
 extern crate core;
@@ -34,6 +34,9 @@ pub use dpp;
 pub use grovedb;
 
 mod fee;
+/// State transition action module
+#[cfg(feature = "full")]
+pub mod state_transition_action;
 /// Test helpers
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;

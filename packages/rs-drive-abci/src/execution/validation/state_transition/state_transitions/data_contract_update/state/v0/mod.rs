@@ -19,8 +19,6 @@ use dpp::data_contract::DataContract;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use dpp::{
     consensus::basic::data_contract::{
@@ -31,6 +29,8 @@ use dpp::{
     Convertible, ProtocolError,
 };
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(

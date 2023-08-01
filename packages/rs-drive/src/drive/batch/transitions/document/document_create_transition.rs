@@ -11,11 +11,11 @@ use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
-use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
+use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransition};
 use dpp::version::PlatformVersion;
 
-impl<'a> DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction<'a> {
+impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
     fn into_high_level_document_drive_operations<'b>(
         self,
         epoch: &Epoch,

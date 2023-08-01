@@ -1,7 +1,7 @@
 mod common_fields;
 mod contract;
 mod document;
-mod identity;
+pub mod identity;
 
 pub use contract::*;
 pub use document::*;

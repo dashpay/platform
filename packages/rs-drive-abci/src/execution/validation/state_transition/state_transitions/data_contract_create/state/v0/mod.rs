@@ -8,10 +8,10 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
-use dpp::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(

@@ -17,10 +17,10 @@ use indexmap::IndexMap;
 
 use crate::platform_types::masternode;
 
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use std::collections::{BTreeMap, HashMap};
-use crate::platform_types::platform_state::PlatformState;
 
 /// Platform state
 #[derive(Clone, Debug)]
@@ -320,6 +320,7 @@ pub trait PlatformStateV0Methods {
 
     /// Returns a mutable reference to the platform initialization information.
     fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState>;
+    /// The epoch ref
     fn epoch_ref(&self) -> &Epoch;
 }
 
@@ -589,6 +590,4 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState> {
         &mut self.initialization_information
     }
-
-
 }

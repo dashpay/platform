@@ -5,9 +5,9 @@ mod structure;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;

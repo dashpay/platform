@@ -142,14 +142,13 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     };
 
     //todo: deal with cost of this operation
-    let documents_outcome = drive
-        .query_documents(
-            drive_query,
-            None,
-            false,
-            transaction,
-            Some(platform_version.protocol_version),
-        )?;
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        None,
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
 
     Ok(ConsensusValidationResult::new_with_data(
         documents_outcome.documents_owned(),
