@@ -1,3 +1,5 @@
+const publicIp = require('public-ip');
+
 const validateIPv4 = require('./validators/validateIPv4');
 const validatePort = require('./validators/validatePort');
 
@@ -5,7 +7,9 @@ const {
   PRESET_MAINNET,
 } = require('../../constants');
 
-function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
+const wait = require('../../util/wait');
+
+function createIpAndPortsFormFactory(defaultConfigs) {
   /**
    * @typedef {function} createIpAndPortsForm
    * @param {string} network
@@ -55,15 +59,19 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
       return validatePort(value);
     }
 
-    let { initialIp } = options;
-
-    if (!initialIp) {
-      initialIp = await resolvePublicIpV4() ?? '';
+    let initialIp;
+    if (options.initialIp === null || options.initialIp === undefined) {
+      initialIp = await Promise.race([
+        publicIp.v4().catch(() => ''),
+        // Resolve in 10 seconds if public IP is not available
+        wait(10000).then(() => ''),
+      ]);
     }
 
-    let { initialCoreP2PPort } = options;
-
-    if (!initialCoreP2PPort || network === PRESET_MAINNET) {
+    let initialCoreP2PPort;
+    if (options.initialCoreP2PPort === undefined
+      || options.initialCoreP2PPort === null
+      || network === PRESET_MAINNET) {
       initialCoreP2PPort = defaultConfigs.get(network).get('core.p2p.port').toString();
     }
 
@@ -85,8 +93,10 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
     ];
 
     if (options.isHPMN) {
-      let { initialPlatformP2PPort } = options;
-      if (!initialPlatformP2PPort || network === PRESET_MAINNET) {
+      let initialPlatformP2PPort;
+      if (options.initialPlatformP2PPort === null
+        || options.initialPlatformP2PPort === undefined
+        || network === PRESET_MAINNET) {
         initialPlatformP2PPort = defaultConfigs.get(network).get('platform.drive.tenderdash.p2p.port').toString();
       }
 
@@ -98,8 +108,10 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
         disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
       });
 
-      let { initialPlatformHTTPPort } = options;
-      if (!initialPlatformHTTPPort || network === PRESET_MAINNET) {
+      let initialPlatformHTTPPort;
+      if (options.initialPlatformHTTPPort === null
+        || options.initialPlatformHTTPPort === undefined
+        || network === PRESET_MAINNET) {
         initialPlatformHTTPPort = defaultConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
       }
 
@@ -122,11 +134,11 @@ function createIpAndPortsFormFactory(defaultConfigs, resolvePublicIpV4) {
       message: 'Enter IP address and ports:',
       choices: fields,
       validate: ({
-        ip,
-        coreP2PPort,
-        platformP2PPort,
-        platformHTTPPort,
-      }) => {
+                   ip,
+                   coreP2PPort,
+                   platformP2PPort,
+                   platformHTTPPort,
+                 }) => {
         const areAllFieldsValid = validateIPv4(ip) && validateCoreP2PPort(coreP2PPort)
           && (
             !options.isHPMN
