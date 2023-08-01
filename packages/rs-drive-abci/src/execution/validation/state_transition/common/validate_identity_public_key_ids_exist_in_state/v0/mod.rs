@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 /// This will validate that all keys are valid against the state
 pub(crate) fn validate_identity_public_key_ids_exist_in_state_v0(
     identity_id: Identifier,
-    mut key_ids: Vec<KeyID>,
+    key_ids: &[KeyID],
     drive: &Drive,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
@@ -25,7 +25,7 @@ pub(crate) fn validate_identity_public_key_ids_exist_in_state_v0(
     let limit = key_ids.len() as u16;
     let identity_key_request = IdentityKeysRequest {
         identity_id: identity_id.to_buffer(),
-        request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
+        request_type: KeyRequestType::SpecificKeys(key_ids.to_vec()),
         limit: Some(limit),
         offset: None,
     };
@@ -36,10 +36,11 @@ pub(crate) fn validate_identity_public_key_ids_exist_in_state_v0(
     )?;
     if keys.len() != key_ids.len() {
         let to_remove = BTreeSet::from_iter(keys);
-        key_ids.retain(|found_key| !to_remove.contains(found_key));
+        let mut missing_keys = key_ids.to_vec();
+        missing_keys.retain(|found_key| !to_remove.contains(found_key));
         // keys should all exist
         Ok(SimpleConsensusValidationResult::new_with_error(
-            MissingIdentityPublicKeyIdsError::new(key_ids).into(),
+            MissingIdentityPublicKeyIdsError::new(missing_keys).into(),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())

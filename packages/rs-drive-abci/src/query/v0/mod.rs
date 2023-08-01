@@ -27,7 +27,7 @@ use drive::drive::identity::IdentityDriveQuery;
 use drive::drive::identity::IdentityProveRequestType;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::query::QueryValidationResult;
+use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;

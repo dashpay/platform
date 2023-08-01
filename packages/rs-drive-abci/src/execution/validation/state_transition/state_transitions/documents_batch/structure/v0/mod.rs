@@ -7,7 +7,6 @@ use dpp::consensus::basic::document::{
 };
 
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -39,10 +38,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = validate_protocol_version_v0(self.protocol_version);
-        if !result.is_valid() {
-            return Ok(result);
-        }
+        let mut result = SimpleConsensusValidationResult::default();
 
         if self.transitions().len() > MAX_TRANSITIONS_IN_BATCH {
             result.add_error(
@@ -60,7 +56,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
         self.transitions().iter().for_each(|document_transition| {
             let contract_identifier = document_transition.data_contract_id();
 
-            match document_transitions_by_contracts.entry(*contract_identifier) {
+            match document_transitions_by_contracts.entry(contract_identifier) {
                 Entry::Vacant(vacant) => {
                     vacant.insert(vec![document_transition]);
                 }

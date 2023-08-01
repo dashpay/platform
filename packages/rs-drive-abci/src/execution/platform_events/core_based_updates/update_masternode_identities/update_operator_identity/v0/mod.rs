@@ -28,6 +28,8 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
 impl<C> Platform<C>
 where
@@ -107,7 +109,7 @@ where
                 .filter_map(|(key_id, key)| {
                     // We can disable previous withdrawal keys as we are adding a new one
                     if needs_change_operator_payout_address {
-                        if Some(key.data.as_slice())
+                        if Some(key.data().as_slice())
                             == old_masternode
                                 .state
                                 .operator_payout_address
@@ -119,7 +121,7 @@ where
                             state_diff.operator_payout_address.as_ref().unwrap()
                         {
                             // an old key that we need to re-enable
-                            if key.data.as_slice() == operator_payout_address.as_slice() {
+                            if key.data().as_slice() == operator_payout_address.as_slice() {
                                 old_operator_payout_address_to_re_enable = Some(key_id);
                             }
                         }
@@ -127,12 +129,12 @@ where
                     if needs_change_platform_node_id
                         && old_masternode.state.platform_node_id.is_some()
                     {
-                        if key.data.as_slice()
+                        if key.data().as_slice()
                             == old_masternode.state.platform_node_id.as_ref().unwrap()
                         {
                             return Some(key_id);
                         } else if state_diff.platform_node_id.as_ref().unwrap().as_slice()
-                            == key.data.as_slice()
+                            == key.data().as_slice()
                         {
                             old_operator_node_id_to_re_enable = Some(key_id);
                         }
@@ -158,7 +160,7 @@ where
             if let Some(old_operator_pub_key_to_re_enable) = old_operator_node_id_to_re_enable {
                 keys_to_re_enable.push(old_operator_pub_key_to_re_enable);
             } else if needs_change_platform_node_id {
-                let key = IdentityPublicKey {
+                let key = IdentityPublicKeyV0 {
                     id: new_key_id,
                     key_type: KeyType::EDDSA_25519_HASH160,
                     purpose: Purpose::SYSTEM,
@@ -187,7 +189,7 @@ where
                     .as_ref()
                     .expect("operator_payout_address confirmed is some")
                 {
-                    let key = IdentityPublicKey {
+                    let key = IdentityPublicKeyV0 {
                         id: new_key_id,
                         key_type: KeyType::ECDSA_HASH160,
                         purpose: WITHDRAW,
@@ -212,12 +214,12 @@ where
             let old_operator_identity_key_ids_to_disable: Vec<KeyID> = old_identity_keys
                 .into_iter()
                 .filter_map(|(key_id, key)| {
-                    if key.data.as_slice() == old_masternode.state.pub_key_operator {
+                    if key.data().as_slice() == old_masternode.state.pub_key_operator {
                         //the old key
                         return Some(key_id);
                     }
                     if old_masternode.state.platform_node_id.is_some()
-                        && key.data.as_slice()
+                        && key.data().as_slice()
                             == old_masternode.state.platform_node_id.as_ref().unwrap()
                     {
                         return Some(key_id);

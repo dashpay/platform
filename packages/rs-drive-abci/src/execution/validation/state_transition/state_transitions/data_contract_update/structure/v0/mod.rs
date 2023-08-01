@@ -1,3 +1,4 @@
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use crate::error::Error;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -18,7 +19,7 @@ impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
         //     return Ok(result);
         // }
 
-        self.data_contract
+        self.data_contract()
             .validate_structure()
             .map_err(Error::Protocol)
     }

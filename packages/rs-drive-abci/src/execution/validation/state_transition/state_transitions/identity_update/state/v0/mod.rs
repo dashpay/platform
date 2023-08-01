@@ -15,6 +15,7 @@ use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
@@ -48,7 +49,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
             validate_unique_identity_public_key_hashes_in_state_v0(
-                self.add_public_keys.as_slice(),
+                self.public_keys_to_add(),
                 drive,
                 tx,
                 platform_version,
@@ -62,8 +63,8 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
 
         validation_result.add_errors(
             validate_identity_public_key_ids_dont_exist_in_state_v0(
-                self.identity_id,
-                self.add_public_keys.as_slice(),
+                self.identity_id(),
+                self.public_keys_to_add(),
                 drive,
                 tx,
                 platform_version,
@@ -75,12 +76,12 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
             return Ok(validation_result);
         }
 
-        if !self.disable_public_keys.is_empty() {
+        if !self.public_key_ids_to_disable().is_empty() {
             // We need to validate that all keys removed existed
             validation_result.add_errors(
                 validate_identity_public_key_ids_exist_in_state_v0(
-                    self.identity_id,
-                    self.disable_public_keys.clone(),
+                    self.identity_id(),
+                    self.public_key_ids_to_disable(),
                     drive,
                     tx,
                     platform_version,
@@ -92,7 +93,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                 return Ok(validation_result);
             }
 
-            if let Some(disabled_at_ms) = self.public_keys_disabled_at {
+            if let Some(disabled_at_ms) = self.public_keys_disabled_at() {
                 // We need to verify the time the keys were disabled
 
                 let last_block_time = platform.state.last_block_time_ms().ok_or(
@@ -109,7 +110,7 @@ impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
                 )
                 .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
 
-                if !window_validation_result.is_valid() {
+                if !window_validation_result.valid {
                     validation_result.add_error(
                         StateError::IdentityPublicKeyDisabledAtWindowViolationError(
                             IdentityPublicKeyDisabledAtWindowViolationError::new(
