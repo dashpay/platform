@@ -6,10 +6,9 @@ const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/val
 /**
  *
  * @param {createIpAndPortsForm} createIpAndPortsForm
- * @param {createPortIsNotReachableForm} createPortIsNotReachableForm
  * @return {registerMasternodeWithDMTFactory}
  */
-function registerMasternodeWithDMTFactory(createIpAndPortsForm, createPortIsNotReachableForm) {
+function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with DMT
    *

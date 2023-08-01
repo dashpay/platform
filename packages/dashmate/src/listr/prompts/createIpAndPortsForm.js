@@ -59,7 +59,7 @@ function createIpAndPortsFormFactory(defaultConfigs) {
       return validatePort(value);
     }
 
-    let initialIp = options.initialIp;
+    let { initialIp } = options;
     if (initialIp === null || initialIp === undefined) {
       initialIp = await Promise.race([
         publicIp.v4().catch(() => ''),
@@ -68,7 +68,7 @@ function createIpAndPortsFormFactory(defaultConfigs) {
       ]);
     }
 
-    let initialCoreP2PPort = options.initialCoreP2PPort;
+    let { initialCoreP2PPort } = options;
     if (initialCoreP2PPort === undefined
       || initialCoreP2PPort === null
       || network === PRESET_MAINNET) {
@@ -93,7 +93,7 @@ function createIpAndPortsFormFactory(defaultConfigs) {
     ];
 
     if (options.isHPMN) {
-      let initialPlatformP2PPort = options.initialPlatformP2PPort;
+      let { initialPlatformP2PPort } = options;
       if (initialPlatformP2PPort === null
         || initialPlatformP2PPort === undefined
         || network === PRESET_MAINNET) {
@@ -108,7 +108,7 @@ function createIpAndPortsFormFactory(defaultConfigs) {
         disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
       });
 
-      let initialPlatformHTTPPort = options.initialPlatformHTTPPort;
+      let { initialPlatformHTTPPort } = options;
       if (initialPlatformHTTPPort === null
         || initialPlatformHTTPPort === undefined
         || network === PRESET_MAINNET) {
