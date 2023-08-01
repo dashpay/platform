@@ -72,6 +72,18 @@ function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
 
     const state = await task.prompt(prompts);
 
+    const portStatus = await providers.mnowatch.checkPortStatus(state.ipAndPorts.coreP2PPort);
+
+    if (portStatus !== PortStatusEnum.OPEN) {
+      const confirmed = await task.prompt(
+        await createPortIsNotReachableForm(state.ipAndPorts.coreP2PPort),
+      );
+
+      if (!confirmed) {
+        throw new Error('Operation is cancelled');
+      }
+    }
+
     // Keep compatibility with other registration methods
     state.operator = {
       privateKey: state.operatorPrivateKey,
