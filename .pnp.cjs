@@ -2957,7 +2957,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["@dashevo/wasm-re2", "npm:1.0.2"],\
+            ["@dashevo/wasm-re2", "npm:2.0.4"],\
             ["@types/bs58", "npm:4.0.1"],\
             ["@types/node", "npm:14.17.34"],\
             ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
@@ -3008,13 +3008,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/wasm-re2", [\
-        ["npm:1.0.2", {\
-          "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-1.0.2-50818efe42-3d54788e4e.zip/node_modules/@dashevo/wasm-re2/",\
-          "packageDependencies": [\
-            ["@dashevo/wasm-re2", "npm:1.0.2"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:2.0.4", {\
           "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-2.0.4-7adcfc6dac-3a66db77e4.zip/node_modules/@dashevo/wasm-re2/",\
           "packageDependencies": [\
