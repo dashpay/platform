@@ -106,6 +106,13 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.24.18': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = base.get('core.docker.image');
+          });
+        return configFile;
+      },
     };
   }
 
