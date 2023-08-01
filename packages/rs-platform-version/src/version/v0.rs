@@ -1,5 +1,25 @@
-use crate::version::dpp_versions::{ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion, DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions, IdentityVersions, IndexVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions, StateTransitionConversionVersions, StateTransitionMethodVersions, StateTransitionSerializationVersions, IndexValidationVersions};
-use crate::version::drive_abci_versions::{DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions, DriveAbciFeePoolOutwardsDistributionMethodVersions, DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions, DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions, DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions};
+use crate::version::dpp_versions::{
+    ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
+    DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
+    DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
+    IdentityVersions, IndexValidationVersions, IndexVersions, JsonSchemaValidatorVersions,
+    PublicKeyInCreationMethodVersions, StateTransitionConversionVersions,
+    StateTransitionMethodVersions, StateTransitionSerializationVersions,
+};
+use crate::version::drive_abci_versions::{
+    DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
+    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
+    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
+    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciFeePoolOutwardsDistributionMethodVersions,
+    DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
+    DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
+    DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
+    DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions,
+    DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
+    DriveAbciWithdrawalsMethodVersions,
+};
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
     DriveContractApplyMethodVersions, DriveContractCostsMethodVersions,
@@ -396,7 +416,10 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         document_factory_structure_version: 0,
     },
     drive_abci: DriveAbciVersion {
-        structs: DriveAbciStructureVersions { platform_state_structure: 0, platform_state_for_saving_structure: 0 },
+        structs: DriveAbciStructureVersions {
+            platform_state_structure: 0,
+            platform_state_for_saving_structure: 0,
+        },
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions {
                 init_chain: 0,

@@ -6,6 +6,7 @@ use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -84,13 +85,13 @@ impl<C> Platform<C> {
 
             for document in documents {
                 let pay_to_id = document
-                    .properties
+                    .properties()
                     .get_identifier("payToId")
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage: u64 = document
-                    .properties
+                    .properties()
                     .get("percentage")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
                         "percentage property is missing".to_string(),

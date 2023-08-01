@@ -39,3 +39,5 @@ pub mod test;
 pub mod mimic;
 /// Platform module
 pub mod platform_types;
+/// Querying
+pub mod query;

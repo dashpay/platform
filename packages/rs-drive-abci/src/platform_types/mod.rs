@@ -43,8 +43,6 @@ pub mod masternode;
 pub mod platform;
 /// Platform state
 pub mod platform_state;
-/// Querying
-pub mod query;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
 /// System identity public keys
