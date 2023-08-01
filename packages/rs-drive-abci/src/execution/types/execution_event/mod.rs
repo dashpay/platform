@@ -75,16 +75,14 @@ impl<'a> ExecutionEvent<'a> {
     }
 }
 
-impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionAction<'a>, &Epoch)>
-    for ExecutionEvent<'a>
+impl<'a> ExecutionEvent<'a>
 {
-    type Error = Error;
-
-    fn try_from_platform_versioned(
-        value: (Option<PartialIdentity>, StateTransitionAction, &Epoch),
+    pub(crate) fn create_from_state_transition_action(
+        action: StateTransitionAction,
+        identity: Option<PartialIdentity>,
+        epoch: &Epoch,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
-        let (identity, action, epoch) = value;
+    ) -> Result<Self, Error> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();

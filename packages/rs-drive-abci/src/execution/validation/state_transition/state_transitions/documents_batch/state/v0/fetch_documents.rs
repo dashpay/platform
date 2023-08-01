@@ -36,8 +36,8 @@ pub(crate) fn fetch_documents_for_transitions(
     > = BTreeMap::new();
 
     for document_transition in document_transitions {
-        let document_type = &document_transition.base().document_type_name();
-        let data_contract_id = &document_transition.base().data_contract_id();
+        let document_type = document_transition.base().document_type_name();
+        let data_contract_id = document_transition.base().data_contract_id_ref();
 
         match transitions_by_contracts_and_types.entry((data_contract_id, document_type)) {
             Entry::Vacant(v) => {
@@ -142,17 +142,16 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     };
 
     //todo: deal with cost of this operation
-    let documents = drive
+    let documents_outcome = drive
         .query_documents(
             drive_query,
             None,
             false,
             transaction,
             Some(platform_version.protocol_version),
-        )?
-        .documents();
+        )?;
 
     Ok(ConsensusValidationResult::new_with_data(
-        documents.to_owned(),
+        documents_outcome.documents_owned(),
     ))
 }

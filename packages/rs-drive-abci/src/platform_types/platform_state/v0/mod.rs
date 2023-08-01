@@ -4,7 +4,7 @@ use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
 use dashcore_rpc::json::QuorumType;
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 use dpp::bincode::{Decode, Encode};
@@ -20,6 +20,7 @@ use crate::platform_types::masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use std::collections::{BTreeMap, HashMap};
+use crate::platform_types::platform_state::PlatformState;
 
 /// Platform state
 #[derive(Clone, Debug)]
@@ -319,6 +320,7 @@ pub trait PlatformStateV0Methods {
 
     /// Returns a mutable reference to the platform initialization information.
     fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState>;
+    fn epoch_ref(&self) -> &Epoch;
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {
@@ -420,6 +422,13 @@ impl PlatformStateV0Methods for PlatformStateV0 {
             .as_ref()
             .map(|block_info| block_info.basic_info().epoch)
             .unwrap_or_default()
+    }
+
+    fn epoch_ref(&self) -> &Epoch {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| &block_info.basic_info().epoch)
+            .unwrap_or(&EPOCH_0)
     }
 
     /// HPMN list len
@@ -580,4 +589,6 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState> {
         &mut self.initialization_information
     }
+
+
 }

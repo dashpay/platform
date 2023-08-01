@@ -591,11 +591,12 @@ where
         let RequestCheckTx { tx, .. } = request;
         match self.platform.check_tx(tx.as_slice()) {
             Ok(validation_result) => {
-                let platform_version = self
+                let platform_state = self
                     .platform
                     .state
-                    .read()
-                    .unwrap()
+                    .read().unwrap();
+                let platform_version =
+                    platform_state
                     .current_platform_version()?;
                 let validation_error = validation_result.errors.first();
 

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use dpp::consensus::basic::document::{
     DataContractNotPresentError, MaxDocumentsTransitionsExceededError,
 };
+use dpp::consensus::ConsensusError;
 
 use crate::error::Error;
 use dpp::identifier::Identifier;
@@ -42,7 +43,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         let mut result = SimpleConsensusValidationResult::default();
 
         if self.transitions().len() > MAX_TRANSITIONS_IN_BATCH {
-            result.add_error(
+            result.add_error::<ConsensusError>(
                 MaxDocumentsTransitionsExceededError::new(MAX_TRANSITIONS_IN_BATCH as u32).into(),
             )
         }
@@ -91,18 +92,19 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
 
             let existing_data_contract = &contract_fetch_info.contract;
 
-            let transitions_as_objects: Vec<Value> = transitions
-                .into_iter()
-                .map(|t| t.to_object().unwrap())
-                .collect();
-            let validation_result = validate_document_transitions_basic(
-                existing_data_contract,
-                self.owner_id(),
-                transitions_as_objects
-                    .iter()
-                    .map(|t| t.to_btree_ref_string_map().unwrap()),
-            )?;
-            result.merge(validation_result);
+            //todo document structure validation
+            // let transitions_as_objects: Vec<Value> = transitions
+            //     .into_iter()
+            //     .map(|t| t.to_object().unwrap())
+            //     .collect();
+            // let validation_result = validate_document_transitions_basic(
+            //     existing_data_contract,
+            //     self.owner_id(),
+            //     transitions_as_objects
+            //         .iter()
+            //         .map(|t| t.to_btree_ref_string_map().unwrap()),
+            // )?;
+            // result.merge(validation_result);
         }
 
         Ok(result)

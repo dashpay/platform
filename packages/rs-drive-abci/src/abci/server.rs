@@ -70,12 +70,13 @@ impl<'a, C> AbciApplication<'a, C> {
             .ok_or(Error::Execution(ExecutionError::NotInTransaction(
                 "trying to commit a transaction, but we are not in one",
             )))?;
-        let platform_version = self
+        let platform_state = self
             .platform
             .state
-            .read()
-            .unwrap()
-            .current_platform_version()?;
+            .read().unwrap();
+        let platform_version =
+            platform_state
+                .current_platform_version()?;
         self.platform
             .drive
             .commit_transaction(transaction, &platform_version.drive)

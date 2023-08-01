@@ -54,8 +54,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let result = state_transition.validate_state(platform, transaction)?;
 
     result.map_result(|action| {
-        (maybe_identity, action, &platform.state.epoch())
-            .try_into_platform_versioned(platform_version)
+        ExecutionEvent::create_from_state_transition_action(action, maybe_identity, platform.state.epoch_ref(), platform_version)
     })
 }
 

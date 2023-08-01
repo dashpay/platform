@@ -59,7 +59,7 @@ pub(crate) fn validate_document_batch_transition_state<'a>(
     // We want to validate by contract, and then for each document type within a contract
     for document_transition in batch_state_transition.transitions().iter() {
         let document_type = document_transition.base().document_type_name();
-        let data_contract_id = &document_transition.base().data_contract_id();
+        let data_contract_id = document_transition.base().data_contract_id_ref();
 
         match transitions_by_contracts_and_types.entry(data_contract_id) {
             Entry::Vacant(v) => {
@@ -159,7 +159,7 @@ fn validate_document_transitions_within_contract<'a>(
 fn validate_document_transitions_within_document_type<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
-    data_contract: &DataContract,
+    data_contract: &'a DataContract,
     document_type_name: &str,
     owner_id: Identifier,
     document_transitions: &[&DocumentTransition],
@@ -245,7 +245,7 @@ fn validate_document_transitions_within_document_type<'a>(
 fn validate_transition<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
-    contract: &DataContract,
+    contract: &'a DataContract,
     document_type: DocumentTypeRef,
     transition: &DocumentTransition,
     fetched_documents: &[Document],

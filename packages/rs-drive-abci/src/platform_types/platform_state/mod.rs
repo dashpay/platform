@@ -266,6 +266,12 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
+    fn epoch_ref(&self) -> &Epoch {
+        match self {
+            PlatformState::V0(v0) => v0.epoch_ref(),
+        }
+    }
+
     fn hpmn_list_len(&self) -> usize {
         match self {
             PlatformState::V0(v0) => v0.hpmn_list_len(),
