@@ -111,6 +111,7 @@ impl TempPlatform<MockCoreRPCLike> {
             .current_platform_version()
             .expect("expected to get current platform version");
         self.platform
+            .drive
             .create_initial_state_structure(None, platform_version)
             .expect("should create root tree successfully");
 

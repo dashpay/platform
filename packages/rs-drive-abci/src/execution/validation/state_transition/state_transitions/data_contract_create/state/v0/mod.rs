@@ -5,6 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
 use dpp::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
@@ -47,7 +48,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
         {
             Ok(ConsensusValidationResult::new_with_errors(vec![
                 StateError::DataContractAlreadyPresentError(DataContractAlreadyPresentError::new(
-                    self.data_contract.id.to_owned(),
+                    self.data_contract().id().to_owned(),
                 ))
                 .into(),
             ]))

@@ -73,7 +73,7 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
         }
 
         validate_identity_public_keys_structure_v0(
-            self.add_public_keys().as_slice(),
+            self.public_keys_to_add(),
             platform_version,
         )
     }

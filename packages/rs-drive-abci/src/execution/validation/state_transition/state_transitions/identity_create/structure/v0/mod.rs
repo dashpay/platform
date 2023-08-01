@@ -23,6 +23,6 @@ impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
             return Ok(result);
         }
 
-        validate_identity_public_keys_structure_v0(self.public_keys().as_slice(), platform_version)
+        validate_identity_public_keys_structure_v0(self.public_keys(), platform_version)
     }
 }

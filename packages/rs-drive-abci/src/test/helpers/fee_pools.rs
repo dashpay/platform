@@ -45,8 +45,10 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::{DocumentV0, INITIAL_REVISION};
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::system_data_contracts::masternode_reward_shares_contract::document_types;
 use dpp::version::PlatformVersion;
+use drive::common::identities::create_test_identity_with_rng;
 use drive::dpp::document::Document;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -70,7 +72,7 @@ fn create_test_mn_share_document(
 
     properties.insert(
         String::from("payToId"),
-        Value::Bytes(pay_to_identity.id.to_buffer().to_vec()),
+        Value::Bytes(pay_to_identity.id().to_buffer().to_vec()),
     );
     properties.insert(String::from("percentage"), percentage.into());
 

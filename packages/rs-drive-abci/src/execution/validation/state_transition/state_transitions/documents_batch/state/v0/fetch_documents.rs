@@ -18,6 +18,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::{
 };
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
@@ -149,7 +150,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
             transaction,
             Some(platform_version.protocol_version),
         )?
-        .documents;
+        .documents();
 
-    Ok(ConsensusValidationResult::new_with_data(documents))
+    Ok(ConsensusValidationResult::new_with_data(documents.to_owned()))
 }
