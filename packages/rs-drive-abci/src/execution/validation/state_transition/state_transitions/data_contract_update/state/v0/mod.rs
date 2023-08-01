@@ -162,7 +162,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
                         ),
                     ));
                 }
-                Err(DiffVAlidatorError::DataStructureError(e)) => {
+                Err(DiffValidatorError::DataStructureError(e)) => {
                     return Err(ProtocolError::ParsingError(e.to_string()).into())
                 }
             }
