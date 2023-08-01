@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '16'
 
       - name: Enable corepack
         run: corepack enable
@@ -82,7 +82,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '16'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -176,7 +176,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '16'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -213,7 +213,7 @@ jobs:
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y build-essential
+        run: sudo apt-get install -y build-essential gcc
 
       - name: Install dependencies
         run: yarn install
@@ -273,7 +273,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '16'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
