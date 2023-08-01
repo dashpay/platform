@@ -18,7 +18,6 @@ use rand::distributions::{Alphanumeric, DistString};
 use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
-mod validate_indices;
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]

@@ -2,7 +2,7 @@ use crate::version::dpp_versions::{
     ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
     DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
     DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
-    IdentityVersions, IndexValidationVersions, IndexVersions, JsonSchemaValidatorVersions,
+    IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
     PublicKeyInCreationMethodVersions, StateTransitionConversionVersions,
     StateTransitionMethodVersions, StateTransitionSerializationVersions,
 };
@@ -721,11 +721,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
             index_versions: IndexVersions {
                 index_levels_from_indices: 0,
-                validation: IndexValidationVersions {
-                    get_wrongly_constructed_new_index: 0,
-                    validate_indices_are_backward_compatible: 0,
-                    get_wrongly_updated_non_unique_index: 0,
-                },
             },
             contract_class_method_versions: ContractClassMethodVersions {
                 get_property_definition_by_path: 0,

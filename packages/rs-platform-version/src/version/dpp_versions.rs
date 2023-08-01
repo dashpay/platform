@@ -105,14 +105,6 @@ pub struct ContractClassMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct IndexVersions {
     pub index_levels_from_indices: FeatureVersion,
-    pub validation: IndexValidationVersions,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct IndexValidationVersions {
-    pub get_wrongly_constructed_new_index: FeatureVersion,
-    pub validate_indices_are_backward_compatible: FeatureVersion,
-    pub get_wrongly_updated_non_unique_index: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

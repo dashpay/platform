@@ -134,7 +134,7 @@ fn should_return_invalid_result_if_non_unique_index_update_failed_due_to_changed
     match basic_error {
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type().clone(), "indexedDocument".to_string());
-            assert_eq!(err.index_name().clone(), "index3".to_string());
+            assert_eq!(err.index_path().clone(), "index3".to_string());
         }
         _ => panic!(
             "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
@@ -167,7 +167,7 @@ fn should_return_invalid_result_if_already_indexed_properties_are_added_to_exist
     match basic_error {
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index3".to_string());
+            assert_eq!(err.index_path(), "index3".to_string());
         }
         _ => panic!(
             "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
@@ -210,7 +210,7 @@ fn should_return_invalid_result_if_one_of_new_indices_contains_old_properties_in
     match basic_error {
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index_other".to_string());
+            assert_eq!(err.index_path(), "index_other".to_string());
         }
         _ => panic!(
             "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
@@ -318,7 +318,7 @@ fn should_return_invalid_result_if_non_unique_index_added_for_non_indexed_proper
     match basic_error {
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
             assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index1337".to_string());
+            assert_eq!(err.index_path(), "index1337".to_string());
         }
         _ => panic!(
             "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",

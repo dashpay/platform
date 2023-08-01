@@ -27,7 +27,7 @@ impl DataContractInvalidIndexDefinitionUpdateErrorWasm {
 
     #[wasm_bindgen(js_name=getIndexName)]
     pub fn get_index_name(&self) -> String {
-        self.inner.index_name().to_string()
+        self.inner.index_path().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
