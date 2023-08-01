@@ -134,11 +134,11 @@ function createIpAndPortsFormFactory(defaultConfigs) {
       message: 'Enter IP address and ports:',
       choices: fields,
       validate: ({
-                   ip,
-                   coreP2PPort,
-                   platformP2PPort,
-                   platformHTTPPort,
-                 }) => {
+        ip,
+        coreP2PPort,
+        platformP2PPort,
+        platformHTTPPort,
+      }) => {
         const areAllFieldsValid = validateIPv4(ip) && validateCoreP2PPort(coreP2PPort)
           && (
             !options.isHPMN
