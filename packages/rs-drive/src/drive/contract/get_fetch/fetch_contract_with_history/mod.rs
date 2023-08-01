@@ -93,7 +93,7 @@ mod tests {
     use dpp::data_contract::data_contract_config::v0::{
         DataContractConfigGettersV0, DataContractConfigSettersV0,
     };
-    use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+    use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -158,7 +158,7 @@ mod tests {
                 );
 
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document, platform_version)
+                .set_document_json_schema("niceDocument".into(), updated_document, platform_version)
                 .expect("to be able to set document schema");
             data_contract.increment_version();
 
@@ -204,7 +204,7 @@ mod tests {
 
     pub fn assert_property_exists(data_contract: &DataContract, property: &str) {
         let updated_document = data_contract
-            .get_document_schema("niceDocument")
+            .document_json_schema("niceDocument")
             .expect("to get document schema");
         let updated_document = updated_document.as_object().expect("to be an object");
         let properties = updated_document

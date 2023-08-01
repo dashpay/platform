@@ -23,6 +23,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::property_names::VERSION;
+use crate::data_contract::schema::json_schema::DataContractSchema;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
@@ -68,11 +69,8 @@ pub struct DataContractV0 {
     /// Internal configuration for the contract.
     pub(super) config: DataContractConfig,
 
-    /// A mapping of document names to their corresponding JSON schemas.
-    pub(super) documents: BTreeMap<DocumentName, JsonSchema>,
-
-    /// Optional mapping of definition names to their corresponding JSON schemas.
-    pub(super) defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
+    /// Data Contract JSON Schema
+    pub(super) schema: DataContractSchema,
 
     /// A nested mapping of document names and property paths to their binary values.
     pub(super) binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,

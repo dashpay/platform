@@ -1,4 +1,4 @@
-use crate::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+use crate::data_contract::schema::DataContractDocumentSchemaMethodsV0;
 use crate::identity::SecurityLevel;
 use crate::prelude::DataContract;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -26,7 +26,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
             let document_type = &transition.base().document_type_name();
             let data_contract_id = transition.base().data_contract_id();
             let data_contract = get_data_contract(data_contract_id)?;
-            let document_schema = data_contract.get_document_schema(document_type)?;
+            let document_schema = data_contract.document_json_schema(document_type)?;
             let document_security_level =
                 get_security_level_requirement(document_schema, DEFAULT_SECURITY_LEVEL);
 

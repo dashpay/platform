@@ -208,7 +208,7 @@ mod tests {
 
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::base::DataContractBaseMethodsV0;
-        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+        use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
         use serde_json::json;
 
         #[test]
@@ -241,7 +241,7 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_json_schema("niceDocument".into(), updated_document)
                 .expect("to be able to set document schema");
 
             let state_transition = DataContractUpdateTransition {
@@ -311,7 +311,7 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_json_schema("niceDocument".into(), updated_document)
                 .expect("to be able to set document schema");
 
             // TODO: add a data contract stop transition

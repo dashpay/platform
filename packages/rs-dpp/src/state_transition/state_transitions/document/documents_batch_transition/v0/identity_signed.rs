@@ -1,4 +1,4 @@
-use crate::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+use crate::data_contract::schema::DataContractDocumentSchemaMethodsV0;
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::DataContract;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;

@@ -40,11 +40,6 @@ pub const ALLOWED_INDEX_SYSTEM_PROPERTIES: [&str; 3] = ["$ownerId", "$createdAt"
 pub const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: usize = 255;
 pub const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 
-lazy_static! {
-    pub static ref BASE_DOCUMENT_SCHEMA: JsonValue =
-        serde_json::from_str(include_str!("../../../schema/document/documentBase.json")).unwrap();
-}
-
 //
 // impl DataContract {
 //     /// checks the correctness of indices and returns the validation result. The bool flags should be on,

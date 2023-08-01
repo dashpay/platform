@@ -11,5 +11,5 @@ pub use data_contract_not_present_error::*;
 pub use identity_not_present_error::*;
 pub use invalid_data_contract_error::*;
 pub use invalid_document_type_error::*;
-pub use json_schema_error::JSONSchemaError;
+pub use json_schema_error::JsonSchemaError;
 pub use structure::StructureError;

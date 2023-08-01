@@ -1,10 +1,7 @@
-use crate::data_contract::{property_names, DataContract};
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::util::{cbor_serializer, deserializer};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::{Identifier, Value};
+use platform_value::Identifier;
 
 pub trait DataContractCborConversionMethodsV0 {
     fn from_cbor_with_id(

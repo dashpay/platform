@@ -1,8 +1,9 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::schema::json_schema::DataContractSchema;
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
+use crate::data_contract::{DocumentName, PropertyPath};
 use crate::metadata::Metadata;
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -42,12 +43,8 @@ impl DataContractV0Getters for DataContractV0 {
         &mut self.config
     }
 
-    fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError> {
-        Ok(&self.documents)
-    }
-
-    fn defs(&self) -> Result<Option<&BTreeMap<DefinitionName, JsonSchema>>, ProtocolError> {
-        Ok(self.defs.as_ref())
+    fn schema(&self) -> &DataContractSchema {
+        &self.schema
     }
 
     fn binary_properties(
@@ -78,13 +75,7 @@ impl DataContractV0Setters for DataContractV0 {
         self.config = config;
     }
 
-    fn set_documents(
-        &mut self,
-        documents: BTreeMap<DocumentName, JsonSchema>,
-        defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
-    ) {
-        // TODO: validate structure here
-        self.documents = documents;
-        self.defs = defs;
+    fn set_schema(&mut self, schema: DataContractSchema) {
+        self.schema = schema;
     }
 }

@@ -1,6 +1,7 @@
 use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
+use crate::data_contract::schema::json_schema::DataContractSchema;
+use crate::data_contract::{DocumentName, PropertyPath};
 use crate::metadata::Metadata;
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -32,11 +33,8 @@ pub trait DataContractV0Getters {
     /// Returns the internal configuration for the contract as mutable.
     fn config_mut(&mut self) -> &mut DataContractConfig;
 
-    /// Returns a mapping of document names to their corresponding JSON schemas.
-    fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError>;
-
-    /// Returns optional mapping of definition names to their corresponding JSON schemas.
-    fn defs(&self) -> Result<Option<&BTreeMap<DefinitionName, JsonSchema>>, ProtocolError>;
+    /// Returns data contract json schema
+    fn schema(&self) -> &DataContractSchema;
 
     /// Returns a nested mapping of document names and property paths to their binary values.
     fn binary_properties(
@@ -60,10 +58,6 @@ pub trait DataContractV0Setters {
     /// Sets the internal configuration for the contract.
     fn set_config(&mut self, config: DataContractConfig);
 
-    /// Sets the mapping of document names to their corresponding JSON schemas and definitions to reuse across documents.
-    fn set_documents(
-        &mut self,
-        documents: BTreeMap<DocumentName, JsonSchema>,
-        defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
-    );
+    /// Sets data contract schema
+    fn set_schema(&mut self, schema: DataContractSchema);
 }

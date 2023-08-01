@@ -4,7 +4,7 @@ use crate::data_contract::v0::DataContractV0;
 use crate::prelude::DataContract;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::version::PlatformVersion;
-use crate::{Convertible, ProtocolError};
+use crate::ProtocolError;
 use platform_value::Identifier;
 pub use v0::*;
 
@@ -49,13 +49,16 @@ impl DataContractCborConversionMethodsV0 for DataContract {
         }
     }
 
-    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
+    fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_cbor(),
+            DataContract::V0(v0) => v0.to_cbor(platform_version),
         }
     }
 
-    fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError> {
+    fn to_cbor_canonical_map(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Result<CborCanonicalMap, ProtocolError> {
         todo!()
     }
 }

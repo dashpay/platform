@@ -8,10 +8,8 @@ pub use data_contract::*;
 use derive_more::From;
 
 use bincode::enc::Encoder;
-use bincode::error::EncodeError;
 pub use generate_data_contract::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use platform_value::{Identifier, Value, ValueMap, ValueMapHelper};
+use platform_value::{Identifier, Value, ValueMapHelper};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -41,13 +39,12 @@ pub mod serialized_version;
 pub use data_contract_methods::*;
 pub mod accessors;
 pub mod data_contract_config;
+mod schema;
 mod validation;
-mod json_schema;
 
 pub use v0::*;
 
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
+use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::serialized_version::{
@@ -62,8 +59,7 @@ use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
-use platform_versioning::PlatformSerdeVersionedDeserialize;
-use serde_json::Value as JsonValue;
+pub use serde_json::Value as JsonValue;
 
 pub mod property_names {
     pub const ID: &str = "$id";
@@ -75,7 +71,7 @@ pub mod property_names {
     pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
 }
 
-pub type JsonSchema = JsonValue;
+type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;
 type PropertyPath = String;
@@ -202,25 +198,25 @@ impl DataContract {
 
     pub fn id(&self) -> Identifier {
         match self {
-            DataContract::V0(v0) => v0.id,
+            DataContract::V0(v0) => v0.id(),
         }
     }
 
     pub fn id_ref(&self) -> &Identifier {
         match self {
-            DataContract::V0(v0) => &v0.id,
+            DataContract::V0(v0) => &v0.id(),
         }
     }
 
     pub fn set_owner_id(&mut self, owner_id: Identifier) {
         match self {
-            DataContract::V0(v0) => v0.owner_id = owner_id,
+            DataContract::V0(v0) => v0.set_owner_id(owner_id),
         }
     }
 
     pub fn set_id(&mut self, id: Identifier) {
         match self {
-            DataContract::V0(v0) => v0.id = id,
+            DataContract::V0(v0) => v0.set_id(id),
         }
     }
 
@@ -254,25 +250,6 @@ impl DataContract {
             .contract_versions
             .contract_structure_version
             == data_contract_system_version)
-    }
-
-    #[cfg(feature = "platform-value")]
-    pub fn from_object(
-        raw_object: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<DataContract, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .contract_structure_version
-        {
-            0 => Ok(DataContractV0::from_object(raw_object, platform_version)?.into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::from_object".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
     }
 
     // TODO: Remove
@@ -326,7 +303,9 @@ mod tests {
 
     #[test]
     fn test_contract_serialization() {
-        let data_contract = load_system_data_contract(Dashpay).expect("expected dashpay contract");
+        let platform_version = PlatformVersion::latest();
+        let data_contract = load_system_data_contract(Dashpay, platform_version.protocol_version)
+            .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract
             .serialize_with_platform_version(platform_version)

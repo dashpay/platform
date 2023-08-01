@@ -494,7 +494,7 @@ mod update {
         });
 
         data_contract
-            .set_document_schema("niceDocument".into(), updated_document)
+            .set_document_json_schema("niceDocument".into(), updated_document)
             .expect("to be able to set document schema");
 
         let state_transition = DataContractUpdateTransition {
@@ -568,7 +568,7 @@ mod update {
         });
 
         data_contract
-            .set_document_schema("niceDocument".into(), updated_document)
+            .set_document_json_schema("niceDocument".into(), updated_document)
             .expect("to be able to set document schema");
 
         assert!(data_contract.config().readonly());

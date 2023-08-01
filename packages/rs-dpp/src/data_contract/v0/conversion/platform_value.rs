@@ -9,6 +9,20 @@ use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
+    fn from_object(
+        mut raw_object: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        raw_object
+            .remove(property_names::SCHEMA)
+            .map_err(ProtocolError::ValueError)?;
+
+        let data_contract_data: DataContractInSerializationFormatV0 =
+            platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)?;
+
+        DataContractV0::try_from_platform_versioned(data_contract_data, platform_version)
+    }
+
     fn to_object(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
         let data_contract_data =
             DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
@@ -27,19 +41,5 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             platform_value::to_value(data_contract_data).map_err(ProtocolError::ValueError)?;
 
         Ok(value)
-    }
-
-    fn from_object(
-        mut raw_object: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        raw_object
-            .remove(property_names::SCHEMA)
-            .map_err(ProtocolError::ValueError)?;
-
-        let data_contract_data: DataContractInSerializationFormatV0 =
-            platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)?;
-
-        DataContractV0::try_from_platform_versioned(data_contract_data, platform_version)
     }
 }

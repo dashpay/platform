@@ -215,14 +215,14 @@ impl DataContractWasm {
     ) -> Result<(), JsValue> {
         let json_schema: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
         self.inner
-            .set_document_schema(doc_type, json_schema)
+            .set_document_json_schema(doc_type, json_schema)
             .with_js_error()?;
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn get_document_schema(&mut self, doc_type: &str) -> Result<JsValue, JsValue> {
-        let doc_schema = self.inner.get_document_schema(doc_type).with_js_error()?;
+        let doc_schema = self.inner.document_json_schema(doc_type).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(doc_schema.serialize(&serializer))
     }
@@ -232,7 +232,7 @@ impl DataContractWasm {
         with_js_error!(serde_wasm_bindgen::to_value(
             &self
                 .inner
-                .get_document_schema_ref(doc_type)
+                .document_json_schema_ref(doc_type)
                 .with_js_error()?
         ))
     }

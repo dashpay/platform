@@ -12,7 +12,7 @@ impl JsonSchemaValidator {
         let res = self
             .schema
             .as_ref()
-            .ok_or_else(|| SerdeParsingError::new("Expected identity schema to be initialized"))?
+            .ok_or_else(|| SerdeParsingError::new("Expected schema to be initialized"))?
             .validate(object);
 
         let mut validation_result = SimpleConsensusValidationResult::default();
