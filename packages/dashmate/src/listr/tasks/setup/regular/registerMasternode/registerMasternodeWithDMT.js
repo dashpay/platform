@@ -2,6 +2,8 @@ const BlsSignatures = require('@dashevo/bls');
 
 const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNodeKeyInput');
 const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
+const PortStatusEnum = require('../../../../../status/enums/portState');
+const providers = require('../../../../../status/providers');
 
 /**
  *
