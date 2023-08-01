@@ -27,7 +27,9 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
 
         // Ensure that either disablePublicKeys or addPublicKeys is present
         if self.public_key_ids_to_disable().is_empty() && self.public_keys_to_add().is_empty() {
-            result.add_error( ConsensusError::from(InvalidIdentityUpdateTransitionEmptyError::new()));
+            result.add_error(ConsensusError::from(
+                InvalidIdentityUpdateTransitionEmptyError::new(),
+            ));
         }
 
         if !result.is_valid() {
@@ -38,18 +40,18 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
         if !self.public_key_ids_to_disable().is_empty() {
             // Ensure max items
             if self.public_key_ids_to_disable().len() > MAX_KEYS_TO_DISABLE {
-                result.add_error(
-                    ConsensusError::from(MaxIdentityPublicKeyLimitReachedError::new(MAX_KEYS_TO_DISABLE)),
-                );
+                result.add_error(ConsensusError::from(
+                    MaxIdentityPublicKeyLimitReachedError::new(MAX_KEYS_TO_DISABLE),
+                ));
             }
 
             // Check key id duplicates
             let mut ids = HashSet::new();
             for key_id in self.public_key_ids_to_disable() {
                 if ids.contains(key_id) {
-                    result.add_error(
-                        ConsensusError::from(DuplicatedIdentityPublicKeyIdBasicError::new(vec![key_id.clone()])),
-                    );
+                    result.add_error(ConsensusError::from(
+                        DuplicatedIdentityPublicKeyIdBasicError::new(vec![key_id.clone()]),
+                    ));
                     break;
                 }
 
@@ -58,20 +60,21 @@ impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
 
             // Ensure disable at timestamp is present
             if self.public_keys_disabled_at().is_none() {
-                result.add_error(ConsensusError::from(InvalidIdentityUpdateTransitionDisableKeysError::new()))
+                result.add_error(ConsensusError::from(
+                    InvalidIdentityUpdateTransitionDisableKeysError::new(),
+                ))
             }
         } else if self.public_keys_disabled_at().is_some() {
             // Ensure there are public keys to disable when disable at timestamp is present
-            result.add_error(ConsensusError::from(InvalidIdentityUpdateTransitionDisableKeysError::new()))
+            result.add_error(ConsensusError::from(
+                InvalidIdentityUpdateTransitionDisableKeysError::new(),
+            ))
         }
 
         if !result.is_valid() {
             return Ok(result);
         }
 
-        validate_identity_public_keys_structure_v0(
-            self.public_keys_to_add(),
-            platform_version,
-        )
+        validate_identity_public_keys_structure_v0(self.public_keys_to_add(), platform_version)
     }
 }

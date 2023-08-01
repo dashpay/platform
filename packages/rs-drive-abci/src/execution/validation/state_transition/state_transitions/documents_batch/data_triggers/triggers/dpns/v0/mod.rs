@@ -45,9 +45,8 @@ pub fn create_domain_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let data_contract = document_transition.base().data_contract();
-
+    let is_dry_run = false; //todo (maybe reenable - maybe not)
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
         _ => {
@@ -184,7 +183,7 @@ pub fn create_domain_data_trigger_v0(
         )?;
 
         let drive_query = DriveQuery {
-            contract: context.data_contract,
+            contract: data_contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
@@ -284,7 +283,7 @@ pub fn create_domain_data_trigger_v0(
     let document_type = data_contract.document_type_for_name("preorder")?;
 
     let drive_query = DriveQuery {
-        contract: context.data_contract,
+        contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -398,7 +397,12 @@ mod test {
         };
 
         let result = create_domain_data_trigger_v0(
-            &DocumentCreateTransitionAction::from(document_create_transition.try_into_platform_versioned(platform_version).expect("expected to produce a state transition action")).into(),
+            &DocumentCreateTransitionAction::from(
+                document_create_transition
+                    .try_into_platform_versioned(platform_version)
+                    .expect("expected to produce a state transition action"),
+            )
+            .into(),
             &data_trigger_context,
             platform_version,
         )

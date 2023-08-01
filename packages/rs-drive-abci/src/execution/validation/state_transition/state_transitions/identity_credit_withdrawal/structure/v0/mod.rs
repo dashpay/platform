@@ -24,12 +24,12 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
         let mut result = SimpleConsensusValidationResult::default();
 
         if self.amount() < MIN_WITHDRAWAL_AMOUNT {
-            result.add_error(
-                ConsensusError::from(InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+            result.add_error(ConsensusError::from(
+                InvalidIdentityCreditWithdrawalTransitionAmountError::new(
                     self.amount(),
                     MIN_WITHDRAWAL_AMOUNT,
-                )),
-            );
+                ),
+            ));
         }
 
         // currently we do not support pooling, so we must validate that pooling is `Never`

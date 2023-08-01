@@ -4,12 +4,18 @@ use crate::rpc::core::CoreRPCLike;
 
 use serde_json::Value as JsonValue;
 
-use dpp::consensus::basic::data_contract::{DataContractInvalidIndexDefinitionUpdateError, InvalidDataContractVersionError};
+use dpp::consensus::basic::data_contract::{
+    DataContractInvalidIndexDefinitionUpdateError, InvalidDataContractVersionError,
+};
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::DataContract;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -24,10 +30,6 @@ use dpp::{
     platform_value::{self, Value},
     Convertible, ProtocolError,
 };
-use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::DataContract;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -53,7 +55,9 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
 
-        let new_data_contract : DataContract = self.data_contract().try_into_platform_versioned(platform_version)?;
+        let new_data_contract: DataContract = self
+            .data_contract()
+            .try_into_platform_versioned(platform_version)?;
 
         // Data contract should exist
         let add_to_cache_if_pulled = tx.is_some();
@@ -87,16 +91,16 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         }
 
         if old_data_contract.config().readonly() {
-            validation_result.add_error(DataContractIsReadonlyError::new(
-                new_data_contract.id(),
-            ));
+            validation_result.add_error(DataContractIsReadonlyError::new(new_data_contract.id()));
             return Ok(validation_result);
         }
 
         // We should now validate that new indexes contains all old indexes
         // This is most easily done by using the index level construct
 
-        for (new_contract_document_type_name, new_contract_document_type) in new_data_contract.document_types() {
+        for (new_contract_document_type_name, new_contract_document_type) in
+            new_data_contract.document_types()
+        {
             let Some(old_contract_document_type) = old_data_contract.optional_document_type_for_name(new_contract_document_type_name) else {
                 // if it's a new document type (ie the old data contract didn't have it)
                 // then new indices on it are fine
@@ -104,10 +108,18 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
             };
             // If the new contract document type doesn't contain all previous indexes then
             // there is a problem
-            if let Some(non_subset_path) = new_contract_document_type.index_structure().contains_subset_first_non_subset_path(old_contract_document_type.index_structure()) {
-                validation_result.add_error(BasicError::DataContractInvalidIndexDefinitionUpdateError(
-                    DataContractInvalidIndexDefinitionUpdateError::new(new_contract_document_type_name.clone(), non_subset_path),
-                ))
+            if let Some(non_subset_path) = new_contract_document_type
+                .index_structure()
+                .contains_subset_first_non_subset_path(old_contract_document_type.index_structure())
+            {
+                validation_result.add_error(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(
+                        DataContractInvalidIndexDefinitionUpdateError::new(
+                            new_contract_document_type_name.clone(),
+                            non_subset_path,
+                        ),
+                    ),
+                )
             }
         }
 

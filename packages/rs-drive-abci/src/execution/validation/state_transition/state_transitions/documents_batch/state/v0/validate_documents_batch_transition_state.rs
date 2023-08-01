@@ -40,13 +40,14 @@ use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub(crate) fn validate_document_batch_transition_state<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     batch_state_transition: &DocumentsBatchTransition,
     transaction: TransactionArg,
-    execution_context: &StateTransitionExecutionContext,
+    execution_context: &mut StateTransitionExecutionContext,
 ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction<'a>>, Error> {
     let owner_id = batch_state_transition.owner_id();
     let platform_version = platform.state.current_platform_version()?;
@@ -298,8 +299,9 @@ fn validate_transition<'a>(
                 }
             }
 
-            let document_create_action: DocumentCreateTransitionAction =
-                document_create_transition.into();
+            let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+                Ok(contract)
+            })?;
 
             if !bypass_validation {
                 let validation_result = platform
@@ -365,10 +367,11 @@ fn validate_transition<'a>(
                     return Ok(result);
                 }
                 let document_replace_action =
-                    DocumentReplaceTransitionAction::from_document_replace_transition(
+                    DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document.created_at(),
-                    );
+                        |identifier| Ok(contract),
+                    )?;
 
                 let validation_result = platform
                     .drive
@@ -393,9 +396,10 @@ fn validate_transition<'a>(
                     None
                 };
 
-                DocumentReplaceTransitionAction::from_document_replace_transition(
+                DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                     document_replace_transition,
                     original_document_created_at,
+                    |identifier| Ok(contract),
                 )
             };
 
@@ -427,10 +431,9 @@ fn validate_transition<'a>(
             }
 
             if result.is_valid() {
-                Ok(
-                    DocumentTransitionAction::DeleteAction(document_delete_transition.into())
-                        .into(),
-                )
+                Ok(DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |identifier| {
+                    Ok(contract)
+                })?.into())
             } else {
                 Ok(result)
             }

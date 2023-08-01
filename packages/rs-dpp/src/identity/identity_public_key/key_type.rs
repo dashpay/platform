@@ -10,6 +10,7 @@ use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 
+use crate::fee::Credits;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use rand::rngs::StdRng;
@@ -74,6 +75,26 @@ impl KeyType {
             KeyType::ECDSA_HASH160 => false,
             KeyType::BIP13_SCRIPT_HASH => false,
             KeyType::EDDSA_25519_HASH160 => false,
+        }
+    }
+
+    pub fn signature_verify_cost(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        match platform_version.dpp.costs.signature_verify {
+            0 => Ok(match self {
+                KeyType::ECDSA_SECP256K1 => 3000,
+                KeyType::BLS12_381 => 6000,
+                KeyType::ECDSA_HASH160 => 4000,
+                KeyType::BIP13_SCRIPT_HASH => 6000,
+                KeyType::EDDSA_25519_HASH160 => 3000,
+            }),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "KeyType::signature_verify_cost".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
     }
 

@@ -123,7 +123,9 @@ impl IndexLevel {
             match self.sub_index_levels.get(key) {
                 Some(self_sub_index) => {
                     // If the rhs sub_index is not a subset of the corresponding self sub_index, return the invalid path.
-                    if let Some(invalid_path) = self_sub_index.contains_subset_first_non_subset_path(rhs_sub_index) {
+                    if let Some(invalid_path) =
+                        self_sub_index.contains_subset_first_non_subset_path(rhs_sub_index)
+                    {
                         return Some(format!("{} -> {}", key, invalid_path));
                     }
                 }

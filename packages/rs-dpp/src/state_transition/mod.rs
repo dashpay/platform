@@ -21,8 +21,7 @@ use crate::util::hash::hash_to_vec;
 mod serialization;
 mod state_transitions;
 mod traits;
-pub mod state_transition_execution_context;
-mod state_transition_fee;
+// pub mod state_transition_fee;
 
 pub use traits::*;
 

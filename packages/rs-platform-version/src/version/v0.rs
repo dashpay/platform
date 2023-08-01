@@ -1,5 +1,5 @@
 use crate::version::dpp_versions::{
-    ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
+    ContractClassMethodVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
     DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
     DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
     IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
@@ -59,11 +59,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         default_current_version: 0,
     },
     proofs: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    },
-    costs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
         default_current_version: 0,
@@ -419,6 +414,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         structs: DriveAbciStructureVersions {
             platform_state_structure: 0,
             platform_state_for_saving_structure: 0,
+            state_transition_execution_context: 0,
         },
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions {
@@ -590,6 +586,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     dpp: DPPVersion {
+        costs: CostVersions {
+            signature_verify: 0,
+        },
         validation: DPPValidationVersions {
             validate_time_in_block_time_window: 0,
             json_schema_validator: JsonSchemaValidatorVersions {

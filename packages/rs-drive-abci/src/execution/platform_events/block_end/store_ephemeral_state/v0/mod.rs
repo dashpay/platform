@@ -1,7 +1,7 @@
-use serde::Serialize;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use serde::Serialize;
 
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformSerializable;

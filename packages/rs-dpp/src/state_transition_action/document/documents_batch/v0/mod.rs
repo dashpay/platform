@@ -1,5 +1,3 @@
-mod transformer;
-
 use crate::identifier::Identifier;
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 

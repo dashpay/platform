@@ -10,7 +10,7 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 
 use dpp::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use dpp::state_transition_action::StateTransitionAction;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use drive::grovedb::TransactionArg;
 
 pub(crate) trait StateTransitionStateValidationV0 {
@@ -23,6 +23,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -53,15 +54,17 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
                 .into(),
             ]))
         } else {
-            self.transform_into_action_v0::<C>()
+            self.transform_into_action_v0::<C>(platform_version)
         }
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action: StateTransitionAction =
-            Into::<DataContractCreateTransitionAction>::into(self).into();
+        let create_action: DataContractCreateTransition =
+            self.try_into_platform_versioned(platform_version)?;
+        let action: StateTransitionAction = create_action.into();
         Ok(action.into())
     }
 }

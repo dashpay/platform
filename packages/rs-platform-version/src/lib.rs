@@ -3,6 +3,16 @@ use crate::version::PlatformVersion;
 pub mod error;
 pub mod version;
 
+pub trait DefaultForPlatformVersion: Sized {
+    /// The type returned in the event of a conversion error.
+    type Error;
+
+    /// Performs the conversion.
+    fn default_for_platform_version(
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error>;
+}
+
 pub trait TryFromPlatformVersioned<T>: Sized {
     /// The type returned in the event of a conversion error.
     type Error;

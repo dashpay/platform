@@ -1,8 +1,8 @@
 mod v0;
 
+use crate::identity::core_script::CoreScript;
 use platform_value::Identifier;
 pub use v0::*;
-use crate::identity::core_script::CoreScript;
 
 use crate::prelude::Revision;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;

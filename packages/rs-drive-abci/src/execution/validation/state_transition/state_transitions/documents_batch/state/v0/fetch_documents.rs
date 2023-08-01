@@ -152,5 +152,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         )?
         .documents();
 
-    Ok(ConsensusValidationResult::new_with_data(documents.to_owned()))
+    Ok(ConsensusValidationResult::new_with_data(
+        documents.to_owned(),
+    ))
 }

@@ -44,7 +44,8 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
-    let is_dry_run = context.state_transition_execution_context.is_dry_run();
+
+    let data_contract = document_transition.base().data_contract();
 
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
@@ -76,7 +77,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
         if !owner_id_in_sml {
             let err = DataTriggerConditionError::new(
-                context.data_contract.id(),
+                data_contract.id(),
                 document_transition.base().id(),
                 "Only masternode identities can share rewards".to_string(),
             );
@@ -93,7 +94,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
     if !is_dry_run && maybe_identity.is_none() {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             document_transition.base().id(),
             format!(
                 "Identity '{}' doesn't exist",
@@ -106,12 +107,11 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
         return Ok(result);
     }
 
-    let document_type = context
-        .data_contract
+    let document_type = data_contract
         .document_type_for_name(&document_create_transition.base().document_type_name())?;
 
     let drive_query = DriveQuery {
-        contract: context.data_contract,
+        contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -153,7 +153,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
     if documents.len() >= MAX_DOCUMENTS {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             document_transition.base().id(),
             format!(
                 "Reward shares cannot contain more than {} identities",
@@ -176,7 +176,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 
     if total_percent > MAX_PERCENTAGE {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             document_transition.base().id(),
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
@@ -216,6 +216,8 @@ mod test {
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
+    use dpp::version::DefaultForPlatformVersion;
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
     struct TestData<'a> {
         top_level_identifier: Identifier,
@@ -415,10 +417,11 @@ mod test {
             .data
             .insert("percentage".to_string(), Value::U64(90501));
 
-        let execution_context = StateTransitionExecutionContext::default();
+        let execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("expected to get an execution context");
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &top_level_identifier,
             state_transition_execution_context: &execution_context,
             transaction: None,
@@ -465,7 +468,6 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &top_level_identifier,
             state_transition_execution_context: &execution_context,
             transaction: None,
@@ -518,7 +520,6 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &generate_random_identifier_struct(),
             state_transition_execution_context: &execution_context,
             transaction: None,
@@ -583,7 +584,6 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &top_level_identifier,
             state_transition_execution_context: &execution_context,
             transaction: None,
@@ -705,7 +705,6 @@ mod test {
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &top_level_identifier,
             state_transition_execution_context: &execution_context,
             transaction: None,
@@ -754,7 +753,6 @@ mod test {
 
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &top_level_identifier,
             state_transition_execution_context: &execution_context,
             transaction: None,

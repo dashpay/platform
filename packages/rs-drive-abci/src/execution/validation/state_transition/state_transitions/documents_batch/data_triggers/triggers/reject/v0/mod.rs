@@ -25,13 +25,12 @@ use super::DataTriggerExecutionContext;
 /// or an empty result indicating the success of the trigger.
 pub fn reject_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
-    _platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
+    let data_contract = document_transition.base().data_contract();
     let mut result = DataTriggerExecutionResult::default();
 
     let err = DataTriggerConditionError::new(
-        context.data_contract.id(),
+        data_contract.id(),
         document_transition.base().id(),
         "Action is not allowed".to_string(),
     );

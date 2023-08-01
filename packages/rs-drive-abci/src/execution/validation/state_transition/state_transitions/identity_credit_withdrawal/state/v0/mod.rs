@@ -49,8 +49,11 @@ impl StateTransitionStateValidationV0 for IdentityCreditWithdrawalTransition {
 
         if existing_identity_balance < self.amount() {
             return Ok(ConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(self.identity_id(), existing_identity_balance)
-                    .into(),
+                IdentityInsufficientBalanceError::new(
+                    self.identity_id(),
+                    existing_identity_balance,
+                )
+                .into(),
             ));
         }
 

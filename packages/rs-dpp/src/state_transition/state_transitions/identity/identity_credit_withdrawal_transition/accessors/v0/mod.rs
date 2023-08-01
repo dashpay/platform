@@ -1,7 +1,7 @@
-use crate::prelude::Revision;
-use platform_value::Identifier;
 use crate::identity::core_script::CoreScript;
+use crate::prelude::Revision;
 use crate::withdrawal::Pooling;
+use platform_value::Identifier;
 
 pub trait IdentityCreditWithdrawalTransitionAccessorsV0 {
     fn identity_id(&self) -> Identifier;
@@ -12,4 +12,3 @@ pub trait IdentityCreditWithdrawalTransitionAccessorsV0 {
     fn core_fee_per_byte(&self) -> u32;
     fn output_script(&self) -> CoreScript;
 }
-

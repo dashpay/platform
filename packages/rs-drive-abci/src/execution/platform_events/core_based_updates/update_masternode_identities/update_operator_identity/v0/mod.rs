@@ -12,6 +12,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
@@ -28,8 +30,6 @@ use drive::drive::identity::key::fetch::{
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
 impl<C> Platform<C>
 where

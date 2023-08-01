@@ -20,9 +20,9 @@ impl StateTransitionStructureValidationV0 for IdentityCreditTransferTransition {
         let mut result = SimpleConsensusValidationResult::default();
 
         if self.amount() < MIN_TRANSFER_AMOUNT {
-            result.add_error(
-                ConsensusError::from(InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT)),
-            );
+            result.add_error(ConsensusError::from(
+                InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT),
+            ));
         }
 
         Ok(result)

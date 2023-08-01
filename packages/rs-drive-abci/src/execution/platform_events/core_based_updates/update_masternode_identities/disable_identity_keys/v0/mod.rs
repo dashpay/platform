@@ -26,8 +26,10 @@ where
         drive_operations: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let operator_identifier =
-            Self::get_operator_identifier_from_masternode_list_item(old_masternode, platform_version)?;
+        let operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
+            old_masternode,
+            platform_version,
+        )?;
         let voter_identifier =
             Self::get_voter_identifier_from_masternode_list_item(old_masternode, platform_version)?;
 
