@@ -139,7 +139,7 @@ where
             )?;
             //todo: add block spacing ms
             let window_validation_result =
-                validate_time_in_block_time_window_v0(last_block_header_time, disabled_at_ms, 0)?;
+                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms, 0)?;
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(

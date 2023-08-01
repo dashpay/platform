@@ -1,11 +1,12 @@
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
+use derive_more::From;
 use platform_value::Identifier;
 
 pub mod document_transition;
 pub mod v0;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum DocumentsBatchTransitionAction<'a> {
     V0(DocumentsBatchTransitionActionV0<'a>),
 }

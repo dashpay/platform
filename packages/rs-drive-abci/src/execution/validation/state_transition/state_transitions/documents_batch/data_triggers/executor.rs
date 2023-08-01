@@ -15,7 +15,7 @@ pub trait DataTriggerExecutor {
         data_trigger_bindings: &Vec<DataTriggerBinding>,
         context: &DataTriggerExecutionContext<'a>,
         platform_version: &PlatformVersion,
-    ) -> Result<DataTriggerExecutionResult, ProtocolError>;
+    ) -> Result<DataTriggerExecutionResult, Error>;
 }
 
 impl<'a> DataTriggerExecutor for DocumentTransitionAction<'a> {
@@ -24,7 +24,7 @@ impl<'a> DataTriggerExecutor for DocumentTransitionAction<'a> {
         data_trigger_bindings: &Vec<DataTriggerBinding>,
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<DataTriggerExecutionResult, ProtocolError> {
+    ) -> Result<DataTriggerExecutionResult, Error> {
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name();
         let transition_action = self.action_type();

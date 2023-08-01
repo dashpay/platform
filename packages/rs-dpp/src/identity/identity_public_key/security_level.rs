@@ -71,22 +71,3 @@ impl std::fmt::Display for SecurityLevel {
         write!(f, "{self:?}")
     }
 }
-
-lazy_static! {
-    pub static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
-        let mut m = HashMap::new();
-        m.insert(
-            Purpose::AUTHENTICATION,
-            vec![
-                SecurityLevel::MASTER,
-                SecurityLevel::CRITICAL,
-                SecurityLevel::HIGH,
-                SecurityLevel::MEDIUM,
-            ],
-        );
-        m.insert(Purpose::ENCRYPTION, vec![SecurityLevel::MEDIUM]);
-        m.insert(Purpose::DECRYPTION, vec![SecurityLevel::MEDIUM]);
-        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::CRITICAL]);
-        m
-    };
-}

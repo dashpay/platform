@@ -5,12 +5,13 @@ use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::TryIntoPlatformVersioned;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
+impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCreateTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: re-enable version validation
         // // Validate protocol version
@@ -47,8 +48,12 @@ impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
             ));
         }
 
-        self.data_contract()
-            .validate_structure()
+        let data_contact: DataContract = self
+            .data_contract()
+            .clone()
+            .try_into_platform_versioned(platform_version)?;
+        data_contact
+            .validate_structure(platform_version)
             .map_err(Error::Protocol)
     }
 }

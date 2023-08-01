@@ -565,7 +565,8 @@ impl<C> Platform<C> {
                                 // TODO: figure out why this is optional
                                 value: Some(
                                     get_data_contract_history_response::DataContractValue {
-                                        value: data_contract.serialize(platform_version)?
+                                        value: data_contract
+                                            .serialize_with_platform_version(platform_version)?
                                     }
                                 )
                             }

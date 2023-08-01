@@ -3,11 +3,14 @@ use dpp::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use dpp::consensus::basic::BasicError;
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 
 use dpp::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 
 use dpp::consensus::state::state_error::StateError;
+use dpp::identity::{Purpose, SecurityLevel};
 
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -16,6 +19,25 @@ use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 const MAX_PUBLIC_KEYS: usize = 10;
+
+lazy_static! {
+    static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
+        let mut m = HashMap::new();
+        m.insert(
+            Purpose::AUTHENTICATION,
+            vec![
+                SecurityLevel::MASTER,
+                SecurityLevel::CRITICAL,
+                SecurityLevel::HIGH,
+                SecurityLevel::MEDIUM,
+            ],
+        );
+        m.insert(Purpose::ENCRYPTION, vec![SecurityLevel::MEDIUM]);
+        m.insert(Purpose::DECRYPTION, vec![SecurityLevel::MEDIUM]);
+        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::CRITICAL]);
+        m
+    };
+}
 
 /// This validation will validate the count of new keys, that there are no duplicates either by
 /// id or by data. This is done before signature and state validation to remove potential

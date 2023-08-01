@@ -45,6 +45,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
 
+    let is_dry_run = false; //todo: maybe reenable
     let data_contract = document_transition.base().data_contract();
 
     let document_create_transition = match document_transition {

@@ -128,11 +128,9 @@ impl From<PlatformStateV0> for PlatformStateForSavingV0 {
     }
 }
 
-impl TryFrom<PlatformStateForSavingV0> for PlatformStateV0 {
-    type Error = ProtocolError;
-
-    fn try_from(value: PlatformStateForSavingV0) -> Result<Self, Self::Error> {
-        Ok(PlatformStateV0 {
+impl From<PlatformStateForSavingV0> for PlatformStateV0 {
+    fn from(value: PlatformStateForSavingV0) -> Self {
+        PlatformStateV0 {
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
@@ -171,7 +169,7 @@ impl TryFrom<PlatformStateForSavingV0> for PlatformStateV0 {
                 .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
                 .collect(),
             initialization_information: value.initialization_information,
-        })
+        }
     }
 }
 

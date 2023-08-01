@@ -42,7 +42,7 @@ where
             .block_end
             .store_ephemeral_state
         {
-            0 => self.store_ephemeral_state_v0(platform_state, transaction, platform_version),
+            0 => self.store_ephemeral_state_v0(platform_state, transaction),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "store_ephemeral_state".to_string(),
                 known_versions: vec![0],

@@ -1,14 +1,17 @@
-mod identity_and_signatures;
+pub(crate) mod identity_and_signatures;
 mod state;
 mod structure;
 
 use crate::error::Error;
 
 use crate::error::execution::ExecutionError;
-use crate::execution::validation::state_transition::identity_create::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::identity_create::state::v0::StateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::identity_create::structure::v0::StateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionValidationV0;
+use crate::execution::validation::state_transition::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
+use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_create::structure::v0::IdentityCreateStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::processor::v0::{
+    StateTransitionSignatureValidationV0, StateTransitionStateValidationV0,
+    StateTransitionStructureValidationV0,
+};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -17,6 +20,7 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -47,7 +51,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
     }
 }
 
-impl StateTransitionValidationV0 for IdentityCreateTransition {
+impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
@@ -70,30 +74,9 @@ impl StateTransitionValidationV0 for IdentityCreateTransition {
             })),
         }
     }
+}
 
-    fn validate_identity_and_signatures(
-        &self,
-        _drive: &Drive,
-        protocol_version: u32,
-        _tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .identity_create_state_transition
-            .identity_signatures
-        {
-            0 => self.validate_identity_and_signatures_v0(),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity create transition: validate_identity_and_signatures".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
+impl StateTransitionStateValidationV0 for IdentityCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,

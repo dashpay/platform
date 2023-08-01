@@ -42,6 +42,15 @@ pub enum ExecutionError {
         received: FeatureVersion,
     },
 
+    /// Platform expected some specific versions
+    #[error("{method} not active for drive version")]
+    VersionNotActive {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+    },
+
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]
     CorruptedCachedState(&'static str),

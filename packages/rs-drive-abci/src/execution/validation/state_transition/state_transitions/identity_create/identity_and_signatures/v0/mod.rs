@@ -9,21 +9,23 @@ use dpp::serialization::{PlatformMessageSignable, Signable};
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::validation::SimpleConsensusValidationResult;
 
-pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
-    fn validate_identity_and_signatures_v0(
+pub(crate) trait IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 {
+    fn validate_identity_create_state_transition_signatures_v0(
         &self,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
+        signable_bytes: Vec<u8>,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransition {
-    fn validate_identity_and_signatures_v0(
+impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransition {
+    fn validate_identity_create_state_transition_signatures_v0(
         &self,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
-        let bytes: Vec<u8> = self.signable_bytes()?;
+        signable_bytes: Vec<u8>,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        let mut validation_result = SimpleConsensusValidationResult::default();
         for key in self.public_keys().iter() {
-            let result = bytes.as_slice().verify_signature(
+            let result = signable_bytes.as_slice().verify_signature(
                 key.key_type(),
                 key.data().as_slice(),
                 key.signature().as_slice(),
@@ -61,9 +63,6 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityCreateTransiti
             ));
         }
 
-        // We need to set the data, even though we are setting to None,
-        // We are really setting to Some(None) internally,
-        validation_result.set_data(None);
         Ok(validation_result)
     }
 }

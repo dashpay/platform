@@ -30,7 +30,7 @@ use crate::consensus::signature::{
 };
 use crate::consensus::ConsensusError;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::identity::{IdentityPublicKey, KeyID, KeyType};
+use crate::identity::{IdentityPublicKey, KeyID, KeyType, SecurityLevel};
 pub use state_transitions::*;
 
 use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
@@ -165,6 +165,13 @@ pub enum StateTransition {
 }
 
 impl StateTransition {
+    pub fn is_identity_signed(&self) -> bool {
+        match self {
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => false,
+            _ => true,
+        }
+    }
+
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         if skip_signature {
             Ok(hash_to_vec(self.signable_bytes()?))
@@ -181,6 +188,11 @@ impl StateTransition {
     /// returns the signature as a byte-array
     pub fn signature_public_key_id(&self) -> Option<KeyID> {
         call_method_identity_signed!(self, signature_public_key_id)
+    }
+
+    /// returns the signature as a byte-array
+    pub fn security_level_requirement(&self) -> Option<Vec<SecurityLevel>> {
+        call_method_identity_signed!(self, security_level_requirement)
     }
 
     /// returns the signature as a byte-array

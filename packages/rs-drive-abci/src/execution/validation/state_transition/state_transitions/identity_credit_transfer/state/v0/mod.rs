@@ -15,7 +15,7 @@ use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-pub(crate) trait StateTransitionStateValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_transfer) trait IdentityCreditTransferStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -28,7 +28,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStateValidationV0 for IdentityCreditTransferTransition {
+impl IdentityCreditTransferStateTransitionStateValidationV0 for IdentityCreditTransferTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,

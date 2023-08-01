@@ -1,4 +1,3 @@
-mod identity_and_signatures;
 mod state;
 mod structure;
 
@@ -12,17 +11,19 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
-use crate::execution::validation::state_transition::data_contract_update::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::state::v0::StateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::structure::v0::StateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::structure::v0::DataContractUpdateStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::processor::v0::{
+    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -49,7 +50,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     }
 }
 
-impl StateTransitionValidationV0 for DataContractUpdateTransition {
+impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
@@ -72,31 +73,9 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
             })),
         }
     }
+}
 
-    fn validate_identity_and_signatures(
-        &self,
-        drive: &Drive,
-        protocol_version: u32,
-        transaction: TransactionArg,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .contract_update_state_transition
-            .identity_signatures
-        {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract update transition: validate_identity_and_signatures"
-                    .to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
+impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,

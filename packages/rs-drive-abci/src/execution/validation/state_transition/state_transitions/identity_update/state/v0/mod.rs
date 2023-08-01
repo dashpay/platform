@@ -23,7 +23,8 @@ use crate::execution::validation::state_transition::common::validate_identity_pu
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
-pub(crate) trait StateTransitionStateValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStateValidationV0
+{
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -36,7 +37,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
+impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,

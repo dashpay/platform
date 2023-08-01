@@ -16,7 +16,8 @@ mod data_triggers;
 pub mod fetch_documents;
 pub mod validate_documents_batch_transition_state;
 
-pub(crate) trait StateTransitionStateValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStateValidationV0
+{
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -31,7 +32,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
+impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -57,10 +58,10 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         let state_transition_action = validation_result.data.as_ref().unwrap();
 
         let data_trigger_execution_context = DataTriggerExecutionContext {
-            platform,
+            platform: &platform.into(),
             transaction: tx,
             owner_id: &self.owner_id(),
-            state_transition_execution_context,
+            state_transition_execution_context: &state_transition_execution_context,
         };
 
         let data_triggers_validation_result = execute_data_triggers(
@@ -79,12 +80,15 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let platform_version = platform.state.current_platform_version()?;
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
         let validation_result = validate_document_batch_transition_state(
             true,
             &platform.into(),
             self,
             tx,
-            &StateTransitionExecutionContext::default(),
+            &mut execution_context,
         )?;
         Ok(validation_result.map(Into::into))
     }

@@ -22,7 +22,8 @@ use drive::grovedb::TransactionArg;
 
 const MAX_TRANSITIONS_IN_BATCH: usize = 1000;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
+{
     fn validate_structure_v0(
         &self,
         drive: &Drive,
@@ -31,7 +32,7 @@ pub(crate) trait StateTransitionStructureValidationV0 {
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
+impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransition {
     fn validate_structure_v0(
         &self,
         drive: &Drive,
@@ -83,7 +84,7 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
                     .1
                 else {
                     result.add_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
-                        data_contract_id.0.0.into()
+                        data_contract_id
                     )));
                     return Ok(result);
                 };

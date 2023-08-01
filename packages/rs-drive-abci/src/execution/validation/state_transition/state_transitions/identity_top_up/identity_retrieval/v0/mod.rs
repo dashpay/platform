@@ -11,23 +11,24 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
-pub(crate) trait StateTransitionIdentityAndSignaturesValidationV0 {
-    fn validate_identity_and_signatures_v0(
+pub(in crate::execution::validation::state_transition) trait IdentityTopUpStateTransitionIdentityRetrievalV0
+{
+    fn retrieve_topped_up_identity(
         &self,
         drive: &Drive,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
+    ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
 }
 
-impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityTopUpTransition {
-    fn validate_identity_and_signatures_v0(
+impl IdentityTopUpStateTransitionIdentityRetrievalV0 for IdentityTopUpTransition {
+    fn retrieve_topped_up_identity(
         &self,
         drive: &Drive,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
+    ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
+        let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
         let maybe_partial_identity = drive.fetch_identity_with_balance(
             self.identity_id().to_buffer(),
@@ -46,7 +47,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityTopUpTransitio
             Some(partial_identity) => partial_identity,
         };
 
-        validation_result.set_data(Some(partial_identity));
+        validation_result.set_data(partial_identity);
         Ok(validation_result)
     }
 }

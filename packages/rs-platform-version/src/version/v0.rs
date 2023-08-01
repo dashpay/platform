@@ -494,54 +494,54 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
         validation_and_processing: DriveAbciValidationVersions {
             state_transitions: DriveAbciStateTransitionValidationVersions {
+                validate_state_transition_identity_signed: 0,
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: 0,
+                    identity_signatures: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: 0,
+                    identity_signatures: None,
                     state: 0,
                     transform_into_action: 0,
                 },
                 identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: 0,
+                    identity_signatures: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },
                 identity_credit_withdrawal_state_transition:
                     DriveAbciStateTransitionValidationVersion {
                         structure: 0,
-                        identity_signatures: 0,
+                        identity_signatures: None,
                         state: 0,
                         transform_into_action: 0,
                     },
                 identity_credit_transfer_state_transition:
                     DriveAbciStateTransitionValidationVersion {
                         structure: 0,
-                        identity_signatures: 0,
+                        identity_signatures: None,
                         state: 0,
                         transform_into_action: 0,
                     },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: 0,
+                    identity_signatures: None,
                     state: 0,
                     transform_into_action: 0,
                 },
                 contract_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: 0,
+                    identity_signatures: None,
                     state: 0,
                     transform_into_action: 0,
                 },
                 documents_batch_state_transition:
                     DriveAbciDocumentsStateTransitionValidationVersions {
                         structure: 0,
-                        identity_signatures: 0,
                         state: 0,
                         transform_into_action: 0,
                         data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
@@ -557,30 +557,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                             },
                         },
                     },
-                document_base_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                },
-                document_create_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                },
-                document_replace_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                },
-                document_delete_state_transition: DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                },
             },
             process_state_transition: 0,
         },
