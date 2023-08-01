@@ -32,9 +32,6 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
             );
         }
 
-        //todo: version validation
-        //Ok(validate_protocol_version(self.protocol_version))
-
         // currently we do not support pooling, so we must validate that pooling is `Never`
 
         if self.pooling() != Pooling::Never {
