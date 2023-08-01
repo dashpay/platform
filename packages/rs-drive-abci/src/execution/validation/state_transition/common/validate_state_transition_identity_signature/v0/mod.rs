@@ -23,6 +23,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use lazy_static::lazy_static;
 use std::collections::HashSet;
+use dpp::state_transition::StateTransition;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {

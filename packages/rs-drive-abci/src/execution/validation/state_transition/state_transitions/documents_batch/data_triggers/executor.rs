@@ -25,7 +25,7 @@ impl<'a> DataTriggerExecutor for DocumentTransitionAction<'a> {
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, ProtocolError> {
-        let data_contract_id = &context.data_contract.id();
+        let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name();
         let transition_action = self.action_type();
 
@@ -33,7 +33,7 @@ impl<'a> DataTriggerExecutor for DocumentTransitionAction<'a> {
         // and then execute matched triggers until one of them returns invalid result
         for data_trigger_binding in data_trigger_bindings {
             if !data_trigger_binding.is_matching(
-                data_contract_id,
+                &data_contract_id,
                 document_type_name,
                 transition_action,
             ) {

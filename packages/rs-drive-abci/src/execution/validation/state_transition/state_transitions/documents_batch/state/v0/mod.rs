@@ -45,22 +45,21 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
         )?;
 
         // Do not execute data triggers if there are already any state-based errors
-        if !validation_result.is_valid() {
+        if !validation_result.is_valid_with_data() {
             return Ok(validation_result.map(Into::into));
         }
+
+        let state_transition_action = validation_result.data.as_ref().unwrap();
 
         let data_trigger_execution_context = DataTriggerExecutionContext {
             platform,
             transaction: tx,
             owner_id: &self.owner_id(),
-            data_contract,
             state_transition_execution_context,
         };
 
-        let document_transition_actions = validation_result.into_data()?;
-
         let data_triggers_validation_result = execute_data_triggers(
-            document_transition_actions.transitions(),
+            state_transition_action.transitions(),
             &data_trigger_execution_context,
             platform.state.current_platform_version()?,
         )?;
