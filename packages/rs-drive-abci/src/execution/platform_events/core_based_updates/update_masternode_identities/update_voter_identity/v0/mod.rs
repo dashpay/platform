@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformState;
+
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
@@ -11,6 +11,7 @@ use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -60,7 +61,7 @@ where
             })?;
 
         let old_voter_identifier =
-            Self::get_voter_identifier_from_masternode_list_item(old_masternode)?;
+            Self::get_voter_identifier_from_masternode_list_item(old_masternode, platform_version)?;
 
         let key_request = IdentityKeysRequest {
             identity_id: old_voter_identifier,
@@ -88,12 +89,15 @@ where
         }));
 
         // Part 2 : Create or Update Voting identity based on new key
-        let new_voter_identity =
-            Self::create_voter_identity(pro_tx_hash.as_inner(), &new_voting_address)?;
+        let new_voter_identity = Self::create_voter_identity(
+            pro_tx_hash.as_inner(),
+            &new_voting_address,
+            platform_version,
+        )?;
 
         // Let's check if the voting identity already exists
         let key_request = IdentityKeysRequest {
-            identity_id: new_voter_identity.id.to_buffer(),
+            identity_id: new_voter_identity.id().to_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,

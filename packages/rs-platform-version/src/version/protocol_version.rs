@@ -38,7 +38,6 @@ pub struct PlatformVersion {
     pub protocol_version: u32,
     pub identity: FeatureVersionBounds,
     pub proofs: FeatureVersionBounds,
-    pub costs: FeatureVersionBounds,
     pub dpp: DPPVersion,
     pub drive: DriveVersion,
     pub drive_abci: DriveAbciVersion,

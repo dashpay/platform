@@ -77,7 +77,7 @@ impl StateTransitionValidationV0 for DataContractCreateTransition {
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        _protocol_version: u32,
+        protocol_version: u32,
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;
@@ -88,7 +88,7 @@ impl StateTransitionValidationV0 for DataContractCreateTransition {
             .contract_create_state_transition
             .identity_signatures
         {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction),
+            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_identity_and_signatures"
                     .to_string(),
@@ -112,7 +112,7 @@ impl StateTransitionValidationV0 for DataContractCreateTransition {
             .contract_create_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
                 known_versions: vec![0],

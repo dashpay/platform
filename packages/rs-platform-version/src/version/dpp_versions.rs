@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPVersion {
+    pub costs: CostVersions,
     pub validation: DPPValidationVersions,
     pub state_transition_serialization_versions: StateTransitionSerializationVersions,
     pub state_transition_conversion_versions: StateTransitionConversionVersions,
@@ -10,6 +11,11 @@ pub struct DPPVersion {
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CostVersions {
+    pub signature_verify: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

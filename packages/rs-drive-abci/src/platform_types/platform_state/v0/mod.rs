@@ -404,7 +404,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn last_block_height(&self) -> u64 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info().height())
+            .map(|block_info| block_info.basic_info().height)
             .unwrap_or_default()
     }
 
@@ -420,7 +420,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn epoch(&self) -> Epoch {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.basic_info().epoch())
+            .map(|block_info| block_info.basic_info().epoch)
             .unwrap_or_default()
     }
 

@@ -42,6 +42,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
+use dpp::document::DocumentV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::IdentityV0;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -178,7 +179,7 @@ impl<C> Platform<C> {
                 data_contract,
                 &mut operations,
                 platform_version,
-            );
+            )?;
 
             self.register_system_identity_operations(identity, &mut operations);
         }
@@ -203,16 +204,16 @@ impl<C> Platform<C> {
         data_contract: DataContract,
         operations: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
-    ) {
-        let serialization = data_contract.serialize_with_platform_version().unwrap();
-        operations.push(DriveOperation::DataContractOperation(
+    ) -> Result<(), Error> {
+        let serialization = data_contract.serialize_with_platform_version(platform_version)?;
+        Ok(operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
-            ContractOperationType::ApplyContractWithSerialization {
+            DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Owned(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
-        ))
+        )))
     }
 
     fn register_system_identity_operations(
@@ -249,14 +250,15 @@ impl<C> Platform<C> {
             .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
-        let document = Document {
+        let document = DocumentV0 {
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
             properties: document_stub_properties,
             owner_id: contract.owner_id(),
             revision: None,
             created_at: None,
             updated_at: None,
-        };
+        }
+        .into();
 
         let document_type = contract.document_type_for_name("domain")?;
 

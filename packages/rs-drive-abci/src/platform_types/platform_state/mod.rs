@@ -14,18 +14,21 @@ use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{
+    PlatformDeserializable, PlatformDeserializableFromVersionedStructure, PlatformSerializable,
+    PlatformSerializableWithPlatformVersion,
+};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
+use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use indexmap::IndexMap;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
-#[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize, From)]
-#[platform_serialize(into = "PlatformStateForSaving")]
+#[derive(Clone, Debug, From)]
 pub enum PlatformState {
     /// Version 0
     V0(PlatformStateV0),
@@ -38,10 +41,48 @@ enum PlatformStateForSaving {
     V0(PlatformStateForSavingV0),
 }
 
+impl PlatformSerializableWithPlatformVersion for PlatformState {
+    fn serialize_with_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let platform_state_for_saving: PlatformStateForSaving =
+            self.try_into_platform_versioned(platform_version)?;
+        bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize PlatformState: {}", e))
+        })
+    }
+}
+
+impl PlatformDeserializableFromVersionedStructure for PlatformState {
+    fn versioned_deserialize(
+        data: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let platform_state_in_save_format: PlatformStateForSaving =
+            bincode::decode_from_slice(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!(
+                        "unable to deserialize PlatformStateForSaving: {}",
+                        e
+                    ))
+                })?
+                .0;
+        platform_state_in_save_format.try_into_platform_versioned(platform_version)
+    }
+}
+
 impl PlatformState {
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&PlatformVersion, Error> {
-        PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::Protocol)
+        Ok(PlatformVersion::get(
+            self.current_protocol_version_in_consensus(),
+        )?)
     }
 
     /// The default state at platform start
@@ -61,7 +102,6 @@ impl PlatformState {
     pub fn v0(&self) -> Result<&PlatformStateV0, Error> {
         match self {
             PlatformState::V0(v) => Ok(v),
-            //_ => Err(Error::Execution(ExecutionError::CorruptedCodeVersionMismatch("platform state version mismatch"))),
         }
     }
 
@@ -69,25 +109,63 @@ impl PlatformState {
     pub fn v0_mut(&mut self) -> Result<&mut PlatformStateV0, Error> {
         match self {
             PlatformState::V0(v) => Ok(v),
-            //_ => Err(Error::Execution(ExecutionError::CorruptedCodeVersionMismatch("platform state version mismatch"))),
         }
     }
 }
 
-impl From<PlatformState> for PlatformStateForSaving {
-    fn from(value: PlatformState) -> Self {
+impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
+    type Error = ProtocolError;
+    fn try_from_platform_versioned(
+        value: PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
         match value {
-            PlatformState::V0(v0_value) => PlatformStateForSaving::V0(v0_value.into()),
+            PlatformState::V0(v0) => {
+                match platform_version
+                    .drive_abci
+                    .structs
+                    .platform_state_for_saving_structure
+                {
+                    0 => {
+                        let saving_v0: PlatformStateForSavingV0 = v0.into();
+                        Ok(saving_v0.into())
+                    }
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method:
+                            "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
+                                .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
         }
     }
 }
 
-impl TryFrom<PlatformStateForSaving> for PlatformState {
+impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
     type Error = ProtocolError;
 
-    fn try_from(value: PlatformStateForSaving) -> Result<Self, Self::Error> {
+    fn try_from_platform_versioned(
+        value: PlatformStateForSaving,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
         match value {
-            PlatformStateForSaving::V0(v0_value) => Ok(PlatformState::V0(v0_value.try_into()?)),
+            PlatformStateForSaving::V0(v0) => {
+                match platform_version.drive_abci.structs.platform_state_structure {
+                    0 => {
+                        let platform_state_v0: PlatformStateV0 = v0.into();
+                        Ok(platform_state_v0.into())
+                    }
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method:
+                            "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
+                                .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
         }
     }
 }

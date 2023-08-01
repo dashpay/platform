@@ -8,9 +8,8 @@ use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_transfer_transition::{
-    IdentityCreditTransferTransition, IdentityCreditTransferTransitionAction,
-};
+use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 
 use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;

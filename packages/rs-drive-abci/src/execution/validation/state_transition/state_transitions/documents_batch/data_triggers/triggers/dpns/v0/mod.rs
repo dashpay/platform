@@ -45,8 +45,8 @@ pub fn create_domain_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let is_dry_run = context.state_transition_execution_context.is_dry_run();
-
+    let data_contract = document_transition.base().data_contract();
+    let is_dry_run = false; //todo (maybe reenable - maybe not)
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
         _ => {
@@ -96,7 +96,7 @@ pub fn create_domain_data_trigger_v0(
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
             let err = DataTriggerConditionError::new(
-                context.data_contract.id(),
+                data_contract.id(),
                 document_transition.base().id(),
                 format!(
                     "Full domain name length can not be more than {} characters long but got {}",
@@ -110,7 +110,7 @@ pub fn create_domain_data_trigger_v0(
 
         if normalized_label != label.to_lowercase() {
             let err = DataTriggerConditionError::new(
-                context.data_contract.id(),
+                data_contract.id(),
                 document_transition.base().id(),
                 format!(
                     "Normalized label doesn't match label: {} != {}",
@@ -127,7 +127,7 @@ pub fn create_domain_data_trigger_v0(
         {
             if id != owner_id {
                 let err = DataTriggerConditionError::new(
-                    context.data_contract.id(),
+                    data_contract.id(),
                     document_transition.base().id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
@@ -145,7 +145,7 @@ pub fn create_domain_data_trigger_v0(
         {
             if id != owner_id {
                 let err = DataTriggerConditionError::new(
-                    context.data_contract.id(),
+                    data_contract.id(),
                     document_transition.base().id(),
                     format!(
                         "ownerId {} doesn't match {} {}",
@@ -160,7 +160,7 @@ pub fn create_domain_data_trigger_v0(
         if normalized_parent_domain_name.is_empty() && context.owner_id != &dpns_contract::OWNER_ID
         {
             let err = DataTriggerConditionError::new(
-                context.data_contract.id(),
+                data_contract.id(),
                 document_transition.base().id(),
                 "Can't create top level domain for this identity".to_string(),
             );
@@ -175,7 +175,7 @@ pub fn create_domain_data_trigger_v0(
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let document_type = context.data_contract.document_type_for_name(
+        let document_type = data_contract.document_type_for_name(
             document_create_transition
                 .base()
                 .document_type_name()
@@ -183,7 +183,7 @@ pub fn create_domain_data_trigger_v0(
         )?;
 
         let drive_query = DriveQuery {
-            contract: context.data_contract,
+            contract: data_contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
@@ -232,7 +232,7 @@ pub fn create_domain_data_trigger_v0(
         if !is_dry_run {
             if documents.is_empty() {
                 let err = DataTriggerConditionError::new(
-                    context.data_contract.id(),
+                    data_contract.id(),
                     document_transition.base().id(),
                     "Parent domain is not present".to_string(),
                 );
@@ -245,7 +245,7 @@ pub fn create_domain_data_trigger_v0(
 
             if rule_allow_subdomains {
                 let err = DataTriggerConditionError::new(
-                    context.data_contract.id(),
+                    data_contract.id(),
                     document_transition.base().id(),
                     "Allowing subdomains registration is forbidden for this domain".to_string(),
                 );
@@ -262,7 +262,7 @@ pub fn create_domain_data_trigger_v0(
                 && context.owner_id != &parent_domain.owner_id()
             {
                 let err = DataTriggerConditionError::new(
-                    context.data_contract.id(),
+                    data_contract.id(),
                     document_transition.base().id(),
                     "The subdomain can be created only by the parent domain owner".to_string(),
                 );
@@ -280,10 +280,10 @@ pub fn create_domain_data_trigger_v0(
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let document_type = context.data_contract.document_type_for_name("preorder")?;
+    let document_type = data_contract.document_type_for_name("preorder")?;
 
     let drive_query = DriveQuery {
-        contract: context.data_contract,
+        contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -325,7 +325,7 @@ pub fn create_domain_data_trigger_v0(
 
     if preorder_documents.is_empty() {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             document_transition.base().id(),
             "preorderDocument was not found".to_string(),
         );
@@ -341,6 +341,7 @@ mod test {
     use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
+    use dpp::version::TryIntoPlatformVersioned;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -390,14 +391,18 @@ mod test {
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract.data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
 
         let result = create_domain_data_trigger_v0(
-            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &DocumentCreateTransitionAction::from(
+                document_create_transition
+                    .try_into_platform_versioned(platform_version)
+                    .expect("expected to produce a state transition action"),
+            )
+            .into(),
             &data_trigger_context,
             platform_version,
         )

@@ -69,6 +69,7 @@ derive_more = "0.99.17"
 
 [dev-dependencies]
 base64 = "0.20.0"
+dpp = { path = "../rs-dpp" , features = ["abci", "fixtures-and-mocks"] }
 
 [features]
 default = ["server"]

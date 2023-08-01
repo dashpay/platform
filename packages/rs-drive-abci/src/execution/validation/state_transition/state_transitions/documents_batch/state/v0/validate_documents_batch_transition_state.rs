@@ -14,64 +14,52 @@ use dpp::consensus::state::document::invalid_document_revision_error::InvalidDoc
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition,
-    DocumentReplaceTransitionAction, DocumentTransitionAction,
-};
-use dpp::document::state_transition::documents_batch_transition::{
-    DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
-};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
-    block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
-    document::{
-        document_transition::{DocumentTransition, DocumentTransitionExt},
-        DocumentsBatchTransition,
-    },
     prelude::{Identifier, TimestampMillis},
-    state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionIdentitySignedV0,
-    },
     validation::ConsensusValidationResult,
     ProtocolError,
 };
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::state_transition::documents_batch_transition::{DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION, DocumentsBatchTransition, DocumentsBatchTransitionAction};
+use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition};
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransitionV0, DocumentReplaceTransitionAction, DocumentTransition, DocumentTransitionAction, DocumentTransitionV0Methods, DocumentTransitionMethodsV0, DocumentReplaceTransition};
-use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentTransition, DocumentReplaceTransition, DocumentTransitionV0Methods};
 use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use dpp::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
+use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use crate::execution::validation::state_transition::documents_batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext};
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
-pub(crate) fn validate_document_batch_transition_state(
+pub(crate) fn validate_document_batch_transition_state<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     batch_state_transition: &DocumentsBatchTransition,
     transaction: TransactionArg,
-    execution_context: &StateTransitionExecutionContext,
-) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, Error> {
-    let owner_id = *batch_state_transition.owner_id();
+    execution_context: &mut StateTransitionExecutionContext,
+) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction<'a>>, Error> {
+    let owner_id = batch_state_transition.owner_id();
+    let platform_version = platform.state.current_platform_version()?;
     let mut transitions_by_contracts_and_types: BTreeMap<
         &Identifier,
         BTreeMap<&String, Vec<&DocumentTransition>>,
     > = BTreeMap::new();
 
     // We want to validate by contract, and then for each document type within a contract
-    for document_transition in batch_state_transition.transitions.iter() {
-        let document_type = &document_transition.base().document_type_name;
-        let data_contract_id = &document_transition.base().data_contract_id;
+    for document_transition in batch_state_transition.transitions().iter() {
+        let document_type = &document_transition.base().document_type_name();
+        let data_contract_id = &document_transition.base().data_contract_id();
 
         match transitions_by_contracts_and_types.entry(data_contract_id) {
             Entry::Vacant(v) => {
@@ -112,11 +100,11 @@ pub(crate) fn validate_document_batch_transition_state(
     let validation_result = ConsensusValidationResult::flatten(validation_result);
 
     if validation_result.is_valid() {
-        let batch_transition_action = DocumentsBatchTransitionAction {
-            version: DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
+        let batch_transition_action = DocumentsBatchTransitionActionV0 {
             owner_id,
             transitions: validation_result.into_data()?,
-        };
+        }
+        .into();
         Ok(ConsensusValidationResult::new_with_data(
             batch_transition_action,
         ))
@@ -127,7 +115,7 @@ pub(crate) fn validate_document_batch_transition_state(
     }
 }
 
-fn validate_document_transitions_within_contract(
+fn validate_document_transitions_within_contract<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     data_contract_id: &Identifier,
@@ -136,7 +124,7 @@ fn validate_document_transitions_within_contract(
     execution_context: &StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction<'a>>>, Error> {
     let drive = platform.drive;
     // Data Contract must exist
     let Some(contract_fetch_info) = drive
@@ -160,6 +148,7 @@ fn validate_document_transitions_within_contract(
                 document_transitions,
                 execution_context,
                 transaction,
+                platform_version,
             )
         })
         .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>(
@@ -167,7 +156,7 @@ fn validate_document_transitions_within_contract(
     Ok(ConsensusValidationResult::flatten(validation_result))
 }
 
-fn validate_document_transitions_within_document_type(
+fn validate_document_transitions_within_document_type<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     data_contract: &DataContract,
@@ -176,7 +165,8 @@ fn validate_document_transitions_within_document_type(
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,
     transaction: TransactionArg,
-) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction<'a>>>, Error> {
     // We use temporary execution context without dry run,
     // because despite the dryRun, we need to get the
     // data contract to proceed with following logic
@@ -198,6 +188,7 @@ fn validate_document_transitions_within_document_type(
             document_type,
             document_transitions,
             transaction,
+            platform_version,
         )?;
 
     if !fetched_documents_validation_result.is_valid() {
@@ -249,7 +240,7 @@ fn validate_document_transitions_within_document_type(
 }
 
 /// The data contract can be of multiple difference versions
-fn validate_transition(
+fn validate_transition<'a>(
     bypass_validation: bool,
     platform: &PlatformStateRef,
     contract: &DataContract,
@@ -258,16 +249,14 @@ fn validate_transition(
     fetched_documents: &[Document],
     owner_id: Identifier,
     transaction: TransactionArg,
-) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
+) -> Result<ConsensusValidationResult<DocumentTransitionAction<'a>>, Error> {
     let platform_version =
         PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
     let latest_block_time_ms = platform.state.last_block_time_ms();
     let average_block_spacing_ms = platform.config.block_spacing_ms;
     match transition {
         DocumentTransition::Create(document_create_transition) => {
-            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
-                DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
-            );
+            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
             if !bypass_validation {
                 let validation_result = check_if_timestamps_are_equal(transition);
                 result.merge(validation_result);
@@ -282,6 +271,7 @@ fn validate_transition(
                         transition,
                         latest_block_time_ms,
                         average_block_spacing_ms,
+                        platform_version,
                     )?;
                     result.merge(validation_result);
 
@@ -309,8 +299,9 @@ fn validate_transition(
                 }
             }
 
-            let document_create_action: DocumentCreateTransitionAction =
-                document_create_transition.into();
+            let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+                Ok(contract)
+            })?;
 
             if !bypass_validation {
                 let validation_result = platform
@@ -333,9 +324,7 @@ fn validate_transition(
             }
         }
         DocumentTransition::Replace(document_replace_transition) => {
-            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
-                DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
-            );
+            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
             let document_replace_action = if !bypass_validation {
                 // We do not need to perform this check on genesis
                 if let Some(latest_block_time_ms) = latest_block_time_ms {
@@ -378,10 +367,11 @@ fn validate_transition(
                     return Ok(result);
                 }
                 let document_replace_action =
-                    DocumentReplaceTransitionAction::from_document_replace_transition(
+                    DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document.created_at(),
-                    );
+                        |identifier| Ok(contract),
+                    )?;
 
                 let validation_result = platform
                     .drive
@@ -401,14 +391,15 @@ fn validate_transition(
                 // There is a case where we updated a just deleted document
                 // In this case we don't care about the created at
                 let original_document_created_at = if validation_result.is_valid() {
-                    validation_result.into_data()?.created_at
+                    validation_result.into_data()?.created_at()
                 } else {
                     None
                 };
 
-                DocumentReplaceTransitionAction::from_document_replace_transition(
+                DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                     document_replace_transition,
                     original_document_created_at,
+                    |identifier| Ok(contract),
                 )
             };
 
@@ -419,9 +410,7 @@ fn validate_transition(
             }
         }
         DocumentTransition::Delete(document_delete_transition) => {
-            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
-                DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction::default()),
-            );
+            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
 
             if !bypass_validation {
                 let validation_result =
@@ -442,10 +431,9 @@ fn validate_transition(
             }
 
             if result.is_valid() {
-                Ok(
-                    DocumentTransitionAction::DeleteAction(document_delete_transition.into())
-                        .into(),
-                )
+                Ok(DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |identifier| {
+                    Ok(contract)
+                })?.into())
             } else {
                 Ok(result)
             }
@@ -459,12 +447,12 @@ pub fn check_ownership(
     owner_id: &Identifier,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
-    if fetched_document.owner_id != owner_id {
+    if fetched_document.owner_id() != owner_id {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError::new(
-                document_transition.base().id,
+                document_transition.base().id(),
                 owner_id.to_owned(),
-                fetched_document.owner_id,
+                fetched_document.owner_id(),
             )),
         ));
     }
@@ -513,12 +501,12 @@ pub fn check_if_document_is_not_already_present(
     let mut result = SimpleConsensusValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id);
+        .find(|d| d.id == document_transition.base().id());
 
     if maybe_fetched_document.is_some() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentAlreadyPresentError(DocumentAlreadyPresentError::new(
-                document_transition.base().id,
+                document_transition.base().id(),
             )),
         ))
     }
@@ -531,14 +519,14 @@ pub fn check_if_document_can_be_found<'a>(
 ) -> ConsensusValidationResult<&'a Document> {
     let maybe_fetched_document = fetched_documents
         .iter()
-        .find(|d| d.id == document_transition.base().id);
+        .find(|d| d.id() == document_transition.base().id());
 
     if let Some(document) = maybe_fetched_document {
         ConsensusValidationResult::new_with_data(document)
     } else {
         ConsensusValidationResult::new_with_error(ConsensusError::StateError(
             StateError::DocumentNotFoundError(DocumentNotFoundError::new(
-                document_transition.base().id,
+                document_transition.base().id(),
             )),
         ))
     }
@@ -554,7 +542,7 @@ pub fn check_if_timestamps_are_equal(
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampsMismatchError(DocumentTimestampsMismatchError::new(
-                document_transition.base().id,
+                document_transition.base().id(),
             )),
         ));
     }
@@ -566,6 +554,7 @@ pub fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
     average_block_spacing_ms: u64,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let mut result = SimpleConsensusValidationResult::default();
     let created_at = match document_transition.created_at() {
@@ -573,10 +562,11 @@ pub fn check_created_inside_time_window(
         None => return Ok(result),
     };
 
-    let window_validation = validate_time_in_block_time_window_v0(
+    let window_validation = validate_time_in_block_time_window(
         last_block_ts_millis,
         created_at,
         average_block_spacing_ms,
+        platform_version,
     )
     .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
     if !window_validation.is_valid() {
@@ -617,7 +607,7 @@ pub fn check_updated_inside_time_window(
             StateError::DocumentTimestampWindowViolationError(
                 DocumentTimestampWindowViolationError::new(
                     String::from("updatedAt"),
-                    document_transition.base().id,
+                    document_transition.base().id(),
                     updated_at as i64,
                     window_validation.time_window_start as i64,
                     window_validation.time_window_end as i64,

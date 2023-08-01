@@ -1,8 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformState;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::Hash;
@@ -12,6 +11,7 @@ use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Purpose::WITHDRAW;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
@@ -74,7 +74,7 @@ where
         let key_ids_to_disable = old_withdrawal_identity_keys
             .into_iter()
             .filter_map(|(key_id, key)| {
-                if key.disabled_at.is_some() {
+                if key.disabled_at().is_some() {
                     None //No need to disable it again
                 } else {
                     Some(key_id)
@@ -89,7 +89,11 @@ where
         }));
 
         // add the new key
-        let new_owner_key = Self::get_owner_identity_key(new_withdrawal_address, last_key_id + 1)?;
+        let new_owner_key = Self::get_owner_identity_key(
+            new_withdrawal_address,
+            last_key_id + 1,
+            platform_version,
+        )?;
 
         drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
             identity_id: owner_identifier,

@@ -1,12 +1,17 @@
-use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
+use dpp::consensus::basic::identity::{
+    InvalidIdentityCreditWithdrawalTransitionAmountError,
+    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+};
+use dpp::consensus::ConsensusError;
 
-use dpp::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransition, Pooling};
+use crate::error::Error;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::withdrawal::Pooling;
-use crate::error::Error;
 
 const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
 
@@ -19,13 +24,13 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
         let mut result = SimpleConsensusValidationResult::default();
 
         if self.amount() < MIN_WITHDRAWAL_AMOUNT {
-            result.add_error(
-                InvalidIdentityCreditWithdrawalTransitionAmountError::new(self.amount(), MIN_WITHDRAWAL_AMOUNT).into(),
-            );
+            result.add_error(ConsensusError::from(
+                InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+                    self.amount(),
+                    MIN_WITHDRAWAL_AMOUNT,
+                ),
+            ));
         }
-
-        //todo: version validation
-        //Ok(validate_protocol_version(self.protocol_version))
 
         // currently we do not support pooling, so we must validate that pooling is `Never`
 
@@ -41,7 +46,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
 
         // validate core_fee is in fibonacci sequence
 
-        if !is_fibonacci_number(self.core_fee_per_byte) {
+        if !is_fibonacci_number(self.core_fee_per_byte()) {
             result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
                 self.core_fee_per_byte(),
             ));
@@ -53,7 +58,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreditWithdrawalTransition
         if !self.output_script().is_p2pkh() && !self.output_script().is_p2sh() {
             result.add_error(
                 InvalidIdentityCreditWithdrawalTransitionOutputScriptError::new(
-                    self.output_script.clone(),
+                    self.output_script().clone(),
                 ),
             );
         }

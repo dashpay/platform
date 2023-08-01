@@ -12,12 +12,14 @@ pub struct InvalidIdentityUpdateTransitionDisableKeysError;
 
 impl InvalidIdentityUpdateTransitionDisableKeysError {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 }
 
 impl From<InvalidIdentityUpdateTransitionDisableKeysError> for ConsensusError {
     fn from(err: InvalidIdentityUpdateTransitionDisableKeysError) -> Self {
-        Self::BasicError(BasicError::InvalidIdentityUpdateTransitionDisableKeysError(err))
+        Self::BasicError(BasicError::InvalidIdentityUpdateTransitionDisableKeysError(
+            err,
+        ))
     }
 }

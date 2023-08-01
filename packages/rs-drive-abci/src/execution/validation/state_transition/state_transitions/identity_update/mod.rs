@@ -3,14 +3,10 @@ mod state;
 mod structure;
 
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition_action::StateTransitionAction;
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
-use dpp::{
-    identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
-};
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -32,7 +28,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _tx: TransactionArg,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
             PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
@@ -68,7 +64,7 @@ impl StateTransitionValidationV0 for IdentityUpdateTransition {
             .identity_update_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -91,7 +87,7 @@ impl StateTransitionValidationV0 for IdentityUpdateTransition {
             .identity_update_state_transition
             .identity_signatures
         {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction),
+            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_identity_and_signatures".to_string(),
                 known_versions: vec![0],
@@ -114,7 +110,7 @@ impl StateTransitionValidationV0 for IdentityUpdateTransition {
             .identity_update_state_transition
             .state
         {
-            0 => self.validate_state_v0(platform, tx),
+            0 => self.validate_state_v0(platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_state".to_string(),
                 known_versions: vec![0],

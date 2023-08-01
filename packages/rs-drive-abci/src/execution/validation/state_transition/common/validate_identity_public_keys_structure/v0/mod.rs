@@ -9,12 +9,13 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 
 use dpp::consensus::state::state_error::StateError;
 
-use dpp::state_transition::identity_update_transition::validate_identity_update_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+
+const MAX_PUBLIC_KEYS: usize = 10;
 
 /// This validation will validate the count of new keys, that there are no duplicates either by
 /// id or by data. This is done before signature and state validation to remove potential
@@ -23,14 +24,10 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let max_items: usize = IDENTITY_PLATFORM_VALUE_SCHEMA
-        .get_integer_at_path("properties.publicKeys.maxItems")
-        .map_err(ProtocolError::ValueError)?;
-
-    if identity_public_keys_with_witness.len() > max_items {
+    if identity_public_keys_with_witness.len() > MAX_PUBLIC_KEYS {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             StateError::MaxIdentityPublicKeyLimitReachedError(
-                MaxIdentityPublicKeyLimitReachedError::new(max_items),
+                MaxIdentityPublicKeyLimitReachedError::new(MAX_PUBLIC_KEYS),
             )
             .into(),
         ));
@@ -68,7 +65,8 @@ pub(crate) fn validate_identity_public_keys_structure_v0(
     let validation_errors = identity_public_keys_with_witness
         .iter()
         .filter_map(|identity_public_key| {
-            let allowed_security_levels = ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose);
+            let allowed_security_levels =
+                ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose());
             if let Some(levels) = allowed_security_levels {
                 if !levels.contains(&identity_public_key.security_level()) {
                     Some(

@@ -35,22 +35,20 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use dpp::document::document_transition::INITIAL_REVISION;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 use drive::dpp::identity::Identity;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use crate::platform_types::contracts::reward_shares::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::document::INITIAL_REVISION;
+use dpp::document::{DocumentV0, INITIAL_REVISION};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::system_data_contracts::masternode_reward_shares_contract::document_types;
 use dpp::version::PlatformVersion;
-use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::common::identities::create_test_identity_with_rng;
-use drive::contract::Contract;
 use drive::dpp::document::Document;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -74,21 +72,22 @@ fn create_test_mn_share_document(
 
     properties.insert(
         String::from("payToId"),
-        Value::Bytes(pay_to_identity.id.to_buffer().to_vec()),
+        Value::Bytes(pay_to_identity.id().to_buffer().to_vec()),
     );
     properties.insert(String::from("percentage"), percentage.into());
 
-    let document = Document {
+    let document = DocumentV0 {
         id,
         properties,
         owner_id: identity_id,
         revision: Some(INITIAL_REVISION),
         created_at: None,
         updated_at: None,
-    };
+    }
+    .into();
 
     let document_type = contract
-        .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)
+        .document_type_for_name(document_types::reward_share::NAME)
         .expect("expected to get a document type");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

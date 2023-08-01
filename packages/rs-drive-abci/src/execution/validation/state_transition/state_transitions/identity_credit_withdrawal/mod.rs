@@ -5,12 +5,8 @@ mod structure;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition_action::StateTransitionAction;
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
-use dpp::{
-    identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_transition::StateTransitionAction,
-    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
-};
 
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;

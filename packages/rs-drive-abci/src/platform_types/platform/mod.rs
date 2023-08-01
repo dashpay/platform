@@ -15,7 +15,7 @@ use dashcore_rpc::dashcore::BlockHash;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure};
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
@@ -138,7 +138,7 @@ impl Platform<MockCoreRPCLike> {
             return Ok(false);
         };
 
-        let recreated_state = PlatformState::deserialize(&serialized_platform_state)?;
+        let recreated_state = PlatformState::versioned_deserialize(&serialized_platform_state)?;
 
         let mut state_cache = self.state.write().unwrap();
         *state_cache = recreated_state;
@@ -194,7 +194,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let platform_state = PlatformState::deserialize(&serialized_platform_state)?;
+        let platform_state = PlatformState::versioned_deserialize(&serialized_platform_state)?;
 
         let platform: Platform<C> = Platform {
             drive,

@@ -2,9 +2,9 @@ use crate::error::Error;
 
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
 
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::version::PlatformVersion;
 
@@ -30,7 +30,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityTopUpTransitio
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
         let maybe_partial_identity = drive.fetch_identity_with_balance(
-            self.identity_id.to_buffer(),
+            self.identity_id().to_buffer(),
             tx,
             platform_version,
         )?;
@@ -39,7 +39,7 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityTopUpTransitio
             None => {
                 //slightly weird to have a signature error, maybe should be changed
                 validation_result.add_error(SignatureError::IdentityNotFoundError(
-                    IdentityNotFoundError::new(self.identity_id),
+                    IdentityNotFoundError::new(self.identity_id().to_owned()),
                 ));
                 return Ok(validation_result);
             }

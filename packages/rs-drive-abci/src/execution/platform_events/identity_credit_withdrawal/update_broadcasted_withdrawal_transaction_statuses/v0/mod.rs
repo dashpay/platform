@@ -179,8 +179,6 @@ mod tests {
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
 
-    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
     use crate::platform_types::epochInfo::v0::EpochInfoV0;

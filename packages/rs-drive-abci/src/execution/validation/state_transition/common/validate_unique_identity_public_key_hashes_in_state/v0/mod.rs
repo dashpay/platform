@@ -15,7 +15,6 @@ use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyI
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::version::PlatformVersion;
 use std::collections::HashMap;
-use std::hash::Hash;
 
 /// This will validate that all keys are valid against the state
 pub(crate) fn validate_unique_identity_public_key_hashes_in_state_v0(

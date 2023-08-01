@@ -3,6 +3,7 @@ mod v0;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
+use crate::execution::types::storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::EpochIndex;
 use dpp::version::PlatformVersion;
@@ -43,7 +44,7 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         batch: &mut GroveDbOpBatch,
         platform_version: &PlatformVersion,
-    ) -> Result<storage_fee_distribution_outcome::StorageFeeDistributionOutcome, Error> {
+    ) -> Result<StorageFeeDistributionOutcome, Error> {
         match platform_version
             .drive_abci
             .methods

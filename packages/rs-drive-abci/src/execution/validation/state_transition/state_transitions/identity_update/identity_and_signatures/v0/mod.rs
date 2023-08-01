@@ -5,12 +5,12 @@ use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIde
 use dpp::consensus::state::state_error::StateError;
 
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signature::v0::validate_state_transition_identity_signature_v0;
-use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::serialization_traits::{PlatformMessageSignable, Signable};
-use dpp::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -34,11 +34,11 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityUpdateTransiti
         let mut result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
 
         let bytes: Vec<u8> = self.signable_bytes()?;
-        for key in self.add_public_keys.iter() {
+        for key in self.public_keys_to_add().iter() {
             let validation_result = bytes.as_slice().verify_signature(
-                key.key_type,
-                key.data.as_slice(),
-                key.signature.as_slice(),
+                key.key_type(),
+                key.data().as_slice(),
+                key.signature().as_slice(),
             )?;
             if !validation_result.is_valid() {
                 result.add_errors(validation_result.errors);
@@ -65,9 +65,9 @@ impl StateTransitionIdentityAndSignaturesValidationV0 for IdentityUpdateTransiti
         };
 
         // Check revision
-        if revision + 1 != self.revision {
+        if revision + 1 != self.revision() {
             result.add_error(StateError::InvalidIdentityRevisionError(
-                InvalidIdentityRevisionError::new(self.identity_id, revision),
+                InvalidIdentityRevisionError::new(self.identity_id(), revision),
             ));
             return Ok(result);
         }

@@ -4,16 +4,15 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::reject::reject_data_trigger;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::reward_share::create_masternode_reward_shares_data_trigger;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::withdrawals::delete_withdrawal_data_trigger;
+use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
 
-use dpp::state_transition_action::document::documents_batch::document_transition::{DocumentTransitionAction, DocumentTransitionActionType};
+use dpp::errors::ProtocolError;
+use dpp::state_transition_action::document::documents_batch::document_transition::{
+    DocumentTransitionAction, DocumentTransitionActionType,
+};
 use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
-use dpp::system_data_contracts::{
-    dashpay_contract, dpns_contract,
-    SystemDataContract,
-};
-use dpp::{errors::ProtocolError};
-use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
+use dpp::system_data_contracts::{dashpay_contract, dpns_contract, SystemDataContract};
 
 /// Retrieves a list of data triggers binding with matching params.
 ///

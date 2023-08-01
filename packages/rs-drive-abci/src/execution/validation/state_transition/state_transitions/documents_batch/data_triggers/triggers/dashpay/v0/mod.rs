@@ -35,8 +35,9 @@ pub fn create_contact_request_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
+    let data_contract = document_transition.base().data_contract();
     let mut result = DataTriggerExecutionResult::default();
-    let is_dry_run = context.state_transition_execution_context.is_dry_run();
+    let is_dry_run = false; //todo (maybe reenable - maybe not)
     let owner_id = context.owner_id;
 
     let document_create_transition = match document_transition {
@@ -62,7 +63,7 @@ pub fn create_contact_request_data_trigger_v0(
     if !is_dry_run {
         if owner_id == &to_user_id {
             let err = DataTriggerConditionError::new(
-                context.data_contract.id(),
+                data_contract.id(),
                 document_transition.base().id(),
                 format!("Identity {to_user_id} must not be equal to owner id"),
             );
@@ -82,7 +83,7 @@ pub fn create_contact_request_data_trigger_v0(
                 || core_height_created_at > height_window_end
             {
                 let err = DataTriggerConditionError::new(
-                    context.data_contract.id(),
+                    data_contract.id(),
                     document_create_transition.base().id(),
                     format!(
                         "Core height {} is out of block height window from {} to {}",
@@ -106,7 +107,7 @@ pub fn create_contact_request_data_trigger_v0(
 
     if !is_dry_run && identity.is_none() {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             document_create_transition.base().id(),
             format!("Identity {to_user_id} doesn't exist"),
         );

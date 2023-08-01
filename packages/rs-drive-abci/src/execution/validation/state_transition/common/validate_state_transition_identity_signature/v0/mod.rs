@@ -7,6 +7,7 @@ use dpp::consensus::signature::{
 use dpp::identity::PartialIdentity;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

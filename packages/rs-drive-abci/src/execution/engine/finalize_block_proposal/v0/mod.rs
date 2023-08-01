@@ -1,12 +1,13 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::{BlockInfo, ExtendedBlockInfo};
+use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 use dpp::validation::SimpleValidationResult;
 
 use drive::grovedb::Transaction;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;

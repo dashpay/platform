@@ -1,5 +1,5 @@
 use crate::version::dpp_versions::{
-    ContractClassMethodVersions, ContractVersions, DPPValidationVersions, DPPVersion,
+    ContractClassMethodVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
     DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
     DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
     IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
@@ -16,8 +16,9 @@ use crate::version::drive_abci_versions::{
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
     DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
-    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
-    DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
+    DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions,
+    DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
+    DriveAbciWithdrawalsMethodVersions,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -58,11 +59,6 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         default_current_version: 0,
     },
     proofs: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    },
-    costs: FeatureVersionBounds {
         min_version: 0,
         max_version: 0,
         default_current_version: 0,
@@ -415,6 +411,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         document_factory_structure_version: 0,
     },
     drive_abci: DriveAbciVersion {
+        structs: DriveAbciStructureVersions {
+            platform_state_structure: 0,
+            platform_state_for_saving_structure: 0,
+            state_transition_execution_context: 0,
+        },
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions {
                 init_chain: 0,
@@ -585,6 +586,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         },
     },
     dpp: DPPVersion {
+        costs: CostVersions {
+            signature_verify: 0,
+        },
         validation: DPPValidationVersions {
             validate_time_in_block_time_window: 0,
             json_schema_validator: JsonSchemaValidatorVersions {

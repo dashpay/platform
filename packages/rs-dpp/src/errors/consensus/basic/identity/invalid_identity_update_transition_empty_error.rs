@@ -12,7 +12,7 @@ pub struct InvalidIdentityUpdateTransitionEmptyError;
 
 impl InvalidIdentityUpdateTransitionEmptyError {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 }
 

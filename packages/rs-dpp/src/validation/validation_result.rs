@@ -80,6 +80,13 @@ impl<E: Debug> SimpleValidationResult<E> {
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
+    pub fn new() -> Self {
+        Self {
+            errors: vec![],
+            data: None::<TData>,
+        }
+    }
+
     pub fn new_with_data(data: TData) -> Self {
         Self {
             errors: vec![],

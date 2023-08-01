@@ -1,3 +1,4 @@
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::prelude::*;
 use drive::grovedb::TransactionArg;
@@ -12,8 +13,6 @@ pub struct DataTriggerExecutionContext<'a> {
     pub transaction: TransactionArg<'a, 'a>,
     /// The identifier of the owner of the data contract that the trigger is associated with.
     pub owner_id: &'a Identifier,
-    /// A reference to the data contract associated with the data trigger.
-    pub data_contract: &'a DataContract,
     /// A reference to the execution context for the state transition that triggered the data trigger.
     pub state_transition_execution_context: &'a StateTransitionExecutionContext,
 }

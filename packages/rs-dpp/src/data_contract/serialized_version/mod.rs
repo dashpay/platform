@@ -7,6 +7,7 @@ use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
 use platform_version::TryFromPlatformVersioned;
+use platform_versioning::PlatformVersioned;
 
 pub(in crate::data_contract) mod v0;
 
@@ -22,6 +23,13 @@ impl DataContractInSerializationFormat {
     pub fn id(&self) -> Identifier {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.id,
+        }
+    }
+
+    /// Returns the version of the data contract.
+    pub fn version(&self) -> u32 {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => v0.version,
         }
     }
 
