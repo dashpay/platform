@@ -78,7 +78,7 @@ function configureNodeTaskFactory(createIpAndPortsForm) {
             } else {
               form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
                 isHPMN: ctx.isHP,
-                initialIp: ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined,
+                initialIp: '',
                 initialCoreP2PPort: showEmptyPort ? '' : undefined,
                 initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
                 initialPlatformP2PPort: showEmptyPort ? '' : undefined,
