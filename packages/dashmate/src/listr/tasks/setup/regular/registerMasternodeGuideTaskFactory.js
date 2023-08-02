@@ -2,14 +2,15 @@ const { Listr } = require('listr2');
 
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
-const registerMasternodeWithDMT = require('./registerMasternode/registerMasternodeWithDMT');
 
 /**
- * @param {registerMasternodeWithCoreWallet} registerMasternodeWithCoreWallet
  * @param {DefaultConfigs} defaultConfigs
+ * @param {registerMasternodeWithCoreWallet} registerMasternodeWithCoreWallet
+ * @param {registerMasternodeWithDMT} registerMasternodeWithDMT
  * @return {registerMasternodeGuideTask}
  */
-function registerMasternodeGuideTaskFactory(defaultConfigs, registerMasternodeWithCoreWallet) {
+function registerMasternodeGuideTaskFactory(defaultConfigs,
+  registerMasternodeWithCoreWallet, registerMasternodeWithDMT) {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}
@@ -37,11 +38,11 @@ function registerMasternodeGuideTaskFactory(defaultConfigs, registerMasternodeWi
   or other external tools where keys are handled securely. During this process,
   dashmate can optionally generate configuration elements as necessary, such as
   the BLS operator key and the node id.
-  
+
   Dash Masternode Tool (DMT) - Recommended for mainnet masternodes
                                so the collateral can be stored
                                on a hardware wallet for maximum security.
-  
+
   Dash Core Wallet           - Recommended for testnet and devnet masternodes
                                where more flexibility is required.\n`,
               message: 'Which wallet will you use to store keys for your masternode?',
