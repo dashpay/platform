@@ -134,6 +134,9 @@ mod test {
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
+    use dpp::errors::consensus::state::data_trigger::DataTriggerError;
+    use dpp::version::DefaultForPlatformVersion;
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -177,17 +180,17 @@ mod test {
             state_read_guard.current_protocol_version_in_consensus(),
         );
 
-        let transition_execution_context = StateTransitionExecutionContext::default();
+        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .unwrap();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract.data_contract,
             owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
 
-        transition_execution_context.enable_dry_run();
+        // transition_execution_context.enable_dry_run();
 
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from(document_create_transition).into(),
@@ -257,7 +260,8 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context = StateTransitionExecutionContext::default();
+        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .unwrap();
         let identity_fixture =
             identity_fixture(state_write_guard.current_protocol_version_in_consensus())?;
 
@@ -268,13 +272,12 @@ mod test {
                 &BlockInfo::default(),
                 true,
                 None,
-                state_write_guard.current_platform_version()?,
+                state_write_guard.current_platform_version().unwrap(),
             )
             .expect("expected to insert identity");
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract.data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
@@ -293,8 +296,8 @@ mod test {
 
         assert!(matches!(
             &result.errors.first().unwrap(),
-            &DataTriggerError::DataTriggerConditionError { message, .. }  if {
-                message == &format!("Identity {owner_id} must not be equal to owner id")
+            &DataTriggerError::DataTriggerConditionError(e)  if {
+                e.message() == &format!("Identity {owner_id} must not be equal to owner id")
             }
         ));
     }
@@ -359,11 +362,11 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context = StateTransitionExecutionContext::default();
+        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .unwrap();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract.data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
@@ -383,8 +386,8 @@ mod test {
 
         assert!(matches!(
             data_trigger_error,
-            DataTriggerError::DataTriggerConditionError { message, .. }  if {
-                message == &format!("Identity {contract_request_to_user_id} doesn't exist")
+            DataTriggerError::DataTriggerConditionError(e)  if {
+                e.message() == &format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));
     }

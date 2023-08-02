@@ -342,7 +342,8 @@ mod test {
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
-    use dpp::version::TryIntoPlatformVersioned;
+    use dpp::version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -365,7 +366,8 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let transition_execution_context = StateTransitionExecutionContext::default();
+        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .unwrap();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(
             ParentDocumentOptions {
@@ -388,7 +390,7 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        transition_execution_context.enable_dry_run();
+        // transition_execution_context.enable_dry_run();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,

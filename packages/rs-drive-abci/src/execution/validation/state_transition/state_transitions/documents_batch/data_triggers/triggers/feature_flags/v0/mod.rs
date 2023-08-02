@@ -96,8 +96,9 @@ mod test {
     use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::PlatformVersion;
+    use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -116,7 +117,9 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let transition_execution_context = StateTransitionExecutionContext::default();
+        let transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let data_contract = get_data_contract_fixture(
             None,
             state_read_guard.current_protocol_version_in_consensus(),
@@ -127,13 +130,10 @@ mod test {
         let document_transition = DocumentTransitionAction::CreateAction(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-
-        transition_execution_context.enable_dry_run();
 
         let result = create_feature_flag_data_trigger_v0(
             &document_transition,

@@ -72,8 +72,6 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
 
-    use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
-
     mod add_distribute_storage_fee_to_epochs_operations {
         use dpp::balances::credits::Creditable;
         use dpp::block::block_info::BlockInfo;
@@ -208,12 +206,11 @@ mod tests {
             assert_eq!(outcome.refunded_epochs_count, refunds.len() as u16);
 
             // collect all the storage fee values of the 1000 epochs pools
-            let storage_fees = drive.get_storage_credits_for_distribution_for_epochs_in_range(
-                &platform.drive,
+            let storage_fees = platform.drive.get_storage_credits_for_distribution_for_epochs_in_range(
                 GENESIS_EPOCH_INDEX..current_epoch_index + PERPETUAL_STORAGE_EPOCHS,
                 Some(&transaction),
                 platform_version,
-            );
+            ).expect("should get storage fees");
 
             // Assert total distributed fees
 
