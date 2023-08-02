@@ -25,10 +25,10 @@ if ! [[ -d $OUTPUT_DIR ]];  then
   mkdir -p "$OUTPUT_DIR"
 fi
 
-if ! [ -x "$(command -v wasm-bindgen)" ]; then
-    echo 'Wasm-bindgen CLI is not installed. Installing';
+#if ! [ -x "$(command -v wasm-bindgen)" ]; then
+#    echo 'Wasm-bindgen CLI is not installed. Installing';
     cargo install -f wasm-bindgen-cli@0.2.86
-fi
+#fi
 
 
 # On a mac, bundled clang won't work - you need to install LLVM manually through brew,
