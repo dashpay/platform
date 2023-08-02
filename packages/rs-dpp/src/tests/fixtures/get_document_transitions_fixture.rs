@@ -7,7 +7,7 @@ use crate::state_transition::documents_batch_transition::document_transition::Do
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::version::LATEST_VERSION;
 
-use super::{get_data_contract_fixture, get_document_validator_fixture};
+use super::get_data_contract_fixture;
 
 pub fn get_document_transitions_fixture(
     documents: impl IntoIterator<Item = (Action, Vec<ExtendedDocument>)>,

@@ -1,6 +1,5 @@
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::property_names;
-use crate::data_contract::schema::json_schema::DATA_CONTRACT_SCHEMA_URI_V0;
 use crate::data_contract::JsonValue;
 use crate::util::json_schema::JsonSchemaExt;
 use crate::ProtocolError;
@@ -13,6 +12,10 @@ lazy_static! {
             .expect("can't parse documentBase.json");
 }
 
+pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
+    "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/data_contract/v0/dataContractMeta.json";
+
+// TODO: Duplicates packages/rs-dpp/src/data_contract/document_type/mod.rs
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_REQUIRED: &str = "required";
 
@@ -33,6 +36,8 @@ pub fn enrich_with_base_schema(
         })?;
 
     let base_required = BASE_DOCUMENT_SCHEMA.get_schema_required_fields()?;
+
+    // TODO: $schema and $defs shouldn't be present
 
     schema
         .insert(

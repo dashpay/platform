@@ -366,94 +366,83 @@
     }
   },
   "properties": {
+    "type": {
+      "type": "string",
+      "const": "object"
+    },
     "$schema": {
       "type": "string",
       "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
     },
-    "documents": {
-      "type": "object",
-      "propertyNames": {
-        "pattern": "^[a-zA-Z0-9-_]{1,64}$"
-      },
-      "additionalProperties": {
-        "type": "object",
-        "allOf": [
-          {
-            "properties": {
-              "indices": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 32
-                    },
-                    "properties": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "propertyNames": {
-                          "maxLength": 256
-                        },
-                        "additionalProperties": {
-                          "type": "string",
-                          "enum": [
-                            "asc"
-                          ]
-                        },
-                        "minProperties": 1,
-                        "maxProperties": 1
-                      },
-                      "minItems": 1,
-                      "maxItems": 10
-                    },
-                    "unique": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "properties",
-                    "name"
-                  ],
-                  "additionalProperties": false
-                },
-                "minItems": 1,
-                "maxItems": 10
-              },
-              "type": {
-                "const": "object"
-              },
-              "signatureSecurityLevelRequirement": {
-                "type": "integer",
-                "enum": [
-                  0,
-                  1,
-                  2,
-                  3
-                ],
-                "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
-              }
-            }
-          },
-          {
-            "$ref": "#/$defs/documentSchema"
-          }
-        ],
-        "unevaluatedProperties": false
-      },
-      "minProperties": 1,
-      "maxProperties": 100
-    },
     "$defs": {
       "$ref": "#/$defs/documentProperties"
+    },
+    "indices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "propertyNames": {
+                "maxLength": 256
+              },
+              "additionalProperties": {
+                "type": "string",
+                "enum": [
+                  "asc"
+                ]
+              },
+              "minProperties": 1,
+              "maxProperties": 1
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "unique": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "properties",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 10
+    },
+    "signatureSecurityLevelRequirement": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
+    },
+    "properties": {
+      "$ref": "#/$defs/documentProperties",
+    },
+    "additionalProperties": {
+      "type": "boolean",
+      "const": false
     }
   },
+  "minProperties": 1,
+  "maxProperties": 100,
   "required": [
     "$schema",
-    "$id",
-    "documents"
-  ],
-  "additionalProperties": false
+    "type",
+    "properties",
+    "additionalProperties"
+  ]
 }

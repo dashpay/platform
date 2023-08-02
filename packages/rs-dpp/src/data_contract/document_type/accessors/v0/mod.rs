@@ -2,7 +2,7 @@ use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::JsonSchema;
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 // TODO: Verify we need all of these getters
@@ -10,7 +10,7 @@ pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
     fn name(&self) -> &String;
 
-    fn schema(&self) -> &JsonSchema;
+    fn schema(&self) -> &Value;
 
     /// Returns the indices of the document type.
     fn indices(&self) -> &Vec<Index>;
@@ -45,5 +45,5 @@ pub trait DocumentTypeV0Getters {
 
 pub trait DocumentTypeV0Setters {
     /// Sets document json schema of the document type.
-    fn set_schema(&self, schema: &JsonSchema);
+    fn set_schema(&self, schema: Value);
 }

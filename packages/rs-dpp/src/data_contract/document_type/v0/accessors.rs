@@ -6,7 +6,7 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::JsonSchema;
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
@@ -60,7 +60,7 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 }
 
 impl DocumentTypeV0Setters for DocumentTypeV0 {
-    fn set_schema(&mut self, schema: JsonSchema) {
+    fn set_schema(&mut self, schema: Value) {
         self.schema = schema;
     }
 }

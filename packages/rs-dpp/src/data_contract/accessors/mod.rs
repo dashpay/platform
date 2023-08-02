@@ -1,7 +1,6 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::schema::json_schema::DataContractSchema;
 use crate::data_contract::{DocumentName, PropertyPath};
 use crate::metadata::Metadata;
 use crate::prelude::DataContract;

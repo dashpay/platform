@@ -8,6 +8,7 @@ use crate::consensus::state::state_error::StateError;
 
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::signature::SignatureError;
+#[cfg(feature = "state-transitions")]
 use crate::consensus::state::data_trigger::DataTriggerError;
 
 #[cfg(test)]

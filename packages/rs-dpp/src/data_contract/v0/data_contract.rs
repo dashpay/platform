@@ -23,7 +23,6 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::property_names::VERSION;
-use crate::data_contract::schema::json_schema::DataContractSchema;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;

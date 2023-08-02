@@ -25,29 +25,6 @@
 //         defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 //         platform_version: &PlatformVersion,
 //     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-//         let mut result = SimpleConsensusValidationResult::default();
-//
-//         let mut schema = Value::Map(Vec::new());
-//         schema.insert(property_names::DOCUMENTS.to_string(), Value::from(documents)).map_err(ValueError::new)?;
-//
-//         if let Some(defs) = defs {
-//             schema.insert(property_names::DEFINITIONS.to_string(), Value::from(defs)).map_err(ValueError::new)?;
-//         }
-//
-//
-//
-//         let enriched_data_contract =
-//             enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
-//
-//         for (_, document_schema) in enriched_data_contract.documents()?.iter() {
-//             let json_schema_validation_result =
-//                 JsonSchemaValidator::validate_schema(document_schema, platform_version)?;
-//             result.merge(json_schema_validation_result);
-//         }
-//         if !result.is_valid() {
-//             return Ok(result);
-//         }
-//
 //         for (document_name, document_type) in self.document_types().iter() {
 //             if document_type.indices().is_empty() {
 //                 continue;
@@ -83,74 +60,7 @@
 //         }
 //
 //         Ok(result)
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//
-//         let mut result = ConsensusValidationResult::default();
-//         // trace!("validating against data contract meta validator");
-//         // result.merge(JsonSchemaValidator::validate_data_contract_schema(
-//         //     &raw_data_contract
-//         //         .try_to_validating_json()
-//         //         .map_err(ProtocolError::ValueError)?, platform_version,
-//         // )?);
-//         // if !result.is_valid() {
-//         //     return Ok(result);
-//         // }
-//         //
-//         // // todo: reenable version validation
-//         // // trace!("validating by protocol protocol version validator");
-//         // // result.merge(
-//         // //     self.protocol_version_validator.validate(
-//         // //         raw_data_contract
-//         // //             .get_integer("protocolVersion")
-//         // //             .map_err(ProtocolError::ValueError)?,
-//         // //     )?,
-//         // // );
-//         // // if !result.is_valid() {
-//         // //     return Ok(result);
-//         // // }
-//         //
-//         // trace!("validating data contract max depth");
-//         // result.merge(validate_data_contract_max_depth(raw_data_contract));
-//         // if !result.is_valid() {
-//         //     return Ok(result);
-//         // }
-//         //
-//         // trace!("validating data contract patterns & byteArray parents");
-//         // result.merge(multi_validator::validate(
-//         //     raw_data_contract,
-//         //     &[
-//         //         pattern_is_valid_regex_validator,
-//         //         byte_array_has_no_items_as_parent_validator,
-//         //     ],
-//         // ));
-//         // if !result.is_valid() {
-//         //     return Ok(result);
-//         // }
-//         //
-//         // let data_contract = Self::from_object(raw_data_contract.clone())?;
-//         // let enriched_data_contract =
-//         //     data_contract.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
-//         //
-//         // trace!("validating the documents");
-//         // for (document_type, document_schema) in enriched_data_contract.documents.iter() {
-//         //     trace!("validating document schema '{}'", document_type);
-//         //     let json_schema_validation_result =
-//         //         JsonSchemaValidator::validate_schema(document_schema, platform_version)?;
-//         //     result.merge(json_schema_validation_result);
-//         // }
-//         // if !result.is_valid() {
-//         //     return Ok(result);
-//         // }
+
 //         //
 //         // trace!("indices validation");
 //         // for (document_type, document_schema) in enriched_data_contract

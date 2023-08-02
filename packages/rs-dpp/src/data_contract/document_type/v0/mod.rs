@@ -6,9 +6,11 @@ use crate::data_contract::document_type::document_field::{DocumentField, Documen
 use crate::data_contract::document_type::enrich_with_base_schema::enrich_with_base_schema;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::validate_data_contract_max_depth::validate_data_contract_max_depth;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::{DataContract, DocumentName, JsonValue, PropertyPath};
+use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
@@ -73,12 +75,29 @@ impl DocumentTypeV0 {
         default_mutability: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        // Validate against JSON Schema
+        // TODO: Do not validate if feature validation is disabled?
+
+        // Create a root JSON Schema from shorten document schema
         let full_schema = enrich_with_base_schema(schema.clone(), Value::from(schema_defs), &[])?;
 
-        crate::validation::meta_validators::DATA_CONTRACT_META_SCHEMA_V0
-            .validate(full_schema.into())
+        // validate_data_contract_max_depth(full_schema);
+
+        // Validate against JSON Schema
+        DOCUMENT_META_SCHEMA_V0
+            .validate(
+                &full_schema
+                    .try_to_validating_json()
+                    .map_err(ProtocolError::ValueError)?,
+            )
             .map_err(JsonSchemaError::from)?;
+
+        // result.merge(multi_validator::validate(
+        //     raw_data_contract,
+        //     &[
+        //         pattern_is_valid_regex_validator,
+        //         byte_array_has_no_items_as_parent_validator,
+        //     ],
+        // ));
 
         let mut flattened_document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
         let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();

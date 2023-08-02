@@ -4,7 +4,8 @@ use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
-use platform_value::Identifier;
+use crate::data_contract::JsonSchema;
+use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
@@ -12,6 +13,12 @@ impl DocumentTypeV0Getters for DocumentType {
     fn name(&self) -> &String {
         match self {
             DocumentType::V0(v0) => v0.name(),
+        }
+    }
+
+    fn schema(&self) -> &JsonSchema {
+        match self {
+            DocumentType::V0(v0) => v0.schema(),
         }
     }
 
@@ -75,54 +82,16 @@ impl DocumentTypeV0Getters for DocumentType {
     }
 }
 
-impl DocumentTypeV0MutGetters for DocumentType {
-    fn indices_mut(&mut self) -> &mut Vec<Index> {
-        match self {
-            DocumentType::V0(v0) => v0.indices_mut(),
-        }
-    }
-
-    fn flattened_properties_mut(&mut self) -> &mut BTreeMap<String, DocumentField> {
-        match self {
-            DocumentType::V0(v0) => v0.flattened_properties_mut(),
-        }
-    }
-
-    fn properties_mut(&mut self) -> &mut BTreeMap<String, DocumentField> {
-        match self {
-            DocumentType::V0(v0) => v0.properties_mut(),
-        }
-    }
-
-    fn identifier_paths_mut(&mut self) -> &mut BTreeSet<String> {
-        match self {
-            DocumentType::V0(v0) => v0.identifier_paths_mut(),
-        }
-    }
-
-    fn binary_paths_mut(&mut self) -> &mut BTreeSet<String> {
-        match self {
-            DocumentType::V0(v0) => v0.binary_paths_mut(),
-        }
-    }
-
-    fn required_fields_mut(&mut self) -> &mut BTreeSet<String> {
-        match self {
-            DocumentType::V0(v0) => v0.required_fields_mut(),
-        }
-    }
-
-    fn index_structure_mut(&mut self) -> &mut IndexLevel {
-        match self {
-            DocumentType::V0(v0) => v0.index_structure_mut(),
-        }
-    }
-}
-
 impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
     fn name(&self) -> &String {
         match self {
             DocumentTypeRef::V0(v0) => v0.name(),
+        }
+    }
+
+    fn schema(&self) -> &JsonSchema {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.schema(),
         }
     }
 
@@ -193,6 +162,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
+    fn schema(&self) -> &JsonSchema {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.schema(),
+        }
+    }
+
     fn indices(&self) -> &Vec<Index> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.indices(),
@@ -253,182 +228,18 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     }
 }
 
-impl<'a> DocumentTypeV0MutGetters for DocumentTypeMutRef<'a> {
-    fn indices_mut(&mut self) -> &mut Vec<Index> {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.indices_mut(),
-        }
-    }
-
-    fn flattened_properties_mut(&mut self) -> &mut BTreeMap<String, DocumentField> {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.flattened_properties_mut(),
-        }
-    }
-
-    fn properties_mut(&mut self) -> &mut BTreeMap<String, DocumentField> {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.properties_mut(),
-        }
-    }
-
-    fn identifier_paths_mut(&mut self) -> &mut BTreeSet<String> {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.identifier_paths_mut(),
-        }
-    }
-
-    fn binary_paths_mut(&mut self) -> &mut BTreeSet<String> {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.binary_paths_mut(),
-        }
-    }
-
-    fn required_fields_mut(&mut self) -> &mut BTreeSet<String> {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.required_fields_mut(),
-        }
-    }
-
-    fn index_structure_mut(&mut self) -> &mut IndexLevel {
-        match self {
-            DocumentTypeMutRef::V0(ref mut v0) => v0.index_structure_mut(),
-        }
-    }
-}
-
 impl DocumentTypeV0Setters for DocumentType {
-    fn set_name(&mut self, name: String) {
+    fn set_schema(&mut self, schema: Value) {
         match self {
-            DocumentType::V0(v0) => v0.set_name(name),
-        }
-    }
-
-    fn set_indices(&mut self, indices: Vec<Index>) {
-        match self {
-            DocumentType::V0(v0) => v0.set_indices(indices),
-        }
-    }
-
-    fn set_index_structure(&mut self, index_structure: IndexLevel) {
-        match self {
-            DocumentType::V0(v0) => v0.set_index_structure(index_structure),
-        }
-    }
-
-    fn set_flattened_properties(&mut self, flattened_properties: BTreeMap<String, DocumentField>) {
-        match self {
-            DocumentType::V0(v0) => v0.set_flattened_properties(flattened_properties),
-        }
-    }
-
-    fn set_properties(&mut self, properties: BTreeMap<String, DocumentField>) {
-        match self {
-            DocumentType::V0(v0) => v0.set_properties(properties),
-        }
-    }
-
-    fn set_identifier_paths(&mut self, identifier_paths: BTreeSet<String>) {
-        match self {
-            DocumentType::V0(v0) => v0.set_identifier_paths(identifier_paths),
-        }
-    }
-
-    fn set_binary_paths(&mut self, binary_paths: BTreeSet<String>) {
-        match self {
-            DocumentType::V0(v0) => v0.set_binary_paths(binary_paths),
-        }
-    }
-
-    fn set_required_fields(&mut self, required_fields: BTreeSet<String>) {
-        match self {
-            DocumentType::V0(v0) => v0.set_required_fields(required_fields),
-        }
-    }
-
-    fn set_documents_keep_history(&mut self, documents_keep_history: bool) {
-        match self {
-            DocumentType::V0(v0) => v0.set_documents_keep_history(documents_keep_history),
-        }
-    }
-
-    fn set_documents_mutable(&mut self, documents_mutable: bool) {
-        match self {
-            DocumentType::V0(v0) => v0.set_documents_mutable(documents_mutable),
-        }
-    }
-
-    fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
-        match self {
-            DocumentType::V0(v0) => v0.set_data_contract_id(data_contract_id),
+            DocumentType::V0(v0) => v0.set_schema(schema),
         }
     }
 }
 
 impl<'a> DocumentTypeV0Setters for DocumentTypeMutRef<'a> {
-    fn set_name(&mut self, name: String) {
+    fn set_schema(&mut self, schema: Value) {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_name(name),
-        }
-    }
-
-    fn set_indices(&mut self, indices: Vec<Index>) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_indices(indices),
-        }
-    }
-
-    fn set_index_structure(&mut self, index_structure: IndexLevel) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_index_structure(index_structure),
-        }
-    }
-
-    fn set_flattened_properties(&mut self, flattened_properties: BTreeMap<String, DocumentField>) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_flattened_properties(flattened_properties),
-        }
-    }
-
-    fn set_properties(&mut self, properties: BTreeMap<String, DocumentField>) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_properties(properties),
-        }
-    }
-
-    fn set_identifier_paths(&mut self, identifier_paths: BTreeSet<String>) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_identifier_paths(identifier_paths),
-        }
-    }
-
-    fn set_binary_paths(&mut self, binary_paths: BTreeSet<String>) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_binary_paths(binary_paths),
-        }
-    }
-
-    fn set_required_fields(&mut self, required_fields: BTreeSet<String>) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_required_fields(required_fields),
-        }
-    }
-
-    fn set_documents_keep_history(&mut self, documents_keep_history: bool) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_documents_keep_history(documents_keep_history),
-        }
-    }
-
-    fn set_documents_mutable(&mut self, documents_mutable: bool) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_documents_mutable(documents_mutable),
-        }
-    }
-
-    fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_data_contract_id(data_contract_id),
+            DocumentTypeMutRef::V0(v0) => v0.set_schema(schema),
         }
     }
 }

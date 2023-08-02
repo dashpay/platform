@@ -15,19 +15,6 @@ use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
 
 impl DataContractSchemaMethodsV0 for DataContractV0 {
-    fn document_json_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
-        let document = self
-            .documents
-            .get(doc_type)
-            .ok_or(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
-                    doc_type.to_owned(),
-                    self.id,
-                )),
-            ))?;
-        Ok(document)
-    }
-
     fn set_document_json_schema(
         &mut self,
         doc_type: String,
