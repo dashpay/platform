@@ -27,7 +27,7 @@ fi
 
 #if ! [ -x "$(command -v wasm-bindgen)" ]; then
 #    echo 'Wasm-bindgen CLI is not installed. Installing';
-    cargo install -f wasm-bindgen-cli@0.2.84
+    cargo install -f wasm-bindgen-cli@0.2.86
 #fi
 
 
