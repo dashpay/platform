@@ -121,6 +121,7 @@ pub fn delete_withdrawal_data_trigger_v0(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -139,6 +140,7 @@ mod tests {
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::withdrawal::Pooling;
+    use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
 
     #[test]
@@ -157,13 +159,28 @@ mod tests {
         let transition_execution_context = StateTransitionExecutionContextV0::default();
         let data_contract =
             get_data_contract_fixture(None, platform_version.protocol_version).data_contract();
-        let owner_id = &data_contract.owner_id;
+        let owner_id = data_contract.owner_id();
 
-        let document_transition = DocumentTransitionAction::DeleteAction(Default::default());
+        let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {
+            id: Default::default(),
+            document_type_name: "".to_string(),
+            data_contract_id: Default::default(),
+            data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
+        }
+        .into();
+
+        let delete_transition: DocumentDeleteTransitionAction = DocumentDeleteTransitionActionV0 {
+            base: base_transition,
+        }
+        .into();
+
+        let document_transition = DocumentTransitionAction::DeleteAction(delete_transition);
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            owner_id,
-            state_transition_execution_context: &StateTransitionExecutionContext::V0(transition_execution_context),
+            owner_id: &owner_id,
+            state_transition_execution_context: &StateTransitionExecutionContext::V0(
+                transition_execution_context,
+            ),
             transaction: None,
         };
 
@@ -232,9 +249,8 @@ mod tests {
             config: &platform.config,
         };
 
-        let transition_execution_context = StateTransitionExecutionContext::V0(
-            StateTransitionExecutionContextV0::default()
-        );
+        let transition_execution_context =
+            StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
 
         let platform_version = state_read_guard
             .current_platform_version()

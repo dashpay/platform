@@ -92,11 +92,16 @@ mod test {
     use super::create_feature_flag_data_trigger_v0;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use std::sync::Arc;
 
     use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+    use drive::drive::contract::DataContractFetchInfo;
+    use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionV0};
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
@@ -124,13 +129,29 @@ mod test {
             None,
             state_read_guard.current_protocol_version_in_consensus(),
         )
-        .data_contract;
-        let owner_id = &data_contract.owner_id;
+        .data_contract();
+        let owner_id = data_contract.owner_id();
 
-        let document_transition = DocumentTransitionAction::CreateAction(Default::default());
+        let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {
+            id: Default::default(),
+            document_type_name: "".to_string(),
+            data_contract_id: Default::default(),
+            data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
+        }
+        .into();
+
+        let create_transition: DocumentCreateTransitionAction = DocumentCreateTransitionActionV0 {
+            base: base_transition,
+            created_at: None,
+            updated_at: None,
+            data: Default::default(),
+        }
+        .into();
+
+        let document_transition = DocumentTransitionAction::CreateAction(create_transition);
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            owner_id,
+            owner_id: *owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };

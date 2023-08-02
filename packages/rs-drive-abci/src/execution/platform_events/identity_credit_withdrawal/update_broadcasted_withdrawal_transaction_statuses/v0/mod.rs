@@ -175,7 +175,9 @@ mod tests {
         hashes::hex::{FromHex, ToHex},
         BlockHash,
     };
-    use dpp::{data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
+    use dpp::{
+        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
+    };
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
 
@@ -187,18 +189,18 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+    use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
+    use dpp::withdrawal::Pooling;
     use dpp::{
         data_contract::DataContract,
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };
-    use dpp::document::DocumentV0Getters;
     use drive::tests::helpers::setup::setup_system_data_contract;
-    use dpp::withdrawal::Pooling;
 
     #[test]
     fn test_statuses_are_updated() {
@@ -305,7 +307,7 @@ mod tests {
             data_contract
                 .to_cbor()
                 .expect("to convert contract to CBOR"),
-            platform_version
+            platform_version,
         )
         .expect("to create data contract from CBOR");
 

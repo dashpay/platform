@@ -180,8 +180,9 @@ mod test {
             state_read_guard.current_protocol_version_in_consensus(),
         );
 
-        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
@@ -260,8 +261,9 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let identity_fixture =
             identity_fixture(state_write_guard.current_protocol_version_in_consensus())?;
 
@@ -362,8 +364,9 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,

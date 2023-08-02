@@ -180,16 +180,18 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
+        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
-        use dpp::data_contract::base::DataContractBaseMethodsV0;
-        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
-        use serde_json::json;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contract::data_contract_config::v0::{DataContractConfigGettersV0, DataContractConfigSettersV0};
+        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::data_contract_config::v0::{
+            DataContractConfigGettersV0, DataContractConfigSettersV0,
+        };
+        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::version::TryFromPlatformVersioned;
-        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+        use serde_json::json;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -228,7 +230,8 @@ mod tests {
                 data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
                     data_contract,
                     platform_version,
-                ).expect("to be able to convert data contract to serialization format"),
+                )
+                .expect("to be able to convert data contract to serialization format"),
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };
@@ -296,8 +299,11 @@ mod tests {
 
             // TODO: add a data contract stop transition
             let state_transition = DataContractUpdateTransitionV0 {
-                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(data_contract.clone(), platform_version)
-                    .expect("to be able to convert data contract to serialization format"),
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract.clone(),
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
             };

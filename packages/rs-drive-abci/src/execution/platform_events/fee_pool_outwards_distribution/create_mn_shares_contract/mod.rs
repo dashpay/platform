@@ -8,9 +8,9 @@ use drive::drive::flags::StorageFlags;
 
 use drive::grovedb::TransactionArg;
 
+use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 use dpp::version::PlatformVersion;
 use std::borrow::Cow;
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
 
 impl<C> Platform<C> {
     /// A function to create and apply the masternode reward shares contract.
@@ -24,9 +24,8 @@ impl<C> Platform<C> {
 
         let contract_cbor = hex::decode(contract_hex).expect("Decoding failed");
 
-        let contract =
-            DataContract::from_cbor(&contract_cbor, platform_version)
-                .expect("expected to deserialize the contract");
+        let contract = DataContract::from_cbor(&contract_cbor, platform_version)
+            .expect("expected to deserialize the contract");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 

@@ -357,8 +357,8 @@ mod test {
                     platform_version,
                 )
                 .expect("expected to apply contract");
-            let mut identity = Identity::random_identity(2, Some(i as u64), platform_version)
-                .unwrap();
+            let mut identity =
+                Identity::random_identity(2, Some(i as u64), platform_version).unwrap();
 
             identity.set_id(document.owner_id());
 
@@ -375,10 +375,12 @@ mod test {
 
             let mut identity = Identity::random_identity(2, Some(100 - i as u64), platform_version)
                 .expect("expected a platform identity");
-            identity.set_id(document
-                .properties()
-                .get_identifier("payToId")
-                .expect("expected pay to id"));
+            identity.set_id(
+                document
+                    .properties()
+                    .get_identifier("payToId")
+                    .expect("expected pay to id"),
+            );
 
             platform_ref
                 .drive
@@ -387,7 +389,9 @@ mod test {
                     &BlockInfo::default(),
                     true,
                     None,
-                    state_write_guard.current_platform_version().expect("expected a platform version"),
+                    state_write_guard
+                        .current_platform_version()
+                        .expect("expected a platform version"),
                 )
                 .expect("expected to add an identity");
 
@@ -469,8 +473,9 @@ mod test {
             config: &platform.config,
         };
 
-        let execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &top_level_identifier,
@@ -522,8 +527,9 @@ mod test {
             config: &platform.config,
         };
 
-        let execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &generate_random_identifier_struct(),
@@ -568,13 +574,18 @@ mod test {
             config: &platform.config,
         };
 
-        let mut identity =
-            Identity::random_identity(2, Some(9), state_write_guard.current_platform_version().unwrap())
-                .expect("expected a platform identity");
-        identity.set_id(document_create_transition
-            .data()
-            .get_identifier("payToId")
-            .expect("expected pay to id"));
+        let mut identity = Identity::random_identity(
+            2,
+            Some(9),
+            state_write_guard.current_platform_version().unwrap(),
+        )
+        .expect("expected a platform identity");
+        identity.set_id(
+            document_create_transition
+                .data()
+                .get_identifier("payToId")
+                .expect("expected pay to id"),
+        );
 
         platform_ref
             .drive
@@ -587,8 +598,9 @@ mod test {
             )
             .expect("expected to add an identity");
 
-        let execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &top_level_identifier,
@@ -648,10 +660,12 @@ mod test {
         let mut main_identity = Identity::random_identity(2, Some(1000_u64), platform_version)
             .expect("expected a platform identity");
 
-        main_identity.set_id(document_create_transition
-            .data()
-            .get_identifier("payToId")
-            .expect("expected pay to id"));
+        main_identity.set_id(
+            document_create_transition
+                .data()
+                .get_identifier("payToId")
+                .expect("expected pay to id"),
+        );
 
         platform_ref
             .drive
@@ -673,10 +687,12 @@ mod test {
 
             let mut identity = Identity::random_identity(2, Some(100 - i), platform_version)
                 .expect("expected a platform identity");
-            identity.set_id(document
-                .properties()
-                .get_identifier("payToId")
-                .expect("expected pay to id"));
+            identity.set_id(
+                document
+                    .properties()
+                    .get_identifier("payToId")
+                    .expect("expected pay to id"),
+            );
 
             platform_ref
                 .drive
@@ -709,8 +725,9 @@ mod test {
                 .expect("expected to insert a document successfully");
         }
 
-        let execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &top_level_identifier,
@@ -756,8 +773,9 @@ mod test {
             config: &platform.config,
         };
 
-        let execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         // execution_context.enable_dry_run();
 
         let context = DataTriggerExecutionContext {

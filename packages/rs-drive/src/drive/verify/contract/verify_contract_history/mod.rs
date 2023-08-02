@@ -32,7 +32,7 @@ impl Drive {
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
     /// - The contract serialization fails.
-    pub(super) fn verify_contract_history(
+    pub fn verify_contract_history(
         proof: &[u8],
         contract_id: [u8; 32],
         start_at_date: u64,

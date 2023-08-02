@@ -911,16 +911,16 @@ mod test {
         };
         use dpp::block::block_info::BlockInfo;
 
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::DataContract;
+        use dpp::serialization::PlatformDeserializableFromVersionedStructure;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use dpp::validation::ValidationResult;
+        use dpp::version::PlatformVersion;
         use drive::drive::Drive;
         use drive::error::contract::DataContractError;
         use prost::Message;
         use serde_json::json;
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::serialization::PlatformDeserializableFromVersionedStructure;
-        use dpp::version::PlatformVersion;
 
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
@@ -952,7 +952,7 @@ mod test {
                     true,
                     None,
                     None,
-                    platform_version
+                    platform_version,
                 )
                 .expect("To apply contract");
 
@@ -992,7 +992,7 @@ mod test {
                     true,
                     None,
                     None,
-                    platform_version
+                    platform_version,
                 )
                 .expect("To apply contract");
 
@@ -1073,16 +1073,20 @@ mod test {
 
             assert_eq!(first_entry.date, 1000);
             let first_entry_data_contract = first_entry.value.expect("To have data contract");
-            let first_data_contract_update =
-                DataContract::versioned_deserialize(&first_entry_data_contract.value, platform_version)
-                    .expect("To decode data contract");
+            let first_data_contract_update = DataContract::versioned_deserialize(
+                &first_entry_data_contract.value,
+                platform_version,
+            )
+            .expect("To decode data contract");
             assert_eq!(first_data_contract_update, original_data_contract);
 
             assert_eq!(second_entry.date, 2000);
             let second_entry_data_contract = second_entry.value.expect("To have data contract");
-            let second_data_contract_update =
-                DataContract::versioned_deserialize(&second_entry_data_contract.value, platform_version)
-                    .expect("To decode data contract");
+            let second_data_contract_update = DataContract::versioned_deserialize(
+                &second_entry_data_contract.value,
+                platform_version,
+            )
+            .expect("To decode data contract");
 
             let updated_doc = second_data_contract_update
                 .documents()
@@ -1155,6 +1159,7 @@ mod test {
                 request.start_at_seconds(),
                 Some(10),
                 Some(0),
+                platform_version,
             )
             .expect("To verify contract history");
 
@@ -1172,7 +1177,8 @@ mod test {
             assert_eq!(first_data_contract_update, original_data_contract);
 
             let updated_doc = second_data_contract_update
-                .documents().unwrap()
+                .documents()
+                .unwrap()
                 .get("niceDocument")
                 .expect("To have niceDocument document");
             assert!(

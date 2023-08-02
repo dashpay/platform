@@ -129,14 +129,14 @@ mod tests {
     use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-    use dpp::state_transition::{StateTransition};
-    use dpp::version::{PlatformVersion};
+    use dpp::state_transition::StateTransition;
+    use dpp::version::PlatformVersion;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
     #[test]
     fn data_contract_create_check_tx() {

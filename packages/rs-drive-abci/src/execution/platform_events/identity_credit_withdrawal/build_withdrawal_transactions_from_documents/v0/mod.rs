@@ -115,9 +115,11 @@ where
 #[cfg(test)]
 mod tests {
 
-    use dpp::{data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
-    use drive::tests::helpers::setup::setup_document;
     use dpp::withdrawal::Pooling;
+    use dpp::{
+        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
+    };
+    use drive::tests::helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::block_info::BlockInfo;
@@ -146,9 +148,11 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract =
-                load_system_data_contract(SystemDataContract::Withdrawals, platform_version.protocol_version)
-                    .expect("to load system data contract");
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                platform_version.protocol_version,
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

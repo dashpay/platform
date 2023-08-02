@@ -366,8 +366,9 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let transition_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)
-            .unwrap();
+        let transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .unwrap();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(
             ParentDocumentOptions {
