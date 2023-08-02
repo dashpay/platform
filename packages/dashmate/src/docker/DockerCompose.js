@@ -53,16 +53,23 @@ class DockerCompose {
   #generateEnvs;
 
   /**
+   * @type {function}
+   */
+  #getServiceList;
+
+  /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
    * @param {generateEnvs} generateEnvs
+   * @param {getServiceList} getServiceList
    */
-  constructor(docker, startedContainers, homeDir, generateEnvs) {
+  constructor(docker, startedContainers, homeDir, generateEnvs, getServiceList) {
     this.#docker = docker;
     this.#startedContainers = startedContainers;
     this.#homeDir = homeDir;
     this.#generateEnvs = generateEnvs;
+    this.#getServiceList = getServiceList;
   }
 
   /**
@@ -115,8 +122,15 @@ class DockerCompose {
   async isNodeRunning(config, options) {
     await this.throwErrorIfNotInstalled();
 
+    const serviceList = await this.#getServiceList(config);
+
+    const filterServiceNames = serviceList
+      .filter((service) => service.profiles.some((profile) => options.profiles.includes(profile)))
+      .map((service) => service.name);
+
     const serviceContainers = await this.getContainersList(config, {
       formatJson: true,
+      filterServiceNames,
       ...options,
     });
 
@@ -250,7 +264,7 @@ class DockerCompose {
 
     const containerIds = await this.getContainersList(config, {
       filterServiceNames:
-        serviceName,
+      serviceName,
       quiet: true,
     });
 

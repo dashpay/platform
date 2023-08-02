@@ -1,9 +1,12 @@
-const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
+const yaml = require('js-yaml');
+const fs = require('fs');
+const path = require('path');
+const { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } = require('../constants');
 
 /**
  * @return {getServiceList}
  */
-function getServiceListFactory() {
+function getServiceListFactory(generateEnvs) {
   /**
    * Returns list of services and corresponding docker images from the config
    *
@@ -12,52 +15,19 @@ function getServiceListFactory() {
    * @return {Object[]}
    */
   function getServiceList(config) {
-    const services = [
-      {
-        name: 'dashmate_helper',
-        title: 'Dashmate Helper',
-        image: DASHMATE_HELPER_DOCKER_IMAGE,
-      },
-      {
-        name: 'core',
-        title: 'Core',
-        image: config.get('core.docker.image'),
-      },
-    ];
+    const file = yaml.load(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml')));
 
-    if (config.get('core.masternode.enable')) {
-      services.push({
-        name: 'sentinel',
-        title: 'Sentinel',
-        image: config.get('core.sentinel.docker.image'),
-      });
-    }
+    const envs = generateEnvs(config);
 
-    if (config.get('platform.enable')) {
-      services.push({
-        name: 'drive_abci',
-        title: 'Drive ABCI',
-        image: config.get('platform.drive.abci.docker.image'),
-      }, {
-        name: 'drive_tenderdash',
-        title: 'Drive Tenderdash',
-        image: config.get('platform.drive.tenderdash.docker.image'),
-      }, {
-        name: 'dapi_api',
-        title: 'DAPI API',
-        image: config.get('platform.dapi.api.docker.image'),
-      }, {
-        name: 'dapi_tx_filter_stream',
-        title: 'DAPI Transactions Filter Stream',
-        image: config.get('platform.drive.abci.docker.image'),
-      }, {
-        name: 'dapi_envoy',
-        title: 'DAPI Envoy',
-        image: config.get('platform.dapi.envoy.docker.image'),
-      });
-    }
-
-    return services;
+    return Object
+      .entries(file.services)
+      .map(([key, { image, labels, profiles }]) => ({
+        name: key,
+        title: labels['org.dashmate.service.title'],
+        image: key === 'dashmate_helper' ? DASHMATE_HELPER_DOCKER_IMAGE
+          : envs[image.match(new RegExp(/([A-Z])\w+/))[0]],
+        profiles: profiles ?? [],
+      }));
   }
 
   return getServiceList;
