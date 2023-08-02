@@ -65,7 +65,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .contracts
                     .push(get_proofs_request::ContractRequest {
-                        contract_id: data_contract_create.data_contract().id().to_vec(),
+                        contract_id: data_contract_create.data_contract_ref().id().to_vec(),
                     });
                 let result = abci_app
                     .platform
@@ -85,7 +85,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     None,
                     false,
-                    data_contract_create.data_contract().id().into_buffer(),
+                    data_contract_create.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify full identity");
@@ -97,14 +97,14 @@ pub(crate) fn verify_state_transitions_were_executed(
                 );
                 assert_eq!(
                     &contract.expect("expected a contract"),
-                    &data_contract_create.data_contract(),
+                    data_contract_create.data_contract_ref(),
                 )
             }
             StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
                 proofs_request
                     .contracts
                     .push(get_proofs_request::ContractRequest {
-                        contract_id: data_contract_update.data_contract().id().to_vec(),
+                        contract_id: data_contract_update.data_contract_ref().id().to_vec(),
                     });
                 let result = abci_app
                     .platform
@@ -124,7 +124,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     None,
                     false,
-                    data_contract_update.data_contract().id().into_buffer(),
+                    data_contract_update.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify full identity");
@@ -136,7 +136,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 );
                 assert_eq!(
                     &contract.expect("expected a contract"),
-                    &data_contract_update.data_contract(),
+                    data_contract_update.data_contract_ref(),
                 )
             }
             StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
@@ -175,9 +175,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let response_proof = proof.expect("proof should be present");
 
                 for document_transition_action in documents_batch_transition.transitions().iter() {
-                    let document_type = document_transition_action
-                        .base()
-                        .data_contract_fetch_info()
+                    let contract_fetch_info =
+                        document_transition_action.base().data_contract_fetch_info();
+
+                    let document_type = contract_fetch_info
                         .contract
                         .document_type_for_name(
                             document_transition_action

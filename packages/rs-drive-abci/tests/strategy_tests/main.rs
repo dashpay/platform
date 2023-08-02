@@ -277,7 +277,8 @@ mod tests {
         abci_app
             .platform
             .recreate_state(
-                platform
+                abci_app
+                    .platform
                     .state
                     .read()
                     .unwrap()
@@ -1017,7 +1018,7 @@ mod tests {
         .expect("expected to get contract from a json document");
 
         //todo: versions should start at 0 (so this should be 1)
-        contract_update_1.data_contract().set_version(2);
+        contract_update_1.data_contract_mut().set_version(2);
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
@@ -1025,7 +1026,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        contract_update_2.data_contract().set_version(3);
+        contract_update_2.data_contract_mut().set_version(3);
 
         let strategy = Strategy {
             contracts_with_updates: vec![(
@@ -1110,7 +1111,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1181,7 +1182,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1262,7 +1263,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1361,7 +1362,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1474,7 +1475,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1576,7 +1577,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1809,6 +1810,9 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let state = outcome.abci_app.platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let identities = outcome
             .abci_app
@@ -1822,12 +1826,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
-                platform
-                    .state
-                    .read()
-                    .unwrap()
-                    .current_platform_version()
-                    .unwrap(),
+                platform_version,
             )
             .expect("expected to fetch balances");
 
@@ -2432,6 +2431,10 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
+        let state = abci_app.platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
         let known_root_hash = abci_app
             .platform
             .drive
@@ -2442,14 +2445,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(
-                platform
-                    .state
-                    .read()
-                    .unwrap()
-                    .current_platform_version()
-                    .unwrap(),
-            )
+            .recreate_state(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {

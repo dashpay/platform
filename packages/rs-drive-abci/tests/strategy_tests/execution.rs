@@ -713,12 +713,9 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
-        let platform_version = platform
-            .state
-            .read()
-            .expect("lock is poisoned")
-            .current_platform_version()
-            .unwrap();
+        let platform_state = platform.state.read().expect("lock is poisoned");
+
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         total_withdrawals.append(&mut withdrawals_this_block);
 
@@ -730,7 +727,7 @@ pub(crate) fn continue_chain_for_strategy(
                         .find(|identity| identity.id() == identifier)
                         .expect("expected to find an identity");
                     identity
-                        .public_keys()
+                        .public_keys_mut()
                         .extend(keys.into_iter().map(|key| (key.id(), key)));
                 }
             }

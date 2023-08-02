@@ -287,30 +287,28 @@ impl Strategy {
                     .clone()
                     .into_partial_identity_info();
 
-                let mut contract = &mut created_contract.data_contract();
+                let entropy_used = *created_contract.entropy_used();
+
+                let contract = created_contract.data_contract_mut();
 
                 contract.set_owner_id(identity.id);
                 let old_id = contract.id();
-                contract.set_id(DataContract::generate_data_contract_id_v0(
-                    identity.id,
-                    created_contract.entropy_used(),
-                ));
+                let new_id = DataContract::generate_data_contract_id_v0(identity.id, entropy_used);
+                contract.set_id(new_id);
                 contract
-                    .document_types()
+                    .document_types_mut()
                     .iter_mut()
-                    .for_each(|(_, document_type)| {
-                        document_type.set_data_contract_id(contract.id())
-                    });
+                    .for_each(|(_, document_type)| document_type.set_data_contract_id(new_id));
 
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
-                        updated_contract.data_contract().set_id(contract.id());
+                        updated_contract.data_contract_mut().set_id(contract.id());
                         updated_contract
-                            .data_contract()
+                            .data_contract_mut()
                             .set_owner_id(contract.owner_id());
                         updated_contract
-                            .data_contract()
-                            .document_types()
+                            .data_contract_mut()
+                            .document_types_mut()
                             .iter_mut()
                             .for_each(|(_, document_type)| {
                                 document_type.set_data_contract_id(contract.id())
@@ -323,11 +321,13 @@ impl Strategy {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
                         if document_op.contract.id() == old_id {
                             document_op.contract.set_id(contract.id());
-                            document_op.contract.document_types().iter_mut().for_each(
-                                |(_, document_type)| {
+                            document_op
+                                .contract
+                                .document_types_mut()
+                                .iter_mut()
+                                .for_each(|(_, document_type)| {
                                     document_type.set_data_contract_id(contract.id())
-                                },
-                            );
+                                });
                             document_op
                                 .document_type
                                 .set_data_contract_id(contract.id());
@@ -337,7 +337,7 @@ impl Strategy {
 
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
-                    created_contract.entropy_used_owned(),
+                    *created_contract.entropy_used(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,

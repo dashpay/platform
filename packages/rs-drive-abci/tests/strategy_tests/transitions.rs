@@ -1,16 +1,20 @@
 use crate::signer::SimpleSigner;
 use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use dashcore_rpc::dashcore::{Network, PrivateKey};
+use dpp::dashcore::secp256k1::Secp256k1;
+use dpp::dashcore::{InstantLock, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::Purpose::AUTHENTICATION;
 use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -23,13 +27,79 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
-use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
+use dpp::util::vec::hex_to_array;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
 use rand::prelude::{IteratorRandom, StdRng};
+use rand::Rng;
 use std::collections::HashSet;
 use std::str::FromStr;
+
+pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> AssetLockProof {
+    let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
+
+    let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+
+    let is_lock_proof = InstantAssetLockProof::new(instant_lock, transaction, 0);
+
+    AssetLockProof::Instant(is_lock_proof)
+}
+
+pub fn instant_asset_lock_proof_transaction_fixture(
+    one_time_private_key: PrivateKey,
+) -> Transaction {
+    let secp = Secp256k1::new();
+
+    let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
+    let private_key = PrivateKey::from_str(private_key_hex).unwrap();
+    let public_key = private_key.public_key(&secp);
+    let public_key_hash = public_key.pubkey_hash();
+    //let from_address = Address::p2pkh(&public_key, Network::Testnet);
+    let one_time_public_key = one_time_private_key.public_key(&secp);
+
+    let txid =
+        Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap();
+    let outpoint = OutPoint::new(txid, 0);
+    let input = TxIn {
+        previous_output: outpoint,
+        script_sig: Script::new_p2pkh(&public_key_hash),
+        sequence: 0,
+        witness: Default::default(),
+    };
+    let one_time_key_hash = one_time_public_key.pubkey_hash().to_vec();
+    let burn_output = TxOut {
+        value: 100000000, // 1 Dash
+        script_pubkey: Script::new_op_return(&one_time_key_hash),
+    };
+    let change_output = TxOut {
+        value: 5000,
+        script_pubkey: Script::new_p2pkh(&public_key_hash),
+    };
+    let unrelated_burn_output = TxOut {
+        value: 5000,
+        script_pubkey: Script::new_op_return(&[1, 2, 3]),
+    };
+    Transaction {
+        version: 0,
+        lock_time: 0,
+        input: vec![input],
+        output: vec![burn_output, change_output, unrelated_burn_output],
+        special_transaction_payload: None,
+    }
+}
+
+pub fn instant_asset_lock_is_lock_fixture(tx_id: Txid) -> InstantLock {
+    InstantLock {
+        version: 1,
+        inputs: vec![
+            OutPoint { txid: Txid::from_str("6e200d059fb567ba19e92f5c2dcd3dde522fd4e0a50af223752db16158dabb1d").unwrap(), vout: 0 }
+        ],
+        txid: tx_id,
+        cyclehash: hex_to_array::<32>("7c30826123d0f29fe4c4a8895d7ba4eb469b1fafa6ad7b23896a1a591766a536").unwrap(),
+        signature: hex_to_array::<96>("8967c46529a967b3822e1ba8a173066296d02593f0f59b3a78a30a7eef9c8a120847729e62e4a32954339286b79fe7590221331cd28d576887a263f45b595d499272f656c3f5176987c976239cac16f972d796ad82931d532102a4f95eec7d80").unwrap(),
+    }
+}
 
 pub fn create_identity_top_up_transition(
     rng: &mut StdRng,
@@ -42,7 +112,7 @@ pub fn create_identity_top_up_transition(
     let sk: [u8; 32] = pk.try_into().unwrap();
     let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
     let asset_lock_proof =
-        instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
+        instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
 
     IdentityTopUpTransition::try_from_identity(
         identity.clone(),
@@ -245,7 +315,7 @@ pub fn create_identities_state_transitions(
             let sk: [u8; 32] = pk.clone().try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
             let asset_lock_proof =
-                instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
+                instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
                     identity.clone(),
@@ -256,9 +326,7 @@ pub fn create_identities_state_transitions(
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            if let StateTransition::IdentityCreate(transition) = identity_create_transition {
-                identity.set_id(transition.identity_id());
-            };
+            identity.set_id(identity_create_transition.owner_id().unwrap());
 
             (identity, identity_create_transition.into())
         })

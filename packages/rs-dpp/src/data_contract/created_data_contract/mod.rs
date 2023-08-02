@@ -52,6 +52,12 @@ impl CreatedDataContract {
         }
     }
 
+    pub fn data_contract_mut(&mut self) -> &mut DataContract {
+        match self {
+            CreatedDataContract::V0(v0) => &mut v0.data_contract,
+        }
+    }
+
     pub fn entropy_used_owned(self) -> Bytes32 {
         match self {
             CreatedDataContract::V0(v0) => v0.entropy_used,
