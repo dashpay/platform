@@ -199,7 +199,7 @@ mod tests {
                 platform,
             } = setup_test();
 
-            data_contract.config().set_readonly(true);
+            data_contract.config_mut().set_readonly(true);
             apply_contract(&platform, &data_contract, Default::default());
 
             let updated_document = json!({
@@ -257,8 +257,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            data_contract.config().set_keeps_history(true);
-            data_contract.config().set_readonly(false);
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
 
             // TODO: check that keep_history actually works
             apply_contract(
