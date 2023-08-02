@@ -911,11 +911,14 @@ mod test {
         };
         use dpp::block::block_info::BlockInfo;
 
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::DataContract;
+        use dpp::serialization::PlatformDeserializableFromVersionedStructure;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use dpp::validation::ValidationResult;
+        use dpp::version::PlatformVersion;
         use drive::drive::Drive;
-        use drive::error::contract::ContractError;
+        use drive::error::contract::DataContractError;
         use prost::Message;
         use serde_json::json;
 
@@ -931,6 +934,7 @@ mod test {
 
         /// Set up simple contract history with one update
         fn set_up_history(platform: &TempPlatform<MockCoreRPCLike>) -> DataContract {
+            let platform_version = PlatformVersion::latest();
             let mut data_contract = get_data_contract_fixture(None).data_contract;
             data_contract.config.keeps_history = true;
             data_contract.config.readonly = false;
@@ -948,6 +952,7 @@ mod test {
                     true,
                     None,
                     None,
+                    platform_version,
                 )
                 .expect("To apply contract");
 
@@ -987,6 +992,7 @@ mod test {
                     true,
                     None,
                     None,
+                    platform_version,
                 )
                 .expect("To apply contract");
 
@@ -1013,6 +1019,8 @@ mod test {
 
         #[test]
         pub fn should_return_contract_history_with_no_errors_if_parameters_are_valid() {
+            let platform_version = PlatformVersion::latest();
+
             let TestData {
                 platform,
                 original_data_contract,
@@ -1022,10 +1030,11 @@ mod test {
                 id: original_data_contract.id().to_vec(),
                 ..default_request()
             };
+
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", &request_data)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -1064,19 +1073,24 @@ mod test {
 
             assert_eq!(first_entry.date, 1000);
             let first_entry_data_contract = first_entry.value.expect("To have data contract");
-            let first_data_contract_update =
-                DataContract::deserialize_no_limit(&first_entry_data_contract.value)
-                    .expect("To decode data contract");
+            let first_data_contract_update = DataContract::versioned_deserialize(
+                &first_entry_data_contract.value,
+                platform_version,
+            )
+            .expect("To decode data contract");
             assert_eq!(first_data_contract_update, original_data_contract);
 
             assert_eq!(second_entry.date, 2000);
             let second_entry_data_contract = second_entry.value.expect("To have data contract");
-            let second_data_contract_update =
-                DataContract::deserialize_no_limit(&second_entry_data_contract.value)
-                    .expect("To decode data contract");
+            let second_data_contract_update = DataContract::versioned_deserialize(
+                &second_entry_data_contract.value,
+                platform_version,
+            )
+            .expect("To decode data contract");
 
             let updated_doc = second_data_contract_update
-                .documents
+                .documents()
+                .unwrap()
                 .get("niceDocument")
                 .expect("To have niceDocument document");
             assert!(
@@ -1095,6 +1109,7 @@ mod test {
 
         #[test]
         pub fn should_return_contract_history_proofs_with_no_errors_if_parameters_are_valid() {
+            let platform_version = PlatformVersion::latest();
             let TestData {
                 platform,
                 original_data_contract,
@@ -1108,7 +1123,7 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", &request_data)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -1144,6 +1159,7 @@ mod test {
                 request.start_at_seconds(),
                 Some(10),
                 Some(0),
+                platform_version,
             )
             .expect("To verify contract history");
 
@@ -1161,7 +1177,8 @@ mod test {
             assert_eq!(first_data_contract_update, original_data_contract);
 
             let updated_doc = second_data_contract_update
-                .documents
+                .documents()
+                .unwrap()
                 .get("niceDocument")
                 .expect("To have niceDocument document");
             assert!(
@@ -1180,6 +1197,7 @@ mod test {
 
         #[test]
         pub fn should_return_error_when_limit_is_larger_than_u16() {
+            let platform_version = PlatformVersion::latest();
             let TestData {
                 platform,
                 original_data_contract,
@@ -1193,13 +1211,13 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let error = platform
-                .query_v0("/dataContractHistory", &request_data)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .unwrap_err();
 
             match error {
                 Error::Drive(drive_error) => match drive_error {
                     drive::error::Error::DataContract(contract_error) => match contract_error {
-                        ContractError::Overflow(error_message) => {
+                        DataContractError::Overflow(error_message) => {
                             assert_eq!(
                                 error_message,
                                 "can't fit u16 limit from the supplied value"
@@ -1214,6 +1232,8 @@ mod test {
 
         #[test]
         pub fn should_return_error_when_offset_is_larger_than_u16() {
+            let platform_version = PlatformVersion::latest();
+
             let TestData {
                 platform,
                 original_data_contract,
@@ -1227,13 +1247,13 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let error = platform
-                .query_v0("/dataContractHistory", &request_data)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .unwrap_err();
 
             match error {
                 Error::Drive(drive_error) => match drive_error {
                     drive::error::Error::DataContract(contract_error) => match contract_error {
-                        ContractError::Overflow(error_message) => {
+                        DataContractError::Overflow(error_message) => {
                             assert_eq!(
                                 error_message,
                                 "can't fit u16 offset from the supplied value"

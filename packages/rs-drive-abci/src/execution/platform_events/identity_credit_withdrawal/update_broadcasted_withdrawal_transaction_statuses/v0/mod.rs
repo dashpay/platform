@@ -175,7 +175,9 @@ mod tests {
         hashes::hex::{FromHex, ToHex},
         BlockHash,
     };
-    use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
+    use dpp::{
+        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
+    };
     use drive::tests::helpers::setup::setup_document;
     use serde_json::json;
 
@@ -187,11 +189,12 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+    use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
-    use dpp::system_data_contracts::withdrawals_contract;
     use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
+    use dpp::withdrawal::Pooling;
     use dpp::{
         data_contract::DataContract,
         prelude::Identifier,
@@ -304,6 +307,7 @@ mod tests {
             data_contract
                 .to_cbor()
                 .expect("to convert contract to CBOR"),
+            platform_version,
         )
         .expect("to create data contract from CBOR");
 
@@ -386,7 +390,7 @@ mod tests {
 
         assert_eq!(documents.len(), 1);
         assert_eq!(
-            documents.get(0).unwrap().id.to_vec(),
+            documents.get(0).unwrap().id().to_vec(),
             document_2.id.to_vec()
         );
 
@@ -401,7 +405,7 @@ mod tests {
 
         assert_eq!(documents.len(), 1);
         assert_eq!(
-            documents.get(0).unwrap().id.to_vec(),
+            documents.get(0).unwrap().id().to_vec(),
             document_1.id.to_vec()
         );
     }

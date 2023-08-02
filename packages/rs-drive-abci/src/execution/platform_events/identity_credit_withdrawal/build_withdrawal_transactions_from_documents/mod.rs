@@ -47,7 +47,6 @@ where
                 documents,
                 drive_operation_types,
                 transaction,
-                platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "build_withdrawal_transactions_from_documents".to_string(),

@@ -92,7 +92,6 @@ mod tests {
     use super::*;
     use dpp::block::block_info::BlockInfo;
 
-    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
     use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -136,7 +135,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         // Create masternode reward shares contract
-        platform.create_mn_shares_contract(Some(&transaction));
+        platform.create_mn_shares_contract(Some(&transaction), platform_version);
 
         let proposers_count = 150;
         let processing_fees = 100000000;
