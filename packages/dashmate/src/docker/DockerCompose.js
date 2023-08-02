@@ -122,7 +122,7 @@ class DockerCompose {
   async isNodeRunning(config, options) {
     await this.throwErrorIfNotInstalled();
 
-    const serviceList = await this.#getServiceList(config);
+    const serviceList = this.#getServiceList(config);
 
     const filterServiceNames = serviceList
       .filter((service) => service.profiles.some((profile) => options.profiles.includes(profile)))
