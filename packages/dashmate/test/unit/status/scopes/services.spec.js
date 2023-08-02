@@ -48,7 +48,7 @@ describe('getServicesScopeFactory', () => {
 
       for (const [, service] of Object.entries(scope)) {
         expect(service.containerId).to.be.equal(null);
-        expect(service.image).to.be.equal(null);
+        expect(service.image).to.be.equal('fakeImageId');
         expect(service.status).to.be.equal(null);
       }
     });
