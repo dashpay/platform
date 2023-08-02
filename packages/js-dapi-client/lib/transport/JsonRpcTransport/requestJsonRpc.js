@@ -1,5 +1,4 @@
 const https = require('https');
-const fetch = require('node-fetch');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
