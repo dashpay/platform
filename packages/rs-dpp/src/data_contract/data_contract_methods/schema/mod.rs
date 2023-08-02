@@ -1,31 +1,36 @@
 mod v0;
-use crate::data_contract::JsonValue;
+
+use crate::data_contract::{DefinitionName, DocumentName, JsonSchema};
 use crate::prelude::DataContract;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use std::collections::BTreeMap;
 pub use v0::*;
 
 impl DataContractSchemaMethodsV0 for DataContract {
-    fn document_json_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
+    fn set_document_schemas(
+        &self,
+        schemas: BTreeMap<DocumentName, JsonSchema>,
+        defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
+    ) {
         match self {
-            DataContract::V0(v0) => v0.document_json_schema_ref(doc_type),
+            DataContract::V0(v0) => v0.set_document_schemas(schemas, defs),
         }
     }
 
-    fn document_json_schema(&self, doc_type: &str) -> Result<&JsonValue, ProtocolError> {
+    fn document_schemas(&self) -> BTreeMap<DocumentName, JsonSchema> {
         match self {
-            DataContract::V0(v0) => v0.document_json_schema(doc_type),
+            DataContract::V0(v0) => v0.document_schemas(),
         }
     }
 
-    fn set_document_json_schema(
-        &mut self,
-        doc_type: String,
-        schema: JsonValue,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
+    fn schema_defs(&self) -> Option<BTreeMap<DefinitionName, JsonSchema>> {
         match self {
-            DataContract::V0(v0) => v0.set_document_json_schema(doc_type, schema, platform_version),
+            DataContract::V0(v0) => v0.schema_defs(),
+        }
+    }
+
+    fn set_schema_defs(&self, defs: Option<BTreeMap<DefinitionName, JsonSchema>>) {
+        match self {
+            DataContract::V0(v0) => v0.set_schema_defs(defs),
         }
     }
 }

@@ -69,11 +69,8 @@ pub struct DataContractV0 {
     /// Internal configuration for the contract.
     pub(super) config: DataContractConfig,
 
-    /// Data Contract JSON Schema
-    pub(super) schema: DataContractSchema,
-
-    /// A nested mapping of document names and property paths to their binary values.
-    pub(super) binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+    /// Shared subschemas to reuse across documents (see $defs)
+    pub(super) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
 }
 
 //

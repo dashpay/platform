@@ -99,7 +99,7 @@ impl DataContractFactoryV0 {
             version: 1,
             owner_id,
             documents: documents_map,
-            defs,
+            schema_defs: defs,
         });
 
         let data_contract = DataContract::try_from_platform_versioned(format, platform_version)?;

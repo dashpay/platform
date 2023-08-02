@@ -3,27 +3,26 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::convert::{TryFrom, TryInto};
 
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::enrich_with_base_schema::enrich_with_base_schema;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::{property_names, DocumentType};
-use crate::data_contract::errors::{DataContractError, StructureError};
-use crate::document::{Document, DocumentV0};
-use crate::prelude::Revision;
-use crate::version::dpp_versions::DocumentTypeVersions;
+use crate::data_contract::errors::{DataContractError, JsonSchemaError};
+use crate::data_contract::{DataContract, DocumentName, JsonValue, PropertyPath};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Identifier, ReplacementType, Value};
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 
 mod accessors;
-pub mod document_factory;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
 pub mod v0_methods;
 
+// TODO: Is this needed?
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
 pub const BASE_CONTRACT_ROOT_PATH_SIZE: usize = 33; // 1 + 32
 pub const BASE_CONTRACT_KEEPING_HISTORY_STORAGE_PATH_SIZE: usize = 34; // 1 + 32 + 1
@@ -37,93 +36,74 @@ pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
+// TODO: We aren't going to serialize it so we should remove it
 #[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentTypeV0 {
-    pub name: String,
-    pub indices: Vec<Index>,
+    pub(crate) name: String,
+    pub(crate) schema: Value,
+    pub(crate) indices: Vec<Index>,
     #[serde(skip)]
-    pub index_structure: IndexLevel,
+    pub(crate) index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
-    pub flattened_properties: BTreeMap<String, DocumentField>,
+    pub(crate) flattened_properties: BTreeMap<String, DocumentField>,
     /// Document field can contain sub objects.
-    pub properties: BTreeMap<String, DocumentField>,
+    pub(crate) properties: BTreeMap<String, DocumentField>,
+    pub(crate) binary_properties: BTreeMap<PropertyPath, JsonValue>,
     #[serde(skip)]
-    pub identifier_paths: BTreeSet<String>,
+    pub(crate) identifier_paths: BTreeSet<String>,
     #[serde(skip)]
-    pub binary_paths: BTreeSet<String>,
-    pub required_fields: BTreeSet<String>,
-    pub documents_keep_history: bool,
-    pub documents_mutable: bool,
+    pub(crate) binary_paths: BTreeSet<String>,
+    pub(crate) required_fields: BTreeSet<String>,
+    pub(crate) documents_keep_history: bool,
+    pub(crate) documents_mutable: bool,
+    // TODO: why is this here? do we update it when data contract id is changed
     #[serde(skip)]
-    pub data_contract_id: Identifier,
+    pub(crate) data_contract_id: Identifier,
 }
 
 impl DocumentTypeV0 {
-    pub fn new(
-        data_contract_id: Identifier,
-        name: String,
-        indices: Vec<Index>,
-        properties: BTreeMap<String, DocumentField>,
-        required_fields: BTreeSet<String>,
-        documents_keep_history: bool,
-        documents_mutable: bool,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        let index_structure =
-            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
-        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
-            &properties,
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
-        )?;
-        Ok(DocumentTypeV0 {
-            name,
-            indices,
-            index_structure,
-            flattened_properties: properties.clone(),
-            properties,
-            identifier_paths,
-            binary_paths,
-            required_fields,
-            documents_keep_history,
-            documents_mutable,
-            data_contract_id,
-        })
-    }
-
-    // TODO: Here should be validation of the documents
     pub(crate) fn from_platform_value(
         data_contract_id: Identifier,
         name: &str,
-        document_type_value_map: &[(Value, Value)],
-        definition_references: &BTreeMap<String, &Value>,
+        schema: Value,
+        schema_defs: &Option<BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
+        // Validate against JSON Schema
+        let full_schema = enrich_with_base_schema(schema.clone(), Value::from(schema_defs), &[])?;
+
+        crate::validation::meta_validators::DATA_CONTRACT_META_SCHEMA_V0
+            .validate(full_schema.into())
+            .map_err(JsonSchemaError::from)?;
+
         let mut flattened_document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
         let mut document_properties: BTreeMap<String, DocumentField> = BTreeMap::new();
 
+        let schema_map = schema.as_map().ok_or_else(|| {
+            ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                "document must be an object",
+            ))
+        })?;
+
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(document_type_value_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(document_type_value_map, "documentsMutable")
+            Value::inner_optional_bool_value(schema_map, "documentsMutable")
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_mutability);
 
-        let index_values = Value::inner_optional_array_slice_value(
-            document_type_value_map,
-            property_names::INDICES,
-        )?;
+        let index_values =
+            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)?;
+
         let indices: Vec<Index> = index_values
             .map(|index_values| {
                 index_values
@@ -133,7 +113,7 @@ impl DocumentTypeV0 {
                             .as_map()
                             .ok_or(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure(
-                                    "table document is not a map as expected",
+                                    "index definition is not a map as expected",
                                 ),
                             ))?
                             .as_slice()
@@ -146,11 +126,11 @@ impl DocumentTypeV0 {
 
         // Extract the properties
         let property_values =
-            Value::inner_optional_btree_map(document_type_value_map, property_names::PROPERTIES)?
+            Value::inner_optional_btree_map(schema_map, property_names::PROPERTIES)?
                 .unwrap_or_default();
 
         let required_fields = Value::inner_recursive_optional_array_of_strings(
-            document_type_value_map,
+            schema_map,
             "".to_string(),
             property_names::PROPERTIES,
             property_names::REQUIRED,
@@ -163,7 +143,7 @@ impl DocumentTypeV0 {
                 None,
                 property_key.clone(),
                 property_value,
-                definition_references,
+                schema_defs,
                 &platform_version
                     .dpp
                     .contract_versions
@@ -175,13 +155,14 @@ impl DocumentTypeV0 {
                 &required_fields,
                 property_key,
                 property_value,
-                definition_references,
+                schema_defs,
                 &platform_version
                     .dpp
                     .contract_versions
                     .document_type_versions,
             )?;
         }
+
         // Add system properties
         if required_fields.contains(property_names::CREATED_AT) {
             flattened_document_properties.insert(
@@ -227,12 +208,21 @@ impl DocumentTypeV0 {
                 .contract_versions
                 .document_type_versions,
         )?;
+
+        // TODO: Figure out why do we need this and how it differs from `binary_paths`
+        let binary_properties = schema
+            .iter()
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::create_binary_properties(&schema.clone().try_into()?, platform_version)?)))
+            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
+
         Ok(DocumentTypeV0 {
             name: String::from(name),
+            schema,
             indices,
             index_structure,
             flattened_properties: flattened_document_properties,
             properties: document_properties,
+            binary_properties,
             identifier_paths,
             binary_paths,
             required_fields,

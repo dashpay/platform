@@ -8,9 +8,11 @@ mod index;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+pub mod enrich_with_base_schema;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod v0;
+mod validate_data_contract_max_depth;
 
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -55,6 +57,7 @@ pub enum DocumentType {
     V0(DocumentTypeV0),
 }
 
+// TODO: It doesn't look good. Default value can't be valid
 impl Default for DocumentType {
     fn default() -> Self {
         DocumentType::V0(DocumentTypeV0::default())
@@ -94,36 +97,6 @@ impl<'a> DocumentTypeRef<'a> {
 }
 
 impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
-    fn unique_id_for_storage(&self) -> [u8; 32] {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.unique_id_for_storage(),
-        }
-    }
-
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.document_field_for_property(property),
-        }
-    }
-
-    fn field_can_be_null(&self, name: &str) -> bool {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.field_can_be_null(name),
-        }
-    }
-
-    fn initial_revision(&self) -> Option<Revision> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.initial_revision(),
-        }
-    }
-
-    fn requires_revision(&self) -> bool {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.requires_revision(),
-        }
-    }
-
     fn index_for_types(
         &self,
         index_names: &[&str],
@@ -159,20 +132,6 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn create_document_from_data(
-        &self,
-        data: Value,
-        owner_id: Identifier,
-        document_entropy: [u8; 32],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
-            }
-        }
-    }
-
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.max_size(platform_version),
@@ -197,6 +156,12 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
+    fn unique_id_for_storage(&self) -> [u8; 32] {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.unique_id_for_storage(),
+        }
+    }
+
     fn unique_id_for_document_field(
         &self,
         index_level: &IndexLevel,
@@ -207,9 +172,47 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
+    fn field_can_be_null(&self, name: &str) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.field_can_be_null(name),
+        }
+    }
+
+    fn initial_revision(&self) -> Option<Revision> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.initial_revision(),
+        }
+    }
+
+    fn requires_revision(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.requires_revision(),
+        }
+    }
+
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.top_level_indices(),
+        }
+    }
+
+    fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.document_field_for_property(property),
+        }
+    }
+
+    fn create_document_from_data(
+        &self,
+        data: Value,
+        owner_id: Identifier,
+        document_entropy: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => {
+                v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
+            }
         }
     }
 

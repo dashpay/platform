@@ -13,7 +13,7 @@ impl DocumentType {
         known_required: &BTreeSet<String>,
         property_key: String,
         property_value: &Value,
-        definition_references: &BTreeMap<String, &Value>,
+        schema_defs: &Option<BTreeMap<String, Value>>,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(), ProtocolError> {
         match document_type_version.insert_values_nested {
@@ -22,7 +22,7 @@ impl DocumentType {
                 known_required,
                 property_key,
                 property_value,
-                definition_references,
+                schema_defs,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "insert_values_nested".to_string(),

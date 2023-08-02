@@ -14,7 +14,7 @@ impl DocumentType {
         prefix: Option<String>,
         property_key: String,
         property_value: &Value,
-        definition_references: &BTreeMap<String, &Value>,
+        schema_defs: &Option<BTreeMap<String, Value>>,
     ) -> Result<(), ProtocolError> {
         let mut to_visit: Vec<(Option<String>, String, &Value)> =
             vec![(prefix, property_key, property_value)];
@@ -24,21 +24,34 @@ impl DocumentType {
                 None => property_key,
                 Some(prefix) => [prefix, property_key].join(".").to_owned(),
             };
+
             let mut inner_properties = property_value.to_btree_ref_string_map()?;
+
             let type_value = inner_properties
                 .remove_optional_string(property_names::TYPE)
                 .map_err(ProtocolError::ValueError)?;
+
             let type_value = match type_value {
                 None => {
                     let ref_value = inner_properties
                         .get_str(property_names::REF)
                         .map_err(ProtocolError::ValueError)?;
+
+                    // TODO We can reference to another part of the document
+                    //  it must be handled
                     let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                         return Err(ProtocolError::DataContractError(
                             DataContractError::InvalidContractStructure("malformed reference"),
                         ));
                     };
-                    inner_properties = definition_references
+
+                    let Some(defs) = schema_defs else {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}").as_str()),
+                        ));
+                    };
+
+                    inner_properties = defs
                         .get_inner_borrowed_str_value_map(ref_value)
                         .map_err(ProtocolError::ValueError)?;
 

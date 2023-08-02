@@ -18,6 +18,7 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
+// TODO: Verify we need all those methods
 pub trait DocumentTypeV0Methods {
     fn index_for_types(
         &self,
@@ -157,33 +158,6 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
-    fn create_document_from_data(
-        &self,
-        data: Value,
-        owner_id: Identifier,
-        document_entropy: [u8; 32],
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .create_document_from_data
-        {
-            0 => self.create_document_from_data_v0(
-                data,
-                owner_id,
-                document_entropy,
-                platform_version,
-            ),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "create_document_from_data".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match platform_version
             .dpp
@@ -278,6 +252,33 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
 
     fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
         self.flattened_properties.get(property).cloned()
+    }
+
+    fn create_document_from_data(
+        &self,
+        data: Value,
+        owner_id: Identifier,
+        document_entropy: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .create_document_from_data
+        {
+            0 => self.create_document_from_data_v0(
+                data,
+                owner_id,
+                document_entropy,
+                platform_version,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "create_document_from_data".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
     fn create_document_with_prevalidated_properties(

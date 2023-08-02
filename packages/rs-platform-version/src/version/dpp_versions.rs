@@ -105,7 +105,7 @@ pub struct ContractClassMethodVersions {
     pub get_definitions: FeatureVersion,
     pub get_document_types_from_contract: FeatureVersion,
     pub get_document_types_from_value: FeatureVersion,
-    pub get_document_types_from_value_array: FeatureVersion,
+    pub create_document_types_from_document_schemas: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

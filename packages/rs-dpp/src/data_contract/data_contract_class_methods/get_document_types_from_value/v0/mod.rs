@@ -28,7 +28,7 @@ impl DataContract {
                 };
                 Ok((type_key_str, value))
             }).collect::<Result<Vec<(&str, &Value)>, ProtocolError>>()?;
-        DataContract::get_document_types_from_value_array(
+        DataContract::create_document_types_from_document_schemas(
             data_contract_id,
             &contract_document_types_raw,
             definition_references,

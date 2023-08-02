@@ -6,7 +6,7 @@ use crate::data_contract::data_contract_methods::schema::DataContractSchemaMetho
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, DefinitionName, DocumentName, JsonSchema};
 use crate::version::PlatformVersion;
 use crate::{identifier, ProtocolError};
 use itertools::{Either, Itertools};
@@ -15,23 +15,6 @@ use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
 
 impl DataContractSchemaMethodsV0 for DataContractV0 {
-    fn document_json_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError> {
-        if !self.is_document_defined(doc_type) {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
-                    doc_type.to_owned(),
-                    self.id,
-                )),
-            ));
-        };
-
-        Ok(format!(
-            "{}#/documents/{}",
-            self.id.to_string(Encoding::Base58),
-            doc_type
-        ))
-    }
-
     fn document_json_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {
         let document = self
             .documents
@@ -51,7 +34,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         schema: JsonSchema,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        let binary_properties = DataContract::get_binary_properties(&schema, platform_version)?;
+        let binary_properties = DataContract::create_binary_properties(&schema, platform_version)?;
         self.documents.insert(doc_type.clone(), schema.clone());
         self.binary_properties
             .insert(doc_type.clone(), binary_properties);
@@ -78,5 +61,28 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         self.document_types.insert(doc_type, document_type.into());
 
         Ok(())
+    }
+
+    fn set_document_schemas(
+        &self,
+        schemas: BTreeMap<DocumentName, JsonSchema>,
+        defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
+    ) {
+        todo!()
+    }
+
+    fn document_schemas(&self) -> &BTreeMap<DocumentName, JsonSchema> {
+        self.document_types
+            .iter()
+            .map(|name, r#type| (name, r#type.schema()))
+            .collect()
+    }
+
+    fn schema_defs(&self) -> &Option<BTreeMap<DefinitionName, JsonSchema>> {
+        &self.schema_defs
+    }
+
+    fn set_schema_defs(&self, defs: Option<BTreeMap<DefinitionName, JsonSchema>>) {
+        todo!()
     }
 }

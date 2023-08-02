@@ -16,6 +16,7 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+// TODO Rename to DocumentProperty. Must be versioned enum
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentField {
@@ -23,14 +24,15 @@ pub struct DocumentField {
     pub required: bool,
 }
 
+// TODO DocumentPropertyType
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum DocumentFieldType {
     ///Todo decompose integer
     Integer,
     Number,
-    String(Option<u16>, Option<u16>),
-    ByteArray(Option<u16>, Option<u16>),
+    String(Option<u16>, Option<u16>),    // TODO use structure
+    ByteArray(Option<u16>, Option<u16>), // TODO user structure
     Identifier,
     Boolean,
     Date,

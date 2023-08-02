@@ -1,6 +1,7 @@
 mod v0;
 
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::DocumentName;
 use crate::prelude::DataContract;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -31,10 +32,10 @@ impl DataContract {
     ///
     /// * `Result<BTreeMap<String, DocumentType>, ProtocolError>`: On success, a map of document types.
     ///   On failure, a ProtocolError.
-    pub fn get_document_types_from_value_array<'a>(
+    pub fn create_document_types_from_document_schemas<'a>(
         data_contract_id: Identifier,
-        contract_document_types_raw: &'a Vec<(&str, &Value)>,
-        definition_references: &'a BTreeMap<String, &'a Value>,
+        document_schemas: BTreeMap<DocumentName, Value>,
+        schema_defs: &'a Option<BTreeMap<String, Value>>,
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         platform_version: &'a PlatformVersion,
@@ -43,18 +44,18 @@ impl DataContract {
             .dpp
             .contract_versions
             .contract_class_method_versions
-            .get_document_types_from_value_array
+            .create_document_types_from_document_schemas
         {
-            0 => Self::get_document_types_from_value_array_v0(
+            0 => Self::create_document_types_from_document_schemas_v0(
                 data_contract_id,
-                contract_document_types_raw,
-                definition_references,
+                document_schemas,
+                schema_defs,
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "get_document_types_from_value_array".to_string(),
+                method: "create_document_types_from_document_schemas".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

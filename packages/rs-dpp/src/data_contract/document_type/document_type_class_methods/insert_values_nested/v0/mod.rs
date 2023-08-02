@@ -13,7 +13,7 @@ impl DocumentType {
         known_required: &BTreeSet<String>,
         property_key: String,
         property_value: &Value,
-        definition_references: &BTreeMap<String, &Value>,
+        schema_defs: &Option<BTreeMap<String, Value>>,
     ) -> Result<(), ProtocolError> {
         let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -25,12 +25,22 @@ impl DocumentType {
                 let ref_value = inner_properties
                     .get_str(property_names::REF)
                     .map_err(ProtocolError::ValueError)?;
+
+                // TODO: References may point to other parts of the document no just
+                //  $defs. It must be handled
                 let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                     return Err(ProtocolError::DataContractError(
                         DataContractError::InvalidContractStructure("malformed reference"),
                     ));
                 };
-                inner_properties = definition_references
+
+                let Some(defs) = schema_defs else {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}").as_str()),
+                    ));
+                };
+
+                inner_properties = defs
                     .get_inner_borrowed_str_value_map(ref_value)
                     .map_err(ProtocolError::ValueError)?;
 
@@ -115,18 +125,23 @@ impl DocumentType {
                         .collect();
 
                     // Create a new set with the prefix removed from the keys
-                    let inner_definition_references: BTreeMap<String, &Value> =
-                        definition_references
-                            .iter()
-                            .filter_map(|(key, value)| {
-                                if key.starts_with(&property_key) && key.len() > property_key.len()
-                                {
-                                    Some((key[property_key.len() + 1..].to_string(), *value))
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
+                    let inner_schema_defs: Option<BTreeMap<String, Value>> =
+                        schema_defs.map(|defs| {
+                            defs.iter()
+                                .filter_map(|(key, value)| {
+                                    if key.starts_with(&property_key)
+                                        && key.len() > property_key.len()
+                                    {
+                                        Some((
+                                            key[property_key.len() + 1..].to_string(),
+                                            value.clone(),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
+                        });
 
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key
@@ -141,7 +156,7 @@ impl DocumentType {
                             &stripped_required,
                             object_property_string,
                             object_property_value,
-                            &inner_definition_references,
+                            &inner_schema_defs,
                         )?;
                     }
                 }

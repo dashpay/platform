@@ -1,25 +1,13 @@
-use crate::data_contract::JsonValue;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+use crate::data_contract::{DefinitionName, DocumentName, JsonSchema};
+use std::collections::BTreeMap;
 
 pub trait DataContractSchemaMethodsV0 {
-    // TODO: Remove json?
-    fn json_schema(&self) -> Result<&JsonValue, ProtocolError>;
-
-    fn set_json_schema(
-        &mut self,
-        schema: JsonValue,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError>;
-
-    fn document_json_schema_ref(&self, doc_type: &str) -> Result<String, ProtocolError>;
-
-    fn document_json_schema(&self, doc_type: &str) -> Result<&JsonValue, ProtocolError>;
-
-    fn set_document_json_schema(
-        &mut self,
-        doc_type: String,
-        schema: JsonValue,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError>;
+    fn set_document_schemas(
+        &self,
+        schemas: BTreeMap<DocumentName, JsonSchema>,
+        defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
+    );
+    fn document_schemas(&self) -> &BTreeMap<DocumentName, JsonSchema>;
+    fn schema_defs(&self) -> &Option<BTreeMap<DefinitionName, JsonSchema>>;
+    fn set_schema_defs(&self, defs: Option<BTreeMap<DefinitionName, JsonSchema>>);
 }

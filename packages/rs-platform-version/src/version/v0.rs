@@ -703,7 +703,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 get_definitions: 0,
                 get_document_types_from_contract: 0,
                 get_document_types_from_value: 0,
-                get_document_types_from_value_array: 0,
+                create_document_types_from_document_schemas: 0,
             },
         },
         document_versions: DocumentVersions {

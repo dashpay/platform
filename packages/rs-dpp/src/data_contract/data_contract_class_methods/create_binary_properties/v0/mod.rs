@@ -11,8 +11,9 @@ const PROPERTY_TYPE: &str = "type";
 
 impl DataContract {
     ///  Construct and get all properties with `contentEncoding` keyword
-    pub(super) fn get_binary_properties_v0(schema: &JsonValue) -> BTreeMap<String, JsonValue> {
+    pub(super) fn create_binary_properties_v0(schema: &JsonValue) -> BTreeMap<String, JsonValue> {
         let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
+
         if let Some(JsonValue::Object(schema_properties)) = schema.get(PROPERTY_PROPERTIES) {
             for (property_name, property_value) in schema_properties {
                 build_binary_properties_map(

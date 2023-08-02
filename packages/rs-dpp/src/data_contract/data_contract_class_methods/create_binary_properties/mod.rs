@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 mod v0;
 
 impl DataContract {
-    pub fn get_binary_properties(
+    pub fn create_binary_properties(
         schema: &JsonValue,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, JsonValue>, ProtocolError> {
@@ -17,7 +17,7 @@ impl DataContract {
             .contract_class_method_versions
             .get_binary_properties_from_schema
         {
-            0 => Ok(Self::get_binary_properties_v0(schema)),
+            0 => Ok(Self::create_binary_properties_v0(schema)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "get_binary_properties".to_string(),
                 known_versions: vec![0],
