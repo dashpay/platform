@@ -598,7 +598,7 @@ impl Strategy {
                                         .expect("expected to unwrap revision")
                                         + 1,
                                     updated_at: Some(block_info.time_ms),
-                                    data: Some(random_new_document.properties_consumed()),
+                                    data: random_new_document.properties_consumed(),
                                 }
                                 .into();
 
@@ -757,7 +757,7 @@ impl Strategy {
         if block_info.height == 1 {
             // add contracts on block 1
             let mut contract_state_transitions =
-                self.contract_state_transitions(current_identities, signer, rng);
+                self.contract_state_transitions(current_identities, signer, rng, platform_version);
             state_transitions.append(&mut contract_state_transitions);
         } else {
             // Don't do any state transitions on block 1
