@@ -126,16 +126,17 @@ mod tests {
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{signer, KeyPair};
     use dpp::data_contracts::dpns_contract;
-    use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-    use dpp::state_transition::{StateTransition, StateTransitionType};
-    use dpp::version::{PlatformVersion, LATEST_VERSION};
+    use dpp::state_transition::{StateTransition};
+    use dpp::version::{PlatformVersion};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
     #[test]
     fn data_contract_create_check_tx() {
@@ -194,7 +195,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         platform
             .drive
@@ -242,7 +243,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
 
@@ -288,7 +289,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
 
@@ -339,7 +340,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
 
@@ -374,7 +375,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
 
@@ -436,7 +437,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
 
@@ -526,7 +527,7 @@ mod tests {
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state.current_platform_version()?;
+        let platform_version = platform_state.current_platform_version().unwrap();
 
         let genesis_time = 0;
 
@@ -544,7 +545,7 @@ mod tests {
 
         let new_key_pair = KeyPair::new(&secp, &mut rng);
 
-        let mut new_key = IdentityPublicKeyInCreation {
+        let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::HIGH,
@@ -563,12 +564,10 @@ mod tests {
 
         new_key.signature = signature.to_vec().into();
 
-        let mut update_transition = IdentityUpdateTransition {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::IdentityUpdate,
+        let mut update_transition = IdentityUpdateTransitionV0 {
             identity_id: dpns_contract::OWNER_ID_BYTES.into(),
             revision: 0,
-            add_public_keys: vec![new_key],
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
             signature_public_key_id: 1,
