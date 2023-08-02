@@ -263,8 +263,7 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     const containerIds = await this.getContainersList(config, {
-      filterServiceNames:
-      serviceName,
+      filterServiceNames: serviceName,
       quiet: true,
     });
 
