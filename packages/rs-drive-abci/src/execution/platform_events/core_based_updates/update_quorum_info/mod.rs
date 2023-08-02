@@ -44,7 +44,6 @@ where
                 block_platform_state,
                 core_block_height,
                 start_from_scratch,
-                platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_quorum_info".to_string(),
