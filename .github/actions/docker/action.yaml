@@ -76,6 +76,7 @@ runs:
       uses: dcginfra/buildkit-cache-dance/inject@main
       if: ${{ inputs.cache_mounts != '' }}
       with:
+        bucket: multi-runner-linux-x64-platform-cache-gy9micic
         mounts: ${{ inputs.cache_mounts }}
 
     - name: Set suffix
@@ -135,4 +136,5 @@ runs:
       uses: dcginfra/buildkit-cache-dance/extract@main
       if: ${{ inputs.cache_mounts != '' }}
       with:
+        bucket: multi-runner-linux-x64-platform-cache-gy9micic
         mounts: ${{ inputs.cache_mounts }}
