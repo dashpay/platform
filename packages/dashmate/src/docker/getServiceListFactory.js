@@ -4,6 +4,7 @@ const path = require('path');
 const { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } = require('../constants');
 
 /**
+ * @param {generateEnvs} generateEnvs
  * @return {getServiceList}
  */
 function getServiceListFactory(generateEnvs) {
