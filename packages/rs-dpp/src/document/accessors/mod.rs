@@ -45,6 +45,12 @@ impl DocumentV0Getters for Document {
         }
     }
 
+    fn properties_consumed(self) -> BTreeMap<String, Value> {
+        match self {
+            Document::V0(v0) => v0.properties,
+        }
+    }
+
     fn revision(&self) -> Option<Revision> {
         match self {
             Document::V0(v0) => v0.revision,

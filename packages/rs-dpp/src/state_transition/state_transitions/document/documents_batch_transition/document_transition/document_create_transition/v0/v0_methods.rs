@@ -49,17 +49,17 @@ pub trait DocumentCreateTransitionV0Methods {
     fn set_updated_at(&mut self, updated_at: Option<TimestampMillis>);
 
     /// Returns an optional reference to the `data` field of the `DocumentCreateTransitionV0`.
-    fn data(&self) -> Option<&BTreeMap<String, Value>>;
+    fn data(&self) -> &BTreeMap<String, Value>;
 
     /// Returns an optional mutable reference to the `data` field of the `DocumentCreateTransitionV0`.
-    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
+    fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
 
     /// Sets the value of the `data` field in the `DocumentCreateTransitionV0`.
     ///
     /// # Arguments
     ///
     /// * `data` - An `Option` containing a `BTreeMap<String, Value>` to set.
-    fn set_data(&mut self, data: Option<BTreeMap<String, Value>>);
+    fn set_data(&mut self, data: BTreeMap<String, Value>);
 }
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
@@ -99,15 +99,15 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
         self.updated_at = updated_at;
     }
 
-    fn data(&self) -> Option<&BTreeMap<String, Value>> {
-        self.data.as_ref()
+    fn data(&self) -> &BTreeMap<String, Value> {
+        &self.data
     }
 
-    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
-        self.data.as_mut()
+    fn data_mut(&mut self) -> &mut BTreeMap<String, Value> {
+        &mut self.data
     }
 
-    fn set_data(&mut self, data: Option<BTreeMap<String, Value>>) {
+    fn set_data(&mut self, data: BTreeMap<String, Value>) {
         self.data = data;
     }
 }

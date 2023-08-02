@@ -1,5 +1,6 @@
 use crate::data_contract::DataContract;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `DocumentBaseTransitionV0`
@@ -18,6 +19,7 @@ pub trait DocumentBaseTransitionV0Methods {
 
     /// Returns the data contract ID.
     fn data_contract_id(&self) -> Identifier;
+    fn data_contract_id_ref(&self) -> &Identifier;
 
     /// Sets the data contract ID.
     fn set_data_contract_id(&mut self, data_contract_id: Identifier);
@@ -42,6 +44,10 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransitionV0 {
 
     fn data_contract_id(&self) -> Identifier {
         self.data_contract_id
+    }
+
+    fn data_contract_id_ref(&self) -> &Identifier {
+        &self.data_contract_id
     }
 
     fn set_data_contract_id(&mut self, data_contract_id: Identifier) {

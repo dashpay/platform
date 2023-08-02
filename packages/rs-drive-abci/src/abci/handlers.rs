@@ -72,6 +72,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::fee::SignedCredits;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::Map;
 
@@ -590,11 +591,13 @@ where
         let RequestCheckTx { tx, .. } = request;
         match self.platform.check_tx(tx.as_slice()) {
             Ok(validation_result) => {
+                let platform_state = self.platform.state.read().unwrap();
+                let platform_version = platform_state.current_platform_version()?;
                 let validation_error = validation_result.errors.first();
 
                 let (code, info) = if let Some(validation_error) = validation_error {
                     let serialized_error = platform_value!(validation_error
-                        .serialize()
+                        .serialize_with_platform_version(platform_version)
                         .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
 
                     let error_data = json!({

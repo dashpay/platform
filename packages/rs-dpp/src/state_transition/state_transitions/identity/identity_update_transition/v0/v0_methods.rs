@@ -2,6 +2,7 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
@@ -13,11 +14,14 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::identity::accessors::IdentityGettersV0;
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::StateTransitionIdentitySigned;
+use crate::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -36,8 +40,9 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         signer: &S,
-        _version: FeatureVersion,
-    ) -> Result<Self, ProtocolError> {
+        _platform_version: &PlatformVersion,
+        _version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError> {
         let add_public_keys_in_creation = add_public_keys
             .iter()
             .map(|public_key| public_key.into())
@@ -46,8 +51,8 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         let mut identity_update_transition = IdentityUpdateTransitionV0 {
             signature: Default::default(),
             signature_public_key_id: 0,
-            identity_id: identity.id,
-            revision: identity.revision,
+            identity_id: identity.id(),
+            revision: identity.revision(),
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
@@ -61,16 +66,16 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             .iter_mut()
             .zip(add_public_keys.iter())
             .try_for_each(|(public_key_with_witness, public_key)| {
-                if public_key.key_type.is_unique_key_type() {
+                if public_key.key_type().is_unique_key_type() {
                     let signature = signer.sign(public_key, &key_signable_bytes)?;
-                    public_key_with_witness.signature = signature;
+                    public_key_with_witness.set_signature(signature);
                 }
 
                 Ok::<(), ProtocolError>(())
             })?;
 
         let master_public_key = identity
-            .public_keys
+            .public_keys()
             .get(master_public_key_id)
             .ok_or::<ConsensusError>(
                 SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(
@@ -78,16 +83,17 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
                 ))
                 .into(),
             )?;
-        if master_public_key.security_level != SecurityLevel::MASTER {
+        if master_public_key.security_level() != SecurityLevel::MASTER {
             Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
-                    master_public_key.security_level,
+                    master_public_key.security_level(),
                     vec![SecurityLevel::MASTER],
                 ),
             ))
         } else {
-            identity_update_transition.sign_external(master_public_key, signer)?;
-            Ok(identity_update_transition)
+            let mut state_transition: StateTransition = identity_update_transition.into();
+            state_transition.sign_external(master_public_key, signer)?;
+            Ok(state_transition)
         }
     }
 }

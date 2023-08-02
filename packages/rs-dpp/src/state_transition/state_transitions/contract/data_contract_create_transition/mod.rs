@@ -3,7 +3,7 @@ mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
-mod methods;
+pub mod methods;
 mod serialize;
 mod state_transition_like;
 mod v0;

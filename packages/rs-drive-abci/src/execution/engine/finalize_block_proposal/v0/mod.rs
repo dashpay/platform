@@ -73,7 +73,9 @@ where
         let epoch_info = block_execution_context.epoch_info();
         let block_platform_state = block_execution_context.block_platform_state();
 
-        let platform_version = block_platform_state.current_platform_version()?;
+        let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
+
+        let platform_version = PlatformVersion::get(current_protocol_version)?;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {

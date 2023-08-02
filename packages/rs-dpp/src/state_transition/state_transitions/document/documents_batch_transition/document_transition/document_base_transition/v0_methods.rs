@@ -38,6 +38,12 @@ impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
         }
     }
 
+    fn data_contract_id_ref(&self) -> &Identifier {
+        match self {
+            DocumentBaseTransition::V0(v0) => v0.data_contract_id_ref(),
+        }
+    }
+
     fn set_data_contract_id(&mut self, data_contract_id: Identifier) {
         match self {
             DocumentBaseTransition::V0(v0) => v0.set_data_contract_id(data_contract_id),

@@ -58,6 +58,12 @@ pub trait IdentitySettersV0 {
 
     /// Sets the revision of the identity.
     fn set_revision(&mut self, new_revision: Revision);
+    /// Sets the revision of the identity.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_revision` - The new revision as a `Revision`.
+    fn bump_revision(&mut self);
 
     /// Sets the identifier of the identity.
     fn set_id(&mut self, new_id: Identifier);

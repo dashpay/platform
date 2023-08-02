@@ -61,8 +61,8 @@ pub struct DocumentCreateTransitionV0 {
     #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<TimestampMillis>,
 
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub data: Option<BTreeMap<String, Value>>,
+    #[serde(flatten)]
+    pub data: BTreeMap<String, Value>,
 }
 //
 // impl DocumentCreateTransitionV0 {
@@ -178,7 +178,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
             updated_at: map
                 .remove_optional_integer(property_names::UPDATED_AT)
                 .map_err(ProtocolError::ValueError)?,
-            data: Some(map),
+            data: map,
         })
     }
 

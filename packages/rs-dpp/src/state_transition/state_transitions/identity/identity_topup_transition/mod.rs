@@ -4,7 +4,7 @@ mod fields;
 mod json_conversion;
 pub mod methods;
 mod state_transition_like;
-pub(crate) mod v0;
+pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;

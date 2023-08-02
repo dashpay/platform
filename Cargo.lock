@@ -1181,6 +1181,7 @@ dependencies = [
  "moka",
  "nohash-hasher",
  "path",
+ "platform-version",
  "rand",
  "rust_decimal",
  "rust_decimal_macros",

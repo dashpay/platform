@@ -79,4 +79,18 @@ impl Identity {
             }),
         }
     }
+
+    /// Convenience method to get Partial Identity Info
+    pub fn into_partial_identity_info(self) -> PartialIdentity {
+        match self {
+            Identity::V0(v0) => v0.into_partial_identity_info(),
+        }
+    }
+
+    /// Convenience method to get Partial Identity Info
+    pub fn into_partial_identity_info_no_balance(self) -> PartialIdentity {
+        match self {
+            Identity::V0(v0) => v0.into_partial_identity_info_no_balance(),
+        }
+    }
 }

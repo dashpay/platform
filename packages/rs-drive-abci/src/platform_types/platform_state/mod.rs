@@ -41,17 +41,46 @@ enum PlatformStateForSaving {
     V0(PlatformStateForSavingV0),
 }
 
-impl PlatformSerializableWithPlatformVersion for PlatformState {
-    fn serialize_with_platform_version(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError> {
+impl PlatformStateForSaving {
+    pub fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
+        match self {
+            PlatformStateForSaving::V0(v0) => v0.current_protocol_version_in_consensus,
+        }
+    }
+}
+
+impl PlatformSerializable for PlatformState {
+    fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
+        let platform_version = PlatformVersion::get(self.current_protocol_version_in_consensus())?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
-            self.try_into_platform_versioned(platform_version)?;
+            self.clone().try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize PlatformState: {}", e))
         })
+    }
+}
+
+// The version we should deserialize this into is determined by the actual saved state
+impl PlatformDeserializable for PlatformState {
+    fn deserialize_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let platform_state_in_save_format: PlatformStateForSaving =
+            bincode::decode_from_slice(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!(
+                        "unable to deserialize PlatformStateForSaving: {}",
+                        e
+                    ))
+                })?
+                .0;
+        let platform_version = PlatformVersion::get(
+            platform_state_in_save_format.current_protocol_version_in_consensus(),
+        )?;
+        platform_state_in_save_format.try_into_platform_versioned(platform_version)
     }
 }
 
@@ -234,6 +263,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn epoch(&self) -> Epoch {
         match self {
             PlatformState::V0(v0) => v0.epoch(),
+        }
+    }
+
+    fn epoch_ref(&self) -> &Epoch {
+        match self {
+            PlatformState::V0(v0) => v0.epoch_ref(),
         }
     }
 

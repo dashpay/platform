@@ -257,6 +257,7 @@ fn validate_transition(
     fetched_documents: &[Document],
     last_header_block_time_millis: u64,
     owner_id: &Identifier,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, ProtocolError> {
     match transition {
         DocumentTransition::Create(document_create_transition) => {
@@ -269,11 +270,11 @@ fn validate_transition(
             result.merge(validation_result);
 
             let validation_result =
-                check_created_inside_time_window(transition, last_header_block_time_millis)?;
+                check_created_inside_time_window(transition, last_header_block_time_millis, platform_version)?;
             result.merge(validation_result);
 
             let validation_result =
-                check_updated_inside_time_window(transition, last_header_block_time_millis)?;
+                check_updated_inside_time_window(transition, last_header_block_time_millis, platform_version)?;
             result.merge(validation_result);
 
             let validation_result =
@@ -294,7 +295,7 @@ fn validate_transition(
                 DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
             );
             let validation_result =
-                check_updated_inside_time_window(transition, last_header_block_time_millis)?;
+                check_updated_inside_time_window(transition, last_header_block_time_millis, platform_version)?;
             result.merge(validation_result);
 
             let validation_result = check_revision(transition, fetched_documents);
@@ -519,6 +520,7 @@ pub fn check_created_inside_time_window(
 pub fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let mut result = SimpleConsensusValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
@@ -528,7 +530,7 @@ pub fn check_updated_inside_time_window(
 
     //todo: deal with block spacing
     let window_validation =
-        validate_time_in_block_time_window_v0(last_block_ts_millis, updated_at, 0)?;
+        validate_time_in_block_time_window(last_block_ts_millis, updated_at, 0)?;
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(

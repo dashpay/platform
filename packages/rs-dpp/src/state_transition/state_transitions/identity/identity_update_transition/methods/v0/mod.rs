@@ -2,6 +2,7 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
@@ -12,6 +13,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -30,10 +32,9 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         signer: &S,
-        version: FeatureVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
+        platform_version: &PlatformVersion,
+        version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::IdentityUpdate

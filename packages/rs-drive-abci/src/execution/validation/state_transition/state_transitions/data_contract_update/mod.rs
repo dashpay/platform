@@ -1,4 +1,3 @@
-mod identity_and_signatures;
 mod state;
 mod structure;
 
@@ -12,17 +11,19 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dpp::state_transition_action::StateTransitionAction;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
 
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
-use crate::execution::validation::state_transition::data_contract_update::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::state::v0::StateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::structure::v0::StateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::structure::v0::DataContractUpdateStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::processor::v0::{
+    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -39,7 +40,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(),
+            0 => self.transform_into_action_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -49,7 +50,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     }
 }
 
-impl StateTransitionValidationV0 for DataContractUpdateTransition {
+impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
@@ -64,7 +65,7 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -72,31 +73,9 @@ impl StateTransitionValidationV0 for DataContractUpdateTransition {
             })),
         }
     }
+}
 
-    fn validate_identity_and_signatures(
-        &self,
-        drive: &Drive,
-        protocol_version: u32,
-        transaction: TransactionArg,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        let platform_version = PlatformVersion::get(protocol_version)?;
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .contract_update_state_transition
-            .identity_signatures
-        {
-            0 => self.validate_identity_and_signatures_v0(drive, transaction, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "data contract update transition: validate_identity_and_signatures"
-                    .to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
+impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -130,12 +109,12 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
-    use dpp::state_transition::{StateTransitionFieldTypes, StateTransitionType};
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+    use dpp::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionType};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::{PlatformVersion, LATEST_VERSION};
 
     struct TestData<T> {
-        raw_state_transition: Value,
         data_contract: DataContract,
         platform: TempPlatform<T>,
     }
@@ -167,15 +146,12 @@ mod tests {
 
         updated_data_contract.increment_version();
 
-        let state_transition = DataContractUpdateTransition {
-            protocol_version: LATEST_VERSION,
+        let state_transition: StateTransition = DataContractUpdateTransitionV0 {
             data_contract: updated_data_contract,
             signature: BinaryData::new(vec![0; 65]),
             signature_public_key_id: 0,
-            transition_type: StateTransitionType::DataContractUpdate,
-        };
-
-        let raw_state_transition = state_transition.to_object(false).unwrap();
+        }
+        .into();
 
         let dc = data_contract;
 
@@ -192,7 +168,6 @@ mod tests {
             .build_with_mock_rpc();
 
         TestData {
-            raw_state_transition,
             data_contract: dc,
             platform: platform.set_initial_state_structure(),
         }
@@ -214,7 +189,6 @@ mod tests {
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
@@ -270,7 +244,6 @@ mod tests {
         #[test]
         pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
@@ -352,7 +325,7 @@ mod tests {
             let contract_history = platform
                 .drive
                 .fetch_contract_with_history(
-                    *data_contract.id.as_bytes(),
+                    *data_contract.id().as_bytes(),
                     None,
                     0,
                     None,
@@ -372,7 +345,7 @@ mod tests {
             let contract_history = platform
                 .drive
                 .fetch_contract_with_history(
-                    *data_contract.id.as_bytes(),
+                    *data_contract.id().as_bytes(),
                     None,
                     0,
                     None,
@@ -390,7 +363,7 @@ mod tests {
             let contract_history = platform
                 .drive
                 .fetch_contract_with_history(
-                    *data_contract.id.as_bytes(),
+                    *data_contract.id().as_bytes(),
                     None,
                     0,
                     Some(1),

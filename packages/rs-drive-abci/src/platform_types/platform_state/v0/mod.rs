@@ -4,7 +4,7 @@ use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
 use dashcore_rpc::json::QuorumType;
-use dpp::block::epoch::Epoch;
+use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 use dpp::bincode::{Decode, Encode};
@@ -17,6 +17,7 @@ use indexmap::IndexMap;
 
 use crate::platform_types::masternode;
 
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use std::collections::{BTreeMap, HashMap};
@@ -128,11 +129,9 @@ impl From<PlatformStateV0> for PlatformStateForSavingV0 {
     }
 }
 
-impl TryFrom<PlatformStateForSavingV0> for PlatformStateV0 {
-    type Error = ProtocolError;
-
-    fn try_from(value: PlatformStateForSavingV0) -> Result<Self, Self::Error> {
-        Ok(PlatformStateV0 {
+impl From<PlatformStateForSavingV0> for PlatformStateV0 {
+    fn from(value: PlatformStateForSavingV0) -> Self {
+        PlatformStateV0 {
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
@@ -171,7 +170,7 @@ impl TryFrom<PlatformStateForSavingV0> for PlatformStateV0 {
                 .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
                 .collect(),
             initialization_information: value.initialization_information,
-        })
+        }
     }
 }
 
@@ -321,6 +320,8 @@ pub trait PlatformStateV0Methods {
 
     /// Returns a mutable reference to the platform initialization information.
     fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState>;
+    /// The epoch ref
+    fn epoch_ref(&self) -> &Epoch;
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {
@@ -422,6 +423,13 @@ impl PlatformStateV0Methods for PlatformStateV0 {
             .as_ref()
             .map(|block_info| block_info.basic_info().epoch)
             .unwrap_or_default()
+    }
+
+    fn epoch_ref(&self) -> &Epoch {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| &block_info.basic_info().epoch)
+            .unwrap_or(&EPOCH_0)
     }
 
     /// HPMN list len

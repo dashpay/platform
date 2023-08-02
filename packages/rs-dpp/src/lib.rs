@@ -46,8 +46,6 @@ pub mod fee;
 pub mod serialization;
 #[cfg(feature = "validation")]
 pub mod signing;
-#[cfg(feature = "state-transition-actions")]
-pub mod state_transition_action;
 #[cfg(feature = "system_contracts")]
 pub mod system_data_contracts;
 pub mod withdrawal;
@@ -74,6 +72,7 @@ pub mod prelude {
 
 pub use bincode;
 pub use bls_signatures;
+pub use data_contracts;
 pub use ed25519_dalek;
 pub use jsonschema;
 pub use platform_serialization;

@@ -11,14 +11,15 @@ use crate::execution::validation::state_transition::common::validate_identity_pu
 
 const MAX_KEYS_TO_DISABLE: usize = 10;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStructureValidationV0
+{
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
+impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransition {
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,

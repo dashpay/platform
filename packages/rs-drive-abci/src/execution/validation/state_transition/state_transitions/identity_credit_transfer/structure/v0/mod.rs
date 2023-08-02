@@ -11,17 +11,20 @@ use dpp::validation::SimpleConsensusValidationResult;
 
 const MIN_TRANSFER_AMOUNT: u64 = 1000;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_transfer) trait IdentityCreditTransferStateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for IdentityCreditTransferTransition {
+impl IdentityCreditTransferStateTransitionStructureValidationV0
+    for IdentityCreditTransferTransition
+{
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = SimpleConsensusValidationResult::default();
+        let mut result = SimpleConsensusValidationResult::new();
 
         if self.amount() < MIN_TRANSFER_AMOUNT {
-            result.add_error(ConsensusError::from(
-                InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT),
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT)
+                    .into(),
             ));
         }
 

@@ -10,8 +10,8 @@ use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
 
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
@@ -75,16 +75,13 @@ impl<'a> ExecutionEvent<'a> {
     }
 }
 
-impl<'a> TryFromPlatformVersioned<(Option<PartialIdentity>, StateTransitionAction<'a>, &Epoch)>
-    for ExecutionEvent<'a>
-{
-    type Error = Error;
-
-    fn try_from_platform_versioned(
-        value: (Option<PartialIdentity>, StateTransitionAction, &Epoch),
+impl<'a> ExecutionEvent<'a> {
+    pub(crate) fn create_from_state_transition_action(
+        action: StateTransitionAction,
+        identity: Option<PartialIdentity>,
+        epoch: &Epoch,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
-        let (identity, action, epoch) = value;
+    ) -> Result<Self, Error> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();

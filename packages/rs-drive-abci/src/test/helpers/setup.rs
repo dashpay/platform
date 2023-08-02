@@ -103,16 +103,17 @@ impl Default for TestPlatformBuilder {
 impl TempPlatform<MockCoreRPCLike> {
     /// A function which sets initial state structure for Platform.
     pub fn set_initial_state_structure(self) -> Self {
-        let platform_version = self
-            .platform
-            .state
-            .read()
-            .unwrap()
-            .current_platform_version()
-            .expect("expected to get current platform version");
         self.platform
             .drive
-            .create_initial_state_structure(None, platform_version)
+            .create_initial_state_structure(
+                None,
+                self.platform
+                    .state
+                    .read()
+                    .unwrap()
+                    .current_platform_version()
+                    .expect("expected to get current platform version"),
+            )
             .expect("should create root tree successfully");
 
         self

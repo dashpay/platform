@@ -5,14 +5,15 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStructureValidationV0
+{
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
+impl IdentityCreateStateTransitionStructureValidationV0 for IdentityCreateTransition {
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,

@@ -38,8 +38,8 @@ mod identity;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
+use crate::state_transition_action::StateTransitionAction;
 use dpp::block::epoch::Epoch;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
 
 /// A converter that will get High Level Drive Operations from State transitions
@@ -52,7 +52,7 @@ pub trait DriveHighLevelOperationConverter {
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
-impl<'s> DriveHighLevelOperationConverter for StateTransitionAction<'s> {
+impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,

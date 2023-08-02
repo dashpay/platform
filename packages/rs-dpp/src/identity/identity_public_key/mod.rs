@@ -41,6 +41,7 @@ pub type TimestampMillis = u64;
     PlatformDeserialize,
     PlatformSerialize,
     From,
+    Hash,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 pub enum IdentityPublicKey {

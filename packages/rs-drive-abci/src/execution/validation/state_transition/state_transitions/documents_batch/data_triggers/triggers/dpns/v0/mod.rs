@@ -14,9 +14,9 @@ use dpp::document::DocumentV0Getters;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::dpns_contract;
 use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{ALLOW_SUBDOMAINS, DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
 use dpp::version::PlatformVersion;
@@ -45,7 +45,8 @@ pub fn create_domain_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract = document_transition.base().data_contract();
+    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract = &data_contract_fetch_info.contract;
     let is_dry_run = false; //todo (maybe reenable - maybe not)
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
@@ -337,8 +338,8 @@ pub fn create_domain_data_trigger_v0(
 
 #[cfg(test)]
 mod test {
-    use dpp::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
+    use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+    use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::TryIntoPlatformVersioned;

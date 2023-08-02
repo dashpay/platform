@@ -3,8 +3,8 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
-use dpp::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::StateTransitionAction;
 
 /// A trait for validating state transitions within a blockchain.
 pub trait StateTransitionActionTransformerV0 {

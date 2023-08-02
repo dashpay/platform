@@ -276,7 +276,15 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state()
+            .recreate_state(
+                abci_app
+                    .platform
+                    .state
+                    .read()
+                    .unwrap()
+                    .current_platform_version()
+                    .unwrap(),
+            )
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -379,7 +387,7 @@ mod tests {
             .platform
             .drive
             .fetch_identity_balance(
-                outcome.identities.first().unwrap().id.to_buffer(),
+                outcome.identities.first().unwrap().id().to_buffer(),
                 None,
                 platform_version,
             )
@@ -786,7 +794,7 @@ mod tests {
                     identity
                         .public_keys()
                         .values()
-                        .any(|key| key.disabled_at.is_some())
+                        .any(|key| key.disabled_at().is_some())
                 })
                 .unwrap_or_default()
         });
@@ -981,8 +989,8 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
-                    .data_contract
-                    .id
+                    .data_contract()
+                    .id()
                     .to_buffer(),
                 None,
                 None,
@@ -1010,7 +1018,7 @@ mod tests {
         .expect("expected to get contract from a json document");
 
         //todo: versions should start at 0 (so this should be 1)
-        contract_update_1.data_contract.version = 2;
+        contract_update_1.data_contract_mut().set_version(2);
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
@@ -1018,7 +1026,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        contract_update_2.data_contract.version = 3;
+        contract_update_2.data_contract_mut().set_version(3);
 
         let strategy = Strategy {
             contracts_with_updates: vec![(
@@ -1081,8 +1089,8 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
-                    .data_contract
-                    .id
+                    .data_contract()
+                    .id()
                     .to_buffer(),
                 None,
                 None,
@@ -1103,7 +1111,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1111,7 +1119,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1174,7 +1182,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1182,7 +1190,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1255,7 +1263,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1263,7 +1271,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1272,7 +1280,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1354,7 +1362,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1362,7 +1370,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1371,7 +1379,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1467,7 +1475,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1475,7 +1483,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1484,7 +1492,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1569,7 +1577,7 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract = created_contract.data_contract_owned();
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1577,7 +1585,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_replace_op = DocumentOp {
@@ -1586,7 +1594,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1595,7 +1603,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1738,7 +1746,7 @@ mod tests {
                 &outcome
                     .identities
                     .into_iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
             )
@@ -1802,6 +1810,9 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let state = outcome.abci_app.platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let identities = outcome
             .abci_app
@@ -1811,7 +1822,7 @@ mod tests {
                 outcome
                     .identities
                     .into_iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
@@ -1821,7 +1832,7 @@ mod tests {
 
         assert!(identities
             .into_iter()
-            .any(|(_, identity)| { identity.expect("expected identity").public_keys.len() > 7 }));
+            .any(|(_, identity)| { identity.expect("expected identity").public_keys().len() > 7 }));
     }
 
     #[test]
@@ -1889,7 +1900,7 @@ mod tests {
                 outcome
                     .identities
                     .into_iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
@@ -2420,6 +2431,10 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
+        let state = abci_app.platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
         let known_root_hash = abci_app
             .platform
             .drive
@@ -2430,7 +2445,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state()
+            .recreate_state(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -2543,7 +2558,7 @@ mod tests {
                 &outcome
                     .identities
                     .iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
             )
@@ -2554,14 +2569,14 @@ mod tests {
         let len = outcome.identities.len();
 
         for identity in &outcome.identities[..len - 1] {
-            let new_balance = balances[&identity.id.to_buffer()];
+            let new_balance = balances[&identity.id().to_buffer()];
             // All identity balances decreased
             // as we transferred funds to the last identity
             assert_eq!(new_balance, 0);
         }
 
         let last_identity = &outcome.identities[len - 1];
-        let last_identity_balance = balances[&last_identity.id.to_buffer()];
+        let last_identity_balance = balances[&last_identity.id().to_buffer()];
         // We transferred funds to the last identity, so we need to check that last identity balance was increased
         assert!(last_identity_balance > 100000000000u64);
     }

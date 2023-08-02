@@ -1,4 +1,4 @@
-use crate::version::FeatureVersion;
+use crate::version::{FeatureVersion, OptionalFeatureVersion};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciVersion {
@@ -40,7 +40,6 @@ pub struct DriveAbciValidationVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub structure: FeatureVersion,
-    pub identity_signatures: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
@@ -66,13 +65,14 @@ pub struct DriveAbciValidationDataTriggerVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
     pub structure: FeatureVersion,
-    pub identity_signatures: FeatureVersion,
+    pub identity_signatures: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersions {
+    pub validate_state_transition_identity_signed: FeatureVersion,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -81,11 +81,6 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
-    // TODO: We might want to add data triggers to action transitions. BTW, they aren't using atm.
-    pub document_base_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub document_create_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub document_replace_state_transition: DriveAbciStateTransitionValidationVersion,
-    pub document_delete_state_transition: DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

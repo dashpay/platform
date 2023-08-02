@@ -19,8 +19,6 @@ use dpp::data_contract::DataContract;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use dpp::{
     consensus::basic::data_contract::{
@@ -31,8 +29,10 @@ use dpp::{
     Convertible, ProtocolError,
 };
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
-pub(crate) trait StateTransitionStateValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStateValidationV0 {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -42,10 +42,11 @@ pub(crate) trait StateTransitionStateValidationV0 {
 
     fn transform_into_action_v0(
         &self,
+        platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
+impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -57,6 +58,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
 
         let new_data_contract: DataContract = self
             .data_contract()
+            .clone()
             .try_into_platform_versioned(platform_version)?;
 
         // Data contract should exist
@@ -216,14 +218,19 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
         //     return Ok(validation_result);
         // }
 
-        self.transform_into_action_v0()
+        self.transform_into_action_v0(platform_version)
     }
 
     fn transform_into_action_v0(
         &self,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let action: StateTransitionAction =
-            Into::<DataContractUpdateTransitionAction>::into(self).into();
+        let action: StateTransitionAction = TryIntoPlatformVersioned::<
+            DataContractUpdateTransitionAction,
+        >::try_into_platform_versioned(
+            self, platform_version
+        )?
+        .into();
         Ok(action.into())
     }
 }

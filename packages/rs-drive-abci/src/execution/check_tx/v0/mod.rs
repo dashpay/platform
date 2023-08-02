@@ -44,7 +44,7 @@ where
             process_state_transition(&platform_ref, state_transition, Some(transaction))?;
 
         if state_transition_execution_event.is_valid() {
-            let platform_version = platform.state.current_platform_version()?;
+            let platform_version = platform_ref.state.current_platform_version()?;
             let execution_event = state_transition_execution_event.into_data()?;
             self.execute_event(execution_event, block_info, transaction, platform_version)
         } else {
@@ -126,13 +126,12 @@ mod tests {
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{signer, KeyPair};
     use dpp::data_contracts::dpns_contract;
-    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::{StateTransition, StateTransitionType};
-    use dpp::system_data_contracts::dpns_contract;
     use dpp::version::{PlatformVersion, LATEST_VERSION};
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -152,8 +151,7 @@ mod tests {
             .drive
             .create_initial_state_structure(None, platform_version)
             .expect("expected to create state structure");
-        let identity = Identity {
-            protocol_version: 1,
+        let identity = IdentityV0 {
             id: Identifier::new([
                 158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
@@ -161,9 +159,8 @@ mod tests {
             public_keys: BTreeMap::from([(1, key)]),
             balance: 100000,
             revision: 0,
-            asset_lock_proof: None,
-            metadata: None,
-        };
+        }
+        .into();
         platform
             .drive
             .add_new_identity(
@@ -196,7 +193,8 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         platform
             .drive
@@ -243,7 +241,8 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         let genesis_time = 0;
 
@@ -288,7 +287,8 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         let genesis_time = 0;
 
@@ -338,7 +338,8 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         let genesis_time = 0;
 
@@ -372,7 +373,8 @@ mod tests {
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         let genesis_time = 0;
 
@@ -433,7 +435,8 @@ mod tests {
             .with_config(config)
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         let genesis_time = 0;
 
@@ -522,7 +525,8 @@ mod tests {
             .with_config(config)
             .build_with_mock_rpc();
 
-        let platform_version = platform.state.read().unwrap().current_platform_version()?;
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version()?;
 
         let genesis_time = 0;
 

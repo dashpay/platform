@@ -19,6 +19,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::version::PlatformVersion;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -633,7 +635,7 @@ pub(crate) fn continue_chain_for_strategy(
                 .expect("lock is poisoned")
                 .last_committed_block_info()
                 .as_ref()
-                .map(|block_info| block_info.basic_info.time_ms),
+                .map(|block_info| block_info.basic_info().time_ms),
         )
         .expect("should calculate epoch info");
 
@@ -711,6 +713,10 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
+        let platform_state = platform.state.read().expect("lock is poisoned");
+
+        let platform_version = platform_state.current_platform_version().unwrap();
+
         total_withdrawals.append(&mut withdrawals_this_block);
 
         for finalize_block_operation in finalize_block_operations {
@@ -718,11 +724,11 @@ pub(crate) fn continue_chain_for_strategy(
                 IdentityAddKeys(identifier, keys) => {
                     let identity = current_identities
                         .iter_mut()
-                        .find(|identity| identity.id == identifier)
+                        .find(|identity| identity.id() == identifier)
                         .expect("expected to find an identity");
                     identity
-                        .public_keys()
-                        .extend(keys.into_iter().map(|key| (key.id, key)));
+                        .public_keys_mut()
+                        .extend(keys.into_iter().map(|key| (key.id(), key)));
                 }
             }
         }
@@ -732,7 +738,12 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions);
+            verify_state_transitions_were_executed(
+                &abci_app,
+                &root_app_hash,
+                &state_transitions,
+                platform_version,
+            );
         }
 
         if let Some(query_strategy) = &strategy.query_testing {
@@ -753,6 +764,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &current_identities,
                 &abci_app,
                 StrategyRandomness::RNGEntropy(rng.clone()),
+                platform_version,
             )
         }
 

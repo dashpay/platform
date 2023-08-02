@@ -16,7 +16,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
+use crate::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::version::PlatformVersion;
 
 impl Drive {

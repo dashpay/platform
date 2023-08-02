@@ -5,7 +5,7 @@ use crate::error::Error;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::{document, ProtocolError};
 use dpp::document::DocumentV0Getters;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -38,6 +38,8 @@ pub fn delete_withdrawal_data_trigger_v0(
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
+    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
 
     let DocumentTransitionAction::DeleteAction(dt_delete) = document_transition else {
@@ -47,12 +49,10 @@ pub fn delete_withdrawal_data_trigger_v0(
         ))));
     };
 
-    let document_type = context
-        .data_contract
-        .document_type_for_name(withdrawal::NAME)?;
+    let document_type = data_contract.document_type_for_name(withdrawal::NAME)?;
 
     let drive_query = DriveQuery {
-        contract: context.data_contract,
+        contract: data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -87,7 +87,7 @@ pub fn delete_withdrawal_data_trigger_v0(
 
     let Some(withdrawal) = withdrawals.get(0) else {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             dt_delete.base().id(),
             "Withdrawal document was not found".to_string(),
         );
@@ -106,7 +106,7 @@ pub fn delete_withdrawal_data_trigger_v0(
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
         let err = DataTriggerConditionError::new(
-            context.data_contract.id(),
+            data_contract.id(),
             dt_delete.base().id(),
             "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
         );
@@ -128,14 +128,15 @@ mod tests {
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters};
     use dpp::platform_value::{platform_value, Bytes32};
-    use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
-    use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
-    use dpp::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
+    use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+    use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionV0;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use dpp::version::PlatformVersion;
     use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
     #[test]
     fn should_throw_error_if_withdrawal_not_found() {
@@ -158,7 +159,6 @@ mod tests {
         let document_transition = DocumentTransitionAction::DeleteAction(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
@@ -294,7 +294,6 @@ mod tests {
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,

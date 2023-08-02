@@ -1,8 +1,8 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
-use dpp::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionResult;
-use dpp::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 
 use super::DataTriggerExecutionContext;
@@ -26,7 +26,8 @@ use super::DataTriggerExecutionContext;
 pub fn reject_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
 ) -> Result<DataTriggerExecutionResult, Error> {
-    let data_contract = document_transition.base().data_contract();
+    let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
+    let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
 
     let err = DataTriggerConditionError::new(

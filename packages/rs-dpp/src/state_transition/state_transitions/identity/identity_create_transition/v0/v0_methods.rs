@@ -24,6 +24,7 @@ use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::StateTransition;
 use crate::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
@@ -35,7 +36,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         signer: &S,
         bls: &impl BlsModule,
         _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    ) -> Result<StateTransition, ProtocolError> {
         let mut identity_create_transition = IdentityCreateTransitionV0::default();
         let public_keys = identity
             .public_keys()
@@ -62,13 +63,11 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
                 Ok::<(), ProtocolError>(())
             })?;
 
-        identity_create_transition.sign_by_private_key(
-            asset_lock_proof_private_key,
-            ECDSA_HASH160,
-            bls,
-        )?;
+        let mut state_transition: StateTransition = identity_create_transition.into();
 
-        Ok(identity_create_transition)
+        state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
+
+        Ok(state_transition)
     }
 
     /// Get State Transition type

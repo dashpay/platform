@@ -16,14 +16,15 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
-use dpp::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
 use drive::grovedb::TransactionArg;
 
-pub(crate) trait StateTransitionStateValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
+{
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -37,7 +38,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
+impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -99,7 +100,7 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        match IdentityTopUpTransitionAction::from_borrowed(self, tx_out.value * 1000) {
+        match IdentityTopUpTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }

@@ -18,15 +18,16 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
-use dpp::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
-use dpp::state_transition_action::StateTransitionAction;
 use dpp::version::PlatformVersion;
+use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
 
-pub(crate) trait StateTransitionStateValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
+{
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -41,7 +42,7 @@ pub(crate) trait StateTransitionStateValidationV0 {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl StateTransitionStateValidationV0 for IdentityCreateTransition {
+impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
