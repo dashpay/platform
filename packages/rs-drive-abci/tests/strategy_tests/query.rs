@@ -6,10 +6,12 @@ use dapi_grpc::platform::v0::{
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{Identity, PartialIdentity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::validation::SimpleValidationResult;
+use dpp::version::PlatformVersion;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive_abci::abci::{AbciApplication, AbciError};
@@ -22,8 +24,6 @@ use std::collections::{HashMap, HashSet};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
 use tenderdash_abci::signatures::{SignBytes, SignDigest};
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::version::PlatformVersion;
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {
@@ -232,7 +232,11 @@ impl QueryStrategy {
             let encoded_request = request.encode_to_vec();
             let query_validation_result = abci_app
                 .platform
-                .query("/identities/by-public-key-hash", encoded_request.as_slice(), platform_version)
+                .query(
+                    "/identities/by-public-key-hash",
+                    encoded_request.as_slice(),
+                    platform_version,
+                )
                 .expect("expected to run query");
 
             assert!(

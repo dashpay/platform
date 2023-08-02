@@ -115,6 +115,7 @@ impl DocumentTypeV0 {
         parameters: RandomDocumentTypeParameters,
         data_contract_id: Identifier,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Call the validation function at the beginning
         parameters.validate_parameters()?;
@@ -225,7 +226,10 @@ impl DocumentTypeV0 {
         let documents_keep_history = rng.gen_bool(parameters.keep_history_chance);
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
 
-        let index_structure = IndexLevel::try_from_indices(indices.as_slice())?;
+        let name = format!("doc_type_{}", rng.gen::<u16>());
+
+        let index_structure =
+            IndexLevel::try_from_indices(indices.as_slice(), name.as_str(), platform_version)?;
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &properties,
             &PlatformVersion::latest()
@@ -234,7 +238,7 @@ impl DocumentTypeV0 {
                 .document_type_versions,
         )?;
         Ok(DocumentTypeV0 {
-            name: format!("doc_type_{}", rng.gen::<u16>()),
+            name,
             indices,
             index_structure,
             flattened_properties: properties.clone(),

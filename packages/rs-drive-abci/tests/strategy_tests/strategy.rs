@@ -20,9 +20,7 @@ use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::{
-    StateTransition, StateTransitionType,
-};
+use dpp::state_transition::{StateTransition, StateTransitionType};
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
 use drive::drive::flags::StorageFlags::SingleEpoch;
@@ -51,6 +49,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::docu
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -231,7 +230,10 @@ impl Strategy {
     ) {
         for op in &self.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
-                let serialize = doc_op.contract.serialize_with_platform_version(platform_version).expect("expected to serialize");
+                let serialize = doc_op
+                    .contract
+                    .serialize_with_platform_version(platform_version)
+                    .expect("expected to serialize");
                 drive
                     .apply_contract_with_serialization(
                         &doc_op.contract,
@@ -296,12 +298,16 @@ impl Strategy {
                 contract
                     .document_types()
                     .iter_mut()
-                    .for_each(|(_, document_type)| document_type.set_data_contract_id(contract.id()));
+                    .for_each(|(_, document_type)| {
+                        document_type.set_data_contract_id(contract.id())
+                    });
 
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
                         updated_contract.data_contract().set_id(contract.id());
-                        updated_contract.data_contract().set_owner_id(contract.owner_id());
+                        updated_contract
+                            .data_contract()
+                            .set_owner_id(contract.owner_id());
                         updated_contract
                             .data_contract()
                             .document_types()
@@ -318,9 +324,13 @@ impl Strategy {
                         if document_op.contract.id() == old_id {
                             document_op.contract.set_id(contract.id());
                             document_op.contract.document_types().iter_mut().for_each(
-                                |(_, document_type)| document_type.set_data_contract_id(contract.id()),
+                                |(_, document_type)| {
+                                    document_type.set_data_contract_id(contract.id())
+                                },
                             );
-                            document_op.document_type.set_data_contract_id(contract.id());
+                            document_op
+                                .document_type
+                                .set_data_contract_id(contract.id());
                         }
                     }
                 });
@@ -417,26 +427,31 @@ impl Strategy {
                                     } else {
                                         None
                                     };
-                                let document_create_transition : DocumentCreateTransition = DocumentCreateTransitionV0 {
-                                    base: DocumentBaseTransitionV0 {
-                                        id: document.id(),
-                                        document_type_name: document_type.name().clone(),
-                                        data_contract_id: contract.id(),
-                                    }.into(),
-                                    entropy: entropy.to_buffer(),
-                                    created_at: document.created_at(),
-                                    updated_at,
-                                    data: document.properties().into(),
-                                }.into();
+                                let document_create_transition: DocumentCreateTransition =
+                                    DocumentCreateTransitionV0 {
+                                        base: DocumentBaseTransitionV0 {
+                                            id: document.id(),
+                                            document_type_name: document_type.name().clone(),
+                                            data_contract_id: contract.id(),
+                                        }
+                                        .into(),
+                                        entropy: entropy.to_buffer(),
+                                        created_at: document.created_at(),
+                                        updated_at,
+                                        data: document.properties_consumed(),
+                                    }
+                                    .into();
 
-                                let document_batch_transition : DocumentsBatchTransition = DocumentsBatchTransitionV0 {
-                                    owner_id: identity.id(),
-                                    transitions: vec![document_create_transition.into()],
-                                    signature_public_key_id: 0,
-                                    signature: BinaryData::default(),
-                                }.into();
-                                let mut document_batch_transition : StateTransition = document_batch_transition.into();
-
+                                let document_batch_transition: DocumentsBatchTransition =
+                                    DocumentsBatchTransitionV0 {
+                                        owner_id: identity.id(),
+                                        transitions: vec![document_create_transition.into()],
+                                        signature_public_key_id: 0,
+                                        signature: BinaryData::default(),
+                                    }
+                                    .into();
+                                let mut document_batch_transition: StateTransition =
+                                    document_batch_transition.into();
 
                                 let identity_public_key = identity
                                     .get_first_public_key_matching(
@@ -475,7 +490,8 @@ impl Strategy {
                                 None,
                                 Some(platform_version.protocol_version),
                             )
-                            .expect("expect to execute query").documents_owned();
+                            .expect("expect to execute query")
+                            .documents_owned();
 
                         if !items.is_empty() {
                             let document = items.remove(0);
@@ -494,23 +510,28 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
-                            let document_delete_transition : DocumentDeleteTransition = DocumentDeleteTransitionV0 {
-                                base: DocumentBaseTransitionV0 {
-                                    id: document.id(),
-                                    document_type_name: document_type.name().clone(),
-                                    data_contract_id: contract.id(),
-                                }.into(),
-                            }.into();
+                            let document_delete_transition: DocumentDeleteTransition =
+                                DocumentDeleteTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
+                                    }
+                                    .into(),
+                                }
+                                .into();
 
-                            let document_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
-                                owner_id: identity.id,
-                                transitions: vec![document_delete_transition.into()],
-                                signature_public_key_id: 0,
-                                signature: BinaryData::default(),
-                            }.into();
+                            let document_batch_transition: DocumentsBatchTransition =
+                                DocumentsBatchTransitionV0 {
+                                    owner_id: identity.id,
+                                    transitions: vec![document_delete_transition.into()],
+                                    signature_public_key_id: 0,
+                                    signature: BinaryData::default(),
+                                }
+                                .into();
 
-                            let mut document_batch_transition : StateTransition = document_batch_transition.into();
-
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
 
                             let identity_public_key = identity
                                 .loaded_public_keys
@@ -550,7 +571,9 @@ impl Strategy {
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
 
-                            let random_new_document = document_type.random_document_with_rng(rng, platform_version).unwrap();
+                            let random_new_document = document_type
+                                .random_document_with_rng(rng, platform_version)
+                                .unwrap();
                             let request = IdentityKeysRequest {
                                 identity_id: document.owner_id().to_buffer(),
                                 request_type: KeyRequestType::SpecificKeys(vec![1]),
@@ -562,26 +585,34 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
-                            let document_replace_transition : DocumentReplaceTransition = DocumentReplaceTransitionV0 {
-                                base: DocumentBaseTransitionV0 {
-                                    id: document.id(),
-                                    document_type_name: document_type.name().clone(),
-                                    data_contract_id: contract.id(),
-                                }.into(),
-                                revision: document.revision().expect("expected to unwrap revision")
-                                    + 1,
-                                updated_at: Some(block_info.time_ms),
-                                data: Some(random_new_document.properties_consumed()),
-                            }.into();
+                            let document_replace_transition: DocumentReplaceTransition =
+                                DocumentReplaceTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
+                                    }
+                                    .into(),
+                                    revision: document
+                                        .revision()
+                                        .expect("expected to unwrap revision")
+                                        + 1,
+                                    updated_at: Some(block_info.time_ms),
+                                    data: Some(random_new_document.properties_consumed()),
+                                }
+                                .into();
 
-                            let document_batch_transition : DocumentsBatchTransition = DocumentsBatchTransitionV0 {
-                                owner_id: identity.id,
-                                transitions: vec![document_replace_transition.into()],
-                                signature_public_key_id: 0,
-                                signature: BinaryData::default(),
-                            }.into();
+                            let document_batch_transition: DocumentsBatchTransition =
+                                DocumentsBatchTransitionV0 {
+                                    owner_id: identity.id,
+                                    transitions: vec![document_replace_transition.into()],
+                                    signature_public_key_id: 0,
+                                    signature: BinaryData::default(),
+                                }
+                                .into();
 
-                            let mut document_batch_transition : StateTransition = document_batch_transition.into();
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
 
                             let identity_public_key = identity
                                 .loaded_public_keys

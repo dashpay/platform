@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use dashcore_rpc::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
@@ -9,7 +10,6 @@ use dpp::state_transition::errors::{
 };
 use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
 use std::collections::HashMap;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 /// This simple signer is only to be used in tests
 #[derive(Default, Debug)]

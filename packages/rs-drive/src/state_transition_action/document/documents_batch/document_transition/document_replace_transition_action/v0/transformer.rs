@@ -30,7 +30,7 @@ impl DocumentReplaceTransitionActionV0 {
             created_at: originally_created_at,
             updated_at: *updated_at,
             //todo: remove clone
-            data: data.clone().unwrap_or_default(),
+            data: data.clone(),
         })
     }
 }

@@ -23,7 +23,13 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        match version.unwrap_or(platform_version.dpp.state_transition_serialization_versions.identity_top_up_state_transition.default_current_version) {
+        match version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .identity_top_up_state_transition
+                .default_current_version,
+        ) {
             0 => Ok(IdentityTopUpTransitionV0::try_from_identity(
                 identity,
                 asset_lock_proof,

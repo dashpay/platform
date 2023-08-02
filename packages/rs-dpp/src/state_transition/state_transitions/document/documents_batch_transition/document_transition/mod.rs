@@ -271,36 +271,24 @@ impl DocumentTransitionV0Methods for DocumentTransition {
 
     fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
         match self {
-            DocumentTransition::Create(t) => {
-                if let Some(ref data) = t.data() {
-                    data.get(path)
-                } else {
-                    None
-                }
-            }
-            DocumentTransition::Replace(t) => {
-                if let Some(ref data) = t.data() {
-                    data.get(path)
-                } else {
-                    None
-                }
-            }
+            DocumentTransition::Create(t) => t.data().get(path),
+            DocumentTransition::Replace(t) => t.data().get(path),
             DocumentTransition::Delete(_) => None,
         }
     }
 
     fn data(&self) -> Option<&BTreeMap<String, Value>> {
         match self {
-            DocumentTransition::Create(t) => t.data(),
-            DocumentTransition::Replace(t) => t.data(),
+            DocumentTransition::Create(t) => Some(t.data()),
+            DocumentTransition::Replace(t) => Some(t.data()),
             DocumentTransition::Delete(_) => None,
         }
     }
 
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
         match self {
-            DocumentTransition::Create(t) => t.data_mut(),
-            DocumentTransition::Replace(t) => t.data_mut(),
+            DocumentTransition::Create(t) => Some(t.data_mut()),
+            DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
         }
     }

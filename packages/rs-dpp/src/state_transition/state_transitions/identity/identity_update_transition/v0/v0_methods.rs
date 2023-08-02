@@ -2,10 +2,10 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, ReplacementType, Value};
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
-use platform_version::version::PlatformVersion;
 
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,

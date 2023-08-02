@@ -26,7 +26,7 @@ impl DocumentCreateTransitionActionV0 {
             )?,
             created_at,
             updated_at,
-            data: data.unwrap_or_default(),
+            data,
         })
     }
 
@@ -49,7 +49,7 @@ impl DocumentCreateTransitionActionV0 {
             created_at: *created_at,
             updated_at: *updated_at,
             //todo: get rid of clone
-            data: data.clone().unwrap_or_default(),
+            data: data.clone(),
         })
     }
 }

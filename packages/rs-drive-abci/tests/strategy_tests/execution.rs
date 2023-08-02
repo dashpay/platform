@@ -19,6 +19,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::version::PlatformVersion;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
@@ -35,7 +36,6 @@ use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::Application;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -716,7 +716,9 @@ pub(crate) fn continue_chain_for_strategy(
         let platform_version = platform
             .state
             .read()
-            .expect("lock is poisoned").current_platform_version().unwrap();
+            .expect("lock is poisoned")
+            .current_platform_version()
+            .unwrap();
 
         total_withdrawals.append(&mut withdrawals_this_block);
 
@@ -739,7 +741,12 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions, platform_version);
+            verify_state_transitions_were_executed(
+                &abci_app,
+                &root_app_hash,
+                &state_transitions,
+                platform_version,
+            );
         }
 
         if let Some(query_strategy) = &strategy.query_testing {

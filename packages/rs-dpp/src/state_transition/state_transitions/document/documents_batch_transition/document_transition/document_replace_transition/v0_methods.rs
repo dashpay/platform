@@ -49,19 +49,19 @@ impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
         }
     }
 
-    fn data(&self) -> Option<&BTreeMap<String, Value>> {
+    fn data(&self) -> &BTreeMap<String, Value> {
         match self {
-            DocumentReplaceTransition::V0(v0) => v0.data.as_ref(),
+            DocumentReplaceTransition::V0(v0) => &v0.data,
         }
     }
 
-    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
+    fn data_mut(&mut self) -> &mut BTreeMap<String, Value> {
         match self {
-            DocumentReplaceTransition::V0(v0) => v0.data.as_mut(),
+            DocumentReplaceTransition::V0(v0) => &mut v0.data,
         }
     }
 
-    fn set_data(&mut self, data: Option<BTreeMap<String, Value>>) {
+    fn set_data(&mut self, data: BTreeMap<String, Value>) {
         match self {
             DocumentReplaceTransition::V0(v0) => v0.data = data,
         }
