@@ -109,12 +109,12 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
-    use dpp::state_transition::{StateTransitionFieldTypes, StateTransitionType};
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+    use dpp::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionType};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::{PlatformVersion, LATEST_VERSION};
 
     struct TestData<T> {
-        raw_state_transition: Value,
         data_contract: DataContract,
         platform: TempPlatform<T>,
     }
@@ -146,15 +146,12 @@ mod tests {
 
         updated_data_contract.increment_version();
 
-        let state_transition = DataContractUpdateTransition {
-            protocol_version: LATEST_VERSION,
+        let state_transition: StateTransition = DataContractUpdateTransitionV0 {
             data_contract: updated_data_contract,
             signature: BinaryData::new(vec![0; 65]),
             signature_public_key_id: 0,
-            transition_type: StateTransitionType::DataContractUpdate,
-        };
-
-        let raw_state_transition = state_transition.to_object(false).unwrap();
+        }
+        .into();
 
         let dc = data_contract;
 
@@ -171,7 +168,6 @@ mod tests {
             .build_with_mock_rpc();
 
         TestData {
-            raw_state_transition,
             data_contract: dc,
             platform: platform.set_initial_state_structure(),
         }
@@ -193,7 +189,6 @@ mod tests {
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
@@ -249,7 +244,6 @@ mod tests {
         #[test]
         pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
