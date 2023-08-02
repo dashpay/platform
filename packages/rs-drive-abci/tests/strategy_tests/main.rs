@@ -1118,7 +1118,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1189,7 +1189,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1270,7 +1270,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1279,7 +1279,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1369,7 +1369,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1378,7 +1378,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1482,7 +1482,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1491,7 +1491,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1584,7 +1584,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_replace_op = DocumentOp {
@@ -1593,7 +1593,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1602,7 +1602,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {

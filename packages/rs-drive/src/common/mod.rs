@@ -36,7 +36,6 @@
 pub mod decode;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod encode;
-#[cfg(test)]
 pub mod identities;
 
 #[cfg(feature = "full")]

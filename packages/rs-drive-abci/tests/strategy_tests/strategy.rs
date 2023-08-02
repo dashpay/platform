@@ -12,17 +12,16 @@ use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::data_contract::{generate_data_contract_id, DataContract};
-use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
+use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySignedV0, StateTransitionType,
+    StateTransition, StateTransitionType,
 };
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
@@ -42,6 +41,16 @@ use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV0Setters};
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::platform_value::BinaryData;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
+use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
+use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
+use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition, DocumentsBatchTransitionV0};
+use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -222,7 +231,7 @@ impl Strategy {
     ) {
         for op in &self.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
-                let serialize = doc_op.contract.serialize().expect("expected to serialize");
+                let serialize = doc_op.contract.serialize_with_platform_version(platform_version).expect("expected to serialize");
                 drive
                     .apply_contract_with_serialization(
                         &doc_op.contract,
@@ -264,6 +273,7 @@ impl Strategy {
         current_identities: &Vec<Identity>,
         signer: &SimpleSigner,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.contracts_with_updates
             .iter_mut()
@@ -277,27 +287,27 @@ impl Strategy {
 
                 let mut contract = &mut created_contract.data_contract();
 
-                contract.owner_id = identity.id;
+                contract.set_owner_id(identity.id);
                 let old_id = contract.id();
                 contract.set_id(DataContract::generate_data_contract_id_v0(
                     identity.id,
-                    created_contract.entropy_used,
+                    created_contract.entropy_used(),
                 ));
                 contract
                     .document_types()
                     .iter_mut()
-                    .for_each(|(_, document_type)| document_type.data_contract_id = contract.id);
+                    .for_each(|(_, document_type)| document_type.set_data_contract_id(contract.id()));
 
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
-                        updated_contract.data_contract.id = contract.id;
-                        updated_contract.data_contract.owner_id = contract.owner_id;
+                        updated_contract.data_contract().set_id(contract.id());
+                        updated_contract.data_contract().set_owner_id(contract.owner_id());
                         updated_contract
-                            .data_contract
-                            .document_types
+                            .data_contract()
+                            .document_types()
                             .iter_mut()
                             .for_each(|(_, document_type)| {
-                                document_type.data_contract_id = contract.id
+                                document_type.set_data_contract_id(contract.id())
                             });
                     }
                 }
@@ -305,22 +315,24 @@ impl Strategy {
                 // since we are changing the id, we need to update all the strategy
                 self.operations.iter_mut().for_each(|operation| {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
-                        if document_op.contract.id == old_id {
-                            document_op.contract.id = contract.id;
-                            document_op.contract.document_types.iter_mut().for_each(
-                                |(_, document_type)| document_type.data_contract_id = contract.id,
+                        if document_op.contract.id() == old_id {
+                            document_op.contract.set_id(contract.id());
+                            document_op.contract.document_types().iter_mut().for_each(
+                                |(_, document_type)| document_type.set_data_contract_id(contract.id()),
                             );
-                            document_op.document_type.data_contract_id = contract.id;
+                            document_op.document_type.set_data_contract_id(contract.id());
                         }
                     }
                 });
 
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
-                    created_contract.entropy_used,
+                    created_contract.entropy_used_owned(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,
+                    platform_version,
+                    None,
                 )
                 .expect("expected to create a create state transition from a data contract");
                 state_transition.into()
@@ -333,6 +345,7 @@ impl Strategy {
         current_identities: &Vec<Identity>,
         block_height: u64,
         signer: &SimpleSigner,
+        platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
         self.contracts_with_updates
             .iter_mut()
@@ -345,16 +358,18 @@ impl Strategy {
                 };
                 let identity = current_identities
                     .iter()
-                    .find(|identity| identity.id == contract_update.data_contract.owner_id)
+                    .find(|identity| identity.id() == contract_update.data_contract().owner_id())
                     .expect("expected to find an identity")
                     .clone()
                     .into_partial_identity_info();
 
                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
-                    contract_update.data_contract.clone(),
+                    contract_update.data_contract().clone(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,
+                    platform_version,
+                    None,
                 )
                 .expect("expected to create a create state transition from a data contract");
                 Some(state_transition.into())
@@ -397,33 +412,31 @@ impl Strategy {
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
                                 let updated_at =
-                                    if document_type.required_fields.contains("$updatedAt") {
+                                    if document_type.required_fields().contains("$updatedAt") {
                                         document.created_at()
                                     } else {
                                         None
                                     };
-                                let document_create_transition = DocumentCreateTransition {
-                                    base: DocumentBaseTransition {
-                                        id: document.id,
-                                        document_type_name: document_type.name.clone(),
-                                        action: Action::Create,
-                                        data_contract_id: contract.id,
-                                        data_contract: contract.clone(),
-                                    },
+                                let document_create_transition : DocumentCreateTransition = DocumentCreateTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
+                                    }.into(),
                                     entropy: entropy.to_buffer(),
-                                    created_at: document.created_at,
+                                    created_at: document.created_at(),
                                     updated_at,
-                                    data: document.properties.into(),
-                                };
+                                    data: document.properties().into(),
+                                }.into();
 
-                                let mut document_batch_transition = DocumentsBatchTransition {
-                                    feature_version: LATEST_VERSION,
-                                    transition_type: StateTransitionType::DocumentsBatch,
-                                    owner_id: identity.id,
+                                let document_batch_transition : DocumentsBatchTransition = DocumentsBatchTransitionV0 {
+                                    owner_id: identity.id(),
                                     transitions: vec![document_create_transition.into()],
-                                    signature_public_key_id: None,
-                                    signature: None,
-                                };
+                                    signature_public_key_id: 0,
+                                    signature: BinaryData::default(),
+                                }.into();
+                                let mut document_batch_transition : StateTransition = document_batch_transition.into();
+
 
                                 let identity_public_key = identity
                                     .get_first_public_key_matching(
@@ -452,28 +465,26 @@ impl Strategy {
                         contract,
                     }) => {
                         let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.clone());
+                            DriveQuery::any_item_query(contract, document_type.as_ref());
                         let mut items = platform
                             .drive
-                            .query_documents_as_serialized(
+                            .query_documents(
                                 any_item_query,
                                 Some(&block_info.epoch),
+                                false,
                                 None,
+                                Some(platform_version.protocol_version),
                             )
-                            .expect("expect to execute query")
-                            .items;
+                            .expect("expect to execute query").documents_owned();
 
                         if !items.is_empty() {
-                            let first_item = items.remove(0);
-                            let document =
-                                Document::from_bytes(first_item.as_slice(), document_type.clone())
-                                    .expect("expected to deserialize document");
+                            let document = items.remove(0);
 
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
 
                             let request = IdentityKeysRequest {
-                                identity_id: document.owner_id.to_buffer(),
+                                identity_id: document.owner_id().to_buffer(),
                                 request_type: KeyRequestType::SpecificKeys(vec![1]),
                                 limit: Some(1),
                                 offset: None,
@@ -483,24 +494,23 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
-                            let document_delete_transition = DocumentDeleteTransition {
-                                base: DocumentBaseTransition {
-                                    id: document.id,
-                                    document_type_name: document_type.name.clone(),
-                                    action: Action::Delete,
-                                    data_contract_id: contract.id,
-                                    data_contract: contract.clone(),
-                                },
-                            };
+                            let document_delete_transition : DocumentDeleteTransition = DocumentDeleteTransitionV0 {
+                                base: DocumentBaseTransitionV0 {
+                                    id: document.id(),
+                                    document_type_name: document_type.name().clone(),
+                                    data_contract_id: contract.id(),
+                                }.into(),
+                            }.into();
 
-                            let mut document_batch_transition = DocumentsBatchTransition {
-                                feature_version: LATEST_VERSION,
-                                transition_type: StateTransitionType::DocumentsBatch,
+                            let document_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
                                 owner_id: identity.id,
                                 transitions: vec![document_delete_transition.into()],
-                                signature_public_key_id: None,
-                                signature: None,
-                            };
+                                signature_public_key_id: 0,
+                                signature: BinaryData::default(),
+                            }.into();
+
+                            let mut document_batch_transition : StateTransition = document_batch_transition.into();
+
 
                             let identity_public_key = identity
                                 .loaded_public_keys
@@ -512,7 +522,7 @@ impl Strategy {
                                 .sign_external(identity_public_key, signer)
                                 .expect("expected to sign");
 
-                            operations.push(document_batch_transition.into());
+                            operations.push(document_batch_transition);
                         }
                     }
                     OperationType::Document(DocumentOp {
@@ -521,29 +531,28 @@ impl Strategy {
                         contract,
                     }) => {
                         let any_item_query =
-                            DriveQuery::any_item_query(contract, document_type.clone());
+                            DriveQuery::any_item_query(contract, document_type.as_ref());
                         let mut items = platform
                             .drive
-                            .query_documents_as_serialized(
+                            .query_documents(
                                 any_item_query,
                                 Some(&block_info.epoch),
+                                false,
                                 None,
+                                Some(platform_version.protocol_version),
                             )
                             .expect("expect to execute query")
-                            .items;
+                            .documents_owned();
 
                         if !items.is_empty() {
-                            let first_item = items.remove(0);
-                            let document =
-                                Document::from_bytes(first_item.as_slice(), document_type.clone())
-                                    .expect("expected to deserialize document");
+                            let document = items.remove(0);
 
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
 
-                            let random_new_document = document_type.random_document_with_rng(rng);
+                            let random_new_document = document_type.random_document_with_rng(rng, platform_version).unwrap();
                             let request = IdentityKeysRequest {
-                                identity_id: document.owner_id.to_buffer(),
+                                identity_id: document.owner_id().to_buffer(),
                                 request_type: KeyRequestType::SpecificKeys(vec![1]),
                                 limit: Some(1),
                                 offset: None,
@@ -553,28 +562,26 @@ impl Strategy {
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
-                            let document_replace_transition = DocumentReplaceTransition {
-                                base: DocumentBaseTransition {
-                                    id: document.id,
-                                    document_type_name: document_type.name.clone(),
-                                    action: Action::Replace,
-                                    data_contract_id: contract.id,
-                                    data_contract: contract.clone(),
-                                },
-                                revision: document.revision.expect("expected to unwrap revision")
+                            let document_replace_transition : DocumentReplaceTransition = DocumentReplaceTransitionV0 {
+                                base: DocumentBaseTransitionV0 {
+                                    id: document.id(),
+                                    document_type_name: document_type.name().clone(),
+                                    data_contract_id: contract.id(),
+                                }.into(),
+                                revision: document.revision().expect("expected to unwrap revision")
                                     + 1,
                                 updated_at: Some(block_info.time_ms),
-                                data: Some(random_new_document.properties),
-                            };
+                                data: Some(random_new_document.properties_consumed()),
+                            }.into();
 
-                            let mut document_batch_transition = DocumentsBatchTransition {
-                                feature_version: LATEST_VERSION,
-                                transition_type: StateTransitionType::DocumentsBatch,
+                            let document_batch_transition : DocumentsBatchTransition = DocumentsBatchTransitionV0 {
                                 owner_id: identity.id,
                                 transitions: vec![document_replace_transition.into()],
-                                signature_public_key_id: None,
-                                signature: None,
-                            };
+                                signature_public_key_id: 0,
+                                signature: BinaryData::default(),
+                            }.into();
+
+                            let mut document_batch_transition : StateTransition = document_batch_transition.into();
 
                             let identity_public_key = identity
                                 .loaded_public_keys
@@ -586,7 +593,7 @@ impl Strategy {
                                 .sign_external(identity_public_key, signer)
                                 .expect("expected to sign");
 
-                            operations.push(document_batch_transition.into());
+                            operations.push(document_batch_transition);
                         }
                     }
                     OperationType::IdentityTopUp if !current_identities.is_empty() => {
@@ -601,6 +608,7 @@ impl Strategy {
                             operations.push(crate::transitions::create_identity_top_up_transition(
                                 rng,
                                 random_identity,
+                                platform_version,
                             ));
                         }
                     }
@@ -617,6 +625,7 @@ impl Strategy {
                                             *count,
                                             signer,
                                             rng,
+                                            platform_version,
                                         );
                                     operations.push(state_transition);
                                     finalize_block_operations.push(IdentityAddKeys(
@@ -632,6 +641,7 @@ impl Strategy {
                                             block_info.time_ms,
                                             signer,
                                             rng,
+                                            platform_version,
                                         );
                                     if let Some(state_transition) = state_transition {
                                         operations.push(state_transition);
@@ -664,7 +674,7 @@ impl Strategy {
 
                         let fetched_owner_balance = platform
                             .drive
-                            .fetch_identity_balance(owner.id.to_buffer(), None, platform_version)
+                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
                             .expect("expected to be able to get identity")
                             .expect("expected to get an identity");
 
@@ -738,6 +748,7 @@ impl Strategy {
                 current_identities,
                 block_info.height,
                 signer,
+                platform_version,
             );
             state_transitions.append(&mut contract_update_state_transitions);
         }

@@ -15,7 +15,12 @@ use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
+use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
+use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
 
 pub(crate) fn verify_state_transitions_were_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
@@ -92,7 +97,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 );
                 assert_eq!(
                     &contract.expect("expected a contract"),
-                    &data_contract_create.data_contract,
+                    &data_contract_create.data_contract(),
                 )
             }
             StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
@@ -131,28 +136,29 @@ pub(crate) fn verify_state_transitions_were_executed(
                 );
                 assert_eq!(
                     &contract.expect("expected a contract"),
-                    &data_contract_update.data_contract,
+                    &data_contract_update.data_contract(),
                 )
             }
             StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
                 documents_batch_transition
-                    .transitions
+                    .transitions()
                     .iter()
                     .for_each(|transition| {
                         proofs_request
                             .documents
                             .push(get_proofs_request::DocumentRequest {
-                                contract_id: transition.base().data_contract_id.to_vec(),
-                                document_type: transition.base().document_type_name.clone(),
+                                contract_id: transition.base().data_contract_id().to_vec(),
+                                document_type: transition.base().document_type_name().clone(),
                                 document_type_keeps_history: transition
                                     .base()
-                                    .data_contract
+                                    .data_contract_fetch_info()
+                                    .contract
                                     .document_type_for_name(
-                                        transition.base().document_type_name.as_str(),
+                                        transition.base().document_type_name().as_str(),
                                     )
                                     .expect("get document type")
-                                    .documents_keep_history,
-                                document_id: transition.base().id.to_vec(),
+                                    .documents_keep_history(),
+                                document_id: transition.base().id().to_vec(),
                             });
                     });
                 let result = abci_app
@@ -168,28 +174,29 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                 let response_proof = proof.expect("proof should be present");
 
-                for document_transition_action in documents_batch_transition.transitions.iter() {
+                for document_transition_action in documents_batch_transition.transitions().iter() {
                     let document_type = document_transition_action
                         .base()
-                        .data_contract
+                        .data_contract_fetch_info()
+                        .contract
                         .document_type_for_name(
                             document_transition_action
                                 .base()
-                                .document_type_name
+                                .document_type_name()
                                 .as_str(),
                         )
                         .expect("get document type");
                     let query = SingleDocumentDriveQuery {
                         contract_id: document_transition_action
                             .base()
-                            .data_contract_id
+                            .data_contract_id()
                             .into_buffer(),
                         document_type_name: document_transition_action
                             .base()
-                            .document_type_name
+                            .document_type_name()
                             .clone(),
-                        document_type_keeps_history: document_type.documents_keep_history,
-                        document_id: document_transition_action.base().id.into_buffer(),
+                        document_type_keeps_history: document_type.documents_keep_history(),
+                        document_id: document_transition_action.base().id().into_buffer(),
                         block_time_ms: None, //None because we want latest
                     };
 
@@ -216,7 +223,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                                 document,
                                 Document::try_from_create_transition(
                                     &creation_action,
-                                    documents_batch_transition.owner_id,
+                                    documents_batch_transition.owner_id(),
                                     platform_version,
                                 )
                                 .expect("expected to get document")
@@ -229,7 +236,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                                     document,
                                     Document::try_from_replace_transition(
                                         &replace_action,
-                                        documents_batch_transition.owner_id,
+                                        documents_batch_transition.owner_id(),
                                         platform_version,
                                     )
                                     .expect("expected to get document")
@@ -247,7 +254,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .identities
                     .push(get_proofs_request::IdentityRequest {
-                        identity_id: identity_create_transition.identity_id.to_vec(),
+                        identity_id: identity_create_transition.identity_id().to_vec(),
                         request_type: get_proofs_request::identity_request::Type::FullIdentity
                             .into(),
                     });
@@ -268,7 +275,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
                     &response_proof.grovedb_proof,
                     false,
-                    identity_create_transition.identity_id.into_buffer(),
+                    identity_create_transition.identity_id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify full identity");
@@ -283,11 +290,11 @@ pub(crate) fn verify_state_transitions_were_executed(
                         .expect("expected an identity")
                         .into_partial_identity_info_no_balance(),
                     PartialIdentity {
-                        id: identity_create_transition.identity_id,
+                        id: identity_create_transition.identity_id(),
                         loaded_public_keys: identity_create_transition
-                            .public_keys
+                            .public_keys()
                             .iter()
-                            .map(|key| (key.id, key.clone()))
+                            .map(|key| (key.id(), key.clone()))
                             .collect(),
                         balance: None,
                         revision: Some(0),
@@ -299,7 +306,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .identities
                     .push(get_proofs_request::IdentityRequest {
-                        identity_id: identity_top_up_transition.identity_id.to_vec(),
+                        identity_id: identity_top_up_transition.identity_id().to_vec(),
                         request_type: get_proofs_request::identity_request::Type::Balance.into(),
                     });
                 let result = abci_app
@@ -318,7 +325,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 // we expect to get an identity that matches the state transition
                 let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                     &response_proof.grovedb_proof,
-                    identity_top_up_transition.identity_id.into_buffer(),
+                    identity_top_up_transition.identity_id().into_buffer(),
                     false,
                     platform_version,
                 )
@@ -333,7 +340,7 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                 //while this isn't 100% sure to be true (in the case of debt,
                 // for the tests we have we can use it
-                assert!(identity_top_up_transition.top_up_balance_amount <= balance);
+                assert!(identity_top_up_transition.top_up_balance_amount() <= balance);
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(
                 identity_credit_withdrawal_transition,
@@ -341,7 +348,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .identities
                     .push(get_proofs_request::IdentityRequest {
-                        identity_id: identity_credit_withdrawal_transition.identity_id.to_vec(),
+                        identity_id: identity_credit_withdrawal_transition.identity_id().to_vec(),
                         request_type: get_proofs_request::identity_request::Type::Balance.into(),
                     });
                 //todo: we should also verify the document
@@ -371,7 +378,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                     &response_proof.grovedb_proof,
                     identity_credit_withdrawal_transition
-                        .identity_id
+                        .identity_id()
                         .into_buffer(),
                     false,
                     platform_version,
@@ -391,7 +398,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .identities
                     .push(get_proofs_request::IdentityRequest {
-                        identity_id: identity_update_transition.identity_id.to_vec(),
+                        identity_id: identity_update_transition.identity_id().to_vec(),
                         request_type: get_proofs_request::identity_request::Type::Keys.into(),
                     });
                 let result = abci_app
@@ -411,7 +418,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
                     &response_proof.grovedb_proof,
                     false,
-                    identity_update_transition.identity_id.into_buffer(),
+                    identity_update_transition.identity_id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify identity keys");
@@ -424,11 +431,11 @@ pub(crate) fn verify_state_transitions_were_executed(
                 );
                 // we need to verify that the partial identity has all keys we added
                 let has_all_keys = identity_update_transition
-                    .add_public_keys
+                    .public_keys_to_add()
                     .iter()
-                    .all(|added| identity.loaded_public_keys.contains_key(&added.id));
+                    .all(|added| identity.loaded_public_keys.contains_key(&added.id()));
                 let has_no_removed_key = !identity_update_transition
-                    .disable_public_keys
+                    .public_keys_to_disable()
                     .iter()
                     .any(|removed| identity.loaded_public_keys.contains_key(removed));
                 assert!(has_all_keys);
@@ -440,14 +447,14 @@ pub(crate) fn verify_state_transitions_were_executed(
                 proofs_request
                     .identities
                     .push(get_proofs_request::IdentityRequest {
-                        identity_id: identity_credit_transfer_action.identity_id.to_vec(),
+                        identity_id: identity_credit_transfer_action.identity_id().to_vec(),
                         request_type: get_proofs_request::identity_request::Type::Balance.into(),
                     });
 
                 proofs_request
                     .identities
                     .push(get_proofs_request::IdentityRequest {
-                        identity_id: identity_credit_transfer_action.recipient_id.to_vec(),
+                        identity_id: identity_credit_transfer_action.recipient_id().to_vec(),
                         request_type: get_proofs_request::identity_request::Type::Balance.into(),
                     });
 
@@ -468,7 +475,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash_identity, _balance_identity) =
                     Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
-                        identity_credit_transfer_action.identity_id.into_buffer(),
+                        identity_credit_transfer_action.identity_id().into_buffer(),
                         true,
                         platform_version,
                     )
@@ -484,7 +491,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let (root_hash_recipient, balance_recipient) =
                     Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
-                        identity_credit_transfer_action.recipient_id.into_buffer(),
+                        identity_credit_transfer_action.recipient_id().into_buffer(),
                         true,
                         platform_version,
                     )
@@ -499,7 +506,7 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                 let balance_recipient = balance_recipient.expect("expected a balance");
 
-                assert!(balance_recipient >= identity_credit_transfer_action.transfer_amount);
+                assert!(balance_recipient >= identity_credit_transfer_action.transfer_amount());
             }
         }
     }

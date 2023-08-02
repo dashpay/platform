@@ -36,6 +36,7 @@ pub trait DocumentV0Getters {
     }
     fn id_ref(&self) -> &Identifier;
     fn owner_id_ref(&self) -> &Identifier;
+    fn properties_consumed(self) -> BTreeMap<String, Value>;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {

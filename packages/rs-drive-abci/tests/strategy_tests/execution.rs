@@ -35,6 +35,7 @@ use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::Application;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -634,7 +635,7 @@ pub(crate) fn continue_chain_for_strategy(
                 .expect("lock is poisoned")
                 .last_committed_block_info()
                 .as_ref()
-                .map(|block_info| block_info.basic_info.time_ms),
+                .map(|block_info| block_info.basic_info().time_ms),
         )
         .expect("should calculate epoch info");
 
@@ -661,7 +662,6 @@ pub(crate) fn continue_chain_for_strategy(
                 &mut current_identities,
                 &mut signer,
                 &mut rng,
-                platform_version,
             );
 
         let proposed_version = proposer_versions
@@ -713,6 +713,11 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
+        let platform_version = platform
+            .state
+            .read()
+            .expect("lock is poisoned").current_platform_version().unwrap();
+
         total_withdrawals.append(&mut withdrawals_this_block);
 
         for finalize_block_operation in finalize_block_operations {
@@ -720,11 +725,11 @@ pub(crate) fn continue_chain_for_strategy(
                 IdentityAddKeys(identifier, keys) => {
                     let identity = current_identities
                         .iter_mut()
-                        .find(|identity| identity.id == identifier)
+                        .find(|identity| identity.id() == identifier)
                         .expect("expected to find an identity");
                     identity
                         .public_keys()
-                        .extend(keys.into_iter().map(|key| (key.id, key)));
+                        .extend(keys.into_iter().map(|key| (key.id(), key)));
                 }
             }
         }
@@ -734,7 +739,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions);
+            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions, platform_version);
         }
 
         if let Some(query_strategy) = &strategy.query_testing {
@@ -755,6 +760,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &current_identities,
                 &abci_app,
                 StrategyRandomness::RNGEntropy(rng.clone()),
+                platform_version,
             )
         }
 

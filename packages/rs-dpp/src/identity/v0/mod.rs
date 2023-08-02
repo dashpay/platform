@@ -1,5 +1,5 @@
 mod conversion;
-#[cfg(feature = "fixtures-and-mocks")]
+#[cfg(feature = "random-identities")]
 pub mod random;
 
 use std::collections::{BTreeMap, HashSet};

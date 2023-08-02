@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
 use tenderdash_abci::signatures::{SignBytes, SignDigest};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::version::PlatformVersion;
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {
@@ -165,6 +167,7 @@ impl QueryStrategy {
         current_identities: &Vec<Identity>,
         abci_app: &AbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
+        platform_version: &PlatformVersion,
     ) {
         let mut rng = match seed {
             StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
@@ -180,6 +183,7 @@ impl QueryStrategy {
                 query_identities_by_public_key_hashes,
                 abci_app,
                 &mut rng,
+                platform_version,
             );
         }
     }
@@ -190,6 +194,7 @@ impl QueryStrategy {
         frequency: &Frequency,
         abci_app: &AbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) {
         let events = frequency.events_if_hit(rng);
 
@@ -202,7 +207,7 @@ impl QueryStrategy {
                     let unique_public_keys: Vec<_> = identity
                         .public_keys()
                         .iter()
-                        .filter(|(_, public_key)| public_key.key_type.is_unique_key_type())
+                        .filter(|(_, public_key)| public_key.key_type().is_unique_key_type())
                         .collect();
 
                     if unique_public_keys.is_empty() {
@@ -227,7 +232,7 @@ impl QueryStrategy {
             let encoded_request = request.encode_to_vec();
             let query_validation_result = abci_app
                 .platform
-                .query("/identities/by-public-key-hash", encoded_request.as_slice())
+                .query("/identities/by-public-key-hash", encoded_request.as_slice(), platform_version)
                 .expect("expected to run query");
 
             assert!(
@@ -255,6 +260,7 @@ impl QueryStrategy {
                             .cloned()
                             .collect::<Vec<_>>()
                             .as_slice(),
+                        platform_version,
                     )
                     .expect("expected to verify proof");
                     let identities: HashMap<[u8; 20], PartialIdentity> = identities
@@ -280,7 +286,7 @@ impl QueryStrategy {
                         .map(|serialized| {
                             Identity::deserialize(&serialized)
                                 .expect("expected to deserialize identity")
-                                .id
+                                .id()
                         })
                         .collect::<HashSet<_>>();
                     assert_eq!(

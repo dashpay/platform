@@ -40,6 +40,10 @@ impl DocumentV0Getters for DocumentV0 {
     fn owner_id_ref(&self) -> &Identifier {
         &self.owner_id
     }
+
+    fn properties_consumed(self) -> BTreeMap<String, Value> {
+        self.properties
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {

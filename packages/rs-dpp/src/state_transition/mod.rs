@@ -275,7 +275,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn sign_external<S: Signer>(
+    pub fn sign_external<S: Signer>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -297,7 +297,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn sign(
+    pub fn sign(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         private_key: &[u8],

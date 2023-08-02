@@ -9,6 +9,7 @@ use dpp::state_transition::errors::{
 };
 use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
 use std::collections::HashMap;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 /// This simple signer is only to be used in tests
 #[derive(Default, Debug)]
@@ -45,9 +46,9 @@ impl Signer for SimpleSigner {
             .get(identity_public_key)
             .or_else(|| self.private_keys_in_creation.get(identity_public_key))
             .ok_or(ProtocolError::InvalidSignaturePublicKeyError(
-                InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
+                InvalidSignaturePublicKeyError::new(identity_public_key.data().to_vec()),
             ))?;
-        match identity_public_key.key_type {
+        match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(data, private_key)?;
                 Ok(signature.to_vec().into())
@@ -72,7 +73,7 @@ impl Signer for SimpleSigner {
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
+                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type()),
             )),
         }
     }

@@ -85,6 +85,14 @@ impl DocumentType {
     }
 }
 
+impl<'a> DocumentTypeRef<'a> {
+    pub fn to_owned_document_type(&self) -> DocumentType {
+        match self {
+            DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
+        }
+    }
+}
+
 impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn unique_id_for_storage(&self) -> [u8; 32] {
         match self {

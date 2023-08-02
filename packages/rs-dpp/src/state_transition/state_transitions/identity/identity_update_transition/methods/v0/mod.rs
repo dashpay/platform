@@ -5,6 +5,7 @@ use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
+use platform_version::version::PlatformVersion;
 
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
@@ -31,7 +32,8 @@ pub trait IdentityUpdateTransitionMethodsV0 {
         disable_public_keys: Vec<KeyID>,
         public_keys_disabled_at: Option<u64>,
         signer: &S,
-        version: FeatureVersion,
+        platform_version: &PlatformVersion,
+        version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {

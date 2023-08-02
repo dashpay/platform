@@ -18,6 +18,7 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use bincode::{config, Decode, Encode};
+use platform_version::version::PlatformVersion;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransition;
@@ -30,7 +31,8 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         bls: &impl BlsModule,
-        _version: FeatureVersion,
+        _platform_version: &PlatformVersion,
+        _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
