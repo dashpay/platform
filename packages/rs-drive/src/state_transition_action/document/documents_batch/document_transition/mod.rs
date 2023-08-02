@@ -4,7 +4,7 @@ pub mod document_create_transition_action;
 pub mod document_delete_transition_action;
 pub mod document_replace_transition_action;
 
-pub use action_type::DocumentTransitionActionType;
+pub use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 use derive_more::From;
 use serde::{Deserialize, Serialize};

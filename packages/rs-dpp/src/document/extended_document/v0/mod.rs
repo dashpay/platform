@@ -20,6 +20,14 @@ use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRem
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
+use std::convert::TryInto;
+use serde::{Deserialize, Serialize};
+
+use crate::data_contract::base::DataContractBaseMethodsV0;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
+#[cfg(feature = "cbor")]
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 
 use crate::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
@@ -29,7 +37,7 @@ use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
     pub document_type_name: String,
@@ -482,7 +490,7 @@ impl PlatformDeserializable for ExtendedDocumentV0 {
     }
 }
 
-impl ValueConvertible for ExtendedDocumentV0 {
+impl<'a> ValueConvertible<'a> for ExtendedDocumentV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
         todo!()
     }

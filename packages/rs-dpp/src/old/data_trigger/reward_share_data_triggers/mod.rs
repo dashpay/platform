@@ -222,7 +222,7 @@ mod test {
             },
         };
         let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+            get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![documents[0].clone()])]);
         TestData {
             extended_documents: documents,
             data_contract,

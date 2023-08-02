@@ -4,16 +4,24 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
-use crate::document::{Document, INITIAL_REVISION};
+use crate::document::errors::DocumentError;
+use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
 use crate::identity::TimestampMillis;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::{PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
 use chrono::Utc;
-use platform_value::{Identifier, Value};
+use platform_value::{Bytes32, Identifier, Value};
+use std::collections::BTreeMap;
 
 #[cfg(feature = "extended-document")]
+use crate::document::extended_document::v0::ExtendedDocumentV0;
+use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
+#[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use crate::state_transition::StateTransitionValueConvert;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -119,85 +127,103 @@ impl DocumentFactoryV0 {
 
         let document = document_type.create_document_from_data(data, owner_id, document_entropy)?;
 
-        let extended_document = ExtendedDocument {
-            feature_version: LATEST_PLATFORM_VERSION
-                .extended_document
-                .default_current_version,
-            document_type_name,
-            data_contract_id: data_contract.id,
-            document,
-            data_contract,
-            metadata: None,
-            entropy: Bytes32::new(document_entropy),
-        };
+        let extended_document = match platform_version
+            .dpp
+            .document_versions
+            .extended_document_structure_version
+            .default_current_version
+        {
+            0 => Ok(ExtendedDocumentV0 {
+                document_type_name,
+                data_contract_id: self.data_contract.id,
+                document,
+                data_contract: self.data_contract.clone(),
+                metadata: None,
+                entropy: Bytes32::new(document_entropy),
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentFactory::create_extended_document".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }?;
 
         Ok(extended_document)
     }
-    //
-    // pub fn create_state_transition(
-    //     &self,
-    //     documents_iter: impl IntoIterator<Item = (Action, Vec<ExtendedDocument>)>,
-    // ) -> Result<DocumentsBatchTransition, ProtocolError> {
-    //     let mut raw_documents_transitions: Vec<Value> = vec![];
-    //     let mut data_contracts: Vec<DataContract> = vec![];
-    //     let documents: Vec<(Action, Vec<ExtendedDocument>)> = documents_iter.into_iter().collect();
-    //     let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
-    //
-    //     if Self::is_empty(flattened_documents_iter.clone()) {
-    //         return Err(DocumentError::NoDocumentsSuppliedError.into());
-    //     }
-    //
-    //     let is_the_same = Self::is_ownership_the_same(
-    //         flattened_documents_iter
-    //             .clone()
-    //             .map(|extended_document| &extended_document.document.owner_id),
-    //     );
-    //     if !is_the_same {
-    //         return Err(DocumentError::MismatchOwnerIdsError {
-    //             documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
-    //         }
-    //             .into());
-    //     }
-    //
-    //     let owner_id = flattened_documents_iter
-    //         .clone()
-    //         .next()
-    //         .unwrap()
-    //         .owner_id()
-    //         .to_owned();
-    //     for (action, documents) in documents {
-    //         data_contracts.extend(documents.iter().map(|d| d.data_contract().clone()));
-    //
-    //         let raw_transitions = match action {
-    //             Action::Create => Self::raw_document_create_transitions(documents)?,
-    //             Action::Delete => Self::raw_document_delete_transitions(documents)?,
-    //             Action::Replace => Self::raw_document_replace_transitions(documents)?,
-    //         };
-    //
-    //         raw_documents_transitions.extend(raw_transitions);
-    //     }
-    //
-    //     if raw_documents_transitions.is_empty() {
-    //         return Err(DocumentError::NoDocumentsSuppliedError.into());
-    //     }
-    //
-    //     let raw_batch_transition = BTreeMap::from([
-    //         (
-    //             PROPERTY_FEATURE_VERSION.to_string(),
-    //             Value::U16(LATEST_PLATFORM_VERSION.document.default_current_version),
-    //         ),
-    //         (
-    //             PROPERTY_OWNER_ID.to_string(),
-    //             Value::Identifier(owner_id.to_buffer()),
-    //         ),
-    //         (
-    //             PROPERTY_TRANSITIONS.to_string(),
-    //             Value::Array(raw_documents_transitions),
-    //         ),
-    //     ]);
-    //
-    //     DocumentsBatchTransition::from_value_map(raw_batch_transition, data_contracts)
-    // }
+    #[cfg(feature = "state-transitions")]
+    pub fn create_state_transition(
+        &self,
+        documents_iter: impl IntoIterator<Item = (DocumentTransitionActionType, Vec<ExtendedDocument>)>,
+    ) -> Result<DocumentsBatchTransition, ProtocolError> {
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+        let mut raw_documents_transitions: Vec<Value> = vec![];
+        let mut data_contracts: Vec<DataContract> = vec![];
+        let documents: Vec<(DocumentTransitionActionType, Vec<ExtendedDocument>)> =
+            documents_iter.into_iter().collect();
+        let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
+
+        if Self::is_empty(flattened_documents_iter.clone()) {
+            return Err(DocumentError::NoDocumentsSuppliedError.into());
+        }
+
+        let is_the_same = Self::is_ownership_the_same(
+            flattened_documents_iter
+                .clone()
+                .map(|extended_document| &extended_document.document.owner_id),
+        );
+        if !is_the_same {
+            return Err(DocumentError::MismatchOwnerIdsError {
+                documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
+            }
+            .into());
+        }
+
+        let owner_id = flattened_documents_iter
+            .clone()
+            .next()
+            .unwrap()
+            .owner_id()
+            .to_owned();
+        for (action, documents) in documents {
+            data_contracts.extend(documents.iter().map(|d| d.data_contract().clone()));
+
+            let raw_transitions = match action {
+                DocumentTransitionActionType::Create => {
+                    Self::raw_document_create_transitions(documents)?
+                }
+                DocumentTransitionActionType::Delete => {
+                    Self::raw_document_delete_transitions(documents)?
+                }
+                DocumentTransitionActionType::Replace => {
+                    Self::raw_document_replace_transitions(documents)?
+                }
+            };
+
+            raw_documents_transitions.extend(raw_transitions);
+        }
+
+        if raw_documents_transitions.is_empty() {
+            return Err(DocumentError::NoDocumentsSuppliedError.into());
+        }
+
+        let raw_batch_transition = BTreeMap::from([
+            (
+                PROPERTY_FEATURE_VERSION.to_string(),
+                Value::U16(LATEST_PLATFORM_VERSION.document.default_current_version),
+            ),
+            (
+                PROPERTY_OWNER_ID.to_string(),
+                Value::Identifier(owner_id.to_buffer()),
+            ),
+            (
+                PROPERTY_TRANSITIONS.to_string(),
+                Value::Array(raw_documents_transitions),
+            ),
+        ]);
+
+        DocumentsBatchTransition::from_value_map(raw_batch_transition, platform_version)
+    }
     //
     // pub fn create_extended_from_document_buffer(
     //     &self,
@@ -284,106 +310,112 @@ impl DocumentFactoryV0 {
     // //     Ok(data_contract)
     // // }
     //
-    // fn raw_document_create_transitions(
-    //     documents: Vec<ExtendedDocument>,
-    // ) -> Result<Vec<Value>, ProtocolError> {
-    //     let mut raw_transitions = vec![];
-    //     for document in documents {
-    //         if document.needs_revision()? {
-    //             let Some(revision) = document.revision() else {
-    //                 return Err(DocumentError::RevisionAbsentError {
-    //                     document: Box::new(document),
-    //                 }.into());
-    //             };
-    //             if revision != &INITIAL_REVISION {
-    //                 return Err(DocumentError::InvalidInitialRevisionError {
-    //                     document: Box::new(document),
-    //                 }
-    //                     .into());
-    //             }
-    //         }
-    //         let mut map = document.to_map_value()?;
-    //
-    //         map.retain(|key, _| {
-    //             !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
-    //         });
-    //         map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Create as u8));
-    //         map.insert(
-    //             PROPERTY_ENTROPY.to_string(),
-    //             Value::Bytes(document.entropy.to_vec()),
-    //         );
-    //         raw_transitions.push(map.into());
-    //     }
-    //
-    //     Ok(raw_transitions)
-    // }
-    //
-    // fn raw_document_replace_transitions(
-    //     documents: Vec<ExtendedDocument>,
-    // ) -> Result<Vec<Value>, ProtocolError> {
-    //     let mut raw_transitions = vec![];
-    //     for document in documents {
-    //         if !document.can_be_modified()? {
-    //             return Err(DocumentError::TryingToReplaceImmutableDocument {
-    //                 document: Box::new(document),
-    //             }
-    //                 .into());
-    //         }
-    //         let Some(document_revision) = document.revision() else {
-    //             return Err(DocumentError::RevisionAbsentError {
-    //                 document: Box::new(document),
-    //             }.into());
-    //         };
-    //         let mut map = document.to_map_value()?;
-    //
-    //         map.retain(|key, _| {
-    //             !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
-    //         });
-    //         map.insert(
-    //             PROPERTY_ACTION.to_string(),
-    //             Value::U8(Action::Replace as u8),
-    //         );
-    //         let new_revision = document_revision + 1;
-    //         map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
-    //
-    //         // If document have an originally set `updatedAt`
-    //         // we should update it then
-    //         let contains_updated_at = document
-    //             .document_type()?
-    //             .required_fields
-    //             .contains(PROPERTY_UPDATED_AT);
-    //
-    //         if contains_updated_at {
-    //             let now = Utc::now().timestamp_millis() as TimestampMillis;
-    //             map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
-    //         }
-    //
-    //         raw_transitions.push(map.into());
-    //     }
-    //     Ok(raw_transitions)
-    // }
-    //
-    // fn raw_document_delete_transitions(
-    //     documents: Vec<ExtendedDocument>,
-    // ) -> Result<Vec<Value>, ProtocolError> {
-    //     Ok(documents
-    //         .into_iter()
-    //         .map(|document| {
-    //             let mut map: BTreeMap<String, Value> = BTreeMap::new();
-    //             map.insert(PROPERTY_ACTION.to_string(), Value::U8(Action::Delete as u8));
-    //             map.insert(PROPERTY_ID.to_string(), document.document().id.into());
-    //             map.insert(
-    //                 PROPERTY_TYPE.to_string(),
-    //                 Value::Text(document.document_type_name().clone()),
-    //             );
-    //             map.insert(
-    //                 PROPERTY_DATA_CONTRACT_ID.to_string(),
-    //                 document.data_contract_id().into(),
-    //             );
-    //             map.into()
-    //         })
-    //         .collect())
-    // }
+    fn raw_document_create_transitions(
+        documents: Vec<ExtendedDocument>,
+    ) -> Result<Vec<Value>, ProtocolError> {
+        let mut raw_transitions = vec![];
+        for document in documents {
+            if document.needs_revision()? {
+                let Some(revision) = document.revision() else {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }.into());
+                };
+                if revision != &INITIAL_REVISION {
+                    return Err(DocumentError::InvalidInitialRevisionError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                }
+            }
+            let mut map = document.to_map_value()?;
+
+            map.retain(|key, _| {
+                !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
+            });
+            map.insert(
+                PROPERTY_ACTION.to_string(),
+                Value::U8(DocumentTransitionActionType::Create as u8),
+            );
+            map.insert(
+                PROPERTY_ENTROPY.to_string(),
+                Value::Bytes(document.entropy.to_vec()),
+            );
+            raw_transitions.push(map.into());
+        }
+
+        Ok(raw_transitions)
+    }
+
+    fn raw_document_replace_transitions(
+        documents: Vec<ExtendedDocument>,
+    ) -> Result<Vec<Value>, ProtocolError> {
+        let mut raw_transitions = vec![];
+        for document in documents {
+            if !document.can_be_modified()? {
+                return Err(DocumentError::TryingToReplaceImmutableDocument {
+                    document: Box::new(document),
+                }
+                .into());
+            }
+            let Some(document_revision) = document.revision() else {
+                return Err(DocumentError::RevisionAbsentError {
+                    document: Box::new(document),
+                }.into());
+            };
+            let mut map = document.to_map_value()?;
+
+            map.retain(|key, _| {
+                !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
+            });
+            map.insert(
+                PROPERTY_ACTION.to_string(),
+                Value::U8(DocumentTransitionActionType::Replace as u8),
+            );
+            let new_revision = document_revision + 1;
+            map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
+
+            // If document have an originally set `updatedAt`
+            // we should update it then
+            let contains_updated_at = document
+                .document_type()?
+                .required_fields
+                .contains(PROPERTY_UPDATED_AT);
+
+            if contains_updated_at {
+                let now = Utc::now().timestamp_millis() as TimestampMillis;
+                map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
+            }
+
+            raw_transitions.push(map.into());
+        }
+        Ok(raw_transitions)
+    }
+
+    fn raw_document_delete_transitions(
+        documents: Vec<ExtendedDocument>,
+    ) -> Result<Vec<Value>, ProtocolError> {
+        Ok(documents
+            .into_iter()
+            .map(|document| {
+                let mut map: BTreeMap<String, Value> = BTreeMap::new();
+                map.insert(
+                    PROPERTY_ACTION.to_string(),
+                    Value::U8(DocumentTransitionActionType::Delete as u8),
+                );
+                map.insert(PROPERTY_ID.to_string(), document.document().id.into());
+                map.insert(
+                    PROPERTY_TYPE.to_string(),
+                    Value::Text(document.document_type_name().clone()),
+                );
+                map.insert(
+                    PROPERTY_DATA_CONTRACT_ID.to_string(),
+                    document.data_contract_id().into(),
+                );
+                map.into()
+            })
+            .collect())
+    }
     //
     // fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
     //     data.into_iter().next().is_none()

@@ -179,7 +179,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
                             map_clone.insert(key, value).expect("expected a value map");
                         }
                         let version: crate::version::FeatureVersion = map_clone.get_integer(#version_field_name).map_err(|_|serde::de::Error::missing_field(#version_field_name))?;
-                        let current_platform_version = crate::version::PlatformVersionCurrentVersion::get_current().map_err(|e|serde::de::Error::custom(e.to_string()))?;
+                        let current_platform_version = crate::version::PlatformVersion::get_current().map_err(|e|serde::de::Error::custom(e.to_string()))?;
                        if current_platform_version.#path_tokens != version {
                         return Err(::serde::de::Error::custom("Invalid version value"));
                     }

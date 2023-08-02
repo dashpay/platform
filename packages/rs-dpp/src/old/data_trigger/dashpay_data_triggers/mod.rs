@@ -170,7 +170,7 @@ mod test {
         let owner_id = &contact_request_document.owner_id();
 
         let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+            get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![contact_request_document])]);
         let document_transition = document_transitions
             .get(0)
             .expect("document transition should be present");
@@ -209,7 +209,7 @@ mod test {
 
         let data_contract = get_dashpay_contract_fixture(None).data_contract;
         let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+            get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![contact_request_document])]);
         let document_transition = document_transitions
             .get(0)
             .expect("document transition should be present");
@@ -267,7 +267,7 @@ mod test {
             .expect("expected to get toUserId");
 
         let document_transitions =
-            get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
+            get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![contact_request_document])]);
         let document_transition = document_transitions
             .get(0)
             .expect("document transition should be present");

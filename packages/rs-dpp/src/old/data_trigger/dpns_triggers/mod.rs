@@ -278,7 +278,7 @@ mod test {
             ..Default::default()
         });
         let data_contract = get_dpns_data_contract_fixture(Some(owner_id)).data_contract;
-        let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
+        let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![document])]);
         let first_transition = transitions.get(0).expect("transition should be present");
 
         state_repository

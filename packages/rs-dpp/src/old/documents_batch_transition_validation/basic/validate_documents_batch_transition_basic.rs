@@ -219,7 +219,7 @@ pub fn validate_document_transitions<'a>(
 
 fn get_enriched_contracts_by_action(
     data_contract: &DataContract,
-) -> Result<HashMap<Action, DataContract>, ProtocolError> {
+) -> Result<HashMap<DocumentTransitionActionType, DataContract>, ProtocolError> {
     let enriched_base_contract =
         data_contract.enrich_with_base_schema(&BASE_TRANSITION_SCHEMA, PREFIX_BYTE_1, &[])?;
     let enriched_create_contract = enriched_base_contract.enrich_with_base_schema(
@@ -232,9 +232,9 @@ fn get_enriched_contracts_by_action(
         PREFIX_BYTE_3,
         &["$createdAt"],
     )?;
-    let mut enriched_contracts_by_action: HashMap<Action, DataContract> = HashMap::new();
-    enriched_contracts_by_action.insert(Action::Create, enriched_create_contract);
-    enriched_contracts_by_action.insert(Action::Replace, enriched_replace_contract);
+    let mut enriched_contracts_by_action: HashMap<DocumentTransitionActionType, DataContract> = HashMap::new();
+    enriched_contracts_by_action.insert(DocumentTransitionActionType::Create, enriched_create_contract);
+    enriched_contracts_by_action.insert(DocumentTransitionActionType::Replace, enriched_replace_contract);
 
     Ok(enriched_contracts_by_action)
 }
@@ -242,7 +242,7 @@ fn get_enriched_contracts_by_action(
 fn validate_raw_transitions<'a>(
     data_contract: &DataContract,
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
-    enriched_contracts_by_action: &HashMap<Action, DataContract>,
+    enriched_contracts_by_action: &HashMap<DocumentTransitionActionType, DataContract>,
     owner_id: Identifier,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let mut result = SimpleConsensusValidationResult::default();
@@ -403,7 +403,7 @@ fn validate_raw_transitions<'a>(
 fn action_is_not_delete(action: &str) -> bool {
     match Action::try_from(action) {
         Err(_) => false,
-        Ok(Action::Delete) => false,
-        Ok(Action::Create) | Ok(Action::Replace) => true,
+        Ok(DocumentTransitionActionType::Delete) => false,
+        Ok(DocumentTransitionActionType::Create) | Ok(DocumentTransitionActionType::Replace) => true,
     }
 }

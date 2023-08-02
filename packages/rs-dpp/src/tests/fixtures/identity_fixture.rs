@@ -4,8 +4,8 @@ use platform_value::string_encoding::Encoding;
 use platform_value::BinaryData;
 use serde_json::json;
 
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::prelude::{Identifier, Identity};
+use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
@@ -74,7 +74,7 @@ pub fn identity_fixture(protocol_version: u32) -> Result<Identity, ProtocolError
         .identity_versions
         .identity_structure_version
     {
-        0 => Ok(IdentityV0::from_object(raw_object, platform_version)?.into()),
+        0 => Ok(IdentityV0::from_object(raw_object)?.into()),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "identity_fixture".to_string(),
             known_versions: vec![0],
