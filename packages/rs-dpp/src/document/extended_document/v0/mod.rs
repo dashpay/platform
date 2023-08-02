@@ -16,7 +16,7 @@ use crate::ProtocolError;
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 
-use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -213,7 +213,7 @@ impl ExtendedDocumentV0 {
         extended_document.data_contract_id = Identifier::new(
             properties
                 .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
-                .unwrap_or(extended_document.data_contract.id.to_buffer()),
+                .unwrap_or(extended_document.data_contract.id().to_buffer()),
         );
         extended_document.document = Document::from_map(properties, None, None)?;
         Ok(extended_document)
@@ -267,11 +267,11 @@ impl ExtendedDocumentV0 {
 
         extended_document
             .document
-            .properties
+            .properties()
             .replace_at_paths(identifiers, ReplacementType::Identifier)?;
         extended_document
             .document
-            .properties
+            .properties()
             .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
