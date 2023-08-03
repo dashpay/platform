@@ -55,7 +55,11 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     const { blocks: coreBlocks } = blockchainInfo.result;
 
     const countInfo = masternodeCount.result;
-    const { enabled } = countInfo;
+    const { hpmn, regular } = countInfo;
+    const { enabled: enabledHpmn } = hpmn;
+    const { enabled: enabledRegular } = regular;
+
+    const enabled = enabledHpmn + enabledRegular;
 
     const { state, status, proTxHash } = masternodeStatus.result;
 
