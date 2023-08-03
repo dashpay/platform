@@ -8,6 +8,7 @@ use crate::consensus::state::state_error::StateError;
 
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::signature::SignatureError;
+#[cfg(feature = "validation")]
 use crate::consensus::state::data_trigger::DataTriggerError;
 
 #[cfg(test)]
@@ -48,6 +49,7 @@ pub enum ConsensusError {
     TestConsensusError(TestConsensusError),
 }
 
+#[cfg(feature = "validation")]
 impl From<DataTriggerError> for ConsensusError {
     fn from(error: DataTriggerError) -> Self {
         Self::StateError(StateError::DataTriggerError(error))

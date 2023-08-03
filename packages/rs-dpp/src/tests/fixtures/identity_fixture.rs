@@ -4,6 +4,7 @@ use platform_value::string_encoding::Encoding;
 use platform_value::BinaryData;
 use serde_json::json;
 
+#[cfg(feature = "identity-value-conversion")]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::prelude::{Identifier, Identity};
 use crate::version::PlatformVersion;
@@ -66,6 +67,7 @@ pub fn identity_fixture_json() -> serde_json::Value {
     })
 }
 
+#[cfg(feature = "identity-value-conversion")]
 pub fn identity_fixture(protocol_version: u32) -> Result<Identity, ProtocolError> {
     let raw_object = identity_fixture_raw_object();
     let platform_version = PlatformVersion::get(protocol_version)?;

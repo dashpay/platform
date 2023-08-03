@@ -3,28 +3,6 @@ use lazy_static::lazy_static;
 use log::trace;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use std::{collections::HashMap, sync::Arc};
-
-use crate::consensus::basic::data_contract::{
-    DuplicateIndexError, DuplicateIndexNameError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-};
-use crate::consensus::ConsensusError;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::Index;
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use crate::version::PlatformVersion;
-use crate::{
-    consensus::basic::BasicError,
-    data_contract::{enrich_with_base_schema::PREFIX_BYTE_0, DataContract},
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
-    validation::{DataValidator, JsonSchemaValidator},
-    ProtocolError,
-};
 
 use super::{
     multi_validator::{

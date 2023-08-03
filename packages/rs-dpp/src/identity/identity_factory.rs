@@ -18,6 +18,7 @@ use crate::serialization::PlatformDeserializable;
 #[cfg(feature = "identity-value-conversion")]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::v0::IdentityV0;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
