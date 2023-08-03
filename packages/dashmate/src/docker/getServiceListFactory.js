@@ -16,19 +16,31 @@ function getServiceListFactory(generateEnvs) {
    * @return {Object[]}
    */
   function getServiceList(config) {
-    const file = yaml.load(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml')));
+    const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml'));
+    const composeFile = yaml.load(file);
 
     const envs = generateEnvs(config);
 
     return Object
-      .entries(file.services)
-      .map(([key, { image, labels, profiles }]) => ({
-        name: key,
-        title: labels['org.dashmate.service.title'],
-        image: key === 'dashmate_helper' ? DASHMATE_HELPER_DOCKER_IMAGE
-          : envs[image.match(new RegExp(/([A-Z])\w+/))[0]],
-        profiles: profiles ?? [],
-      }));
+      .entries(composeFile.services)
+      .map(([serviceName, { image: serviceImage, labels, profiles }]) => {
+        if (!labels['org.dashmate.service.title']) {
+          throw new Error(`Label for dashmate service ${serviceName}`);
+        }
+
+        // Use hardcoded version for dashmate helper
+        // Or parse image variable and extract version from the env
+        const image = serviceName === 'dashmate_helper'
+          ? DASHMATE_HELPER_DOCKER_IMAGE
+          : envs[serviceImage.match(new RegExp(/([A-Z])\w+/))[0]];
+
+        return ({
+          name: serviceName,
+          title: labels['org.dashmate.service.title'],
+          image,
+          profiles: profiles ?? [],
+        });
+      });
   }
 
   return getServiceList;
