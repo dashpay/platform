@@ -51,7 +51,7 @@ impl DocumentBaseTransitionV0 {
             data_contract_id: Identifier::new(
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
                     .map_err(ProtocolError::ValueError)?
-                    .unwrap_or(data_contract.id.to_buffer()),
+                    .unwrap_or(data_contract.id().to_buffer()),
             ),
         })
     }
@@ -112,10 +112,6 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         btree_map.insert(
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(self.data_contract_id.to_buffer()),
-        );
-        btree_map.insert(
-            property_names::ACTION.to_string(),
-            Value::U8(self.action as u8),
         );
         btree_map.insert(
             property_names::DOCUMENT_TYPE.to_string(),

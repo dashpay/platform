@@ -18,6 +18,7 @@ use crate::state_transition::identity_update_transition::fields::property_names:
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
+use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;

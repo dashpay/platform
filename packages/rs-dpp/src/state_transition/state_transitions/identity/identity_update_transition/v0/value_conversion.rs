@@ -6,6 +6,7 @@ use platform_value::btreemap_extensions::{
 };
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
+use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 
 use crate::{
     data_contract::DataContract,
@@ -85,7 +86,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
 
         let mut add_public_keys: Vec<Value> = vec![];
         for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_object(skip_signature)?);
+            add_public_keys.push(key.to_object(skip_signature)?);
         }
 
         if !add_public_keys.is_empty() {
@@ -110,7 +111,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         if !self.add_public_keys.is_empty() {
             let mut add_public_keys: Vec<Value> = vec![];
             for key in self.add_public_keys.iter() {
-                add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+                add_public_keys.push(key.to_cleaned_object(skip_signature)?);
             }
 
             value.insert(
