@@ -25,7 +25,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_version::version::PlatformVersion;
 
-impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
+impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
     fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,

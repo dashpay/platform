@@ -13,6 +13,7 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
+use crate::data_contract::document_type::DocumentType;
 
 #[cfg(feature = "extended-document")]
 use crate::document::extended_document::v0::ExtendedDocumentV0;
@@ -154,39 +155,29 @@ impl DocumentFactoryV0 {
     #[cfg(feature = "state-transitions")]
     pub fn create_state_transition(
         &self,
-        documents_iter: impl IntoIterator<Item = (DocumentTransitionActionType, Vec<ExtendedDocument>)>,
+        documents_iter: impl IntoIterator<Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>)>,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let mut raw_documents_transitions: Vec<Value> = vec![];
-        let mut data_contracts: Vec<DataContract> = vec![];
-        let documents: Vec<(DocumentTransitionActionType, Vec<ExtendedDocument>)> =
+        let documents: Vec<(DocumentTransitionActionType, Vec<(Document, DocumentType)>)> =
             documents_iter.into_iter().collect();
-        let flattened_documents_iter = documents.iter().flat_map(|(_, v)| v);
+        let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
-        if Self::is_empty(flattened_documents_iter.clone()) {
+        let Some((first_document, _)) = flattened_documents_iter.peek() else {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
-        }
+        };
 
-        let is_the_same = Self::is_ownership_the_same(
-            flattened_documents_iter
-                .clone()
-                .map(|extended_document| &extended_document.document.owner_id),
-        );
-        if !is_the_same {
+        let owner_id = first_document.owner_id();
+
+        let is_the_same_owner = flattened_documents_iter.all(|(document,_)| document.owner_id() == owner_id);
+        if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
             }
             .into());
         }
 
-        let owner_id = flattened_documents_iter
-            .clone()
-            .next()
-            .unwrap()
-            .owner_id()
-            .to_owned();
         for (action, documents) in documents {
-            data_contracts.extend(documents.iter().map(|d| d.data_contract().clone()));
 
             let raw_transitions = match action {
                 DocumentTransitionActionType::Create => {
@@ -311,11 +302,11 @@ impl DocumentFactoryV0 {
     // // }
     //
     fn raw_document_create_transitions(
-        documents: Vec<ExtendedDocument>,
+        documents: Vec<(Document, DocumentType)>,
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
-        for document in documents {
-            if document.needs_revision()? {
+        for (document, document_type) in documents {
+            if document_type.documents_mutable()? { //we need to have revisions
                 let Some(revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
@@ -348,11 +339,11 @@ impl DocumentFactoryV0 {
     }
 
     fn raw_document_replace_transitions(
-        documents: Vec<ExtendedDocument>,
+        documents: Vec<(Document, DocumentType)>,
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
-        for document in documents {
-            if !document.can_be_modified()? {
+        for (document, document_type) in documents {
+            if !document_type.documents_mutable()? {
                 return Err(DocumentError::TryingToReplaceImmutableDocument {
                     document: Box::new(document),
                 }
@@ -377,9 +368,8 @@ impl DocumentFactoryV0 {
 
             // If document have an originally set `updatedAt`
             // we should update it then
-            let contains_updated_at = document
-                .document_type()?
-                .required_fields
+            let contains_updated_at = document_type
+                .required_fields()
                 .contains(PROPERTY_UPDATED_AT);
 
             if contains_updated_at {
@@ -393,35 +383,30 @@ impl DocumentFactoryV0 {
     }
 
     fn raw_document_delete_transitions(
-        documents: Vec<ExtendedDocument>,
+        documents: Vec<(Document, DocumentType)>,
     ) -> Result<Vec<Value>, ProtocolError> {
         Ok(documents
             .into_iter()
-            .map(|document| {
+            .map(|(document, document_type)| {
                 let mut map: BTreeMap<String, Value> = BTreeMap::new();
                 map.insert(
                     PROPERTY_ACTION.to_string(),
                     Value::U8(DocumentTransitionActionType::Delete as u8),
                 );
-                map.insert(PROPERTY_ID.to_string(), document.document().id.into());
+                map.insert(PROPERTY_ID.to_string(), document.id().into());
                 map.insert(
                     PROPERTY_TYPE.to_string(),
-                    Value::Text(document.document_type_name().clone()),
+                    Value::Text(document_type.name().to_owned()),
                 );
                 map.insert(
                     PROPERTY_DATA_CONTRACT_ID.to_string(),
-                    document.data_contract_id().into(),
+                    document_type.data_contract_id().into(),
                 );
                 map.into()
             })
             .collect())
     }
-    //
-    // fn is_empty<T>(data: impl IntoIterator<Item = T>) -> bool {
-    //     data.into_iter().next().is_none()
-    // }
-    //
-    // fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
-    //     ids.into_iter().all_equal()
-    // }
+    fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
+        ids.into_iter().all_equal()
+    }
 }

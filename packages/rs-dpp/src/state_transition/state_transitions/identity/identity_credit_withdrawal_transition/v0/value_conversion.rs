@@ -23,7 +23,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_version::version::PlatformVersion;
 
-impl StateTransitionValueConvert for IdentityCreditWithdrawalTransitionV0 {
+impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransitionV0 {
     fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,
