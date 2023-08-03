@@ -437,7 +437,7 @@ fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
         if attr.path().is_ident("platform_version_path") {
 
             attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("path") {
+                if meta.path.is_ident("value") {
                     let value = meta.value()?;
                     platform_version_path = Some(value.parse::<LitStr>()?);
                 }
