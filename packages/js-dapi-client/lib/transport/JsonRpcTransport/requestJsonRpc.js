@@ -1,4 +1,4 @@
-const {Agent} = require('undici');
+const {Agent, setGlobalDispatcher} = require('undici');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
