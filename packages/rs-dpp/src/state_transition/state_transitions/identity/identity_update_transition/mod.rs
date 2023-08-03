@@ -45,7 +45,7 @@ use serde::Serialize;
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
-    "dpp.state_transition_serialization_versions.identity_update_state_transition"
+    value = "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

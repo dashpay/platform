@@ -98,6 +98,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
     let name_str = ident.to_string();
 
     let path = parse_path(&attrs).expect("expected a path");
+    // let is_bounds = parse_is_version_bounds(&attrs).unwrap_or(false);
 
     let path_tokens: proc_macro2::TokenStream = {
         let mut tokens = proc_macro2::TokenStream::new();
@@ -154,6 +155,17 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
         }
     }).collect::<Vec<_>>();
 
+    let is_bounds = true;
+    let version_check = if is_bounds {
+        quote! {
+            current_platform_version.#path_tokens.check_version(version)
+        }
+    } else {
+        quote! {
+            current_platform_version.#path_tokens != version
+        }
+    };
+
     let output = quote! {
         impl<'de> ::serde::de::Deserialize<'de> for #ident {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -180,7 +192,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
                         }
                         let version: crate::version::FeatureVersion = map_clone.get_integer(#version_field_name).map_err(|_|serde::de::Error::missing_field(#version_field_name))?;
                         let current_platform_version = crate::version::PlatformVersion::get_current().map_err(|e|serde::de::Error::custom(e.to_string()))?;
-                       if current_platform_version.#path_tokens != version {
+                       if #version_check {
                         return Err(::serde::de::Error::custom("Invalid version value"));
                     }
                         match version {
@@ -382,6 +394,28 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
+fn parse_is_version_bounds(attrs: &[Attribute]) -> Option<bool> {
+    let mut is_bounds = None::<bool>;
+
+    // for attr in attrs {
+    //     if attr.path().is_ident("platform_version_path") {
+    //         platform_version_path = attr.parse_args().expect("Failed to parse path");
+    //     }
+    // }
+    //
+    // if let Some(platform_version_path) = platform_version_path {
+    //     let path_string = platform_version_path.value();
+    //     return Some(
+    //         path_string
+    //             .split('.')
+    //             .map(|s| Ident::new(s, Span::call_site()))
+    //             .collect()
+    //     );
+    // }
+
+    return None;
+}
+
 fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
     let mut platform_version_path = None::<LitStr>;
     //
@@ -401,7 +435,16 @@ fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
     // }
     for attr in attrs {
         if attr.path().is_ident("platform_version_path") {
-            platform_version_path = attr.parse_args().expect("Failed to parse path");
+
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("path") {
+                    let value = meta.value()?;
+                    platform_version_path = Some(value.parse::<LitStr>()?);
+                }
+                Ok(())
+            })
+            .expect("expected to parse nested meta")
+            // platform_version_path = attr.parse_args().expect("Failed to parse path");
         }
     }
 
@@ -411,7 +454,7 @@ fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
             path_string
                 .split('.')
                 .map(|s| Ident::new(s, Span::call_site()))
-                .collect(),
+                .collect()
         );
     }
 
