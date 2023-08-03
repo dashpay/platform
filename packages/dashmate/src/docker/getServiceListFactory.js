@@ -21,7 +21,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
    */
   function getServiceList(config) {
     const envs = generateEnvs(config);
-    const profiles = getConfigProfiles(config);
+    const configProfiles = getConfigProfiles(config);
 
     return Object
       .entries(composeFile.services)
@@ -35,8 +35,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
         // Use hardcoded version for dashmate helper
         // Or parse image variable and extract version from the env
         const image = serviceName === 'dashmate_helper'
-          ? DASHMATE_HELPER_DOCKER_IMAGE
-          : envs[serviceImage.match(new RegExp(/([A-Z])\w+/))[0]];
+          ? DASHMATE_HELPER_DOCKER_IMAGE : envs[serviceImage.match(new RegExp(/([A-Z])\w+/))[0]];
 
         return ({
           name: serviceName,
@@ -45,7 +44,8 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
           profiles: serviceProfiles ?? [],
         });
       })
-      .filter((service) => service.profiles.some((profile) => profiles.length === 0 || profiles.includes(profile)));
+      .filter((service) => service.profiles.length === 0
+        || service.profiles.some((serviceProfile) => configProfiles.includes(serviceProfile)));
   }
 
   return getServiceList;
