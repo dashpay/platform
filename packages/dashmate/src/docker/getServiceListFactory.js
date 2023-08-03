@@ -17,11 +17,21 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
    *
    * @typedef {getServiceList}
    * @param {Config} config
+   * @param {object?} options
+   * @param {string[]} [options.profiles] - Filter by profiles
    * @return {Object[]}
    */
-  function getServiceList(config) {
+  function getServiceList(config, options) {
     const envs = generateEnvs(config);
-    const configProfiles = getConfigProfiles(config);
+
+    let profiles
+
+    // override profiles if option is passed
+    if (!options?.profiles) {
+      profiles = getConfigProfiles(config);
+    } else {
+      profiles = options.profiles
+    }
 
     return Object
       .entries(composeFile.services)
@@ -45,7 +55,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
         });
       })
       .filter((service) => service.profiles.length === 0
-        || service.profiles.some((serviceProfile) => configProfiles.includes(serviceProfile)));
+        || service.profiles.some((serviceProfile) => profiles.includes(serviceProfile)));
   }
 
   return getServiceList;
