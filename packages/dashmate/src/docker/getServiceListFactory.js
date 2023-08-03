@@ -43,7 +43,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
         }
 
         // Use hardcoded version for dashmate helper
-        // Or parse image variable and extract version from the env
+        // Or parse image env variable name and extract version from the env
         const image = serviceName === 'dashmate_helper'
           ? DASHMATE_HELPER_DOCKER_IMAGE : envs[serviceImage.match(new RegExp(/([A-Z])\w+/))[0]];
 
