@@ -1,4 +1,4 @@
-const {Agent, setGlobalDispatcher} = require('undici');
+const { Agent } = require('undici');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
@@ -54,11 +54,7 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     && process.versions.node != null
     && protocol === 'https'
     && selfSigned) {
-    setGlobalDispatcher(new Agent({
-      connect: {
-        rejectUnauthorized: false
-      }
-    }))
+    requestOptions.dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
   }
 
   // eslint-disable-next-line
