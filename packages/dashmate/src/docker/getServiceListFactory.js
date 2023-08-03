@@ -24,10 +24,10 @@ function getServiceListFactory(generateEnvs) {
     return Object
       .entries(composeFile.services)
       .map(([serviceName, { image: serviceImage, labels, profiles }]) => {
-        const title = labels['org.dashmate.service.title'];
+        const title = labels && labels['org.dashmate.service.title'];
 
         if (!title) {
-          throw new Error(`Label for dashmate service ${serviceName}`);
+          throw new Error(`Label for dashmate service ${serviceName} is not defined`);
         }
 
         // Use hardcoded version for dashmate helper
