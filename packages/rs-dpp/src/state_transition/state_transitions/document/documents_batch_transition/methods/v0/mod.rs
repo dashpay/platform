@@ -1,4 +1,7 @@
-use crate::data_contract::schema::DataContractDocumentSchemaMethodsV0;
+use crate::consensus::basic::BasicError::DataContractHaveNewUniqueIndexError;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::errors::DataContractError;
 use crate::identity::SecurityLevel;
 use crate::prelude::DataContract;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -23,10 +26,22 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         let mut highest_security_level = SecurityLevel::lowest_level();
 
         for transition in self.transitions().iter() {
-            let document_type = &transition.base().document_type_name();
+            let document_type_name = transition.base().document_type_name();
             let data_contract_id = transition.base().data_contract_id();
             let data_contract = get_data_contract(data_contract_id)?;
-            let document_schema = data_contract.document_json_schema(document_type)?;
+            let document_type =
+                data_contract
+                    .document_type(document_type_name)
+                    .ok_or_else(|| {
+                        ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(
+                                "document type not found in data contract".to_string(),
+                            ),
+                        )
+                    })?;
+
+            let document_schema = document_type.schema();
+
             let document_security_level =
                 get_security_level_requirement(document_schema, DEFAULT_SECURITY_LEVEL);
 

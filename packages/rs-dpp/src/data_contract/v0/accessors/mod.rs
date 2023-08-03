@@ -2,11 +2,9 @@ use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0S
 use crate::data_contract::data_contract_config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::{DocumentName, PropertyPath};
+use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
-use crate::ProtocolError;
 use platform_value::Identifier;
-use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 impl DataContractV0Getters for DataContractV0 {
@@ -20,6 +18,10 @@ impl DataContractV0Getters for DataContractV0 {
 
     fn owner_id(&self) -> Identifier {
         self.owner_id
+    }
+
+    fn document_type(&self, name: &DocumentName) -> Option<&DocumentType> {
+        self.document_types.get(name)
     }
 
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
@@ -40,16 +42,6 @@ impl DataContractV0Getters for DataContractV0 {
 
     fn config_mut(&mut self) -> &mut DataContractConfig {
         &mut self.config
-    }
-
-    fn schema(&self) -> &DataContractSchema {
-        &self.schema
-    }
-
-    fn binary_properties(
-        &self,
-    ) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
-        Ok(&self.binary_properties)
     }
 }
 
@@ -72,9 +64,5 @@ impl DataContractV0Setters for DataContractV0 {
 
     fn set_config(&mut self, config: DataContractConfig) {
         self.config = config;
-    }
-
-    fn set_schema(&mut self, schema: DataContractSchema) {
-        self.schema = schema;
     }
 }

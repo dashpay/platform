@@ -77,7 +77,6 @@ impl DataContractFactoryV0 {
             DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), entropy.to_buffer());
 
         let defs = definitions
-            .as_ref()
             .map(|defs| defs.into_btree_string_map())
             .transpose()
             .map_err(ProtocolError::ValueError)?;
@@ -98,7 +97,7 @@ impl DataContractFactoryV0 {
             config,
             version: 1,
             owner_id,
-            documents: documents_map,
+            document_schemas: documents_map,
             schema_defs: defs,
         });
 
@@ -114,12 +113,14 @@ impl DataContractFactoryV0 {
         mut data_contract_object: Value,
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        #[cfg(feature = "validation")]
-        {
-            if !skip_validation {
-                self.validate_data_contract(&data_contract_object)?;
-            }
-        }
+        // TODO: We validate Data Contract on creation.
+        //   Should we disable it when flag is off?
+        // #[cfg(feature = "validation")]
+        // {
+        //     if !skip_validation {
+        //         self.validate_data_contract(&data_contract_object)?;
+        //     }
+        // }
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         match platform_version
             .dpp
@@ -152,30 +153,34 @@ impl DataContractFactoryV0 {
             ))
         })?;
 
-        #[cfg(feature = "validation")]
-        {
-            if !skip_validation {
-                self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
-            }
-        }
+        // TODO: We validate Data Contract on creation.
+        //   Should we disable it when flag is off?
+        // #[cfg(feature = "validation")]
+        // {
+        //     if !skip_validation {
+        //         self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
+        //     }
+        // }
 
         Ok(data_contract)
     }
 
-    #[cfg(feature = "validation")]
-    pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
-        let platform_version = PlatformVersion::get(self.protocol_version)?;
-        let data_contract = DataContract::from_object(raw_data_contract.clone(), platform_version)?;
-        let result = data_contract.validate_schema(platform_version)?;
-
-        if !result.is_valid() {
-            return Err(ProtocolError::InvalidDataContractError(
-                InvalidDataContractError::new(result.errors, raw_data_contract.to_owned()),
-            ));
-        }
-
-        Ok(())
-    }
+    // TODO: We validate Data Contract on creation.
+    //   Should we disable it when flag is off?
+    // #[cfg(feature = "validation")]
+    // pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
+    //     let platform_version = PlatformVersion::get(self.protocol_version)?;
+    //     let data_contract = DataContract::from_object(raw_data_contract.clone(), platform_version)?;
+    //     let result = data_contract.validate_schema(platform_version)?;
+    //
+    //     if !result.is_valid() {
+    //         return Err(ProtocolError::InvalidDataContractError(
+    //             InvalidDataContractError::new(result.errors, raw_data_contract.to_owned()),
+    //         ));
+    //     }
+    //
+    //     Ok(())
+    // }
 
     #[cfg(feature = "state-transitions")]
     pub fn create_unsigned_data_contract_create_transition(

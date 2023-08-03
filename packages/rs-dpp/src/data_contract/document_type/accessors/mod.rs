@@ -4,7 +4,7 @@ use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
-use crate::data_contract::JsonSchema;
+use crate::data_contract::{JsonSchema, PropertyPath};
 use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
@@ -16,9 +16,15 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn schema(&self) -> &JsonSchema {
+    fn schema(&self) -> &Value {
         match self {
             DocumentType::V0(v0) => v0.schema(),
+        }
+    }
+
+    fn schema_owned(self) -> Value {
+        match self {
+            DocumentType::V0(v0) => v0.schema_owned(),
         }
     }
 
@@ -57,6 +63,13 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.binary_paths(),
         }
     }
+
+    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
+        match self {
+            DocumentType::V0(v0) => v0.binary_properties(),
+        }
+    }
+
     fn required_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(v0) => v0.required_fields(),
@@ -89,9 +102,15 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn schema(&self) -> &JsonSchema {
+    fn schema(&self) -> &Value {
         match self {
             DocumentTypeRef::V0(v0) => v0.schema(),
+        }
+    }
+
+    fn schema_owned(self) -> Value {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.clone().schema_owned(),
         }
     }
 
@@ -130,6 +149,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => v0.binary_paths(),
         }
     }
+
+    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.binary_properties(),
+        }
+    }
+
     fn required_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(v0) => v0.required_fields(),
@@ -162,9 +188,15 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn schema(&self) -> &JsonSchema {
+    fn schema(&self) -> &Value {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.schema(),
+        }
+    }
+
+    fn schema_owned(self) -> Value {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.clone().schema_owned(),
         }
     }
 
@@ -203,6 +235,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
             DocumentTypeMutRef::V0(v0) => v0.binary_paths(),
         }
     }
+
+    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.binary_properties(),
+        }
+    }
+
     fn required_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.required_fields(),

@@ -14,11 +14,13 @@ impl DataContractJsonConversionMethodsV0 for DataContractV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut value: Value = json_value.into();
-        value.replace_at_paths(DATA_CONTRACT_BINARY_FIELDS_V0, ReplacementType::BinaryBytes)?;
+        // TODO: Revisit this. We defo don't have entory
+        // value.replace_at_paths(DATA_CONTRACT_BINARY_FIELDS_V0, ReplacementType::BinaryBytes)?;
         value.replace_at_paths(
             DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
             ReplacementType::Identifier,
         )?;
+        // TODO: We also need to replace the binary fields in documents
         Self::from_object(value, platform_version)
     }
 
@@ -27,9 +29,11 @@ impl DataContractJsonConversionMethodsV0 for DataContractV0 {
         self.to_object(platform_version)?
             .try_into()
             .map_err(ProtocolError::ValueError)
+
+        // TODO: Are we expect string here?
     }
 
-    // TODO: is this method needed?
+    // TODO: is this method needed? Why do we have two methods with the same output?
     fn to_json_object(
         &self,
         platform_version: &PlatformVersion,

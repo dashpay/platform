@@ -1,3 +1,4 @@
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
@@ -18,7 +19,7 @@ pub trait DocumentHashV0Method: DocumentPlatformConversionMethodsV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = contract.id().to_vec();
-        buf.extend(document_type.name().as_bytes());
+        buf.extend(document_type.name().as_bytes()); // TODO: Why we put it here?
         buf.extend(self.serialize(document_type, platform_version)?);
         Ok(hash_to_vec(buf))
     }

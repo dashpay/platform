@@ -6,6 +6,7 @@ use anyhow::Context;
 use jsonschema::JSONSchema;
 use serde_json::Value as JsonValue;
 
+// TODO: Remove?
 pub struct JsonSchemaValidator {
     raw_schema_json: JsonValue,
     schema: Option<JSONSchema>,

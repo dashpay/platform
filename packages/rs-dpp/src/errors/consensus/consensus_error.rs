@@ -1,5 +1,5 @@
 use bincode;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -8,8 +8,6 @@ use crate::consensus::state::state_error::StateError;
 
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::signature::SignatureError;
-#[cfg(feature = "state-transitions")]
-use crate::consensus::state::data_trigger::DataTriggerError;
 
 #[cfg(test)]
 use crate::consensus::test_consensus_error::TestConsensusError;
@@ -47,12 +45,6 @@ pub enum ConsensusError {
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
-}
-
-impl From<DataTriggerError> for ConsensusError {
-    fn from(error: DataTriggerError) -> Self {
-        Self::StateError(StateError::DataTriggerError(error))
-    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@ pub mod v0;
 use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 
@@ -26,21 +26,15 @@ impl DataContractValueConversionMethodsV0 for DataContract {
         }
     }
 
-    fn to_object(&self) -> Result<Value, ProtocolError> {
+    fn to_object(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_object(),
+            DataContract::V0(v0) => v0.to_object(platform_version),
         }
     }
 
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+    fn into_object(self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_cleaned_object(),
-        }
-    }
-
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        match self {
-            DataContract::V0(v0) => v0.into_object(),
+            DataContract::V0(v0) => v0.into_object(platform_version),
         }
     }
 }

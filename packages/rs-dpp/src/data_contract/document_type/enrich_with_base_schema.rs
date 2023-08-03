@@ -21,7 +21,7 @@ const PROPERTY_REQUIRED: &str = "required";
 
 pub fn enrich_with_base_schema(
     mut schema: Value,
-    schema_defs: Value,
+    schema_defs: Option<Value>,
     exclude_properties: &[&str], // TODO: Do we need this?
 ) -> Result<Value, ProtocolError> {
     let base_properties = BASE_DOCUMENT_SCHEMA
@@ -56,22 +56,24 @@ pub fn enrich_with_base_schema(
             .map_err(ProtocolError::ValueError)?;
     }
 
-    if let Some(JsonValue::Object(ref mut properties)) = schema.get_mut(PROPERTY_PROPERTIES) {
+    if let Some(Value::Map(ref mut properties)) = schema
+        .get_mut(PROPERTY_PROPERTIES)
+        .map_err(ProtocolError::ValueError)?
+    {
         properties.extend(
             base_properties
                 .iter()
-                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+                .map(|(k, v)| (k.clone().into(), v.into())),
         );
     }
 
-    if let Some(JsonValue::Array(ref mut required)) = schema.get_mut(PROPERTY_REQUIRED) {
-        required.extend(
-            base_required
-                .iter()
-                .map(|v| JsonValue::String(v.to_string())),
-        );
+    if let Some(Value::Array(ref mut required)) = schema
+        .get_mut(PROPERTY_REQUIRED)
+        .map_err(ProtocolError::ValueError)?
+    {
+        required.extend(base_required.iter().map(|v| v.to_string().into()));
         required.retain(|p| {
-            if let JsonValue::String(v) = p {
+            if let Value::Text(v) = p {
                 return !exclude_properties.contains(&v.as_str());
             }
             true

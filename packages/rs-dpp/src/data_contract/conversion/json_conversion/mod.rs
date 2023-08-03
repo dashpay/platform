@@ -29,15 +29,18 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
         }
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_json(),
+            DataContract::V0(v0) => v0.to_json(platform_version),
         }
     }
 
-    fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json_object(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_json_object(),
+            DataContract::V0(v0) => v0.to_json_object(platform_version),
         }
     }
 }

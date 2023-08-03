@@ -30,13 +30,13 @@ impl DocumentType {
                 //  $defs. It must be handled
                 let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                     return Err(ProtocolError::DataContractError(
-                        DataContractError::InvalidContractStructure("malformed reference"),
+                        DataContractError::InvalidContractStructure("malformed reference".to_string()),
                     ));
                 };
 
                 let Some(defs) = schema_defs else {
                     return Err(ProtocolError::DataContractError(
-                        DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}").as_str()),
+                        DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}")),
                     ));
                 };
 
@@ -89,7 +89,7 @@ impl DocumentType {
                         } else {
                             return Err(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure(
-                                    "byteArray should always be true if defined",
+                                    "byteArray should always be true if defined".to_string(),
                                 ),
                             ));
                         }
@@ -126,7 +126,7 @@ impl DocumentType {
 
                     // Create a new set with the prefix removed from the keys
                     let inner_schema_defs: Option<BTreeMap<String, Value>> =
-                        schema_defs.map(|defs| {
+                        schema_defs.as_ref().map(|defs| {
                             defs.iter()
                                 .filter_map(|(key, value)| {
                                     if key.starts_with(&property_key)

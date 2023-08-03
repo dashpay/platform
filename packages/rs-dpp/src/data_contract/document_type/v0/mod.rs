@@ -2,11 +2,11 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::{TryFrom, TryInto};
 
+use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
 use crate::data_contract::document_type::enrich_with_base_schema::enrich_with_base_schema;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::validate_data_contract_max_depth::validate_data_contract_max_depth;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::{DataContract, DocumentName, JsonValue, PropertyPath};
@@ -39,7 +39,7 @@ pub const MAX_INDEX_SIZE: usize = 255;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 // TODO: We aren't going to serialize it so we should remove it
-#[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentTypeV0 {
     pub(crate) name: String,
@@ -52,7 +52,7 @@ pub struct DocumentTypeV0 {
     pub(crate) flattened_properties: BTreeMap<String, DocumentField>,
     /// Document field can contain sub objects.
     pub(crate) properties: BTreeMap<String, DocumentField>,
-    pub(crate) binary_properties: BTreeMap<PropertyPath, JsonValue>,
+    pub(crate) binary_properties: BTreeMap<PropertyPath, Value>,
     #[serde(skip)]
     pub(crate) identifier_paths: BTreeSet<String>,
     #[serde(skip)]
@@ -78,7 +78,11 @@ impl DocumentTypeV0 {
         // TODO: Do not validate if feature validation is disabled?
 
         // Create a root JSON Schema from shorten document schema
-        let full_schema = enrich_with_base_schema(schema.clone(), Value::from(schema_defs), &[])?;
+        let full_schema = enrich_with_base_schema(
+            schema.clone(),
+            schema_defs.as_ref().map(|defs| Value::from(defs.clone())),
+            &[],
+        )?;
 
         // validate_data_contract_max_depth(full_schema);
 
@@ -89,7 +93,7 @@ impl DocumentTypeV0 {
                     .try_to_validating_json()
                     .map_err(ProtocolError::ValueError)?,
             )
-            .map_err(JsonSchemaError::from)?;
+            .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
         // result.merge(multi_validator::validate(
         //     raw_data_contract,
@@ -104,7 +108,7 @@ impl DocumentTypeV0 {
 
         let schema_map = schema.as_map().ok_or_else(|| {
             ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                "document must be an object",
+                "document must be an object".to_string(),
             ))
         })?;
 
@@ -132,7 +136,7 @@ impl DocumentTypeV0 {
                             .as_map()
                             .ok_or(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure(
-                                    "index definition is not a map as expected",
+                                    "index definition is not a map as expected".to_string(),
                                 ),
                             ))?
                             .as_slice()
@@ -229,10 +233,8 @@ impl DocumentTypeV0 {
         )?;
 
         // TODO: Figure out why do we need this and how it differs from `binary_paths`
-        let binary_properties = schema
-            .iter()
-            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::create_binary_properties(&schema.clone().try_into()?, platform_version)?)))
-            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
+        //   and move this function to DocumentType
+        let binary_properties = DataContract::create_binary_properties(&schema, platform_version)?;
 
         Ok(DocumentTypeV0 {
             name: String::from(name),

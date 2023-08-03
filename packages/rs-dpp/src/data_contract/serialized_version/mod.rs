@@ -1,19 +1,19 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::DataContract;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
 use platform_version::TryFromPlatformVersioned;
-use platform_versioning::PlatformVersioned;
+use serde::{Deserialize, Serialize};
 
 pub(in crate::data_contract) mod v0;
 
 pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, From, Serialize, Deserialize)]
 pub enum DataContractInSerializationFormat {
     V0(DataContractInSerializationFormatV0),
 }
@@ -55,7 +55,7 @@ impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFor
             .default_current_version
         {
             0 => {
-                let v0_format: DataContractInSerializationFormatV0 = value.into();
+                let v0_format: DataContractInSerializationFormatV0 = DataContract::V0(value).into();
                 Ok(v0_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -81,7 +81,8 @@ impl TryFromPlatformVersioned<&DataContractV0> for DataContractInSerializationFo
             .default_current_version
         {
             0 => {
-                let v0_format: DataContractInSerializationFormatV0 = value.clone().into();
+                let v0_format: DataContractInSerializationFormatV0 =
+                    DataContract::V0(value.to_owned()).into();
                 Ok(v0_format.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {

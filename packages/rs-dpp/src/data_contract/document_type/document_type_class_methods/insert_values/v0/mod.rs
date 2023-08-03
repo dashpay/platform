@@ -41,13 +41,13 @@ impl DocumentType {
                     //  it must be handled
                     let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
                         return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure("malformed reference"),
+                            DataContractError::InvalidContractStructure("malformed reference".to_string()),
                         ));
                     };
 
                     let Some(defs) = schema_defs else {
                         return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}").as_str()),
+                            DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}")),
                         ));
                     };
 
@@ -66,40 +66,41 @@ impl DocumentType {
                 "array" => {
                     // Only handling bytearrays for v1
                     // Return an error if it is not a byte array
-                    field_type =
-                        match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
-                            Some(inner_bool) => {
-                                if inner_bool {
-                                    match inner_properties
-                                        .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                    field_type = match inner_properties
+                        .get_optional_bool(property_names::BYTE_ARRAY)?
+                    {
+                        Some(inner_bool) => {
+                            if inner_bool {
+                                match inner_properties
+                                    .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                                {
+                                    Some(content_media_type)
+                                        if content_media_type
+                                            == "application/x.dash.dpp.identifier" =>
                                     {
-                                        Some(content_media_type)
-                                            if content_media_type
-                                                == "application/x.dash.dpp.identifier" =>
-                                        {
-                                            DocumentFieldType::Identifier
-                                        }
-                                        Some(_) | None => DocumentFieldType::ByteArray(
-                                            inner_properties
-                                                .get_optional_integer(property_names::MIN_ITEMS)?,
-                                            inner_properties
-                                                .get_optional_integer(property_names::MAX_ITEMS)?,
-                                        ),
+                                        DocumentFieldType::Identifier
                                     }
-                                } else {
-                                    return Err(ProtocolError::DataContractError(
-                                        DataContractError::InvalidContractStructure(
-                                            "byteArray should always be true if defined",
-                                        ),
-                                    ));
+                                    Some(_) | None => DocumentFieldType::ByteArray(
+                                        inner_properties
+                                            .get_optional_integer(property_names::MIN_ITEMS)?,
+                                        inner_properties
+                                            .get_optional_integer(property_names::MAX_ITEMS)?,
+                                    ),
                                 }
+                            } else {
+                                return Err(ProtocolError::DataContractError(
+                                    DataContractError::InvalidContractStructure(
+                                        "byteArray should always be true if defined".to_string(),
+                                    ),
+                                ));
                             }
-                            // TODO: Contract indices and new encoding format don't support arrays
-                            //   but we still can use them as document fields with current cbor encoding
-                            //   This is a temporary workaround to bring back v0.22 behavior and should be
-                            //   replaced with a proper array support in future versions
-                            None => DocumentFieldType::Array(ArrayFieldType::Boolean),
-                        };
+                        }
+                        // TODO: Contract indices and new encoding format don't support arrays
+                        //   but we still can use them as document fields with current cbor encoding
+                        //   This is a temporary workaround to bring back v0.22 behavior and should be
+                        //   replaced with a proper array support in future versions
+                        None => DocumentFieldType::Array(ArrayFieldType::Boolean),
+                    };
 
                     document_properties.insert(
                         prefixed_property_key,

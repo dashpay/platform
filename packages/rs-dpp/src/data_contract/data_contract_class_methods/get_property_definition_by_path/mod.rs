@@ -6,6 +6,7 @@ use serde_json::Value as JsonValue;
 mod v0;
 
 impl DataContract {
+    // TODO: Used only in test for itself, remove?
     pub(crate) fn get_property_definition_by_path<'a>(
         document_definition: &'a JsonValue,
         path: &str,

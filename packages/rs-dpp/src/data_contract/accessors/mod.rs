@@ -30,6 +30,12 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn document_type(&self, name: &DocumentName) -> Option<&DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_type(name),
+        }
+    }
+
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types(),
@@ -57,20 +63,6 @@ impl DataContractV0Getters for DataContract {
     fn config_mut(&mut self) -> &mut DataContractConfig {
         match self {
             DataContract::V0(v0) => v0.config_mut(),
-        }
-    }
-
-    fn schema(&self) -> &DataContractSchema {
-        match self {
-            DataContract::V0(v0) => v0.schema(),
-        }
-    }
-
-    fn binary_properties(
-        &self,
-    ) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
-        match self {
-            DataContract::V0(v0) => v0.binary_properties(),
         }
     }
 }
@@ -103,12 +95,6 @@ impl DataContractV0Setters for DataContract {
     fn set_config(&mut self, config: DataContractConfig) {
         match self {
             DataContract::V0(v0) => v0.set_config(config),
-        }
-    }
-
-    fn set_schema(&mut self, schema: DataContractSchema) {
-        match self {
-            DataContract::V0(v0) => v0.set_schema(schema),
         }
     }
 }

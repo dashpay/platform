@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::prelude::DataContract;
+use platform_value::Value;
 use serde_json::{Map, Value as JsonValue};
 
 use crate::util::json_schema::JsonSchemaExt;
@@ -11,58 +12,61 @@ const PROPERTY_TYPE: &str = "type";
 
 impl DataContract {
     ///  Construct and get all properties with `contentEncoding` keyword
-    pub(super) fn create_binary_properties_v0(schema: &JsonValue) -> BTreeMap<String, JsonValue> {
-        let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
+    pub(super) fn create_binary_properties_v0(schema: &Value) -> BTreeMap<String, Value> {
+        // TODO: Enable when justify than this binary properties are actually needed.
+        // let mut binary_properties: BTreeMap<String, JsonValue> = BTreeMap::new();
+        //
+        // if let Some(JsonValue::Object(schema_properties)) = schema.get(PROPERTY_PROPERTIES) {
+        //     for (property_name, property_value) in schema_properties {
+        //         build_binary_properties_map(
+        //             property_value,
+        //             Some(property_name.to_string()),
+        //             &mut binary_properties,
+        //         );
+        //     }
+        // }
+        // binary_properties
 
-        if let Some(JsonValue::Object(schema_properties)) = schema.get(PROPERTY_PROPERTIES) {
-            for (property_name, property_value) in schema_properties {
-                build_binary_properties_map(
-                    property_value,
-                    Some(property_name.to_string()),
-                    &mut binary_properties,
-                );
-            }
-        }
-        binary_properties
+        BTreeMap::new()
     }
 }
 
 /// Recursively build properties map
 fn build_binary_properties_map(
-    schema: &JsonValue,
+    schema: &Value,
     property_path: Option<String>,
-    binary_paths: &mut BTreeMap<String, JsonValue>,
+    binary_paths: &mut BTreeMap<String, Value>,
 ) {
-    if let JsonValue::Object(map) = schema {
-        match get_schema_property_type(map) {
-            Some("object") => {
-                visit_map(map, property_path.as_ref(), binary_paths);
-            }
-            Some("array") => {
-                if let Some(JsonValue::Object(items)) = map.get(PROPERTY_ITEMS) {
-                    if get_schema_property_type(items) == Some("object") {
-                        visit_map(items, property_path.as_ref(), binary_paths);
-                    }
-                }
-                if let Some(JsonValue::Array(items)) = map.get(PROPERTY_ITEMS) {
-                    visit_array(items, property_path.as_ref(), binary_paths);
-                }
-            }
-            _ => {}
-        }
-    }
-    if schema.is_type_of_byte_array() {
-        binary_paths.insert(
-            property_path.unwrap_or_else(|| String::from("")),
-            schema.clone(),
-        );
-    }
+    // if let JsonValue::Object(map) = schema {
+    //     match get_schema_property_type(map) {
+    //         Some("object") => {
+    //             visit_map(map, property_path.as_ref(), binary_paths);
+    //         }
+    //         Some("array") => {
+    //             if let Some(JsonValue::Object(items)) = map.get(PROPERTY_ITEMS) {
+    //                 if get_schema_property_type(items) == Some("object") {
+    //                     visit_map(items, property_path.as_ref(), binary_paths);
+    //                 }
+    //             }
+    //             if let Some(JsonValue::Array(items)) = map.get(PROPERTY_ITEMS) {
+    //                 visit_array(items, property_path.as_ref(), binary_paths);
+    //             }
+    //         }
+    //         _ => {}
+    //     }
+    // }
+    // if schema.is_type_of_byte_array() {
+    //     binary_paths.insert(
+    //         property_path.unwrap_or_else(|| String::from("")),
+    //         schema.clone(),
+    //     );
+    // }
 }
 
 fn visit_array(
-    array: &[JsonValue],
+    array: &[Value],
     property_path: Option<&String>,
-    binary_paths: &mut BTreeMap<String, JsonValue>,
+    binary_paths: &mut BTreeMap<String, Value>,
 ) {
     for (index, v) in array.iter().enumerate() {
         let property_path = if let Some(ref path) = property_path {
@@ -74,22 +78,25 @@ fn visit_array(
     }
 }
 
-fn visit_map(
-    map: &Map<String, JsonValue>,
-    property_path: Option<&String>,
-    binary_paths: &mut BTreeMap<String, JsonValue>,
-) {
-    if let Some(JsonValue::Object(properties)) = map.get(PROPERTY_PROPERTIES) {
-        for (key, v) in properties {
-            let property_path = if let Some(ref path) = property_path {
-                format!("{}.{}", path, key)
-            } else {
-                key.to_string()
-            };
-            build_binary_properties_map(v, Some(property_path), binary_paths);
-        }
-    }
-}
+// fn visit_map(
+//     map: &Map<String, Value>,
+//     property_path: Option<&String>,
+//     binary_paths: &mut BTreeMap<String, Value>,
+// ) {
+//     if let Some(JsonValue::Object(properties)) = map
+//         .get(PROPERTY_PROPERTIES)
+//         .expect("properties must be a map and validated on creation")
+//     {
+//         for (key, v) in properties {
+//             let property_path = if let Some(ref path) = property_path {
+//                 format!("{}.{}", path, key)
+//             } else {
+//                 key.to_string()
+//             };
+//             build_binary_properties_map(v, Some(property_path), binary_paths);
+//         }
+//     }
+// }
 
 fn get_schema_property_type(m: &serde_json::Map<String, JsonValue>) -> Option<&str> {
     if let Some(JsonValue::String(ref st)) = m.get(PROPERTY_TYPE) {

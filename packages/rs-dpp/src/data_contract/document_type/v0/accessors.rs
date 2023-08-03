@@ -5,7 +5,7 @@ use crate::data_contract::document_type::document_field::DocumentField;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::JsonSchema;
+use crate::data_contract::{JsonSchema, PropertyPath};
 use platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,8 +14,12 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         &self.name
     }
 
-    fn schema(&self) -> &JsonSchema {
+    fn schema(&self) -> &Value {
         &self.schema
+    }
+
+    fn schema_owned(self) -> Value {
+        self.schema
     }
 
     fn indices(&self) -> &Vec<Index> {
@@ -40,6 +44,10 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn binary_paths(&self) -> &BTreeSet<String> {
         &self.binary_paths
+    }
+
+    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
+        &self.binary_properties
     }
 
     fn required_fields(&self) -> &BTreeSet<String> {

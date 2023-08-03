@@ -1,11 +1,13 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::base::DataContractBaseMethodsV0;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::data_contract::DataContractV0;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::JsonValue;
 use crate::{identifier, ProtocolError};
 use itertools::{Either, Itertools};
+use platform_value::Value;
 use std::collections::{BTreeMap, HashSet};
 
 impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
@@ -13,14 +15,19 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
         &self,
         document_type: &str,
     ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
-        let binary_properties = self.get_optional_binary_properties(document_type)?;
+        let binary_properties = self.get_optional_binary_properties(document_type);
 
         // At this point we don't bother about returned error from `get_binary_properties`.
         // If document of given type isn't found, then empty vectors will be returned.
         let (binary_paths, identifiers_paths) = match binary_properties {
             None => (HashSet::new(), HashSet::new()),
             Some(binary_properties) => binary_properties.iter().partition_map(|(path, v)| {
-                if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                if let Some(Value::Text(content_type)) = v
+                    .get("contentMediaType")
+                    // TODO: This must be a map otherwise we have a bug in binary properties creation
+                    //   ChatGTP says we should panic in such cases. Ask Sam
+                    .expect("binary property value must be a map")
+                {
                     if content_type == identifier::MEDIA_TYPE {
                         Either::Right(path.as_str())
                     } else {
@@ -40,29 +47,9 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
     /// automatically generates binary properties when setting the Json Schema
     // TODO: Naming is confusing. It's not clear, it sounds like it will return optional document properties
     //   but not None if document type is not present. Rename this
-    fn get_optional_binary_properties(
-        &self,
-        doc_type: &str,
-    ) -> Result<Option<&BTreeMap<String, JsonValue>>, ProtocolError> {
-        if !self.is_document_defined(doc_type) {
-            return Ok(None);
-        }
-
-        // The rust implementation doesn't set the value if it is not present in `binary_properties`. The difference is caused by
-        // required `mut` annotation. As `get_binary_properties` is reused in many other read-only methods, the mutation would require
-        // propagating the `mut` to other getters which by the definition shouldn't be mutable.
-        self.binary_properties
-            .get(doc_type)
-            .ok_or_else(|| {
-                {
-                    anyhow::anyhow!(
-                        "document '{}' has not generated binary_properties",
-                        doc_type
-                    )
-                }
-                .into()
-            })
-            .map(Some)
+    fn get_optional_binary_properties(&self, doc_type: &str) -> Option<&BTreeMap<String, Value>> {
+        self.document_type(&doc_type.to_string())
+            .map(|r#type| r#type.binary_properties())
     }
 
     /// Returns the binary properties for the given document type
@@ -72,8 +59,8 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
     fn get_binary_properties(
         &self,
         doc_type: &str,
-    ) -> Result<&BTreeMap<String, JsonValue>, ProtocolError> {
-        self.get_optional_binary_properties(doc_type)?
+    ) -> Result<&BTreeMap<String, Value>, ProtocolError> {
+        self.get_optional_binary_properties(doc_type)
             .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
                     doc_type.to_owned(),
@@ -88,14 +75,19 @@ impl DataContractIdentifiersAndBinaryPathsMethodsV0 for DataContractV0 {
         &self,
         document_type: &str,
     ) -> Result<(I, I), ProtocolError> {
-        let binary_properties = self.get_optional_binary_properties(document_type)?;
+        let binary_properties = self.get_optional_binary_properties(document_type);
 
         // At this point we don't bother about returned error from `get_binary_properties`.
         // If document of given type isn't found, then empty vectors will be returned.
         Ok(binary_properties
             .map(|binary_properties| {
                 binary_properties.iter().partition_map(|(path, v)| {
-                    if let Some(JsonValue::String(content_type)) = v.get("contentMediaType") {
+                    if let Some(Value::Text(content_type)) = v
+                        .get("contentMediaType")
+                        // TODO: This must be a map otherwise we have a bug in binary properties creation
+                        //   ChatGTP says we should panic in such cases. Ask Sam
+                        .expect("binary property value must be a map")
+                    {
                         if content_type == platform_value::IDENTIFIER_MEDIA_TYPE {
                             Either::Left(path.clone())
                         } else {

@@ -1,6 +1,8 @@
 use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
 use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
+use crate::consensus::state::state_error::StateError;
+use crate::consensus::ConsensusError;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -24,4 +26,10 @@ pub enum DataTriggerError {
 
     #[error(transparent)]
     DataTriggerInvalidResultError(DataTriggerInvalidResultError),
+}
+
+impl From<DataTriggerError> for ConsensusError {
+    fn from(error: DataTriggerError) -> Self {
+        Self::StateError(StateError::DataTriggerError(error))
+    }
 }

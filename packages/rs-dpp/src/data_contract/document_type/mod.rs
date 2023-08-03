@@ -57,13 +57,6 @@ pub enum DocumentType {
     V0(DocumentTypeV0),
 }
 
-// TODO: It doesn't look good. Default value can't be valid
-impl Default for DocumentType {
-    fn default() -> Self {
-        DocumentType::V0(DocumentTypeV0::default())
-    }
-}
-
 impl DocumentType {
     pub const fn as_ref(&self) -> DocumentTypeRef {
         match self {

@@ -1,6 +1,7 @@
 use crate::data_contract::DataContract;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
@@ -8,9 +9,9 @@ mod v0;
 
 impl DataContract {
     pub fn create_binary_properties(
-        schema: &JsonValue,
+        schema: &Value,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<String, JsonValue>, ProtocolError> {
+    ) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions

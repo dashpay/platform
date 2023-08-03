@@ -1,4 +1,5 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;

@@ -220,7 +220,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             .ok_or({
                                 ProtocolError::DataContractError(
                                     DataContractError::InvalidContractStructure(
-                                        "index name should be a string",
+                                        "index name should be a string".to_string(),
                                     ),
                                 )
                             })?

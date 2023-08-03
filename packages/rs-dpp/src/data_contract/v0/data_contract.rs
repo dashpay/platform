@@ -1,35 +1,25 @@
 use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
-use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Identifier;
-use platform_value::{ReplacementType, Value, ValueMapHelper};
+use platform_value::{Value, ValueMapHelper};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::data_contract::{
-    data_contract_config, DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath,
-};
+use crate::data_contract::{DefinitionName, DocumentName};
 
 use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use crate::data_contract::errors::DataContractError;
-use crate::data_contract::property_names::VERSION;
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+use crate::data_contract::document_type::DocumentType;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
-use crate::util::deserializer::ProtocolVersion;
-use crate::version::PlatformVersion;
-use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
-use crate::{identifier, Convertible};
+use crate::Convertible;
+use crate::{errors::ProtocolError, metadata::Metadata};
 use platform_value::string_encoding::Encoding;
 
 use super::super::property_names;
@@ -51,25 +41,25 @@ pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
 pub struct DataContractV0 {
     /// A unique identifier for the data contract.
     /// This field must always present in all versions.
-    pub(super) id: Identifier,
+    pub(crate) id: Identifier,
 
     /// The version of this data contract.
-    pub(super) version: u32,
+    pub(crate) version: u32,
 
     /// The identifier of the contract owner.
-    pub(super) owner_id: Identifier,
+    pub(crate) owner_id: Identifier,
 
     /// A mapping of document names to their corresponding document types.
-    pub(super) document_types: BTreeMap<DocumentName, DocumentType>,
+    pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
 
     /// Optional metadata associated with the contract.
-    pub(super) metadata: Option<Metadata>,
+    pub(crate) metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
-    pub(super) config: DataContractConfig,
+    pub(crate) config: DataContractConfig,
 
     /// Shared subschemas to reuse across documents (see $defs)
-    pub(super) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
+    pub(crate) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
 }
 
 //

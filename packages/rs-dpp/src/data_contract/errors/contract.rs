@@ -40,7 +40,7 @@ pub enum DataContractError {
     EncodingDataStructureNotSupported(&'static str),
 
     #[error("invalid contract structure: {0}")]
-    InvalidContractStructure(&'static str),
+    InvalidContractStructure(String),
 
     #[error("document type not found: {0}")]
     DocumentTypeNotFound(&'static str),

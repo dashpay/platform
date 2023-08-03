@@ -187,41 +187,12 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
 }
 
 impl DataContract {
+    // TODO: Don't we need this method in DataContractV0?
     // Returns hash from Data Contract
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash_to_vec(
             self.serialize_with_platform_version(platform_version)?,
         ))
-    }
-
-    pub fn id(&self) -> Identifier {
-        match self {
-            DataContract::V0(v0) => v0.id(),
-        }
-    }
-
-    pub fn id_ref(&self) -> &Identifier {
-        match self {
-            DataContract::V0(v0) => &v0.id(),
-        }
-    }
-
-    pub fn set_owner_id(&mut self, owner_id: Identifier) {
-        match self {
-            DataContract::V0(v0) => v0.set_owner_id(owner_id),
-        }
-    }
-
-    pub fn set_id(&mut self, id: Identifier) {
-        match self {
-            DataContract::V0(v0) => v0.set_id(id),
-        }
-    }
-
-    pub fn set_version(&mut self, version: u32) {
-        match self {
-            DataContract::V0(v0) => v0.version = version,
-        }
     }
 
     pub fn as_v0(&self) -> Option<&DataContractV0> {
