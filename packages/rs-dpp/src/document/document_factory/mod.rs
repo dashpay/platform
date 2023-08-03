@@ -7,6 +7,7 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
@@ -14,7 +15,6 @@ use crate::state_transition::documents_batch_transition::document_transition::ac
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::DocumentFactoryV0;
-use crate::data_contract::document_type::DocumentType;
 
 /// # Document Factory
 ///
@@ -109,7 +109,9 @@ impl DocumentFactory {
     #[cfg(feature = "state-transitions")]
     pub fn create_state_transition(
         &self,
-        documents_iter: impl IntoIterator<Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>)>,
+        documents_iter: impl IntoIterator<
+            Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>),
+        >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
             DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter),

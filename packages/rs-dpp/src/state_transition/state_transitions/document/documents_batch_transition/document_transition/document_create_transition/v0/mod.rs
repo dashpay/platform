@@ -168,7 +168,10 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0::from_value_map_consume(&mut map, data_contract)?),
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0::from_value_map_consume(
+                &mut map,
+                data_contract,
+            )?),
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,

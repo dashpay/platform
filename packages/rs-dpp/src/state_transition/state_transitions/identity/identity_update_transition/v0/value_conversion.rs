@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
+use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
 };
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 
 use crate::{
     data_contract::DataContract,

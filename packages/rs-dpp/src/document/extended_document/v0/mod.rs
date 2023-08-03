@@ -16,12 +16,14 @@ use crate::ProtocolError;
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 
-use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
+};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
-use serde::{Deserialize, Serialize};
 
 use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
