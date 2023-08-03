@@ -350,7 +350,7 @@ mod test {
         let documents =
             get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
                 .unwrap();
-        let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+        let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
             owner_id: data_contract.owner_id,
@@ -382,7 +382,7 @@ mod test {
         let documents =
             get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
                 .unwrap();
-        let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+        let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
             owner_id: data_contract.owner_id,
@@ -412,7 +412,7 @@ mod test {
         let documents =
             get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
                 .unwrap();
-        let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+        let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         execution_context.enable_dry_run();
 

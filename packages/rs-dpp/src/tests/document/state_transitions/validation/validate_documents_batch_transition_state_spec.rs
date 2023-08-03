@@ -51,8 +51,10 @@ fn setup_test() -> TestData {
     let documents =
         get_extended_documents_fixture(created_data_contract.data_contract.clone()).unwrap();
 
-    let document_transitions =
-        get_document_transitions_fixture([(Action::Create, documents.clone())]);
+    let document_transitions = get_document_transitions_fixture([(
+        DocumentTransitionActionType::Create,
+        documents.clone(),
+    )]);
     let raw_document_transitions: Vec<Value> = document_transitions
         .iter()
         .map(|dt| dt.to_object().unwrap())
@@ -163,8 +165,11 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
         ..
     } = setup_test();
     let document_transitions = get_document_transitions_fixture([
-        (Action::Create, vec![]),
-        (Action::Delete, vec![documents[0].clone()]),
+        (DocumentTransitionActionType::Create, vec![]),
+        (
+            DocumentTransitionActionType::Delete,
+            vec![documents[0].clone()],
+        ),
     ]);
     let transition_id = document_transitions[0].base().id;
 
@@ -235,8 +240,11 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     documents[0].created_at = replace_document.created_at().copied();
 
     let document_transitions = get_document_transitions_fixture([
-        (Action::Create, vec![]),
-        (Action::Replace, vec![replace_document]),
+        (DocumentTransitionActionType::Create, vec![]),
+        (
+            DocumentTransitionActionType::Replace,
+            vec![replace_document],
+        ),
     ]);
     let transition_id = document_transitions[0].base().id;
 
@@ -317,8 +325,11 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
     fetched_document.document.owner_id = another_owner_id;
 
     let document_transitions = get_document_transitions_fixture([
-        (Action::Create, vec![]),
-        (Action::Replace, vec![replace_document]),
+        (DocumentTransitionActionType::Create, vec![]),
+        (
+            DocumentTransitionActionType::Replace,
+            vec![replace_document],
+        ),
     ]);
     let transition_id = document_transitions[0].base().id;
 
@@ -392,8 +403,10 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         ..
     } = setup_test();
 
-    let document_transitions =
-        get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+    let document_transitions = get_document_transitions_fixture([(
+        DocumentTransitionActionType::Create,
+        vec![documents[0].clone()],
+    )]);
     let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
@@ -456,8 +469,10 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         ..
     } = setup_test();
 
-    let document_transitions =
-        get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+    let document_transitions = get_document_transitions_fixture([(
+        DocumentTransitionActionType::Create,
+        vec![documents[0].clone()],
+    )]);
     let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
@@ -524,8 +539,11 @@ async fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for
     } = setup_test();
 
     let document_transitions = get_document_transitions_fixture([
-        (Action::Create, vec![]),
-        (Action::Replace, vec![documents[0].clone()]),
+        (DocumentTransitionActionType::Create, vec![]),
+        (
+            DocumentTransitionActionType::Replace,
+            vec![documents[0].clone()],
+        ),
     ]);
     let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<Value> = document_transitions
@@ -588,8 +606,10 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         ..
     } = setup_test();
 
-    let document_transitions =
-        get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+    let document_transitions = get_document_transitions_fixture([(
+        DocumentTransitionActionType::Create,
+        vec![documents[0].clone()],
+    )]);
     let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
         .map(|dt| dt.to_object().unwrap())
@@ -644,8 +664,10 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
         ..
     } = setup_test();
 
-    let document_transitions =
-        get_document_transitions_fixture([(Action::Create, vec![documents[1].clone()])]);
+    let document_transitions = get_document_transitions_fixture([(
+        DocumentTransitionActionType::Create,
+        vec![documents[1].clone()],
+    )]);
     let transition_id = document_transitions[0].base().id;
     let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()
@@ -725,9 +747,15 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
             ])
         });
     let document_transitions = get_document_transitions_fixture([
-        (Action::Create, vec![]),
-        (Action::Replace, vec![extended_documents[1].clone()]),
-        (Action::Delete, vec![extended_documents[2].clone()]),
+        (DocumentTransitionActionType::Create, vec![]),
+        (
+            DocumentTransitionActionType::Replace,
+            vec![extended_documents[1].clone()],
+        ),
+        (
+            DocumentTransitionActionType::Delete,
+            vec![extended_documents[2].clone()],
+        ),
     ]);
     let raw_document_transitions: Vec<Value> = document_transitions
         .into_iter()

@@ -6,11 +6,12 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
+use serde::{Deserialize, Deserializer};
 pub use v0::*;
 
-impl ValueConvertible for Identity {}
+impl<'a> ValueConvertible<'a> for Identity {}
 
-impl IdentityPlatformValueConversionMethodsV0 for Identity {}
+impl<'a> IdentityPlatformValueConversionMethodsV0<'a> for Identity {}
 
 impl TryFromPlatformVersioned<Value> for Identity {
     type Error = ProtocolError;

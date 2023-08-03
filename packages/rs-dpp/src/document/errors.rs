@@ -38,19 +38,19 @@ pub enum DocumentError {
 
     #[cfg(feature = "extended-document")]
     #[error("Invalid Document initial revision '{}'", document.revision().copied().unwrap_or_default())]
-    InvalidInitialRevisionError { document: Box<ExtendedDocument> },
+    InvalidInitialRevisionError { document: Box<Document> },
 
     #[cfg(feature = "extended-document")]
     #[error("Revision absent on mutable document")]
-    RevisionAbsentError { document: Box<ExtendedDocument> },
+    RevisionAbsentError { document: Box<Document> },
 
     #[cfg(feature = "extended-document")]
     #[error("Trying To Replace Immutable Document")]
-    TryingToReplaceImmutableDocument { document: Box<ExtendedDocument> },
+    TryingToReplaceImmutableDocument { document: Box<Document> },
 
     #[cfg(feature = "extended-document")]
     #[error("Documents have mixed owner ids")]
-    MismatchOwnerIdsError { documents: Vec<ExtendedDocument> },
+    MismatchOwnerIdsError { documents: Vec<Document> },
 
     #[error("No previous revision error")]
     DocumentNoRevisionError { document: Box<Document> },

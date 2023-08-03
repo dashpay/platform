@@ -23,7 +23,7 @@ use bincode::{config, Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl StateTransitionValueConvert for DataContractCreateTransition {
+impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             DataContractCreateTransition::V0(transition) => {

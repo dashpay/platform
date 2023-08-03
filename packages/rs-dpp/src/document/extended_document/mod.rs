@@ -1,6 +1,6 @@
 mod accessors;
 mod serde_serialize;
-mod v0;
+pub(crate) mod v0;
 
 use crate::data_contract::DataContract;
 use crate::ProtocolError;

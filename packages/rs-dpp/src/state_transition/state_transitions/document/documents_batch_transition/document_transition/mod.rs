@@ -12,6 +12,7 @@ use crate::{
 };
 use document_base_transition::DocumentBaseTransition;
 
+pub mod action_type;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;

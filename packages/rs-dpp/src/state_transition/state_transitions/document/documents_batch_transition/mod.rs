@@ -579,7 +579,7 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 //         let mut document = documents.first().unwrap().to_owned();
 //         document.entropy = Bytes32::new(entropy_bytes);
 //
-//         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
+//         let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![document])]);
 //         let mut transition = transitions.first().unwrap().to_owned();
 //         if let DocumentTransition::Create(ref mut t) = transition {
 //             t.created_at = Some(1671718896263);

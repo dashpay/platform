@@ -26,7 +26,7 @@ use crate::state_transition::documents_batch_transition::{
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use bincode::{config, Decode, Encode};
 //
-// impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {
+// impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransitionV0 {
 //     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
 //         Ok(self.to_value_map(skip_signature)?.into())
 //     }

@@ -41,15 +41,17 @@ fn setup_test(action: Action) -> TestData {
     let documents =
         get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
     let transitions = match action {
-        Action::Create => get_document_transitions_fixture([(Action::Create, documents)]),
+        Action::Create => {
+            get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)])
+        }
         Action::Replace => get_document_transitions_fixture([
-            (Action::Replace, documents),
-            (Action::Create, vec![]),
+            (DocumentTransitionActionType::Replace, documents),
+            (DocumentTransitionActionType::Create, vec![]),
         ]),
         Action::Delete => get_document_transitions_fixture([
-            (Action::Delete, documents),
-            (Action::Replace, vec![]),
-            (Action::Create, vec![]),
+            (DocumentTransitionActionType::Delete, documents),
+            (DocumentTransitionActionType::Replace, vec![]),
+            (DocumentTransitionActionType::Create, vec![]),
         ]),
     };
 
@@ -108,7 +110,7 @@ async fn property_should_be_present(property: &str) {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition.remove(property).unwrap();
 
@@ -134,7 +136,7 @@ async fn protocol_version_should_be_integer() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["protocolVersion"] = platform_value!("1");
 
@@ -160,7 +162,7 @@ async fn protocol_version_should_be_valid() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["protocolVersion"] = platform_value!("-1");
 
@@ -186,7 +188,7 @@ async fn type_should_be_equal_1() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["type"] = platform_value!(666);
 
@@ -214,7 +216,7 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let array = ["string"; 32];
     raw_state_transition[property_name] = platform_value!(array);
@@ -249,7 +251,7 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let array = [0u8; 31];
     raw_state_transition["ownerId"] = platform_value!(array);
@@ -276,7 +278,7 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let mut array = Vec::new();
     array.resize(33, 0u8);
@@ -304,7 +306,7 @@ async fn transitions_should_be_an_array() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"] = platform_value!("not an array");
 
@@ -330,7 +332,7 @@ async fn transitions_should_have_at_least_one_element() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"] = platform_value!([]);
 
@@ -356,7 +358,7 @@ async fn transitions_should_have_no_more_than_10_elements() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let mut elements = vec![];
     for _ in 0..11 {
@@ -386,7 +388,7 @@ async fn transitions_should_have_an_object_as_elements() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let elements = vec![platform_value!(1)];
     raw_state_transition["transitions"] = Value::Array(elements);
@@ -417,7 +419,7 @@ async fn property_in_document_transition_should_be_present(property: &str) {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"][0]
         .remove(property)
@@ -448,7 +450,7 @@ async fn property_should_should_exist_with_code(property_name: &str, error_code:
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"][0]
         .remove(property_name)
@@ -477,7 +479,7 @@ async fn property_should_be_byte_array(property_name: &str) {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let array = ["string"; 32];
     raw_state_transition["transitions"][0][property_name] = platform_value!(array);
@@ -512,7 +514,7 @@ async fn data_contract_id_should_be_byte_array() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"][0]["$dataContractId"] = platform_value!("something");
 
@@ -540,7 +542,7 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let array = [0u8; 31];
     raw_state_transition["transitions"][0][property_name] = platform_value!(array);
@@ -569,7 +571,7 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let mut array = Vec::new();
     array.resize(33, 0u8);
@@ -603,7 +605,7 @@ async fn data_contract_should_exist_in_the_state() {
         raw_state_transition,
         protocol_version_validator,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
         .expect_fetch_data_contract()
@@ -630,7 +632,7 @@ async fn type_should_be_defined_in_data_contract() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"][0]["$type"] = platform_value!("wrong");
 
@@ -655,7 +657,7 @@ async fn should_throw_invalid_document_transaction_action_error_if_action_is_not
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"][0]["$action"] = platform_value!(4);
 
@@ -680,7 +682,7 @@ async fn id_should_be_valid_generated_id() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     raw_state_transition["transitions"][0]["$id"] =
         platform_value!(generate_random_identifier_struct());
@@ -707,7 +709,7 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Replace);
+    } = setup_test(DocumentTransitionActionType::Replace);
 
     raw_state_transition["transitions"][0]
         .remove(property)
@@ -735,7 +737,7 @@ async fn revision_should_be_number() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Replace);
+    } = setup_test(DocumentTransitionActionType::Replace);
 
     raw_state_transition["transitions"][0]["$revision"] = platform_value!("1");
 
@@ -761,7 +763,7 @@ async fn revision_should_not_be_fractional() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Replace);
+    } = setup_test(DocumentTransitionActionType::Replace);
 
     raw_state_transition["transitions"][0]["$revision"] = platform_value!(1.2);
 
@@ -787,7 +789,7 @@ async fn revision_should_be_at_least_1() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Replace);
+    } = setup_test(DocumentTransitionActionType::Replace);
 
     raw_state_transition["transitions"][0]["$revision"] = platform_value!(0);
 
@@ -813,7 +815,7 @@ async fn id_should_be_present_in_delete_transition() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Delete);
+    } = setup_test(DocumentTransitionActionType::Delete);
 
     raw_state_transition["transitions"][0]
         .remove("$id")
@@ -853,7 +855,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let array = [0u8; 64].to_vec();
     raw_state_transition["signature"] = platform_value!(array);
@@ -880,7 +882,7 @@ async fn signature_should_be_not_longer_than_96_bytes() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let array = [0u8; 97].to_vec();
     raw_state_transition["signature"] = platform_value!(array);
@@ -907,7 +909,7 @@ async fn signature_public_key_should_be_an_integer() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Delete);
+    } = setup_test(DocumentTransitionActionType::Delete);
 
     raw_state_transition["signaturePublicKeyId"] = platform_value!(1.4);
 
@@ -936,7 +938,7 @@ async fn validation_should_be_successful() {
         protocol_version_validator,
         state_repository_mock,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let validator = DocumentBatchTransitionBasicValidator::new(
         Arc::new(state_repository_mock),
@@ -957,7 +959,7 @@ async fn should_not_validate_document_transitions_on_dry_run() {
         raw_state_transition,
         protocol_version_validator,
         ..
-    } = setup_test(Action::Create);
+    } = setup_test(DocumentTransitionActionType::Create);
 
     let execution_context = StateTransitionExecutionContext::default();
     execution_context.enable_dry_run();
