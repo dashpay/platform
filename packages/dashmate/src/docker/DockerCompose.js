@@ -124,9 +124,7 @@ class DockerCompose {
 
     const serviceList = this.#getServiceList(config);
 
-    const filterServiceNames = serviceList
-      .filter((service) => service.profiles.some((profile) => options.profiles.includes(profile)))
-      .map((service) => service.name);
+    const filterServiceNames = serviceList.map((service) => service.name);
 
     const serviceContainers = await this.getContainersList(config, {
       formatJson: true,
