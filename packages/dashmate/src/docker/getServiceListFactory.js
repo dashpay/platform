@@ -24,7 +24,9 @@ function getServiceListFactory(generateEnvs) {
     return Object
       .entries(composeFile.services)
       .map(([serviceName, { image: serviceImage, labels, profiles }]) => {
-        if (!labels['org.dashmate.service.title']) {
+        const title = labels['org.dashmate.service.title'];
+
+        if (!title) {
           throw new Error(`Label for dashmate service ${serviceName}`);
         }
 
@@ -36,7 +38,7 @@ function getServiceListFactory(generateEnvs) {
 
         return ({
           name: serviceName,
-          title: labels['org.dashmate.service.title'],
+          title,
           image,
           profiles: profiles ?? [],
         });
