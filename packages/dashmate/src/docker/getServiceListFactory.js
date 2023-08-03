@@ -45,7 +45,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
           profiles: serviceProfiles ?? [],
         });
       })
-      .filter((service) => service.profiles.some((profile) => profiles.includes(profile)));
+      .filter((service) => service.profiles.some((profile) => profiles.length === 0 || profiles.includes(profile)));
   }
 
   return getServiceList;
