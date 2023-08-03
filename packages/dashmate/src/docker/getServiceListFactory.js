@@ -8,6 +8,9 @@ const { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } = require('../constants
  * @return {getServiceList}
  */
 function getServiceListFactory(generateEnvs) {
+  const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml'));
+  const composeFile = yaml.load(file);
+  
   /**
    * Returns list of services and corresponding docker images from the config
    *
@@ -16,9 +19,6 @@ function getServiceListFactory(generateEnvs) {
    * @return {Object[]}
    */
   function getServiceList(config) {
-    const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml'));
-    const composeFile = yaml.load(file);
-
     const envs = generateEnvs(config);
 
     return Object
