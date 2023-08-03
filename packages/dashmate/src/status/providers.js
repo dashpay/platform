@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const PortStateEnum = require('./enums/portState');
 
 const MAX_REQUEST_TIMEOUT = 5000;

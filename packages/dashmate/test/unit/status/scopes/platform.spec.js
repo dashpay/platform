@@ -1,5 +1,3 @@
-const fetch = require('node-fetch');
-
 const { FetchError } = fetch;
 
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
