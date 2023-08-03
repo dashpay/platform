@@ -69,7 +69,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
       const paymentQueuePosition = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
-      const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
+      const lastPaidTime = lastPaidHeight ? blocksToTime(coreBlocks - lastPaidHeight) : null;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
       info.nodeState.dmnState = dmnState;
