@@ -88,7 +88,8 @@ use syn::{
         versioned,
         platform_serde_versioned,
         platform_serialize,
-        platform_version_path
+        platform_version_path,
+        platform_version_path_bounds
     )
 )]
 pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream {
@@ -97,7 +98,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
     } = parse_macro_input!(input);
     let name_str = ident.to_string();
 
-    let path = parse_path(&attrs).expect("expected a path");
+    let (path, is_bounds) = parse_path(&attrs).expect("expected a path");
 
     let path_tokens: proc_macro2::TokenStream = {
         let mut tokens = proc_macro2::TokenStream::new();
@@ -148,11 +149,21 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
 
         quote! {
             #version => {
-                let value = #variant_ident_sub::from_object(map_clone).map_err(|e|serde::de::Error::custom(e.to_string()))?;
+                let value = #variant_ident_sub::from_object(map_clone, current_platform_version).map_err(|e|serde::de::Error::custom(e.to_string()))?;
                 Ok(#ident::#variant_ident(value))
             }
         }
     }).collect::<Vec<_>>();
+
+    let version_check = if is_bounds {
+        quote! {
+            current_platform_version.#path_tokens.check_version(version)
+        }
+    } else {
+        quote! {
+            current_platform_version.#path_tokens != version
+        }
+    };
 
     let output = quote! {
         impl<'de> ::serde::de::Deserialize<'de> for #ident {
@@ -180,7 +191,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
                         }
                         let version: crate::version::FeatureVersion = map_clone.get_integer(#version_field_name).map_err(|_|serde::de::Error::missing_field(#version_field_name))?;
                         let current_platform_version = crate::version::PlatformVersion::get_current().map_err(|e|serde::de::Error::custom(e.to_string()))?;
-                       if current_platform_version.#path_tokens != version {
+                       if #version_check {
                         return Err(::serde::de::Error::custom("Invalid version value"));
                     }
                         match version {
@@ -334,7 +345,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
     let name = &input.ident;
     let path = parse_path(&input.attrs);
 
-    let verify_protocol_version: proc_macro2::TokenStream = if let Some(path) = path {
+    let verify_protocol_version: proc_macro2::TokenStream = if let Some((path, _)) = path {
         let mut tokens = proc_macro2::TokenStream::new();
         for (i, ident) in path.iter().enumerate() {
             if i != 0 {
@@ -382,8 +393,9 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
+fn parse_path(attrs: &[Attribute]) -> Option<(Vec<Ident>, bool)> {
     let mut platform_version_path = None::<LitStr>;
+    let mut is_bounds = false;
     //
     // if let Some(platform_serialize_attr) = attrs
     //     .iter()
@@ -402,17 +414,21 @@ fn parse_path(attrs: &[Attribute]) -> Option<Vec<Ident>> {
     for attr in attrs {
         if attr.path().is_ident("platform_version_path") {
             platform_version_path = attr.parse_args().expect("Failed to parse path");
+        } else if attr.path().is_ident("platform_version_path_bounds") {
+            platform_version_path = attr.parse_args().expect("Failed to parse path");
+            is_bounds = true;
         }
     }
 
     if let Some(platform_version_path) = platform_version_path {
         let path_string = platform_version_path.value();
-        return Some(
+        return Some((
             path_string
                 .split('.')
                 .map(|s| Ident::new(s, Span::call_site()))
                 .collect(),
-        );
+            is_bounds
+        ));
     }
 
     return None;

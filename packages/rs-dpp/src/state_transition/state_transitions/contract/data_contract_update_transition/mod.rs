@@ -30,6 +30,8 @@ mod version;
 pub use fields::*;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use crate::version::PlatformVersionCurrentVersion;
+use crate::state_transition::StateTransitionValueConvert;
 
 use crate::data_contract::DataContract;
 use crate::version::FeatureVersion;
@@ -55,7 +57,7 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
 pub enum DataContractUpdateTransition {

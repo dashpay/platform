@@ -14,7 +14,9 @@ use fields::*;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
+use crate::state_transition::StateTransitionValueConvert;
 use crate::state_transition::StateTransitionFieldTypes;
+use crate::version::PlatformVersionCurrentVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
@@ -40,7 +42,7 @@ use serde::Serialize;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]
 pub enum IdentityTopUpTransition {

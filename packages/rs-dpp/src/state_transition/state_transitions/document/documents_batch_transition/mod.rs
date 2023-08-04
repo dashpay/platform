@@ -48,6 +48,7 @@ mod v0;
 mod value_conversion;
 mod version;
 
+use crate::version::PlatformVersionCurrentVersion;
 use crate::state_transition::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
@@ -57,6 +58,7 @@ use crate::state_transition::documents_batch_transition::fields::{
 };
 
 use crate::state_transition::StateTransitionType::DocumentsBatch;
+use crate::state_transition::StateTransitionValueConvert;
 pub use v0::*;
 
 #[derive(
@@ -77,7 +79,7 @@ pub use v0::*;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
 pub enum DocumentsBatchTransition {

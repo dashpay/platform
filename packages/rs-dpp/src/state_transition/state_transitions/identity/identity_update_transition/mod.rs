@@ -25,6 +25,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::Serialize;
+use crate::version::PlatformVersionCurrentVersion;
 
 #[derive(
     Debug,
@@ -44,7 +45,7 @@ use serde::Serialize;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
 pub enum IdentityUpdateTransition {

@@ -17,6 +17,8 @@ use crate::state_transition::identity_credit_transfer_transition::fields::proper
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
+use crate::state_transition::StateTransitionValueConvert;
+use crate::version::PlatformVersionCurrentVersion;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
@@ -45,7 +47,7 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_credit_transfer_state_transition"
 )]
 pub enum IdentityCreditTransferTransition {
