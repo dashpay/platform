@@ -127,7 +127,7 @@ class DockerCompose {
     if (options.profiles?.length > 0) {
       serviceList = serviceList.filter((service) => (
         service.profiles.some((profile) => options.profiles.includes(profile))
-      ))
+      ));
     }
 
     const filterServiceNames = serviceList.map((service) => service.name);
