@@ -69,7 +69,9 @@ pub trait StateTransitionValueConvert<'a>:
     where
         Self: Sized,
     {
-        platform_value::from_value(Value::Map(raw_value_map.into_iter().collect()))
+        platform_value::from_value(Value::Map(raw_value_map.into_iter()
+            .map(|(k, v)| (k.into(), v))
+            .collect()))
             .map_err(ProtocolError::ValueError)
     }
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
