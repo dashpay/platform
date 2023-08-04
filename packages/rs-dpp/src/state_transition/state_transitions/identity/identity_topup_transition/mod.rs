@@ -22,6 +22,9 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::Serialize;
 
+use crate::state_transition::StateTransitionValueConvert;
+use crate::version::PlatformVersionCurrentVersion;
+
 #[derive(
     Debug,
     Clone,
@@ -41,7 +44,7 @@ use serde::Serialize;
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
-    "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
+    value = "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]
 pub enum IdentityTopUpTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

@@ -78,7 +78,7 @@ pub use v0::*;
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
-    "dpp.state_transition_serialization_versions.documents_batch_state_transition"
+    value = "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
 pub enum DocumentsBatchTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

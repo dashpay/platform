@@ -2,6 +2,7 @@ use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
@@ -13,7 +14,6 @@ use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
-use crate::data_contract::document_type::DocumentType;
 
 #[cfg(feature = "extended-document")]
 use crate::document::extended_document::v0::ExtendedDocumentV0;
@@ -23,6 +23,7 @@ use crate::document::ExtendedDocument;
 use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::StateTransitionValueConvert;
+use itertools::Itertools;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -155,7 +156,9 @@ impl DocumentFactoryV0 {
     #[cfg(feature = "state-transitions")]
     pub fn create_state_transition(
         &self,
-        documents_iter: impl IntoIterator<Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>)>,
+        documents_iter: impl IntoIterator<
+            Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>),
+        >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let mut raw_documents_transitions: Vec<Value> = vec![];
@@ -169,7 +172,8 @@ impl DocumentFactoryV0 {
 
         let owner_id = first_document.owner_id();
 
-        let is_the_same_owner = flattened_documents_iter.all(|(document,_)| document.owner_id() == owner_id);
+        let is_the_same_owner =
+            flattened_documents_iter.all(|(document, _)| document.owner_id() == owner_id);
         if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
@@ -178,7 +182,6 @@ impl DocumentFactoryV0 {
         }
 
         for (action, documents) in documents {
-
             let raw_transitions = match action {
                 DocumentTransitionActionType::Create => {
                     Self::raw_document_create_transitions(documents)?
@@ -201,7 +204,12 @@ impl DocumentFactoryV0 {
         let raw_batch_transition = BTreeMap::from([
             (
                 PROPERTY_FEATURE_VERSION.to_string(),
-                Value::U16(LATEST_PLATFORM_VERSION.document.default_current_version),
+                Value::U16(
+                    LATEST_PLATFORM_VERSION
+                        .dpp
+                        .document_versions
+                        .document_structure_version,
+                ),
             ),
             (
                 PROPERTY_OWNER_ID.to_string(),
@@ -306,13 +314,14 @@ impl DocumentFactoryV0 {
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for (document, document_type) in documents {
-            if document_type.documents_mutable()? { //we need to have revisions
+            if document_type.documents_mutable() {
+                //we need to have revisions
                 let Some(revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
                     }.into());
                 };
-                if revision != &INITIAL_REVISION {
+                if revision != INITIAL_REVISION {
                     return Err(DocumentError::InvalidInitialRevisionError {
                         document: Box::new(document),
                     }
@@ -328,10 +337,6 @@ impl DocumentFactoryV0 {
                 PROPERTY_ACTION.to_string(),
                 Value::U8(DocumentTransitionActionType::Create as u8),
             );
-            map.insert(
-                PROPERTY_ENTROPY.to_string(),
-                Value::Bytes(document.entropy.to_vec()),
-            );
             raw_transitions.push(map.into());
         }
 
@@ -343,7 +348,7 @@ impl DocumentFactoryV0 {
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for (document, document_type) in documents {
-            if !document_type.documents_mutable()? {
+            if !document_type.documents_mutable() {
                 return Err(DocumentError::TryingToReplaceImmutableDocument {
                     document: Box::new(document),
                 }

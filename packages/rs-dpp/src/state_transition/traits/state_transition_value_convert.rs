@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionValueConvert<'a>: Serialize + Deserialize<'a> + StateTransitionFieldTypes {
+pub trait StateTransitionValueConvert<'a>:
+    Serialize + Deserialize<'a> + StateTransitionFieldTypes
+{
     /// Returns the [`platform_value::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

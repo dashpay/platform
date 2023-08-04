@@ -18,6 +18,7 @@ use crate::state_transition::identity_update_transition::fields::property_names:
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
+use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
@@ -44,7 +45,7 @@ use serde::Serialize;
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
-    "dpp.state_transition_serialization_versions.identity_update_state_transition"
+    value = "dpp.state_transition_serialization_versions.identity_update_state_transition"
 )]
 pub enum IdentityUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
