@@ -119,7 +119,7 @@ class DockerCompose {
    * @param {string[]} [options.profiles] - Filter by profiles
    * @return {Promise<boolean>}
    */
-  async isNodeRunning(config, options = {profiles: []}) {
+  async isNodeRunning(config, options = { profiles: [] }) {
     await this.throwErrorIfNotInstalled();
 
     const serviceList = this.#getServiceList(config, options);
@@ -127,7 +127,7 @@ class DockerCompose {
     const filterServiceNames = serviceList
       .filter((service) => options.profiles.length === 0
         || service.profiles.some((serviceProfile) => options.profiles.includes(serviceProfile)))
-      .map((service) => service.name)
+      .map((service) => service.name);
 
     const serviceContainers = await this.getContainersList(config, {
       formatJson: true,

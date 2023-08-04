@@ -22,7 +22,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
   function getServiceList(config) {
     const envs = generateEnvs(config);
 
-    const profiles = getConfigProfiles(config)
+    const profiles = getConfigProfiles(config);
 
     return Object
       .entries(composeFile.services)
