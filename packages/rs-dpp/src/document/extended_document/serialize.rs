@@ -1,13 +1,15 @@
 use crate::data_contract::document_type::DocumentTypeRef;
+use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::{
     DocumentPlatformConversionMethodsV0, DocumentPlatformSerializationMethodsV0,
 };
 use crate::document::{Document, DocumentV0};
+use crate::prelude::ExtendedDocument;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_version::version::FeatureVersion;
 
-impl DocumentPlatformConversionMethodsV0 for Document {
+impl DocumentPlatformConversionMethodsV0 for ExtendedDocument {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
@@ -18,7 +20,9 @@ impl DocumentPlatformConversionMethodsV0 for Document {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            Document::V0(document_v0) => document_v0.serialize(document_type, platform_version),
+            ExtendedDocument::V0(document_v0) => {
+                document_v0.serialize(document_type, platform_version)
+            }
         }
     }
 
@@ -28,7 +32,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
         feature_version: FeatureVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            Document::V0(document_v0) => {
+            ExtendedDocument::V0(document_v0) => {
                 document_v0.serialize_specific_version(document_type, feature_version)
             }
         }
@@ -44,7 +48,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            Document::V0(document_v0) => {
+            ExtendedDocument::V0(document_v0) => {
                 document_v0.serialize_consume(document_type, platform_version)
             }
         }
@@ -59,14 +63,16 @@ impl DocumentPlatformConversionMethodsV0 for Document {
         match platform_version
             .dpp
             .document_versions
-            .document_structure_version
+            .extended_document_structure_version
         {
-            0 => Ok(
-                DocumentV0::from_bytes(serialized_document, document_type, platform_version)?
-                    .into(),
-            ),
+            0 => Ok(ExtendedDocumentV0::from_bytes(
+                serialized_document,
+                document_type,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "Document::from_bytes".to_string(),
+                method: "ExtendedDocument::from_bytes (structure)".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

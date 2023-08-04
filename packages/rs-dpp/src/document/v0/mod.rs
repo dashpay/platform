@@ -42,19 +42,25 @@ use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
 /// Documents contain the data that goes into data contracts.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct DocumentV0 {
     /// The unique document ID.
+    #[serde(rename = "$id")]
     pub id: Identifier,
     /// The ID of the document's owner.
+    #[serde(rename = "$ownerId")]
     pub owner_id: Identifier,
     /// The document's properties (data).
+    #[serde(flatten)]
     pub properties: BTreeMap<String, Value>,
     /// The document revision.
+    #[serde(rename = "$revision", default)]
     pub revision: Option<Revision>,
     /// The time in milliseconds that the document was created
+    #[serde(rename = "$createdAt", default)]
     pub created_at: Option<TimestampMillis>,
     /// The time in milliseconds that the document was last updated
+    #[serde(rename = "$updatedAt", default)]
     pub updated_at: Option<TimestampMillis>,
 }
 
