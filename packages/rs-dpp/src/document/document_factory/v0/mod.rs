@@ -23,6 +23,7 @@ use crate::document::ExtendedDocument;
 use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::state_transition::StateTransitionValueConvert;
+use itertools::Itertools;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
 const PROPERTY_ENTROPY: &str = "$entropy";
@@ -203,7 +204,12 @@ impl DocumentFactoryV0 {
         let raw_batch_transition = BTreeMap::from([
             (
                 PROPERTY_FEATURE_VERSION.to_string(),
-                Value::U16(LATEST_PLATFORM_VERSION.document.default_current_version),
+                Value::U16(
+                    LATEST_PLATFORM_VERSION
+                        .dpp
+                        .document_versions
+                        .document_structure_version,
+                ),
             ),
             (
                 PROPERTY_OWNER_ID.to_string(),
@@ -308,14 +314,14 @@ impl DocumentFactoryV0 {
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for (document, document_type) in documents {
-            if document_type.documents_mutable()? {
+            if document_type.documents_mutable() {
                 //we need to have revisions
                 let Some(revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
                     }.into());
                 };
-                if revision != &INITIAL_REVISION {
+                if revision != INITIAL_REVISION {
                     return Err(DocumentError::InvalidInitialRevisionError {
                         document: Box::new(document),
                     }
@@ -331,10 +337,6 @@ impl DocumentFactoryV0 {
                 PROPERTY_ACTION.to_string(),
                 Value::U8(DocumentTransitionActionType::Create as u8),
             );
-            map.insert(
-                PROPERTY_ENTROPY.to_string(),
-                Value::Bytes(document.entropy.to_vec()),
-            );
             raw_transitions.push(map.into());
         }
 
@@ -346,7 +348,7 @@ impl DocumentFactoryV0 {
     ) -> Result<Vec<Value>, ProtocolError> {
         let mut raw_transitions = vec![];
         for (document, document_type) in documents {
-            if !document_type.documents_mutable()? {
+            if !document_type.documents_mutable() {
                 return Err(DocumentError::TryingToReplaceImmutableDocument {
                     document: Box::new(document),
                 }
