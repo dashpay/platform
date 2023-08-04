@@ -4,7 +4,7 @@ use crate::data_contract::JsonValue;
 use crate::util::json_schema::JsonSchemaExt;
 use crate::ProtocolError;
 use lazy_static::lazy_static;
-use platform_value::Value;
+use platform_value::{Value, ValueMap, ValueMapHelper};
 
 lazy_static! {
     pub static ref BASE_DOCUMENT_SCHEMA: JsonValue =
@@ -24,41 +24,61 @@ pub fn enrich_with_base_schema(
     schema_defs: Option<Value>,
     exclude_properties: &[&str], // TODO: Do we need this?
 ) -> Result<Value, ProtocolError> {
+    let mut schema_map = schema.to_map_mut().map_err(|err| {
+        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
+            "document schema must be an object: {err}"
+        )))
+    })?;
+
     let base_properties = BASE_DOCUMENT_SCHEMA
         .get_schema_properties()?
         .as_object()
         .ok_or_else(|| {
-            ProtocolError::DataContractError(DataContractError::JsonSchema(
-                JsonSchemaError::CreateSchemaError(
-                    "base document schema's 'properties' is not a map",
-                ),
+            ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                "base document schema's 'properties' is not a map".to_string(),
             ))
         })?;
 
     let base_required = BASE_DOCUMENT_SCHEMA.get_schema_required_fields()?;
 
-    // TODO: $schema and $defs shouldn't be present
-
-    schema
-        .insert(
-            property_names::SCHEMA.to_string(),
-            DATA_CONTRACT_SCHEMA_URI_V0.into(),
-        )
-        .map_err(ProtocolError::ValueError)?;
-
-    // Add $defs
-    if let Some(schema_defs) = schema_defs {
-        schema
-            .insert(
-                property_names::DEFINITIONS.to_string(),
-                Value::from(schema_defs),
-            )
-            .map_err(ProtocolError::ValueError)?;
+    // Add $schema
+    if schema_map
+        .get_optional_key(property_names::SCHEMA)
+        .is_some()
+    {
+        return Err(ProtocolError::DataContractError(
+            DataContractError::InvalidContractStructure(
+                "document schema shouldn't contain '$schema' property".to_string(),
+            ),
+        ));
     }
 
-    if let Some(Value::Map(ref mut properties)) = schema
-        .get_mut(PROPERTY_PROPERTIES)
-        .map_err(ProtocolError::ValueError)?
+    schema_map.insert_string_key_value(
+        property_names::SCHEMA.to_string(),
+        DATA_CONTRACT_SCHEMA_URI_V0.into(),
+    );
+
+    // Add $defs
+    if schema_map
+        .get_optional_key(property_names::DEFINITIONS)
+        .is_some()
+    {
+        return Err(ProtocolError::DataContractError(
+            DataContractError::InvalidContractStructure(
+                "document schema shouldn't contain '$schema' property".to_string(),
+            ),
+        ));
+    }
+
+    if let Some(schema_defs) = schema_defs {
+        schema_map.insert_string_key_value(
+            property_names::DEFINITIONS.to_string(),
+            Value::from(schema_defs),
+        )
+    }
+
+    if let Some(Value::Map(ref mut properties)) =
+        schema_map.get_optional_key_mut(PROPERTY_PROPERTIES)
     {
         properties.extend(
             base_properties
@@ -67,9 +87,7 @@ pub fn enrich_with_base_schema(
         );
     }
 
-    if let Some(Value::Array(ref mut required)) = schema
-        .get_mut(PROPERTY_REQUIRED)
-        .map_err(ProtocolError::ValueError)?
+    if let Some(Value::Array(ref mut required)) = schema_map.get_optional_key_mut(PROPERTY_REQUIRED)
     {
         required.extend(base_required.iter().map(|v| v.to_string().into()));
         required.retain(|p| {

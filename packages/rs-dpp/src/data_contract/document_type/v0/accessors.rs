@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV0Setters,
 };
-use crate::data_contract::document_type::document_field::DocumentField;
+use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
@@ -30,11 +30,11 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         &self.index_structure
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
         &self.flattened_properties
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
         &self.properties
     }
 

@@ -9,7 +9,7 @@ impl DocumentTypeV0 {
             .flattened_properties
             .iter()
             .filter_map(|(_, document_field_type)| {
-                document_field_type.document_type.middle_byte_size_ceil()
+                document_field_type.r#type.middle_byte_size_ceil()
             });
         let first = Some(iter.next().unwrap_or_default());
 

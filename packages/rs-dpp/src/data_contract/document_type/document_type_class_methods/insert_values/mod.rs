@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::document_field::DocumentField;
+use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::DocumentType;
 use crate::version::dpp_versions::DocumentTypeVersions;
 use crate::ProtocolError;
@@ -9,7 +9,7 @@ mod v0;
 
 impl DocumentType {
     pub fn insert_values(
-        document_properties: &mut BTreeMap<String, DocumentField>,
+        document_properties: &mut BTreeMap<String, DocumentProperty>,
         known_required: &BTreeSet<String>,
         prefix: Option<String>,
         property_key: String,

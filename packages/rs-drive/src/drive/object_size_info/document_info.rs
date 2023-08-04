@@ -119,14 +119,11 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                             "incorrect key path for document type for estimated sizes",
                         ))
                     })?;
-                let estimated_size = document_field_type
-                    .document_type
-                    .middle_byte_size_ceil()
-                    .ok_or({
-                        Error::Drive(DriveError::CorruptedCodeExecution(
-                            "document type must have a max size",
-                        ))
-                    })?;
+                let estimated_size = document_field_type.r#type.middle_byte_size_ceil().ok_or({
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "document type must have a max size",
+                    ))
+                })?;
                 Ok(estimated_size)
             }
         }
@@ -187,10 +184,8 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                                 ))
                             })?;
 
-                        let estimated_middle_size = document_field_type
-                            .document_type
-                            .middle_byte_size_ceil()
-                            .ok_or({
+                        let estimated_middle_size =
+                            document_field_type.r#type.middle_byte_size_ceil().ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
                                     "document type must have a max size",
                                 ))

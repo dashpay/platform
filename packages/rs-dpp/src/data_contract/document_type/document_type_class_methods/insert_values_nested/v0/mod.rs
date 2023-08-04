@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::array_field::ArrayFieldType;
-use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::document_field::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentType {
     pub(super) fn insert_values_nested_v0(
-        document_properties: &mut BTreeMap<String, DocumentField>,
+        document_properties: &mut BTreeMap<String, DocumentProperty>,
         known_required: &BTreeSet<String>,
         property_key: String,
         property_value: &Value,
@@ -49,17 +49,17 @@ impl DocumentType {
             Some(type_value) => type_value,
         };
         let is_required = known_required.contains(&property_key);
-        let field_type: DocumentFieldType;
+        let field_type: DocumentPropertyType;
 
         match type_value.as_str() {
             "integer" => {
-                field_type = DocumentFieldType::Integer;
+                field_type = DocumentPropertyType::Integer;
             }
             "number" => {
-                field_type = DocumentFieldType::Number;
+                field_type = DocumentPropertyType::Number;
             }
             "string" => {
-                field_type = DocumentFieldType::String(
+                field_type = DocumentPropertyType::String(
                     inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
                     inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
                 );
@@ -77,9 +77,9 @@ impl DocumentType {
                                     if content_media_type
                                         == "application/x.dash.dpp.identifier" =>
                                 {
-                                    DocumentFieldType::Identifier
+                                    DocumentPropertyType::Identifier
                                 }
-                                Some(_) | None => DocumentFieldType::ByteArray(
+                                Some(_) | None => DocumentPropertyType::ByteArray(
                                     inner_properties
                                         .get_optional_integer(property_names::MIN_ITEMS)?,
                                     inner_properties
@@ -98,7 +98,7 @@ impl DocumentType {
                     //   but we still can use them as document fields with current cbor encoding
                     //   This is a temporary workaround to bring back v0.22 behavior and should be
                     //   replaced with a proper array support in future versions
-                    None => DocumentFieldType::Array(ArrayFieldType::Boolean),
+                    None => DocumentPropertyType::Array(ArrayFieldType::Boolean),
                 };
             }
             "object" => {
@@ -160,11 +160,11 @@ impl DocumentType {
                         )?;
                     }
                 }
-                field_type = DocumentFieldType::Object(nested_properties);
+                field_type = DocumentPropertyType::Object(nested_properties);
                 document_properties.insert(
                     property_key,
-                    DocumentField {
-                        document_type: field_type,
+                    DocumentProperty {
+                        r#type: field_type,
                         required: is_required,
                     },
                 );
@@ -178,8 +178,8 @@ impl DocumentType {
 
         document_properties.insert(
             property_key,
-            DocumentField {
-                document_type: field_type,
+            DocumentProperty {
+                r#type: field_type,
                 required: is_required,
             },
         );

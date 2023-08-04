@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::data_contract::document_type::document_field::DocumentField;
+use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
@@ -40,13 +40,13 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
         match self {
             DocumentType::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
         match self {
             DocumentType::V0(v0) => v0.properties(),
         }
@@ -126,13 +126,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.properties(),
         }
@@ -212,13 +212,13 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.flattened_properties(),
         }
     }
 
-    fn properties(&self) -> &BTreeMap<String, DocumentField> {
+    fn properties(&self) -> &BTreeMap<String, DocumentProperty> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.properties(),
         }

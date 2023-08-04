@@ -162,7 +162,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
                     updated_at = Some(time_ms);
                     None
                 } else {
-                    Some((key.clone(), document_field.document_type.random_value(rng)))
+                    Some((key.clone(), document_field.r#type.random_value(rng)))
                 }
             })
             .collect();
@@ -241,10 +241,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
             .flattened_properties
             .iter()
             .map(|(key, document_field)| {
-                (
-                    key.clone(),
-                    document_field.document_type.random_filled_value(rng),
-                )
+                (key.clone(), document_field.r#type.random_filled_value(rng))
             })
             .collect();
 

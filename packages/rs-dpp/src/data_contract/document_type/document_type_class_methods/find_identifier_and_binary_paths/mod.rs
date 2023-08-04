@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::document_field::DocumentField;
+use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::DocumentType;
 use crate::version::dpp_versions::DocumentTypeVersions;
 use crate::ProtocolError;
@@ -8,7 +8,7 @@ mod v0;
 
 impl DocumentType {
     pub fn find_identifier_and_binary_paths(
-        properties: &BTreeMap<String, DocumentField>,
+        properties: &BTreeMap<String, DocumentProperty>,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(BTreeSet<String>, BTreeSet<String>), ProtocolError> {
         match document_type_version.find_identifier_and_binary_paths {

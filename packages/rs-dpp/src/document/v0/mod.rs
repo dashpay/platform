@@ -18,7 +18,7 @@ use std::fmt;
 
 use serde_json::{json, Value as JsonValue};
 
-use crate::data_contract::document_type::DocumentFieldType;
+use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::DataContract;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;

@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::DocumentFieldType;
+use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::DocumentV0Getters;
 use crate::version::PlatformVersion;
@@ -28,12 +28,12 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
                 "$createdAt" => {
                     return Ok(self
                         .created_at()
-                        .map(|time| DocumentFieldType::encode_date_timestamp(time).unwrap()))
+                        .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
                 }
                 "$updatedAt" => {
                     return Ok(self
                         .updated_at()
-                        .map(|time| DocumentFieldType::encode_date_timestamp(time).unwrap()))
+                        .map(|time| DocumentPropertyType::encode_date_timestamp(time).unwrap()))
                 }
                 _ => {}
             }

@@ -106,7 +106,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             buffer.push(1);
                         }
                         let value = field
-                            .document_type
+                            .r#type
                             .encode_value_ref_with_size(value, field.required)?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
@@ -179,9 +179,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                         Ok(())
                     }
                 } else if let Some(value) = self.properties.remove(field_name) {
-                    let value = field
-                        .document_type
-                        .encode_value_with_size(value, field.required)?;
+                    let value = field.r#type.encode_value_with_size(value, field.required)?;
                     buffer.extend(value.as_slice());
                     Ok(())
                 } else if field.required {
@@ -301,7 +299,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                         Err(e) => Some(Err(e)),
                     }
                 } else {
-                    let read_value = field.document_type.read_from(&mut buf, field.required);
+                    let read_value = field.r#type.read_from(&mut buf, field.required);
                     match read_value {
                         Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
                         Err(e) => Some(Err(e)),

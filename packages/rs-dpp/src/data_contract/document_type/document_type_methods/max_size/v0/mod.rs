@@ -7,9 +7,7 @@ impl DocumentTypeV0 {
         let mut iter = self
             .flattened_properties
             .iter()
-            .filter_map(|(_, document_field_type)| {
-                document_field_type.document_type.max_byte_size()
-            });
+            .filter_map(|(_, document_field_type)| document_field_type.r#type.max_byte_size());
         let first = Some(iter.next().unwrap_or_default());
 
         iter.fold(first, |acc, item| acc.and_then(|acc| acc.checked_add(item)))

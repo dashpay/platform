@@ -16,18 +16,18 @@ use rand::rngs::StdRng;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-// TODO Rename to DocumentProperty. Must be versioned enum
+// TODO Must be versioned enum
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct DocumentField {
-    pub document_type: DocumentFieldType,
+pub struct DocumentProperty {
+    pub r#type: DocumentPropertyType,
     pub required: bool,
 }
 
 // TODO DocumentPropertyType
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub enum DocumentFieldType {
+pub enum DocumentPropertyType {
     ///Todo decompose integer
     Integer,
     Number,
@@ -36,112 +36,129 @@ pub enum DocumentFieldType {
     Identifier,
     Boolean,
     Date,
-    Object(BTreeMap<String, DocumentField>),
+    Object(BTreeMap<String, DocumentProperty>),
     Array(ArrayFieldType),
     VariableTypeArray(Vec<ArrayFieldType>),
 }
 
-impl DocumentFieldType {
+impl DocumentPropertyType {
+    pub fn name(&self) -> String {
+        match self {
+            DocumentPropertyType::Integer => "integer".to_string(),
+            DocumentPropertyType::Number => "number".to_string(),
+            DocumentPropertyType::String(_, _) => "string".to_string(),
+            DocumentPropertyType::ByteArray(_, _) => "byteArray".to_string(),
+            DocumentPropertyType::Identifier => "identifier".to_string(),
+            DocumentPropertyType::Boolean => "boolean".to_string(),
+            DocumentPropertyType::Date => "date".to_string(),
+            DocumentPropertyType::Object(_) => "object".to_string(),
+            DocumentPropertyType::Array(_) => "array".to_string(),
+            DocumentPropertyType::VariableTypeArray(_) => "variableTypeArray".to_string(),
+        }
+    }
+
     pub fn min_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(min_length, _) => match min_length {
+            DocumentPropertyType::Integer => Some(8),
+            DocumentPropertyType::Number => Some(8),
+            DocumentPropertyType::String(min_length, _) => match min_length {
                 None => Some(0),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::ByteArray(min_size, _) => match min_size {
+            DocumentPropertyType::ByteArray(min_size, _) => match min_size {
                 None => Some(0),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentPropertyType::Boolean => Some(1),
+            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.document_type.min_size())
+                .map(|(_, sub_field)| sub_field.r#type.min_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::VariableTypeArray(_) => None,
+            DocumentPropertyType::Identifier => Some(32),
         }
     }
 
     pub fn min_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(min_length, _) => match min_length {
+            DocumentPropertyType::Integer => Some(8),
+            DocumentPropertyType::Number => Some(8),
+            DocumentPropertyType::String(min_length, _) => match min_length {
                 None => Some(0),
                 Some(size) => Some(*size * 4),
             },
-            DocumentFieldType::ByteArray(min_size, _) => match min_size {
+            DocumentPropertyType::ByteArray(min_size, _) => match min_size {
                 None => Some(0),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentPropertyType::Boolean => Some(1),
+            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.document_type.min_byte_size())
+                .map(|(_, sub_field)| sub_field.r#type.min_byte_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::VariableTypeArray(_) => None,
+            DocumentPropertyType::Identifier => Some(32),
         }
     }
 
     pub fn max_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(_, max_length) => match max_length {
+            DocumentPropertyType::Integer => Some(8),
+            DocumentPropertyType::Number => Some(8),
+            DocumentPropertyType::String(_, max_length) => match max_length {
                 None => Some(u16::MAX),
                 Some(size) => Some(*size * 4),
             },
-            DocumentFieldType::ByteArray(_, max_size) => match max_size {
+            DocumentPropertyType::ByteArray(_, max_size) => match max_size {
                 None => Some(u16::MAX),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentPropertyType::Boolean => Some(1),
+            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.document_type.max_byte_size())
+                .map(|(_, sub_field)| sub_field.r#type.max_byte_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::VariableTypeArray(_) => None,
+            DocumentPropertyType::Identifier => Some(32),
         }
     }
 
     pub fn max_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Integer => Some(8),
-            DocumentFieldType::Number => Some(8),
-            DocumentFieldType::String(_, max_length) => match max_length {
+            DocumentPropertyType::Integer => Some(8),
+            DocumentPropertyType::Number => Some(8),
+            DocumentPropertyType::String(_, max_length) => match max_length {
                 None => Some(16383),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::ByteArray(_, max_size) => match max_size {
+            DocumentPropertyType::ByteArray(_, max_size) => match max_size {
                 None => Some(u16::MAX),
                 Some(size) => Some(*size),
             },
-            DocumentFieldType::Boolean => Some(1),
-            DocumentFieldType::Date => Some(8),
-            DocumentFieldType::Object(sub_fields) => sub_fields
+            DocumentPropertyType::Boolean => Some(1),
+            DocumentPropertyType::Date => Some(8),
+            DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.document_type.max_size())
+                .map(|(_, sub_field)| sub_field.r#type.max_size())
                 .sum(),
-            DocumentFieldType::Array(_) => None,
-            DocumentFieldType::VariableTypeArray(_) => None,
-            DocumentFieldType::Identifier => Some(32),
+            DocumentPropertyType::Array(_) => None,
+            DocumentPropertyType::VariableTypeArray(_) => None,
+            DocumentPropertyType::Identifier => Some(32),
         }
     }
 
     /// The middle size rounded down halfway between min and max size
     pub fn middle_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_size().unwrap();
@@ -152,7 +169,9 @@ impl DocumentFieldType {
     /// The middle size rounded up halfway between min and max size
     pub fn middle_size_ceil(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_size().unwrap();
@@ -163,7 +182,9 @@ impl DocumentFieldType {
     /// The middle size rounded down halfway between min and max byte size
     pub fn middle_byte_size(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_byte_size().unwrap();
@@ -174,7 +195,9 @@ impl DocumentFieldType {
     /// The middle size rounded up halfway between min and max byte size
     pub fn middle_byte_size_ceil(&self) -> Option<u16> {
         match self {
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => return None,
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
+                return None
+            }
             _ => {}
         }
         let min_size = self.min_byte_size().unwrap() as u32;
@@ -190,9 +213,9 @@ impl DocumentFieldType {
 
     pub fn random_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
-            DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentFieldType::String(_, _) => {
+            DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
+            DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
+            DocumentPropertyType::String(_, _) => {
                 let size = self.random_size(rng);
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -201,7 +224,7 @@ impl DocumentFieldType {
                         .collect(),
                 )
             }
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_, _) => {
                 let size = self.random_size(rng);
                 if self.min_size() == self.max_size() {
                     match size {
@@ -220,34 +243,34 @@ impl DocumentFieldType {
                     Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
                 }
             }
-            DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
-            DocumentFieldType::Date => {
+            DocumentPropertyType::Boolean => Value::Bool(rng.gen::<bool>()),
+            DocumentPropertyType::Date => {
                 let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
                 Value::Float(f.round() / 1000.0)
             }
-            DocumentFieldType::Object(sub_fields) => {
+            DocumentPropertyType::Object(sub_fields) => {
                 let value_vec = sub_fields
                     .iter()
                     .map(|(string, field_type)| {
                         (
                             Value::Text(string.clone()),
-                            field_type.document_type.random_value(rng),
+                            field_type.r#type.random_value(rng),
                         )
                     })
                     .collect();
                 Value::Map(value_vec)
             }
-            DocumentFieldType::Array(_) => Value::Null,
-            DocumentFieldType::VariableTypeArray(_) => Value::Null,
-            DocumentFieldType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Array(_) => Value::Null,
+            DocumentPropertyType::VariableTypeArray(_) => Value::Null,
+            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
         }
     }
 
     pub fn random_filled_value(&self, rng: &mut StdRng) -> Value {
         match self {
-            DocumentFieldType::Integer => Value::I64(rng.gen::<i64>()),
-            DocumentFieldType::Number => Value::Float(rng.gen::<f64>()),
-            DocumentFieldType::String(_, _) => {
+            DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
+            DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
+            DocumentPropertyType::String(_, _) => {
                 let size = self.max_size().unwrap();
                 Value::Text(
                     rng.sample_iter(Alphanumeric)
@@ -256,30 +279,30 @@ impl DocumentFieldType {
                         .collect(),
                 )
             }
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_, _) => {
                 let size = self.max_size().unwrap();
                 Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
             }
-            DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
-            DocumentFieldType::Date => {
+            DocumentPropertyType::Boolean => Value::Bool(rng.gen::<bool>()),
+            DocumentPropertyType::Date => {
                 let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
                 Value::Float(f.round() / 1000.0)
             }
-            DocumentFieldType::Object(sub_fields) => {
+            DocumentPropertyType::Object(sub_fields) => {
                 let value_vec = sub_fields
                     .iter()
                     .map(|(string, field_type)| {
                         (
                             Value::Text(string.clone()),
-                            field_type.document_type.random_filled_value(rng),
+                            field_type.r#type.random_filled_value(rng),
                         )
                     })
                     .collect();
                 Value::Map(value_vec)
             }
-            DocumentFieldType::Array(_) => Value::Null,
-            DocumentFieldType::VariableTypeArray(_) => Value::Null,
-            DocumentFieldType::Identifier => Value::Identifier(rng.gen()),
+            DocumentPropertyType::Array(_) => Value::Null,
+            DocumentPropertyType::VariableTypeArray(_) => Value::Null,
+            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
         }
     }
 
@@ -318,7 +341,7 @@ impl DocumentFieldType {
             }
         }
         match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentPropertyType::String(_, _) => {
                 let bytes = Self::read_varint_value(buf)?;
                 let string = String::from_utf8(bytes).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
@@ -327,7 +350,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(Some(Value::Text(string)))
             }
-            DocumentFieldType::Date | DocumentFieldType::Number => {
+            DocumentPropertyType::Date | DocumentPropertyType::Number => {
                 let date = buf.read_f64::<BigEndian>().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                         "error reading date/number from serialized document",
@@ -335,7 +358,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(Some(Value::Float(date)))
             }
-            DocumentFieldType::Integer => {
+            DocumentPropertyType::Integer => {
                 let integer = buf.read_i64::<BigEndian>().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                         "error reading integer from serialized document",
@@ -343,7 +366,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(Some(Value::I64(integer)))
             }
-            DocumentFieldType::Boolean => {
+            DocumentPropertyType::Boolean => {
                 let value = buf.read_u8().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                         "error reading bool from serialized document",
@@ -354,7 +377,7 @@ impl DocumentFieldType {
                     _ => Ok(Some(Value::Bool(true))),
                 }
             }
-            DocumentFieldType::ByteArray(min, max) => {
+            DocumentPropertyType::ByteArray(min, max) => {
                 match (min, max) {
                     (Some(min), Some(max)) if min == max => {
                         // if min == max, then we don't need a varint for the length
@@ -381,7 +404,7 @@ impl DocumentFieldType {
                     }
                 }
             }
-            DocumentFieldType::Identifier => {
+            DocumentPropertyType::Identifier => {
                 let mut id = [0; 32];
                 buf.read_exact(&mut id).map_err(|_| {
                     ProtocolError::DecodingError(
@@ -392,11 +415,11 @@ impl DocumentFieldType {
                 Ok(Some(Value::Identifier(id)))
             }
 
-            DocumentFieldType::Object(inner_fields) => {
+            DocumentPropertyType::Object(inner_fields) => {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
-                        let read_value = field.document_type.read_from(buf, field.required);
+                        let read_value = field.r#type.read_from(buf, field.required);
                         match read_value {
                             Ok(read_value) => read_value
                                 .map(|read_value| Ok((Value::Text(key.clone()), read_value))),
@@ -410,10 +433,12 @@ impl DocumentFieldType {
                     Ok(Some(Value::Map(values)))
                 }
             }
-            DocumentFieldType::Array(_array_field_type) => Err(ProtocolError::DataContractError(
-                DataContractError::Unsupported("serialization of arrays not yet supported"),
-            )),
-            DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+            DocumentPropertyType::Array(_array_field_type) => {
+                Err(ProtocolError::DataContractError(
+                    DataContractError::Unsupported("serialization of arrays not yet supported"),
+                ))
+            }
+            DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported("serialization of arrays not yet supported"),
             )),
         }
@@ -428,7 +453,7 @@ impl DocumentFieldType {
             return Ok(vec![]);
         }
         match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentPropertyType::String(_, _) => {
                 if let Value::Text(value) = value {
                     let vec = value.into_bytes();
                     let mut r_vec = vec.len().encode_var_vec();
@@ -438,7 +463,7 @@ impl DocumentFieldType {
                     Err(get_field_type_matching_error())
                 }
             }
-            DocumentFieldType::Date => {
+            DocumentPropertyType::Date => {
                 let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
@@ -450,7 +475,7 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::Integer => {
+            DocumentPropertyType::Integer => {
                 let value_as_i64: i64 = value.into_integer().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
                 if required {
@@ -462,7 +487,7 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::Number => {
+            DocumentPropertyType::Number => {
                 let value_as_f64 = value.into_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
@@ -474,21 +499,21 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_, _) => {
                 let mut bytes = value.into_binary_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentFieldType::Identifier => {
+            DocumentPropertyType::Identifier => {
                 let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
             }
-            DocumentFieldType::Boolean => {
+            DocumentPropertyType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 // 0 means does not exist
                 if value_as_boolean {
@@ -497,16 +522,15 @@ impl DocumentFieldType {
                     Ok(vec![2]) // 2 is false
                 }
             }
-            DocumentFieldType::Object(inner_fields) => {
+            DocumentPropertyType::Object(inner_fields) => {
                 if let Value::Map(map) = value {
                     let mut value_map =
                         Value::map_into_btree_string_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
-                            let mut serialized_value = field
-                                .document_type
-                                .encode_value_with_size(value, field.required)?;
+                            let mut serialized_value =
+                                field.r#type.encode_value_with_size(value, field.required)?;
                             r_vec.append(&mut serialized_value);
                             Ok(())
                         } else if field.required {
@@ -526,7 +550,7 @@ impl DocumentFieldType {
                     Err(get_field_type_matching_error())
                 }
             }
-            DocumentFieldType::Array(array_field_type) => {
+            DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -541,7 +565,7 @@ impl DocumentFieldType {
                     Err(get_field_type_matching_error())
                 }
             }
-            DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+            DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported(
                     "serialization of variable type arrays not yet supported",
                 ),
@@ -558,14 +582,14 @@ impl DocumentFieldType {
             return Ok(vec![]);
         }
         return match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentPropertyType::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
                 let mut r_vec = vec.len().encode_var_vec();
                 r_vec.extend(vec);
                 Ok(r_vec)
             }
-            DocumentFieldType::Date => {
+            DocumentPropertyType::Date => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
                 if required {
@@ -577,15 +601,15 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             }
-            DocumentFieldType::Integer => {
+            DocumentPropertyType::Integer => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_i64.to_be_bytes().to_vec())
             }
-            DocumentFieldType::Number => {
+            DocumentPropertyType::Number => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_f64.to_be_bytes().to_vec())
             }
-            DocumentFieldType::ByteArray(min, max) => match (min, max) {
+            DocumentPropertyType::ByteArray(min, max) => match (min, max) {
                 (Some(min), Some(max)) if min == max => Ok(value.to_binary_bytes()?),
                 _ => {
                     let mut bytes = value.to_binary_bytes()?;
@@ -595,8 +619,8 @@ impl DocumentFieldType {
                     Ok(r_vec)
                 }
             },
-            DocumentFieldType::Identifier => Ok(value.to_identifier_bytes()?),
-            DocumentFieldType::Boolean => {
+            DocumentPropertyType::Identifier => Ok(value.to_identifier_bytes()?),
+            DocumentPropertyType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 // 0 means does not exist
                 if value_as_boolean {
@@ -605,7 +629,7 @@ impl DocumentFieldType {
                     Ok(vec![0]) // 0 is false
                 }
             }
-            DocumentFieldType::Object(inner_fields) => {
+            DocumentPropertyType::Object(inner_fields) => {
                 let Some(value_map) = value.as_map() else {
                     return Err(get_field_type_matching_error())
                 };
@@ -617,7 +641,7 @@ impl DocumentFieldType {
                             r_vec.push(1);
                         }
                         let value = field
-                            .document_type
+                            .r#type
                             .encode_value_ref_with_size(value, field.required)?;
                         r_vec.extend(value.as_slice());
                         Ok(())
@@ -635,7 +659,7 @@ impl DocumentFieldType {
                 })?;
                 Ok(r_vec)
             }
-            DocumentFieldType::Array(array_field_type) => {
+            DocumentPropertyType::Array(array_field_type) => {
                 if let Value::Array(array) = value {
                     let mut r_vec = array.len().encode_var_vec();
 
@@ -651,7 +675,7 @@ impl DocumentFieldType {
                 }
             }
 
-            DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+            DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported("serialization of arrays not yet supported"),
             )),
         };
@@ -663,7 +687,7 @@ impl DocumentFieldType {
             return Ok(vec![]);
         }
         match self {
-            DocumentFieldType::String(_, _) => {
+            DocumentPropertyType::String(_, _) => {
                 let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
                 let vec = value_as_text.as_bytes().to_vec();
                 if vec.is_empty() {
@@ -673,24 +697,24 @@ impl DocumentFieldType {
                     Ok(vec)
                 }
             }
-            DocumentFieldType::Date => DocumentFieldType::encode_date_timestamp(
+            DocumentPropertyType::Date => DocumentPropertyType::encode_date_timestamp(
                 value.to_integer().map_err(ProtocolError::ValueError)?,
             ),
-            DocumentFieldType::Integer => {
+            DocumentPropertyType::Integer => {
                 let value_as_i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
 
-                DocumentFieldType::encode_signed_integer(value_as_i64)
+                DocumentPropertyType::encode_signed_integer(value_as_i64)
             }
-            DocumentFieldType::Number => Ok(Self::encode_float(
+            DocumentPropertyType::Number => Ok(Self::encode_float(
                 value.to_float().map_err(ProtocolError::ValueError)?,
             )),
-            DocumentFieldType::ByteArray(_, _) => {
+            DocumentPropertyType::ByteArray(_, _) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
-            DocumentFieldType::Identifier => value
+            DocumentPropertyType::Identifier => value
                 .to_identifier_bytes()
                 .map_err(ProtocolError::ValueError),
-            DocumentFieldType::Boolean => {
+            DocumentPropertyType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 if value_as_boolean {
                     Ok(vec![1])
@@ -698,12 +722,12 @@ impl DocumentFieldType {
                     Ok(vec![0])
                 }
             }
-            DocumentFieldType::Object(_) => Err(ProtocolError::DataContractError(
+            DocumentPropertyType::Object(_) => Err(ProtocolError::DataContractError(
                 DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an object",
                 ),
             )),
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
                 Err(ProtocolError::DataContractError(
                     DataContractError::EncodingDataStructureNotSupported(
                         "we should never try encoding an array",
@@ -716,7 +740,7 @@ impl DocumentFieldType {
     // Given a field type and a value this function chooses and executes the right encoding method
     pub fn value_from_string(&self, str: &str) -> Result<Value, ProtocolError> {
         match self {
-            DocumentFieldType::String(min, max) => {
+            DocumentPropertyType::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min as usize {
                         return Err(ProtocolError::DataContractError(
@@ -733,19 +757,19 @@ impl DocumentFieldType {
                 }
                 Ok(Value::Text(str.to_string()))
             }
-            DocumentFieldType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
+            DocumentPropertyType::Integer => str.parse::<i128>().map(Value::I128).map_err(|_| {
                 ProtocolError::DataContractError(DataContractError::ValueWrongType(
                     "value is not an integer from string",
                 ))
             }),
-            DocumentFieldType::Number | DocumentFieldType::Date => {
+            DocumentPropertyType::Number | DocumentPropertyType::Date => {
                 str.parse::<f64>().map(Value::Float).map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::ValueWrongType(
                         "value is not a float from string",
                     ))
                 })
             }
-            DocumentFieldType::ByteArray(min, max) => {
+            DocumentPropertyType::ByteArray(min, max) => {
                 if let Some(min) = min {
                     if str.len() / 2 < *min as usize {
                         return Err(ProtocolError::DataContractError(
@@ -766,10 +790,10 @@ impl DocumentFieldType {
                     ))
                 })?))
             }
-            DocumentFieldType::Identifier => Ok(Value::Identifier(
+            DocumentPropertyType::Identifier => Ok(Value::Identifier(
                 Value::Text(str.to_owned()).to_identifier()?.into_buffer(),
             )),
-            DocumentFieldType::Boolean => {
+            DocumentPropertyType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
                     Ok(Value::Bool(true))
                 } else if str.to_lowercase().as_str() == "false" {
@@ -782,12 +806,12 @@ impl DocumentFieldType {
                     ))
                 }
             }
-            DocumentFieldType::Object(_) => Err(ProtocolError::DataContractError(
+            DocumentPropertyType::Object(_) => Err(ProtocolError::DataContractError(
                 DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding an object",
                 ),
             )),
-            DocumentFieldType::Array(_) | DocumentFieldType::VariableTypeArray(_) => {
+            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
                 Err(ProtocolError::DataContractError(
                     DataContractError::EncodingDataStructureNotSupported(
                         "we should never try encoding an array",

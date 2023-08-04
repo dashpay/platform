@@ -31,7 +31,7 @@ impl DocumentTypeV0 {
                 let field_type = self.flattened_properties.get(key).ok_or_else(|| {
                     DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))
                 })?;
-                let bytes = field_type.document_type.encode_value_for_tree_keys(value)?;
+                let bytes = field_type.r#type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(

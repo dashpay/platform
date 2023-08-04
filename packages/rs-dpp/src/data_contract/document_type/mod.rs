@@ -9,6 +9,7 @@ pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
 pub mod enrich_with_base_schema;
+mod multi_validator;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod v0;
@@ -70,12 +71,12 @@ impl DocumentType {
         }
     }
 
-    fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
+    fn string_to_field_type(field_type_name: &str) -> Option<DocumentPropertyType> {
         match field_type_name {
-            "integer" => Some(DocumentFieldType::Integer),
-            "number" => Some(DocumentFieldType::Number),
-            "boolean" => Some(DocumentFieldType::Boolean),
-            "date" => Some(DocumentFieldType::Date),
+            "integer" => Some(DocumentPropertyType::Integer),
+            "number" => Some(DocumentPropertyType::Number),
+            "boolean" => Some(DocumentPropertyType::Boolean),
+            "date" => Some(DocumentPropertyType::Date),
             _ => None,
         }
     }
@@ -141,7 +142,7 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         &self,
         property: &str,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentFieldType>, ProtocolError> {
+    ) -> Result<Option<DocumentPropertyType>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => {
                 v0.document_field_type_for_property(property, platform_version)
@@ -189,7 +190,7 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
+    fn document_field_for_property(&self, property: &str) -> Option<DocumentProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.document_field_for_property(property),
         }

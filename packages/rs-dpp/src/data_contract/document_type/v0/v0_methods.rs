@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::data_contract::document_type::document_field::{DocumentField, DocumentFieldType};
+use crate::data_contract::document_type::document_field::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::index::{Index, IndexProperty};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
@@ -49,7 +49,7 @@ pub trait DocumentTypeV0Methods {
         &self,
         property: &str,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentFieldType>, ProtocolError>;
+    ) -> Result<Option<DocumentPropertyType>, ProtocolError>;
 
     /// Non versioned
     fn unique_id_for_storage(&self) -> [u8; 32];
@@ -74,7 +74,7 @@ pub trait DocumentTypeV0Methods {
     fn top_level_indices(&self) -> Vec<&IndexProperty>;
 
     /// Non versioned
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentField>;
+    fn document_field_for_property(&self, property: &str) -> Option<DocumentProperty>;
     fn create_document_from_data(
         &self,
         data: Value,
@@ -194,7 +194,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         &self,
         property: &str,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentFieldType>, ProtocolError> {
+    ) -> Result<Option<DocumentPropertyType>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions
@@ -219,7 +219,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         index_level: &IndexLevel,
         base_event: [u8; 32],
     ) -> Vec<u8> {
-        let mut bytes = index_level.level_identifier.to_be_bytes().to_vec();
+        let mut bytes = index_level.identifier().to_be_bytes().to_vec();
         bytes.extend_from_slice(&base_event);
         bytes
     }
@@ -250,7 +250,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         index_properties
     }
 
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
+    fn document_field_for_property(&self, property: &str) -> Option<DocumentProperty> {
         self.flattened_properties.get(property).cloned()
     }
 

@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::document_field::DocumentField;
+use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::{JsonSchema, PropertyPath};
@@ -21,10 +21,10 @@ pub trait DocumentTypeV0Getters {
     fn index_structure(&self) -> &IndexLevel;
 
     /// Returns the flattened properties of the document type.
-    fn flattened_properties(&self) -> &BTreeMap<String, DocumentField>;
+    fn flattened_properties(&self) -> &BTreeMap<String, DocumentProperty>;
 
     /// Returns the properties of the document type.
-    fn properties(&self) -> &BTreeMap<String, DocumentField>;
+    fn properties(&self) -> &BTreeMap<String, DocumentProperty>;
 
     /// Returns the identifier paths of the document type.
     fn identifier_paths(&self) -> &BTreeSet<String>;

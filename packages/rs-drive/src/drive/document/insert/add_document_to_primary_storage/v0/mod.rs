@@ -1,4 +1,4 @@
-use dpp::data_contract::document_type::{DocumentFieldType, IndexLevel};
+use dpp::data_contract::document_type::{DocumentPropertyType, IndexLevel};
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -154,7 +154,7 @@ impl Drive {
                 drive_operations,
                 drive_version,
             )?;
-            let encoded_time = DocumentFieldType::encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = DocumentPropertyType::encode_unsigned_integer(block_info.time_ms)?;
             let path_key_element_info = match &document_and_contract_info
                 .owned_document_info
                 .document_info
