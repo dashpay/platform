@@ -4,7 +4,7 @@ const { createFetch } = require('@whatwg-node/fetch');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
-const fetch = createFetch();
+const { fetch } = createFetch();
 
 /**
  * @typedef {requestJsonRpc}
