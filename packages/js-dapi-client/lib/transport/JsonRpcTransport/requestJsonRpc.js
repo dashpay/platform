@@ -1,4 +1,7 @@
-const { Agent } = require('undici');
+import { createFetch } from '@whatwg-node/fetch'
+
+const fetch = createFetch()
+
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
 
