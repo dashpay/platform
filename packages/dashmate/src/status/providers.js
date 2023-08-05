@@ -13,8 +13,8 @@ const request = async (url) => {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.warn(`Could not fetch: ${e}`);
-        return null;
       }
+      return null;
     }
     throw e;
   }
