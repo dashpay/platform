@@ -1,9 +1,10 @@
-import { createFetch } from '@whatwg-node/fetch'
-
-const fetch = createFetch()
+const https = require('https');
+const { createFetch } = require('@whatwg-node/fetch');
 
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
+
+const fetch = createFetch();
 
 /**
  * @typedef {requestJsonRpc}
@@ -57,7 +58,9 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     && process.versions.node != null
     && protocol === 'https'
     && selfSigned) {
-    requestOptions.dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+    requestOptions.agent = new https.Agent({
+      rejectUnauthorized: false,
+    });
   }
 
   // eslint-disable-next-line
