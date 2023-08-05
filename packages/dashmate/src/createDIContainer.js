@@ -105,6 +105,7 @@ const getConfigFileMigrationsFactory = require('../configs/getConfigFileMigratio
 const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
 const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const generateEnvsFactory = require('./config/generateEnvsFactory');
+const getConfigProfilesFactory = require('./config/getConfigProfilesFactory');
 const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
 const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
 const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
@@ -149,6 +150,7 @@ async function createDIContainer(options = {}) {
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
     generateEnvs: asFunction(generateEnvsFactory).singleton(),
+    getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
