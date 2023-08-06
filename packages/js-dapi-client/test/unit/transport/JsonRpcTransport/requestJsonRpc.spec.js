@@ -1,7 +1,7 @@
 const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/requestJsonRpc');
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
-const getFetch = require('../../../../lib/transport/JsonRpcTransport/getFetch')
+const getFetch = require('../../../../lib/transport/JsonRpcTransport/getFetch');
 
 describe('requestJsonRpc', () => {
   let protocol;

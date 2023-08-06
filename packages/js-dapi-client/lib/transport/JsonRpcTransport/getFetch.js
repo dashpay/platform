@@ -1,5 +1,5 @@
-const fetch = require('cross-fetch')
+const fetch = require('cross-fetch');
 
 module.exports = {
-  fetch
-}
+  fetch,
+};
