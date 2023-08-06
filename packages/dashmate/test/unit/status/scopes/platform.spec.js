@@ -1,5 +1,3 @@
-const { FetchError } = fetch;
-
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
 const determineStatus = require('../../../../src/status/determineStatus');
 const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
@@ -45,7 +43,8 @@ describe('getPlatformScopeFactory', () => {
       mockCreateRpcClient = () => mockRpcClient;
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
-      mockFetch = this.sinon.stub(fetch, 'Promise');
+      // eslint-disable-next-line
+      mockFetch = this.sinon.stub(globalThis, 'fetch');
       mockGetConnectionHost = this.sinon.stub();
       configFile = { getProjectId: this.sinon.stub() };
 
@@ -348,7 +347,7 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
-      mockFetch.returns(Promise.reject(new FetchError('test')));
+      mockFetch.returns(Promise.reject(new Error('FetchError')));
 
       const expectedScope = {
         coreIsSynced: true,
