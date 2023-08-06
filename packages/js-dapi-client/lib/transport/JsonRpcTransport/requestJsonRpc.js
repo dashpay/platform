@@ -1,11 +1,7 @@
-const https = require('https');
-const { createFetch } = require('@whatwg-node/fetch');
-
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
-
-const { fetch } = createFetch();
-
+const https = require('https')
+const getFetch = require('./getFetch')
 /**
  * @typedef {requestJsonRpc}
  * @param {string} protocol
@@ -62,7 +58,7 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
       rejectUnauthorized: false,
     });
   }
-
+  const fetch = getFetch.fetch
   // eslint-disable-next-line
   const response = await fetch(url, requestOptions);
 
