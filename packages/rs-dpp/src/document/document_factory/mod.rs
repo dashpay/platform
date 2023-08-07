@@ -2,7 +2,7 @@ mod v0;
 
 use crate::data_contract::DataContract;
 
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::{PlatformVersion};
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};

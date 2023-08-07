@@ -1,7 +1,6 @@
-use crate::document::property_names::FEATURE_VERSION;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::{Document, DocumentV0};
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::{PlatformVersion};
 use crate::ProtocolError;
 use platform_value::Value;
 use std::collections::BTreeMap;

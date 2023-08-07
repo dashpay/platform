@@ -1,4 +1,3 @@
-use crate::document::{v0, DocumentV0};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;

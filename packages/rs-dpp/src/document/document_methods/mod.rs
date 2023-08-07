@@ -1,6 +1,5 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
-use crate::document::{DocumentV0Getters, DocumentV0Setters};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
